@@ -57,11 +57,16 @@ class SecurityHeadersMiddleware:
 
 
 def client_host(request: Request, *, trust_proxy_headers: bool) -> str:
-    """Resolve one client address, trusting forwarded input only when configured."""
+    """Resolve one client address, trusting forwarded input only when configured.
+
+    Exactly one trusted proxy hop is assumed: that proxy appends the address it saw to
+    X-Forwarded-For, so only the last entry is trusted. Earlier entries come from the
+    client and would let it mint a fresh identity per request.
+    """
     direct = request.client.host if request.client is not None else "unknown"
     if not trust_proxy_headers:
         return direct
-    forwarded = request.headers.get("x-forwarded-for", "").split(",", maxsplit=1)[0].strip()
+    forwarded = request.headers.get("x-forwarded-for", "").rsplit(",", maxsplit=1)[-1].strip()
     if not forwarded:
         return direct
     try:

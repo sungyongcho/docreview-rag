@@ -21,6 +21,7 @@ def _guarded_app(
     tmp_path,
     *,
     enforce_rate_limit: bool = True,
+    trust_proxy_headers: bool = False,
     per_minute: int = 1,
     per_day: int = 2,
     daily_limit: Decimal = Decimal("1"),
@@ -31,7 +32,7 @@ def _guarded_app(
     app.add_middleware(
         ReleaseGuardMiddleware,
         allowance=SharedAIAllowance(tmp_path / "limits.sqlite3", daily_limit, per_minute, per_day),
-        trust_proxy_headers=False,
+        trust_proxy_headers=trust_proxy_headers,
         enforce_rate_limit=enforce_rate_limit,
     )
     app.add_middleware(SecurityHeadersMiddleware)
@@ -221,7 +222,24 @@ def test_forwarded_client_input_requires_explicit_trust() -> None:
     request = Request(scope)
 
     assert client_host(request, trust_proxy_headers=False) == "127.0.0.1"
-    assert client_host(request, trust_proxy_headers=True) == "203.0.113.8"
+    assert client_host(request, trust_proxy_headers=True) == "10.0.0.1"
+
+
+def test_spoofed_forwarded_entries_through_one_proxy_hop_share_one_rate_limit_key(
+    tmp_path,
+) -> None:
+    """Key the client on the hop the trusted proxy appended, not on client-written entries."""
+    app = _guarded_app(tmp_path, trust_proxy_headers=True)
+
+    with TestClient(app) as client:
+        first = client.post("/review", headers={"x-forwarded-for": "203.0.113.1, 10.0.0.1"})
+        second = client.post("/review", headers={"x-forwarded-for": "203.0.113.2, 10.0.0.1"})
+        other_hop = client.post("/review", headers={"x-forwarded-for": "203.0.113.1, 10.0.0.2"})
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["error"]["code"] == "rate_limited"
+    assert other_hop.status_code == 200
 
 
 def test_server_secret_is_redacted_before_log_formatting() -> None:

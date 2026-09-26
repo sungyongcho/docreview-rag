@@ -54,6 +54,8 @@ class ReleaseSettings(DotenvFirstSettings):
     host: str = "0.0.0.0"
     rate_limit_per_minute: int = Field(default=10, ge=1, le=1_000)
     rate_limit_per_day: int = Field(default=50, ge=1, le=100_000)
+    # Trust exactly one proxy hop: the client identity is the last X-Forwarded-For entry,
+    # the address that proxy appended. Earlier entries are client-supplied and ignored.
     trust_proxy_headers: bool = False
     admin_mode: AdminMode = "readonly"
     admin_cors_origin: str | None = None
