@@ -248,6 +248,38 @@ def test_missing_candidate_metadata_is_an_explicit_failure(hit):
     assert failure.value.error.code == "evidence_metadata_unavailable"
 
 
+def test_component_ranks_use_the_per_language_vector_lane():
+    """A chunk first in the Korean vector lane is rank 1 tagged ko, not its concatenated offset."""
+    from app.retrieval.service import ComponentRankings, RetrievalResult
+
+    routed = RetrievalResult(
+        hits=(),
+        candidates=(),
+        score_stage="rrf",
+        component_rankings=ComponentRankings(
+            vector=(1, 2, 3),
+            vector_by_language={"en": (1, 2), "ko": (3,)},
+            lexical=(3,),
+            lexical_by_language={"ko": (3,)},
+        ),
+    )
+    ranks = RuntimeApiServices._component_ranks(3, routed)
+    assert [(rank.lane, rank.language, rank.rank) for rank in ranks] == [
+        ("vector", "ko", 1),
+        ("lexical", "ko", 1),
+    ]
+
+    # Without per-language lanes the flat vector tuple is the only provenance available.
+    flat = RetrievalResult(
+        hits=(),
+        candidates=(),
+        score_stage="rrf",
+        component_rankings=ComponentRankings(vector=(1, 2, 3), lexical=()),
+    )
+    ranks = RuntimeApiServices._component_ranks(3, flat)
+    assert [(rank.lane, rank.language, rank.rank) for rank in ranks] == [("vector", None, 3)]
+
+
 @pytest.fixture
 def routing_service():
     """Use a two-registry manifest and stop at the actual retrieval boundary."""

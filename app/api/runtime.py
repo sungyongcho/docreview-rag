@@ -780,24 +780,33 @@ class RuntimeApiServices(ApiServices):
         chunk_id: int,
         result: RetrievalResult,
     ) -> tuple[CandidateComponentRank, ...]:
-        """Return every component rank that contributed one candidate."""
+        """Return every component rank that contributed one candidate.
+
+        A rank is the candidate's 1-based position inside the lane that proposed it.
+        When the service ran one vector lane per corpus language, those lanes are
+        reported tagged with their language, so a chunk ranked first in the Korean lane
+        is rank 1 rather than its offset inside the concatenated ``vector`` tuple. The
+        flat tuple is consulted only when no per-language lanes exist.
+        """
+        rankings = result.component_rankings
         ranks: list[CandidateComponentRank] = []
-        if chunk_id in result.component_rankings.vector:
-            ranks.append(
-                CandidateComponentRank(
-                    lane="vector",
-                    rank=result.component_rankings.vector.index(chunk_id) + 1,
-                )
-            )
-        for language, ids in result.component_rankings.lexical_by_language.items():
+
+        def record(lane: str, language: str | None, ids: tuple[int, ...]) -> None:
+            """Record the candidate's rank inside one lane when that lane proposed it."""
             if chunk_id in ids:
                 ranks.append(
-                    CandidateComponentRank(
-                        lane="lexical",
-                        language=cast("Literal['en', 'ko']", language),
-                        rank=ids.index(chunk_id) + 1,
+                    CandidateComponentRank.model_validate(
+                        {"lane": lane, "language": language, "rank": ids.index(chunk_id) + 1}
                     )
                 )
+
+        if rankings.vector_by_language:
+            for language, ids in rankings.vector_by_language.items():
+                record("vector", language, ids)
+        else:
+            record("vector", None, rankings.vector)
+        for language, ids in rankings.lexical_by_language.items():
+            record("lexical", language, ids)
         return tuple(ranks)
 
     def _registry_name(self, doc_id: str) -> str | None:
