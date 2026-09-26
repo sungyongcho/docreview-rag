@@ -7,7 +7,7 @@ import pytest
 
 from app.api.admin_schemas import EvaluationRunRequest
 from app.config import Settings
-from app.corpus_admin import CorpusStatus
+from app.corpus_admin.types import CorpusStatus
 from app.evals.admin import EvaluationAdminService, EvaluationNotReadyError
 from app.evals.source_binding import BoundGolden, SourceCheck
 from app.retrieval.embeddings import DeterministicEmbeddingProvider

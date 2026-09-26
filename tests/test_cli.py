@@ -173,7 +173,7 @@ def test_ingest_submits_the_shared_job_contract(monkeypatch):
     from fastapi.encoders import jsonable_encoder
     import httpx
 
-    from app.corpus_admin import AdminCommand, AdminJob
+    from app.corpus_admin.types import AdminCommand, AdminJob
 
     job = AdminJob(
         "cli-job",

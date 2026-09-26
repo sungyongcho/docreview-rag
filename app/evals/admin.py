@@ -32,7 +32,7 @@ from app.api.admin_schemas import (
 )
 from app.api.review_profile import ServerBM25, with_server_bm25
 from app.config import Settings, get_settings
-from app.corpus_admin import CorpusStatus
+from app.corpus_admin.types import CorpusStatus
 from app.db.models import Chunk
 from app.db.session_factory import SessionFactory
 from app.evals.admin_results import (

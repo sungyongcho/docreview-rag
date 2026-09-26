@@ -5,7 +5,8 @@ import asyncio
 import pytest
 
 from app.config import Settings
-from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand
 from app.ingestion.manifest import Manifest
 from app.ingestion.source_deletion import SourceDeletion
 from app.ingestion.source_selection import record_selection, source_inventory

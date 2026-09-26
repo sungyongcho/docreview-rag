@@ -19,7 +19,7 @@ from app.api.app import DEV_SURFACE, LIVE_ADMIN_SURFACE, PROD_SURFACE, create_ap
 from app.api.review_profile import PromptPolicy
 from app.api.runtime import RuntimeApiServices
 from app.config import Settings
-from app.corpus_admin import RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_inventory import LocalModelInventory
 from app.llm.local_runtime import build_local_runtime

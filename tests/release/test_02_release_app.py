@@ -10,7 +10,8 @@ import pytest
 from app.api.deps import get_api_services
 from app.api.review_profile import PromptPolicy, ServerBM25
 from app.api.runtime import RuntimeApiServices
-from app.corpus_admin import CorpusStatus, RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import CorpusStatus
 from app.llm.schemas import RawProviderResponse
 from app.observability.types import RunReport, build_run_report
 from app.release.ai_allowance import SharedAIAllowance, reserve_openai

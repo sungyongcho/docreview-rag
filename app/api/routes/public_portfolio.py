@@ -11,7 +11,7 @@ from app.api.public_portfolio import PublicPortfolioReader
 from app.api.public_portfolio_schemas import PublicPortfolioPreparation
 from app.api.runtime import RuntimeApiServices
 from app.config import get_settings
-from app.corpus_admin import RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
 
 router = APIRouter(prefix="/public/portfolio", tags=["documents"])
 

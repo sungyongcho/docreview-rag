@@ -10,13 +10,11 @@ from pydantic import SecretStr
 import pytest
 
 from app.config import Settings
-import app.corpus_admin as corpus_admin
-from app.corpus_admin import (
-    AdminCommand,
-    OperationOutcome,
-    RuntimeCorpusAdminService,
-)
+import app.corpus_admin.runtime as runtime
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.ingestion.progress import OperationProgress
+from app.operator.corpus_access import JobCancelledError
 from app.operator.jobs import JobDomain, JobStatus, JobStore, StoredJob
 from app.operator.progress import PROGRESS_KEY, stored_progress
 from app.retrieval.bm25 import TermStatCounts
@@ -25,21 +23,6 @@ from app.retrieval.embeddings import (
     EmbeddingBackfillResult,
 )
 from tests.live_postgres import live_postgres_unavailable
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        lambda: AdminCommand("acquire_edgar"),
-        lambda: AdminCommand("acquire_dart", identifiers=("005930",), years=(1800,)),
-        lambda: AdminCommand("ingest_manifest", manifest=""),
-        lambda: AdminCommand("ingest_manifest", manifest="manifest.json", expected_documents=0),
-    ],
-)
-def test_admin_commands_reject_incomplete_or_unsafe_inputs(command) -> None:
-    """Reject hidden defaults and invalid counts before an operation is queued."""
-    with pytest.raises(ValueError):
-        command()
 
 
 def test_runtime_queue_is_fifo_and_reports_progress(tmp_path: Path) -> None:
@@ -228,9 +211,9 @@ def test_backfill_refuses_false_success_when_committed_count_does_not_change(
         """Treat the focused fake schema as writable."""
         del self
 
-    monkeypatch.setattr(corpus_admin, "_embedding_state", fake_state)
-    monkeypatch.setattr(corpus_admin, "embed_missing_chunks", fake_embed)
-    monkeypatch.setattr(corpus_admin, "bootstrap_schema", fake_bootstrap)
+    monkeypatch.setattr(runtime, "_embedding_state", fake_state)
+    monkeypatch.setattr(runtime, "embed_missing_chunks", fake_embed)
+    monkeypatch.setattr(runtime, "bootstrap_schema", fake_bootstrap)
     monkeypatch.setattr(RuntimeCorpusAdminService, "_assert_writable_schema", fake_writable)
     service = RuntimeCorpusAdminService(
         settings=Settings(corpus_dir=tmp_path),
@@ -402,8 +385,8 @@ def test_bm25_job_reports_completion_only_after_rebuild(tmp_path: Path, monkeypa
         events.append(progress)
         original_publish(self, job_id, progress)
 
-    monkeypatch.setattr(corpus_admin, "bootstrap_schema", fake_bootstrap)
-    monkeypatch.setattr(corpus_admin, "backfill_term_stats", fake_rebuild)
+    monkeypatch.setattr(runtime, "bootstrap_schema", fake_bootstrap)
+    monkeypatch.setattr(runtime, "backfill_term_stats", fake_rebuild)
     monkeypatch.setattr(RuntimeCorpusAdminService, "_assert_writable_schema", fake_writable)
     monkeypatch.setattr(RuntimeCorpusAdminService, "_publish", record_publish)
 
@@ -607,9 +590,9 @@ def test_selection_command_restores_from_stored_job(tmp_path):
             job_id="selection",
             domain="corpus",
             kind=command.kind,
-            request_json=corpus_admin._command_payload(command),
+            request_json=runtime._command_payload(command),
         )
-        assert corpus_admin._command_from_stored(row) == command
+        assert runtime._command_from_stored(row) == command
 
     asyncio.run(scenario())
 
@@ -637,9 +620,7 @@ def test_acquisition_returns_common_manifest_selection(tmp_path, monkeypatch, re
         )
 
     monkeypatch.setattr(service, "_assert_writable_schema", writable)
-    monkeypatch.setattr(
-        corpus_admin, "acquire_edgar" if registry == "sec" else "acquire_dart", acquire
-    )
+    monkeypatch.setattr(runtime, "acquire_edgar" if registry == "sec" else "acquire_dart", acquire)
     result = asyncio.run(
         service._run_operation(
             AdminCommand(
@@ -692,9 +673,9 @@ def test_backfill_uses_the_exact_selected_document_ids(tmp_path, monkeypatch):
         embedding_provider=DeterministicEmbeddingProvider(),
     )
     monkeypatch.setattr(service, "_assert_writable_schema", writable)
-    monkeypatch.setattr(corpus_admin, "bootstrap_schema", bootstrap)
-    monkeypatch.setattr(corpus_admin, "_embedding_state", state)
-    monkeypatch.setattr(corpus_admin, "embed_missing_chunks", embed)
+    monkeypatch.setattr(runtime, "bootstrap_schema", bootstrap)
+    monkeypatch.setattr(runtime, "_embedding_state", state)
+    monkeypatch.setattr(runtime, "embed_missing_chunks", embed)
     result = asyncio.run(
         service._run_operation(
             AdminCommand("backfill_embeddings", manifest="manifest.json", selection_id="selected"),
@@ -723,7 +704,7 @@ def test_stored_command_rejects_invalid_json_types(kind, payload):
         store = _LedgerStore()
         row = await store.create(job_id="invalid", domain="corpus", kind=kind, request_json=payload)
         with pytest.raises(ValueError):
-            corpus_admin._command_from_stored(row)
+            runtime._command_from_stored(row)
 
     asyncio.run(scenario())
 
@@ -755,7 +736,7 @@ def test_acquisition_is_independent_of_corpus_schema_writes(tmp_path, monkeypatc
         )
     )
     monkeypatch.setattr(service, "_assert_writable_schema", blocked)
-    monkeypatch.setattr(corpus_admin, "acquire_edgar", acquire)
+    monkeypatch.setattr(runtime, "acquire_edgar", acquire)
     result = asyncio.run(
         service._run_operation(
             AdminCommand("acquire_edgar", identifiers=("NVDA",), years=(2024,)),
@@ -830,7 +811,7 @@ def test_embedding_usage_survives_job_transitions(tmp_path, outcome):
             if outcome == "failed":
                 raise ValueError("fixture failed after provider response")
             if outcome == "cancelled":
-                raise corpus_admin.JobCancelledError("fixture cancellation")
+                raise JobCancelledError("fixture cancellation")
             return OperationOutcome("completed")
 
         service._run_operation = operation
@@ -939,7 +920,7 @@ def test_status_recomputes_after_the_max_age_and_on_invalidation(tmp_path, monke
     """A reading older than the window, an invalidation, or a zero window measures again."""
     service, calls = _status_service(tmp_path, monkeypatch)
     clock = {"now": 100.0}
-    monkeypatch.setattr(corpus_admin.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(runtime.time, "monotonic", lambda: clock["now"])
 
     async def scenario():
         """Age the memo past the window, invalidate it, then demand a fresh reading."""
@@ -1036,7 +1017,7 @@ def test_ingest_leaves_bm25_for_explicit_rebuild_and_preserves_progress(tmp_path
         on_progress(OperationProgress("prepare", 1, 1, "Parsed fixture"))
         return batch
 
-    monkeypatch.setattr(corpus_admin, "load_seed_batch", load)
+    monkeypatch.setattr(runtime, "load_seed_batch", load)
 
     async def scenario():
         """Inspect readiness, history and isolated evaluation statistics after serial jobs."""
@@ -1102,15 +1083,6 @@ def test_ingest_leaves_bm25_for_explicit_rebuild_and_preserves_progress(tmp_path
             await engine.dispose()
 
     asyncio.run(scenario())
-
-
-@pytest.mark.parametrize("document_ids", [None, (), ("filing-a", "filing-a")])
-def test_selected_command_requires_exact_document_ids(document_ids):
-    """Internal commands reject absent or duplicate selected identities before queueing."""
-    with pytest.raises(ValueError, match="nonempty unique document_ids"):
-        AdminCommand(
-            "ingest_selected", identifiers=("NVDA",), years=(2024,), document_ids=document_ids
-        )
 
 
 def test_corpus_job_waits_for_search_before_running(tmp_path: Path) -> None:

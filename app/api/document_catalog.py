@@ -21,7 +21,7 @@ from app.api.admin_schemas import (
     DocumentSort,
 )
 from app.api.errors import unavailable
-from app.corpus_admin import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
+from app.corpus_admin.types import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
 from app.db.bootstrap import SchemaDriftError, ensure_complete_schema
 from app.db.models import (
     Chunk,

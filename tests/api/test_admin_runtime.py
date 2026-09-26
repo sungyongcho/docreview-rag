@@ -10,7 +10,7 @@ import pytest
 
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.runtime import RuntimeApiServices
-from app.corpus_admin import CorpusStatus
+from app.corpus_admin.types import CorpusStatus
 from app.db.session_factory import SessionFactory
 from app.operator.jobs import StoredJob
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
@@ -131,7 +131,7 @@ def test_duplicate_evaluation_is_a_typed_409():
 def test_acquisition_api_preserves_absent_deletion_and_document_arguments():
     """New optional deletion fields must not make ordinary corpus commands invalid."""
     from app.api.admin_schemas import CorpusOperationRequest
-    from app.corpus_admin import AdminJob
+    from app.corpus_admin.types import AdminJob
 
     request = CorpusOperationRequest(kind="acquire_edgar", identifiers=("NVDA",), years=(2024,))
     service = object.__new__(RuntimeAdminApiServices)

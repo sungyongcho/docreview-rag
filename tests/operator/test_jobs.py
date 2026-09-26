@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import Settings, get_settings
-from app.corpus_admin import AdminCommand, OperationOutcome, RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.db.models import OperatorJob
 from app.ingestion.progress import OperationProgress
 from app.operator.jobs import JobExecutionCoordinator, JobStore, ProgressPersister

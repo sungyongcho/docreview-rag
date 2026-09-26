@@ -10,7 +10,8 @@ import pytest
 
 from app.api.admin_schemas import EvaluationPreparationResource, EvaluationRunRequest
 from app.config import Settings
-from app.corpus_admin import AdminCommand, CorpusStatus, OperationOutcome, RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand, CorpusStatus, OperationOutcome
 from app.evals.admin import EvaluationAdminService, EvaluationAlreadyQueuedError
 from app.operator.jobs import JobExecutionCoordinator, JobStore
 from app.retrieval.embeddings import DeterministicEmbeddingProvider

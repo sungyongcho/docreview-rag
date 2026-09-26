@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.document_catalog import DocumentCatalog, public_source_url
 from app.api.runtime import RuntimeApiServices
-from app.corpus_admin import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
+from app.corpus_admin.types import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
 from app.db.models import (
     Base,
     Chunk,

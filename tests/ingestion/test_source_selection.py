@@ -6,7 +6,8 @@ import json
 import pytest
 
 from app.config import Settings
-from app.corpus_admin import AdminCommand, OperationOutcome, RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.ingestion.manifest import Manifest
 from app.ingestion.source_publication import fixed_path, publish_acquired
 from app.ingestion.source_selection import acquisition_draft, record_selection, source_inventory

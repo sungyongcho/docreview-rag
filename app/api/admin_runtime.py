@@ -62,7 +62,8 @@ from app.api.schemas import (
 )
 from app.api.search_consistency import prepare_search
 from app.config import get_settings
-from app.corpus_admin import AdminCommand, CorpusStatus, RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand, CorpusStatus
 from app.db.models import (
     Chunk,
     Document,
