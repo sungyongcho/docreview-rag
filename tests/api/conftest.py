@@ -50,6 +50,7 @@ def trace() -> StepTrace:
         request_time_ms=1.0,
         llm_output='{"grades":[]}',
         retries=0,
+        requests=1,
         error=None,
     )
 

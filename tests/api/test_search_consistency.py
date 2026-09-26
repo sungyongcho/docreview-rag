@@ -29,6 +29,7 @@ def test_search_snapshot_and_strategy_gates_on_isolated_postgres():
     if not dsn:
         live_postgres_unavailable("SEARCH_CONSISTENCY_TEST_DSN is not configured")
     url = make_url(dsn)
+    assert url.database is not None
     assert url.host in {"127.0.0.1", "localhost"} and url.database.startswith("pipeline_test_")
 
     async def exercise():

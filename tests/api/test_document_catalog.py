@@ -3,12 +3,14 @@
 import asyncio
 import hashlib
 import os
+from typing import TypedDict
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.api.admin_schemas import DocumentEmbeddingStatus, DocumentSort
 from app.api.document_catalog import DocumentCatalog, public_source_url
 from app.api.runtime import RuntimeApiServices
 from app.corpus_admin.types import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
@@ -28,6 +30,24 @@ from app.db.models import (
 from app.retrieval.embeddings import DeterministicEmbeddingProvider, EmbeddingIdentity
 from tests.ingestion.support import filing_document
 from tests.live_postgres import live_postgres_unavailable
+
+
+class DocumentPageQuery(TypedDict):
+    """The keyword arguments of `DocumentCatalog.documents`, so unpacked calls stay typed."""
+
+    query: str
+    registry: str
+    issuer: str
+    fiscal_year: int | None
+    language: str
+    form: str
+    parse_status: str
+    embedding_status: DocumentEmbeddingStatus | None
+    snapshot_id: int | None
+    sort: DocumentSort
+    descending: bool
+    cursor: str | None
+    limit: int
 
 
 def test_public_source_url_rejects_local_paths_and_credentials() -> None:
@@ -207,7 +227,7 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
                     ("dart", "published"): "Unrelated Registry Company",
                 },
             )
-            parameters = dict(
+            parameters = DocumentPageQuery(
                 query="",
                 registry="",
                 issuer="",

@@ -95,6 +95,8 @@ def test_atomic_failure_preserves_previous_bytes(store: PresetStore):
 def test_server_resolves_canonical_files(store: PresetStore):
     """Named request profiles match the exact canonical JSON shipped to the web."""
     for preset in store.catalog().presets:
+        # The fixture seeds only the built-ins, whose IDs are the named retrieval presets.
+        assert preset.id in ("balanced", "korean", "accuracy")
         resolved = resolve_retrieval_profile(ReviewSessionProfile(retrieval_preset=preset.id))
         assert resolved.model_dump(exclude={"preset"}) == preset.retrieval.model_dump()
 

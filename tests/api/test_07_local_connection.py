@@ -1,5 +1,7 @@
 """Local settings routes, public capabilities, and production connection boundaries."""
 
+from typing import Any
+
 from fastapi.testclient import TestClient
 import httpx
 import pytest
@@ -8,11 +10,13 @@ from app.api.runtime import RuntimeApiServices
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import local_provider_budget
 from app.release.app import create_release_app
-from app.release.config import ReleaseSettings
+from app.release.config import AdminMode, ReleaseSettings
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
-def connection_app(tmp_path, environment="dev", admin_mode="live", admin_cors_origin=None):
+def connection_app(
+    tmp_path, environment="dev", admin_mode: AdminMode = "live", admin_cors_origin=None
+):
     """Build real routes with metadata-only transport and no database calls."""
 
     def metadata(request: httpx.Request) -> httpx.Response:
@@ -35,9 +39,12 @@ def connection_app(tmp_path, environment="dev", admin_mode="live", admin_cors_or
             "local": local_provider_budget(max_input_tokens=1000, max_output_tokens=100)
         },
     )
+    # BaseSettings.__init__ takes `_env_file` and validation aliases such as
+    # DOCREVIEW_ENVIRONMENT through **values; the field-derived signature the type
+    # checker sees lists neither, so they travel as an explicit untyped mapping.
+    init_options: dict[str, Any] = {"_env_file": None, "DOCREVIEW_ENVIRONMENT": environment}
     settings = ReleaseSettings(
-        _env_file=None,
-        DOCREVIEW_ENVIRONMENT=environment,
+        **init_options,
         mode="runtime",
         host="127.0.0.1",
         admin_mode=admin_mode,

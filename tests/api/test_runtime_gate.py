@@ -25,7 +25,10 @@ from app.api.schemas import ReviewRequest
 def test_control_requires_dev_opt_in_loopback_and_private_token(tmp_path, monkeypatch):
     """Expose no control on ordinary apps and reject unauthenticated loopback requests."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    for surface, admin in ((DEV_SURFACE, object()), (LIVE_ADMIN_SURFACE, None)):
+    for surface, admin in (
+        (DEV_SURFACE, cast(RuntimeAdminApiServices, object())),
+        (LIVE_ADMIN_SURFACE, None),
+    ):
         app = create_api_app(admin_services=admin, surface=surface)
         with TestClient(app) as client:
             assert client.get("/_internal/reset/activity").status_code == 404
@@ -159,6 +162,8 @@ def test_stream_remains_active_until_cancelled_producer_cleanup_finishes(failure
                 await send_waiting.wait()
                 return {"type": "http.disconnect"}
             await asyncio.Event().wait()
+            # Only cancellation ends that wait, so this path never delivers a message.
+            raise AssertionError("an event nobody sets never finishes waiting")
 
         async def send(message):
             """Interrupt delivery only after the workflow has produced its first body."""

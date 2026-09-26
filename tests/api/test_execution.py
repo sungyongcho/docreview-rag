@@ -3,13 +3,21 @@
 import asyncio
 from decimal import Decimal
 
+from pydantic import JsonValue
 import pytest
 
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest, RunResponse
 from app.llm.schemas import ProviderBudget, TokenPricing
+from app.observability.types import JsonObject
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.llm.support import DeterministicLLMProvider
+
+
+def json_object(value: JsonValue) -> JsonObject:
+    """Narrow one JSON value that the execution contract defines as an object."""
+    assert isinstance(value, dict)
+    return value
 
 
 def test_effective_budget_exposes_the_limiting_source_and_chat_exclusion():
@@ -26,10 +34,10 @@ def test_effective_budget_exposes_the_limiting_source_and_chat_exclusion():
     provider = DeterministicLLMProvider(())
     request = ReviewRequest(query="Revenue?")
     context = asyncio.run(service._execution_context(provider, budget, request))
-    settings = context["effective_settings"]
-    assert settings["run_limits"]["max_input_tokens"] == 60000
-    assert settings["effective_provider_budget"]["max_input_tokens"] == 2500
-    assert settings["budget_sources"]["max_input_tokens"] == "provider_budget"
+    settings = json_object(context["effective_settings"])
+    assert json_object(settings["run_limits"])["max_input_tokens"] == 60000
+    assert json_object(settings["effective_provider_budget"])["max_input_tokens"] == 2500
+    assert json_object(settings["budget_sources"])["max_input_tokens"] == "provider_budget"
     assert settings["run_limits_source"] == "application_default"
     overridden = ReviewRequest.model_validate(
         {
@@ -37,16 +45,16 @@ def test_effective_budget_exposes_the_limiting_source_and_chat_exclusion():
             "session_profile": {"prompt_policy": {"workflow_budget": {"max_input_tokens": 1000}}},
         }
     )
-    settings = asyncio.run(service._execution_context(provider, budget, overridden))[
-        "effective_settings"
-    ]
-    assert settings["effective_provider_budget"]["max_input_tokens"] == 1000
-    assert settings["budget_sources"]["max_input_tokens"] == "run_limits"
+    context = asyncio.run(service._execution_context(provider, budget, overridden))
+    settings = json_object(context["effective_settings"])
+    assert json_object(settings["effective_provider_budget"])["max_input_tokens"] == 1000
+    assert json_object(settings["budget_sources"])["max_input_tokens"] == "run_limits"
     assert settings["run_limits_source"] == "request"
     chat = asyncio.run(service._execution_context(provider, budget, request, chat_only=True))
-    assert chat["effective_settings"]["retrieval_applicable"] is False
-    assert chat["effective_settings"]["run_limits"] is None
-    assert chat["effective_settings"]["effective_provider_budget"]["max_input_tokens"] == 2500
+    chat_settings = json_object(chat["effective_settings"])
+    assert chat_settings["retrieval_applicable"] is False
+    assert chat_settings["run_limits"] is None
+    assert json_object(chat_settings["effective_provider_budget"])["max_input_tokens"] == 2500
 
 
 def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(successful_run):

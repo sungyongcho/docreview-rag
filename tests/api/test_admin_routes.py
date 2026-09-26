@@ -19,6 +19,8 @@ from app.api.admin_schemas import (
     EvaluationRunRequest,
     GoldenCanonicalResource,
     OperatorJobsResponse,
+    SourceDeletionPreviewResource,
+    SourceDeletionRequest,
     UsageResponse,
 )
 from app.api.app import create_api_app
@@ -222,6 +224,12 @@ class FakeAdminServices:
         """Leave review unused in this focused route test."""
         raise AssertionError(request)
 
+    async def source_deletion_preview(
+        self, request: SourceDeletionRequest
+    ) -> SourceDeletionPreviewResource:
+        """Leave the deletion preview to the test that stages its own reply."""
+        raise AssertionError(request)
+
 
 def test_admin_routes_are_injected_and_typed() -> None:
     """Expose local routes only with one explicit administrator service override."""
@@ -416,8 +424,6 @@ def test_history_routes_validate_scope_and_translate_conflicts(tmp_path) -> None
 
 def test_source_deletion_preview_is_admin_only_and_validates_exact_ids():
     """The preview route remains unavailable publicly and forwards only explicit IDs."""
-    from app.api.admin_schemas import SourceDeletionPreviewResource
-
     with TestClient(create_api_app()) as client:
         assert (
             client.post(

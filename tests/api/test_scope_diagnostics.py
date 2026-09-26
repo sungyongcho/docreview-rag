@@ -93,6 +93,7 @@ def test_detail_is_bounded_redacted_and_uses_a_relative_path(tmp_path):
     """DEV diagnostics preserve the useful error while sanitizing configured secrets."""
     error = ValueError(f"{tmp_path}/manifest.json: fixture-secret " + "broken " * 1000)
     problem = manifest_problem(error, tmp_path, developer=True, secret_values=("fixture-secret",))
+    assert problem.error.detail is not None
     assert str(tmp_path) not in problem.error.detail
     assert "fixture-secret" not in problem.error.detail
     assert len(problem.error.detail) < 1550

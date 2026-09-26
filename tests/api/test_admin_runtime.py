@@ -9,10 +9,13 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.api.admin_runtime import RuntimeAdminApiServices
+from app.api.document_catalog import DocumentCatalog
 from app.api.runtime import RuntimeApiServices
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.corpus_admin.types import CorpusStatus
 from app.db.session_factory import SessionFactory
-from app.operator.jobs import StoredJob
+from app.evals.admin import EvaluationAdminService
+from app.operator.jobs import JobStore, StoredJob
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
@@ -39,9 +42,9 @@ def test_job_board_reads_history_without_revalidating_ingestion_arguments():
         updated_at=now,
     )
     service = object.__new__(RuntimeAdminApiServices)
-    service._corpus = SimpleNamespace(recover_jobs=AsyncMock())
-    service._evaluations = SimpleNamespace(recover_jobs=AsyncMock())
-    service._job_store = SimpleNamespace(list=AsyncMock(return_value=[job]))
+    service._corpus = cast(RuntimeCorpusAdminService, SimpleNamespace(recover_jobs=AsyncMock()))
+    service._evaluations = cast(EvaluationAdminService, SimpleNamespace(recover_jobs=AsyncMock()))
+    service._job_store = cast(JobStore, SimpleNamespace(list=AsyncMock(return_value=[job])))
     board = asyncio.run(service.operator_jobs())
     assert board.jobs[0].request == {"manifest": "manifest.json"}
     assert board.jobs[0].message == job.message
@@ -56,14 +59,20 @@ def test_document_detail_checks_schema_before_serializing():
     from app.api.errors import ApiProblemError, unavailable
 
     service = object.__new__(RuntimeAdminApiServices)
-    service._documents = SimpleNamespace(
-        ensure_ready=AsyncMock(side_effect=unavailable("schema_not_ready", "drifted"))
+    service._documents = cast(
+        DocumentCatalog,
+        SimpleNamespace(
+            ensure_ready=AsyncMock(side_effect=unavailable("schema_not_ready", "drifted"))
+        ),
     )
-    service._corpus = SimpleNamespace(document_detail=AsyncMock())
+    corpus_document_detail = AsyncMock()
+    service._corpus = cast(
+        RuntimeCorpusAdminService, SimpleNamespace(document_detail=corpus_document_detail)
+    )
     with pytest.raises(ApiProblemError) as error:
         asyncio.run(service.document_detail("test"))
     assert error.value.error.code == "schema_not_ready"
-    service._corpus.document_detail.assert_not_called()
+    corpus_document_detail.assert_not_called()
 
 
 class _RecordingCorpus:
@@ -118,8 +127,11 @@ def test_duplicate_evaluation_is_a_typed_409():
     from app.evals.admin import EvaluationAlreadyQueuedError
 
     service = object.__new__(RuntimeAdminApiServices)
-    service._evaluations = SimpleNamespace(
-        enqueue=AsyncMock(side_effect=EvaluationAlreadyQueuedError("eval-existing"))
+    service._evaluations = cast(
+        EvaluationAdminService,
+        SimpleNamespace(
+            enqueue=AsyncMock(side_effect=EvaluationAlreadyQueuedError("eval-existing"))
+        ),
     )
     with pytest.raises(ApiProblemError) as error:
         asyncio.run(service.enqueue_evaluation(EvaluationRunRequest(suite_id="sec-en")))
@@ -141,7 +153,7 @@ def test_acquisition_api_preserves_absent_deletion_and_document_arguments():
         assert command.document_ids is None and command.confirm_delete is None
         return AdminJob("download", command, "queued", "queued", 0, None, "Queued")
 
-    service._corpus = SimpleNamespace(enqueue=enqueue)
+    service._corpus = cast(RuntimeCorpusAdminService, SimpleNamespace(enqueue=enqueue))
     result = asyncio.run(service.enqueue_corpus(request))
     assert result["command"]["kind"] == "acquire_edgar"
 
@@ -169,6 +181,7 @@ def test_evaluation_jobs_expose_each_recorded_result_configuration():
     if not dsn:
         live_postgres_unavailable("EVAL_IDENTITY_TEST_DSN is not configured")
     url = make_url(dsn)
+    assert url.database is not None
     assert url.host in {"localhost", "127.0.0.1"} and url.database.startswith("pipeline_test_")
 
     async def exercise():
@@ -210,8 +223,10 @@ def test_evaluation_jobs_expose_each_recorded_result_configuration():
                 )
             )
             service = object.__new__(RuntimeAdminApiServices)
-            service._runtime = SimpleNamespace(session_factory=factory)
-            service._evaluations = SimpleNamespace(jobs=AsyncMock(return_value=board))
+            service._runtime = cast(RuntimeApiServices, SimpleNamespace(session_factory=factory))
+            service._evaluations = cast(
+                EvaluationAdminService, SimpleNamespace(jobs=AsyncMock(return_value=board))
+            )
             result = await service.evaluation_jobs()
             assert [item.config["strategy"] for item in result.jobs[0].result_summaries] == [
                 "lexical",
@@ -244,6 +259,7 @@ def test_golden_evidence_pages_preserve_exact_source_coordinates():
     if not dsn:
         live_postgres_unavailable("GOLDEN_EVIDENCE_TEST_DSN is not configured")
     url = make_url(dsn)
+    assert url.database is not None
     assert url.host in {"localhost", "127.0.0.1"} and url.database.startswith("pipeline_test_")
 
     async def exercise():
@@ -256,8 +272,9 @@ def test_golden_evidence_pages_preserve_exact_source_coordinates():
             async with factory() as session:
                 await persist_seed_batch(session, batch)
             service = object.__new__(RuntimeAdminApiServices)
-            service._runtime = SimpleNamespace(session_factory=factory)
+            service._runtime = cast(RuntimeApiServices, SimpleNamespace(session_factory=factory))
             first = await service.golden_evidence_chunks("NVDA-FY2024", "", 0, 1)
+            assert first.next_after is not None
             second = await service.golden_evidence_chunks("NVDA-FY2024", "", first.next_after, 1)
             assert len(first.chunks) == len(second.chunks) == 1
             assert first.chunks[0].chunk_id != second.chunks[0].chunk_id
@@ -298,7 +315,10 @@ def test_source_deletion_preview_accepts_the_plan_lists_from_the_corpus_service(
         "retained_derived": True,
     }
     service = object.__new__(RuntimeAdminApiServices)
-    service._corpus = SimpleNamespace(preview_source_deletion=AsyncMock(return_value=plan))
+    service._corpus = cast(
+        RuntimeCorpusAdminService,
+        SimpleNamespace(preview_source_deletion=AsyncMock(return_value=plan)),
+    )
     resource = asyncio.run(
         service.source_deletion_preview(
             SourceDeletionRequest(document_ids=("dart-20250311001085",))

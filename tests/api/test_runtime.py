@@ -88,6 +88,8 @@ def test_empty_inventory_blocks_local_execution() -> None:
 
 def test_request_pins_endpoint_and_provider_across_connection_changes(tmp_path) -> None:
     """Running requests keep their endpoint and model while the next request uses a saved change."""
+    from app.llm.local import LocalLLMProvider
+
     manager = LocalConnectionManager(
         initial_base_url="http://first/v1",
         path=tmp_path / "connection.json",
@@ -109,6 +111,7 @@ def test_request_pins_endpoint_and_provider_across_connection_changes(tmp_path) 
         """Resolve stages before and after a switch, then enter another request boundary."""
         async with services._request_connection(request.session_profile):
             first, _ = await services._engines.resolve_engine(request)
+            assert isinstance(first, LocalLLMProvider)
             assert first._base_url == "http://first/v1"
             await manager.add_server("Second", "http://second/v1")
             later, _ = await services._engines.resolve_engine(request)
@@ -118,6 +121,7 @@ def test_request_pins_endpoint_and_provider_across_connection_changes(tmp_path) 
         assert first._client.is_closed
         async with services._request_connection(request.session_profile):
             next_request, _ = await services._engines.resolve_engine(request)
+            assert isinstance(next_request, LocalLLMProvider)
             assert next_request._base_url == "http://second/v1"
             assert next_request is not first
         assert next_request._client.is_closed
@@ -548,6 +552,7 @@ def test_zero_history_bound_prevents_implicit_inheritance(classified_service):
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["history_turns"] == 0
     assert error.path_decision["retrieval_query"] == "그럼 2024년은?"
@@ -569,6 +574,7 @@ def test_casual_input_does_not_inherit_filing_scope(routing_service, query):
     except ApiProblemError as failure:
         assert failure.error.code == "unsupported_request"
         rejected = failure.error.path_decision
+        assert rejected is not None
         assert rejected["retrieval_query"] == query
         assert rejected["matched_rule"] != "filing_followup"
         return
@@ -600,6 +606,7 @@ def test_scope_stops_before_retrieval_with_action(classified_service, profile, c
         )
     error = failure.value.error
     assert error.code == code
+    assert error.path_decision is not None
     assert error.path_decision["stopping_reason"] == code
     assert error.path_decision["suggested_scope"] == (
         "auto" if code == "query_scope_conflict" else None
@@ -713,6 +720,7 @@ def test_explicit_language_filter_still_empties_anchored_document_scope(classifi
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "query_scope_empty"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["model_call_count"] == 0
     assert prompts == []
@@ -744,6 +752,7 @@ def test_vague_question_with_multiple_selected_companies_is_rejected(classified_
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["suggested_scope"] is None
     assert len(prompts) <= 1
@@ -777,6 +786,7 @@ def test_unknown_selected_document_id_cannot_establish_a_unique_anchor(classifie
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code in ("query_scope_empty", "ambiguous_issuer")
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert len(prompts) <= 1
 
@@ -786,7 +796,7 @@ def test_classifier_history_and_service_guidance_are_recorded_once():
     from contextlib import asynccontextmanager
     import json
 
-    from app.api.schemas import RetrieveRequest, RunResponse
+    from app.api.schemas import ConversationReport, RetrieveRequest, RunResponse
     from app.llm.local import LocalLLMProvider
     from app.observability.stages import record_stages
     from app.workflow.gate import ConversationTurn
@@ -862,11 +872,15 @@ def test_classifier_history_and_service_guidance_are_recorded_once():
             return prepared, RunResponse.from_run_report(report)
 
     prepared, result = asyncio.run(exercise())
+    assert prepared.path_decision is not None
     assert prepared.path_decision["intent"] == "service_help"
     assert len(prompts) == 1
     assert prompts[0]["history"] == [{"role": "user", "text": "NVDA revenue"}]
+    assert result.execution is not None
     assert [call.node for call in result.execution.model_calls] == ["gate"]
+    assert isinstance(result.report, ConversationReport)
     assert result.report.response_source == "canned"
+    assert result.execution.path_decision is not None
     assert result.execution.path_decision["source"] == "classifier"
     assert saved[0].request_context["path_decision"]["scope_outcome"] == "not_applicable"
 
@@ -1115,6 +1129,7 @@ def test_routing_stops_before_search_and_answer(
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == code
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == stage
     assert error.path_decision["stopping_reason"] == code
     assert error.path_decision["suggested_scope"] is None
@@ -1318,6 +1333,7 @@ def test_mixed_prior_turn_cannot_anchor_a_followup(classified_service):
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["retrieval_query"] == "그럼 2024년은?"
     assert error.path_decision["matched_rule"] != "filing_followup"
@@ -1345,6 +1361,7 @@ def test_classifier_all_without_corpus_wide_cue_is_clarified(classified_service,
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["stopping_reason"] == "ambiguous_issuer"
     assert error.path_decision["target_scope"] == "all"
@@ -1371,6 +1388,7 @@ def test_roleplay_overrides_previous_filing_context(classified_service):
         )
     error = failure.value.error
     assert error.code == "unsupported_request"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "path"
     assert error.path_decision["source"] == "deterministic"
     assert error.path_decision["model_call_count"] == 0
@@ -1408,6 +1426,7 @@ def test_restatement_after_unresolved_prior_cannot_inherit_scope(classified_serv
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert len(prompts) <= 1
 
@@ -1449,6 +1468,7 @@ def test_restatement_with_new_unknown_target_never_inherits_prior_issuer(classif
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "unknown_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["missing_issuers"] == ["UnknownCorp"]
     assert len(prompts) == 1
