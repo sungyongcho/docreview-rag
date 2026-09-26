@@ -56,6 +56,8 @@ import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
 import { useRuntimeHealth } from "@/lib/use-runtime-health";
 import { useOperatorJobs } from "@/lib/use-operator-jobs";
 import { useConversationDraft } from "./use-conversation-draft";
+import { useHelpShortcut } from "./use-help-shortcut";
+import { useHelpTargetReveal } from "./use-help-target-reveal";
 import { usePublicExecutionPolicy } from "./use-public-execution-policy";
 import { useReviewRequests } from "./use-review-requests";
 
@@ -483,26 +485,7 @@ function ServiceSession() {
     setPendingHelpTarget(id === "review.snapshot" ? "measure.snapshots.list" : id === "measure.runs.chunk_targets" ? "measure.runs.mode" : id.startsWith("review.retrieval.") && activeSessionProfile.retrieval_preset !== "custom" ? "review.retrieval" : id);
   }
 
-  useEffect(() => {
-    if (!pendingHelpTarget) return;
-    let finished = false;
-    const observer = new MutationObserver(revealTarget);
-    /** Lazy panels and evaluation dialogs can mount after the workspace navigation commits. */
-    function revealTarget() {
-      if (finished) return;
-      const target = Array.from(document.querySelectorAll<HTMLElement>(`[data-help="${pendingHelpTarget}"]`)).find((element) => !element.closest("[hidden]"));
-      if (!target) return;
-      finished = true;
-      observer.disconnect();
-      for (let disclosure = target.closest("details"); disclosure; disclosure = disclosure.parentElement?.closest("details") ?? null) disclosure.open = true;
-      target.scrollIntoView?.({ block: "center", inline: "nearest" });
-      setPendingHelpTarget(null);
-    }
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
-    const frame = requestAnimationFrame(revealTarget);
-    const timeout = window.setTimeout(() => { finished = true; observer.disconnect(); setPendingHelpTarget(null); }, 2000);
-    return () => { finished = true; cancelAnimationFrame(frame); window.clearTimeout(timeout); observer.disconnect(); };
-  }, [pendingHelpTarget, view, buildTab, measureTab, systemTab, conversationTab]);
+  useHelpTargetReveal(pendingHelpTarget, () => setPendingHelpTarget(null), `${view}/${buildTab}/${measureTab}/${systemTab}/${conversationTab}`);
 
   /** Keep settings callbacks and guarded workspace history as the only notification destinations. */
   function openNotification(target: NotificationTarget) {
@@ -623,20 +606,8 @@ function ServiceSession() {
     setHelpOpen(open);
   }
 
-  /** `?` toggles Help anywhere except inside a text control, and never behind the tour or a modal. */
   const modalOpen = settingsOpen || runtimeHealth.modalVisible || (view === "review" && conversationTab !== null);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "?" || tourOpen || modalOpen) return;
-      const target = event.target;
-      if (target instanceof Element && target.closest('[role="dialog"][aria-modal="true"]')) return;
-      if (target instanceof HTMLElement && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable || target.hasAttribute("contenteditable"))) return;
-      event.preventDefault();
-      setHelp(!helpOpen);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [helpOpen, tourOpen, modalOpen]);
+  useHelpShortcut({ helpOpen, tourOpen, modalOpen, setHelp });
   const currentTab = view === "build" ? buildTab : view === "measure" ? measureTab : view === "system" ? systemTab : "";
   const location = `${view}/${buildTab}/${measureTab}/${systemTab}`;
   /** The workspace reserves room for the panel only while it is actually on screen. */
