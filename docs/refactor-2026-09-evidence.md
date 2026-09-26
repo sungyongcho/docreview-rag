@@ -908,3 +908,308 @@ Per-test branch coverage over `app/` and `scripts/` was recorded with `pytest --
 | `tests/workflow/test_gate.py::test_known_company_filing_questions_stay_deterministic[삼전 영업이익]` | duplicate | `tests/workflow/test_gate.py::test_development_demo_matches_routing_rules[shortform]`<br>`tests/workflow/test_gate.py::test_known_company_filing_questions_stay_deterministic[삼성전자 매출]` |
 | `tests/workflow/test_gate.py::test_unresolved_targets_are_left_for_the_classifier[Compare Nvidia and SanDisk]` | duplicate | `tests/workflow/test_gate.py::test_development_demo_matches_routing_rules[mixed]`<br>`tests/workflow/test_gate.py::test_unresolved_targets_are_left_for_the_classifier[Nvidia or another company?]` |
 | `tests/workflow/test_gate.py::test_unresolved_targets_are_left_for_the_classifier[Nvidia and UnknownCorp revenue]` | duplicate | `tests/workflow/test_gate.py::test_development_demo_matches_routing_rules[mixed]` |
+
+## Second pass: test cleanup audit
+
+This section records the Workflow A2 item 6.6 review of the integrated test-quality
+commits. It preserves the earlier tables as historical evidence. The original subagent
+removal tables were not recovered from the available scratchpad and task outputs, so this
+audit reconstructed each change from its commit and checked the surviving assertions in
+the current tests. This was a read-only audit, without test execution. Shared line coverage
+or a lower test count alone was not accepted as proof that behavior survived.
+
+The categories follow the second-pass brief: **a**, constant-only; **b**, duplicate;
+**c**, implementation pin; **d**, equivalent cases or merged behavioral tests. A rewrite
+replaces an assertion about configuration or structure with an assertion about the rule
+that consumes it. Removed examples in the same row belong to the same reviewed change;
+distinct boundaries and error outcomes are named in the retained-assertion column.
+
+### Count provenance
+
+These are the test-quality pass counts and commit deltas, not final suite totals or the
+full branch comparison against `7780a72`.
+
+| Area | Before to after | Evidence and limits |
+|---|---|---|
+| Ingestion and DB | 549 to 548, reported | Exact commit delta is -1. The original collection totals were not recovered. |
+| Retrieval, LLM, agent, observability and workflow | 531 to **509**, conditional | The six cleanup commits remove 23 cases; `9eb612a` restores one facade test. Net delta is -22. If the recorded starting count of 531 is correct, the integrated count is 509; the earlier 508 omits that restoration. Neither absolute collection total was recovered. |
+| Scripts, release, operator and top-level | **546 to 530**, recovered | Complete collected-ID logs agree with the -16 commit delta: scripts 346 to 339, release 95 to 91, operator 66 to 64, top-level 39 to 36. |
+| API and evals | **576 to 575**, derived after count | Recovered starting IDs contain API 258 and evals 318. Commit deltas are -3 and +2 respectively. The before-run log records 568 passed and 8 deselected; no after-run result is inferred from the count. |
+| Corpus admin | Unchanged | All three commits preserve collected cases; no absolute collection total was recovered. |
+| Web | **1284 to 1259**, recovered before audit repairs | Per-file lists and passing Vitest logs agree. Restoring the running deletion case adds one case; the resulting 1260 is an expected count, not a final executed result. The long-identifier repair changes no count. |
+
+Recovered logs are rooted at
+`/tmp/claude-1000/-home-wwaya-Documents-docreview-rag/8d36a64b-8852-4da7-a12b-0afb81f66d45/scratchpad/`.
+The relevant files are `baseline_collect.txt`, `after_collect.txt`, `baseline_ids.txt`,
+`baseline_run.txt`, `before-counts.txt`, `after-counts.txt`, `vitest-before.out` and
+`vitest-after.out`. The archived integrated Web runs also record 1284 passing cases in
+`a2/after/web-ec233bd/logs/test.log` and 1259 in
+`a2/after/web-1680605/logs/test.log`. These local logs describe their recorded states;
+they do not establish final coverage, evaluation or smoke results.
+
+### Ingestion and DB
+
+Commits: `2dedd5b`, `a96e54f`, `c5f661e`, `fc4d828`, `8f230bb`.
+
+| File and removed or rewritten test | Category | Retained behavior and assertion |
+|---|---|---|
+| `tests/db/test_session.py`: `test_session_factory_uses_the_shared_engine` | a/c, rewritten | `test_committed_rows_stay_readable_after_the_session_closes` commits through the real factory, checks the returned bind is `engine`, and reads the committed row after the session closes. |
+| `tests/ingestion/chunk/test_01_contract.py`: `test_config_defaults_are_positive` | a, rewritten | `test_default_config_plans_with_the_shared_input_budget` checks that the default chunk configuration produces the shared `InputBudget()`, replacing three literal defaults. |
+| `tests/ingestion/test_registry.py`: `test_registry_section_codes_never_overlap` | a, rewritten | `test_registry_less_lookup_gives_every_code_its_own_registry_title` checks every SEC and DART code against its own registry's title lookup. |
+| `tests/ingestion/test_dart.py`: `test_document_identity_is_explicit_and_not_rederived` | b, merged | `test_parse_dart_filing_maps_registry_identity_without_derivation` now uses the opaque `report-identity` and retains registry, issuer and manifest fiscal-year assertions. |
+
+### Retrieval, LLM and workflow
+
+Commits: `7da67d2`, `b63b340`, `9006bef`, `e45006c`, `3ec4fa4`, `14f320f`, `9eb612a`.
+Agent and observability tests have no removals in these commits.
+
+| File and change | Category | Retained behavior and assertion |
+|---|---|---|
+| `tests/retrieval/test_bm25.py`: statement `k1=inf` case | d | `test_statement_rejects_out_of_range_parameters` retains NaN, zero `k1`, invalid limits, both finite `b` bounds, nonfinite `b` and unknown IDF; invalid statements raise. |
+| Same file: settings `bm25_k1=inf` and `bm25_b=inf` cases | d | `test_settings_reject_out_of_range_bm25_constants` retains corresponding NaN cases, zero `k1`, below-zero `b` and above-one `b`. |
+| Same file: `test_settings_default_to_ts_rank_cd_with_published_bm25_constants` | a | Literal defaults are removed; settings rejection tests and default lexical service composition remain. |
+| `tests/retrieval/test_service.py`: `ComponentRankings.model_fields` set | c | `test_service_uses_default_candidate_pool_one_session_and_rank_only_components` still asserts the complete actual rankings dump, including per-language lanes and chunk identities. |
+| Same file: service `bm25_k1=inf` and `bm25_b=inf` cases | d | `test_service_rejects_invalid_requests_before_provider_or_search` retains NaN representatives and the query, limit and candidate-depth boundaries. |
+| Same file: facade export-name catalog | c, rewritten | `test_package_reexports_each_public_name_from_its_defining_module` checks a nonempty facade and exact identity with each defining module. The audit established no current guaranteed historical name-set, so it does not require the old catalog pin. |
+| `tests/retrieval/test_types.py`: `test_chunk_hit_fields_match_the_current_sqlalchemy_models` | c, rewritten | `test_searched_rows_carry_exactly_the_chunk_hit_fields` compares actual lexical-statement selected columns with the validated hit fields. |
+| Same file: `test_chunk_hit_forbids_unknown_fields` | d, merged | `test_chunk_hit_rejects_values_outside_its_contract[unknown-field]` retains rejection of `distance`; invalid identities, spans, content and scores remain separate cases. |
+| Same file: `test_language_filters_canonicalize_and_reject_non_tags` | d, merged | `test_filters_are_frozen_and_canonical` asserts sorted, deduplicated languages; `test_filters_reject_invalid_dimensions` retains rejection of `KOR`. |
+| `tests/retrieval/test_korean.py`: overlapping-bigram, short-run, particle, Latin/number and mixed-script tests | d, merged | Three `test_tokenizer_emits_the_stored_lexical_tokens` cases assert exact overlapping bigrams, one- and two-character runs, Latin case folding, joined numbers and document order. Particle examples use the same retained bigram rule. |
+| `tests/retrieval/test_language.py`: ordinary English sentence | d | `test_detect_query_language_classifies_on_hangul_presence` retains non-Hangul alphanumeric input and Hangul input; Unicode-boundary and blank-input tests remain. |
+| `tests/retrieval/test_scope.py`: Samsung `삼전`/`Samsung` and NVIDIA Korean-name/abbreviation examples | d | `test_samsung_aliases_resolve_to_dart_korean` and `test_everyday_company_spellings_resolve` retain manifest names, stock code, short forms, particles, abbreviations and spacing, with issuer, registry and language assertions. |
+| `tests/retrieval/test_translate.py`: `not json` route-failure case | b/d | `test_route_query_fails_closed_on_invalid_provider_outputs` retains schema rejection, blank translation, wrong language and refusal with exact attempts. `test_translate_query_fails_closed_instead_of_returning_the_original` and provider repair tests still exercise malformed JSON. |
+| `tests/llm/test_local.py`: separate timeout/context-window constructor tests | c/d, merged | `test_provider_accepts_a_positive_timeout_or_window_and_refuses_zero` accepts each positive setting with an owned client, closes it, and matches its zero-value error. Oversized-prompt tests retain operational window enforcement. |
+| `tests/llm/test_local_engine.py`: explicit Responses override example | d | `test_auto_reads_the_v1_suffix_and_an_explicit_protocol_always_wins` retains explicit Ollama override plus automatic detection with and without `/v1`, including a trailing slash. |
+| `tests/llm/test_provider.py`: `test_provider_boundary_is_abstract_and_async` | c | Awaited `complete()` tests retain typed output, refusal, bounded repair and metadata assertions; abstract-class introspection is removed. |
+| `tests/workflow/test_01_node_guardrails.py`: English-original/Korean-rewrite mirror | d | `test_original_question_controls_response_language_without_changing_retrieval` retains the reverse language pair, both grade/check prompts, original-language instructions and distinct unchanged workflow values. |
+| `tests/workflow/test_gate.py`: exact-service examples `hello`, `뭐함`, `help`, `사용법` | d | `test_exact_service_intents_return_bounded_guidance` retains exact phrase, punctuation, internal whitespace and casual-cue overlap, each yielding a nonempty `service_help` answer. |
+| Same file: `samsung 매출` filing example | d | `test_known_company_filing_questions_stay_deterministic` retains English finance, Korean finance and Korean particles with deterministic `document_review` assertions. |
+| `tests/retrieval/test_lexical.py`: rank-normalization constant pin | a/c, rewritten | `test_ranking_normalizes_by_extent_distance_and_document_length` asserts that the actual SQL calls `ts_rank_cd` with its bound normalization equal to `4 \| 1`. |
+
+### API and evals
+
+Commits: `7ad7633`, `039ba89`, `06c5b7a`, `f444e06`, `3ee973a`, `8126113`, `e4d0143`, `e942bed`.
+
+| File and change | Category | Retained behavior and assertion |
+|---|---|---|
+| `tests/api/test_admin_schemas.py`: `test_default_profile_is_explicit_hybrid_ts_rank` | a | Literal profile defaults are removed. Contradictory strategy/ranker, reranking, routing and candidate-depth cases remain. |
+| Same file: duplicate-axis test used the removed `target_text_chars` field | Repaired | `test_matrix_axes_must_be_unique_and_nonempty` now sends duplicate `target_tokens` and matches its uniqueness error, reaching the rule its name promises. |
+| `tests/evals/test_parity.py`: language-tolerance literal pins | a, rewritten | `test_language_regression_tolerance_absorbs_one_flipped_case_on_every_metric` accepts one flipped case out of 24 on all gated metrics, rejects a collapse and names recall, hit rate and MRR as regressed. |
+| `tests/evals/test_crosslingual.py`: profile filename/selection literals | a, rewritten | Existing CLI-resolution assertions remain. `test_each_corpus_profile_selects_only_its_own_registry_from_the_shipped_manifest` adds two corpus cases requiring nonempty selections exclusively from the intended registry. |
+| `tests/evals/test_run.py`: separate strategy and token/ranker axis-normalization functions | d, merged | `test_every_matrix_axis_is_deduplicated_and_canonically_ordered` retains three named cases for strategy, token-target and ranker normalization. |
+| Same file: standalone deepest budget-arm example | d, merged | `test_the_budget_arm_is_the_deepest_lane_with_a_ranker_only_for_lexical_queries` retains hybrid precedence, vector's absent ranker and lexical canonical/sole-ranker choices. |
+| `tests/evals/test_arms.py`: `test_bm25_values_are_rejected_on_an_arm_that_runs_no_bm25_query` | b | The experiment-config rejection matrix invokes the shared rule and matches `only for bm25 arms` for `ts_rank_cd` carrying a BM25 value. |
+| Same file: separate English lexical-lane test | d, merged | `test_lexical_lane_tokenizes_for_the_filtered_corpus_language` retains exact Korean bigrams under `simple` and an unchanged no-filter English query under `english`. |
+| `tests/api/test_runtime.py`: supported-question corpus-wide revenue example | b | `test_explicit_corpus_wide_scope_keeps_every_language` reaches retrieval and checks explicit all-corpus scope, unrestricted languages/issuers and zero classifier calls. |
+| Same file: supported-question `그럼 2024년은?` example | b | `test_followups_reach_retrieval_with_replaced_scope` retains that exact question, replaced year, inherited issuer/topic and zero classifier calls. |
+| `tests/evals/test_ablation.py`: separate missing-BM25 and non-BM25-with-BM25 config tests | d, merged | Both remain in `test_experiment_config_rejects_ambiguous_or_inconsistent_values`, with named cases and exact rule-message matches; existing rejection cases also gain message checks. |
+| `tests/evals/test_arms.py` and `test_index_identity.py`: parameter IDs | No removal | All BM25 bind-time and changed-index identity cases remain; IDs name the changed input. |
+
+### Corpus admin
+
+Commits: `029e378`, `48e6cce`, `870662f`. No cases were removed.
+
+| File and change | Retained or corrected assertion |
+|---|---|
+| `tests/corpus_admin/test_types.py`: zero expected-documents case | Supplies the required selection so validation reaches `expected_documents`, then matches `expected_documents must be positive`. Every other command rejection now matches its intended rule too. |
+| `tests/corpus_admin/test_stored_jobs.py`: parameter IDs | All five malformed stored-command cases remain, named after the malformed field. |
+| `tests/corpus_admin/test_job_queue.py`: FIFO test name | Submission order and one-at-a-time execution assertions remain; the name no longer claims unasserted progress behavior. |
+
+### Scripts, release, operator and top-level tests
+
+Commits: `c22fa46`, `5d23b9b`, `55ee15a`, `f98a592`, `7f108dc`, `7bad4be`, `0ed8fbc`.
+
+| File and change | Category | Retained behavior and assertion |
+|---|---|---|
+| `tests/test_atomic_write.py`: umask `022` example | d | `test_mode_is_exact_or_narrowed_by_the_process_umask` still checks actual file modes for exact mode despite umask and umask-narrowed mode. |
+| `tests/test_canonical_json.py`: negative infinity | d | `test_non_finite_numbers_are_refused` retains NaN and positive infinity with `ValueError`; exact canonical serialization remains separately checked. |
+| `tests/test_openai_models.py`: whitespace-only model | d | `test_policy_rejects_models_outside_the_role_allowlist` retains blank selection and disallowed sibling model with policy-error matching. |
+| `tests/test_cli.py`: blank query, zero `k` and absent embedding-provider exit tests | d, merged | `test_invalid_retrieve_arguments_are_typed_invalid_input_exits` retains all three inputs, the exit category and each distinct public error code. |
+| Same file: separate provider/database unavailable exits | d, merged | `test_unavailable_dependencies_have_stable_nonsecret_exits` retains both secret-bearing exception fixtures, exact nonsecret error envelopes and `UNAVAILABLE` exit. |
+| `tests/operator/test_progress.py`: BM25 single-stage example | d | `test_single_stage_progress_reserves_terminal_completion` retains 99 before postconditions and 100 only after `finish_progress`. |
+| Same file: ordinary EDGAR partial-byte example | d | `test_download_bytes_contribute_only_to_acquisition_progress` retains DART completed-item/current-byte combination, EDGAR capping, unknown/zero lengths and non-acquisition exclusion. |
+| `tests/operator/test_service.py`: two command-target literals | a | `test_command_targets_match_the_registry_and_live_schema` still compares the full live API target enum with registry targets. |
+| `tests/release/test_02_release_app.py`: healthy-prod readiness example | d | `test_public_readiness_publishes_counts_and_withholds_only_write_access` retains degraded-prod, healthy-dev, operator and proxy-marked cases with public counts, redaction and write-access assertions. |
+| `tests/release/test_compose_layers.py`: two `test_overlays_declare_no_required_variables` cases | b/c | Dev/prod layer tests actually render Compose with a clean environment, `--env-file /dev/null` and `check=True`, detecting missing required variables through rendering. |
+| `tests/release/test_config.py`: default rate/cost literals and exact price estimate | a, rewritten | `test_release_defaults_to_canned_without_provider_activation` retains canned/read-only/provider-off/untrusted-proxy rules and requires the calculated largest default call to fit the per-call cap. |
+| `tests/scripts/diagnostics/test_ollama.py`: blocked `invalid` representative | d | `test_shared_blocked_selection_explains_reconnect_without_probing` retains disconnected-server guidance, uncollected inventory and absence of fabricated zero counts or unexpected-response text. |
+| `tests/scripts/schema/test_schema_cli.py`: `succeeded` exit-zero representative | d | `test_recreate_cli_maps_explicit_outcomes_without_planning_restart` retains cancelled=0, incomplete=1, exact invocation arguments and prohibition of secondary schema operations. |
+| `tests/scripts/stack/test_cli.py`: retired `up`, `down`, `start-quick` examples | d | `test_retired_top_level_commands_are_not_forwarded` retains `start-fresh` parser rejection with exit code 2. |
+| `tests/scripts/stack/test_environment.py`: exact loopback address | a, rewritten | `test_defaults_are_complete_and_loopback_bound` checks the loaded host with `ipaddress.ip_address(...).is_loopback`; the complete default environment assertion remains. |
+| `tests/scripts/stack/test_quickstart.py`: Compose array representative | b/d | `test_service_states_are_project_scoped` retains JSON-lines reporting. `test_stack_cli.py::test_parse_compose_ps_reads_both_output_shapes` checks actual array and JSON-lines parsing, returned rows, blank output and malformed-shape rejection. |
+| Same file: explicit `q` cancellation representative | d | `test_configuration_cancellation_stops_before_database_work` retains default decline and EOF, unchanged dotenv bytes and no later database/setup work. |
+| Same file: declined/failed schema-retry functions | d, merged | `test_schema_drift_blocks_application_start` retains both cases: one/two read-only checks, one confirmation and no service start. |
+| `tests/release/test_middleware.py`: prompt-override denial example | b | `test_01_request_guards.py::test_public_prompt_local_and_snapshot_controls_stay_locked` retains the exact additional-instructions input and the complete HTTP 403 `capability_disabled` envelope. |
+
+### Web
+
+Commits: `1d9eca0`, `81a2a0e`, `4137ddb`, `8e847ab`, `4fe1b98`, `7d6fcde`, `1680605`.
+Paths below are relative to `web/`. The two audit repairs are recorded separately from
+the original cleanup decisions; their presence was inspected without running tests.
+
+| File and change | Category | Retained behavior and assertion |
+|---|---|---|
+| `components/job-history-controls.test.tsx`: dialog timing | Repaired | The focus/Escape test opens inside awaited `act`, then requires the summary and enabled Close button. Focus trap, close and trigger-focus assertions remain. |
+| `components/local-engine-settings.test.tsx`: long identifier merged into localized identifier test | b/d, repaired after audit | The retained test again uses 200 repeated characters plus a custom tag, checks the Korean status prefix and preserves the complete option and selected values. The initial merge had shortened the input and lost this boundary. |
+| `components/service-shell.test.tsx`: stored-interruption localization test | b, merged | Both locale directions retain translated interruption, canonical persisted English notice and unchanged generated answer. |
+| `lib/pipeline.test.ts`: duplicate initial-checking test | b | The live/public parameterized test also asserts pending source and read-only state; every stage is unknown, numberless, actionless and unblocked, with no next action. |
+| `lib/company-labels.test.ts`: unspaced Hynix and Hynix bilingual examples | d | Spaced Hynix and Samsung bilingual representatives retain alias normalization and locale-specific labels; unknown-company behavior remains. |
+| `lib/i18n.test.tsx`: `ja-JP` example | d | `fr-FR` retains unsupported-locale fallback; `ko`, `ko-KR`, `en-US`, misleading `kok-IN` and empty input remain. |
+| `components/slow-cpu-notice.test.tsx`, `lib/local-limit-suggestion.test.ts`, `lib/saved-presets.test.ts`: default literals | a, rewritten | Snapshot the supplied defaults, perform the operation and check full non-mutation. Draft/save behavior, calculated recommendations and prior-copy assertions remain. |
+| `lib/documentation-registry.test.ts`: document-count literal | a, rewritten | The development draft must not appear in the ordinary catalog; locale-specific source and route preservation remain. |
+| `components/build-workspace.test.tsx`: succeeded/cancelled/interrupted refresh examples | d | Failed-job completion retains exactly one refresh, no repeated refresh on unchanged polling, and matching facets refresh. |
+| Same file: running deletion-lock case | Removal rejected and restored | Both queued and running cases prove deletion is enabled without a job, disabled while that job is active, and enabled after it clears, with no preview or submission while blocked. Board counters match the tested status. The interaction exercises the workspace and pipeline guards. |
+| `components/job-center.test.tsx`: schema/BM25 placeholder-stage examples | d | The documents representative retains absence of fabricated current-stage progress and preserves recorded overall progress. |
+| Same file: DART download-speed example | d | The EDGAR representative retains measured speed and stale/current-item reset behavior. |
+| `components/build-pipeline.test.tsx`: deterministic embedding-provider example | d | OpenAI, `none` and null retain the duration note only for embedding execution. |
+| `components/retrieval-preset-manager.test.tsx`: Korean/accuracy built-in examples and self-evident ID comparison | a/d | Balanced retains the complete displayed export shape: empty ID, canonical name, description and retrieval settings. |
+| `lib/local-models.test.ts`: infinite CPU speed | d | NaN, zero, negative and threshold/fast values retain the no-warning result. |
+| `lib/preparation-diagnostics.test.ts`: nine blocked-prerequisite pairs reduced to one | d | The ask-to-embeddings representative asserts blocked state and returns the reported prerequisite. |
+| `components/composer-toolbar.test.tsx`: empty block | No assertion removed | All readiness-label assertions remain. |
+
+### Protected regression checks
+
+All **46 named Python regression tests** in the second-pass bug list were found after
+correcting one file reference: `test_routes_outside_the_metered_set_never_consume_the_allowance`
+was added by `515b052` in `tests/release/test_01_request_guards.py`, not
+`test_02_release_app.py`. It remains there, exhausting `/review` to HTTP 429 and then
+requiring three `/work` requests to succeed without rate-limit headers. This was a stale
+evidence reference, not a removed regression.
+
+The audited test-quality commits remove no live PostgreSQL cases. The two Web corrections
+restore the only identified lost boundary and data-loss-prevention scenario within this
+audit. The remaining reductions retain the reviewed behavior, rejection paths and
+assertions described above; this assertion audit does not substitute for executed final
+coverage or integration verification.
+
+
+## Second pass: integration and verification
+
+The final integration checks use app/script code at `28f8a15`; `00dde96` changes only
+coverage-boundary tests. The branch target remains `refactor/remove-dead-code` at
+`8ca94d9`, and comparisons use `7780a72`. This continuation integrated the nine review
+follow-ups recorded in report section 13.3, completed facade/settings cleanup and restored
+lost assertions. It does not present the original authors' checks as independent review.
+
+### Bug and SQL evidence
+
+Report section 13.1 preserves each original defect's commit and regression reference.
+Those pre-fix reproductions are inherited from the earlier work; the current unit/live
+runs execute the retained regressions. All 46 named Python regression functions remain.
+The corrected allowance-test path and the two rejected Web removals are recorded above.
+
+For `f117176` and `4e85ec3`, 64 representative SQL statements were compiled before and
+after the shared snapshot-identity predicate and source-ordering extraction. PostgreSQL
+and asyncpg SQL strings and bound parameters are byte-identical. Local files are
+`sql-before.json`, `sql-snapshot.json` and `sql-ordering.json` under the verification root
+`/tmp/a2-continuation-20260926/`; both comparisons passed `cmp`.
+
+### Boundary checks restored or added
+
+`28f8a15` keeps the complete 200-character model name plus tag in rendered status and
+selection, and tests both queued and running job deletion locks through the workspace.
+Truncating the name makes its test fail. Permitting running-job deletion in both actual
+workspace/pipeline guards makes the running case fail; changing only one guard does not
+bypass the other. Both app sources were restored byte-for-byte after that experiment.
+
+`00dde96` restores saved `initial` state loading in
+`tests/llm/test_local_connection.py::test_default_resolves_runtime_and_legacy_matching_choice_without_writes[stored-initial-state]`.
+The removed reset method is not reinstated. The reader must select the configured Default
+endpoint, preserve its source and leave the stored bytes unchanged.
+
+The same commit extends existing scenarios for malformed local protocol envelopes and
+content parts, mapping-style log arguments and stack redaction, malformed HTTP readiness
+bodies, input/cost budget admission, incomplete-turn consistency and invalid reranker
+windows. MCP dispatch tests run `main(["--mcp"])` with the real tool registry and a fake
+transport, requiring engine release on both normal and exceptional exits. They do not
+claim a real MCP transport session.
+
+The eight affected files pass 130 tests under branch coverage. Seven parent-owned and
+five agent-owned process-local mutations fail the intended assertions without changing
+app/script files: saved-state loading, Responses/Ollama object envelopes, unusable content,
+mapping/stack redaction, readiness shape, MCP cleanup, exact input/cost exhaustion,
+incomplete-state consistency and a nonpositive reranker window. The temporary mutation
+harness has import-rewrite warnings in three agent runs; the normal verification runs
+have no warning summary. Mutation diagnostics are separate from the passing suite.
+
+### Coverage preservation and limits
+
+The whole unit/live run is in `cov-final/`. The `cov-verified/` dataset copies that result
+and appends the 130 affected tests on unchanged application/script code. It reaches
+17,133 of 19,181 statements and 4,271 of 5,456 branches: 89.32% statement coverage,
+78.28% branch coverage and 86.88% combined coverage. The report's before/after table uses
+these measures separately.
+
+The raw `cov_diff.py` comparator exits **1**, reporting 702 newly missing line numbers and
+495 newly missing branch pairs. It compares physical locations, so this is not a clean
+mechanical preservation result. Matching unchanged source text reduces the candidates
+to two statement locations and zero branches after the saved-state test is restored.
+The review also checked all 86 initially changed/moved missing statements and the
+197 missing statements/126 missing branches in 25 newly reported modules against their
+old owners. New meaningful boundary gaps received the tests above; moved, previously
+untested paths and forwarding methods did not receive coverage-only tests.
+
+| Apparent loss | Source/context adjudication |
+|---|---|
+| `app/evals/snapshots.py:204`, formerly 205 | The baseline records arc 205 to 211 at a line that raises a published-revision error. Its unchanged live test supplies a published revision with a mismatched SHA and exercises the later mismatch error. No assertion was removed. |
+| `scripts/schema/recreate.py:104`, formerly 109 | Raw arc 110 to -92 appears in both datasets under the retained live `recreate` test, although that test never calls `local_target`. It is not evidence that the volume-user query lost a test. |
+| `app/corpus_admin/inspection.py:536` | The old monolith labels `DocumentDetail` at 855 covered, but its only nearby raw arcs are 1267 to 886 to -878 under the retained ingestion-only live test, which never requests document detail. |
+| `app/corpus_admin/operations.py:232` | The same ingestion-only trace labels the old backfill callback covered without requesting backfill. Baseline backfill fakes never invoke that callback. No backfill-progress assertion was removed. |
+
+These are observed source/trace attribution mismatches; their instrumentation cause was
+not diagnosed in this product refactor. The source-aware review found no additional
+lost behavior assertion, but does not turn the raw comparator into a pass. Detailed local
+mapping and adjudication are in `coverage-source-map-verified.json` and
+`coverage-adjudication.md` under the verification root. Higher coverage alone is not the
+reason any test was removed.
+
+### Evaluation comparison
+
+`run_evals.sh codex26final .../evals` completes every step with exit zero. The database
+fingerprints match, and corpus/evaluation-output preservation guards pass. `compare.py`
+exits **1** because three of 52 deterministic outputs contain the approved extra empty
+`component_rankings.lexical_by_language.ko` list. The other 49 outputs are identical.
+A separate strict comparison removes only that empty key from those three probes and
+requires the complete remaining objects to equal baseline; hits and all other rankings
+match. Five CLI stdout streams are informational text rather than JSON; their JSON
+artifacts are compared instead.
+
+All 16 paid decomposition calls return `ok` with the same recorded configuration, and the
+single-query arm's metrics match. The unseeded decomposed arm differs: hit rate/recall
+0.333333 to 0.250000, MRR 0.141667 to 0.120833. `m3c-02` loses its rank-four hit;
+`m3c-22` has different hits with unchanged zero score. The decomposition implementation
+diff contains only the module move and typing/import changes. These results are recorded
+as variation in the unseeded arm, not equal LLM output or evidence of quality improvement;
+generated subquestions were not captured, so an input-by-input causal comparison is not
+available. `decomposition-case-diff.json` keys cases by `golden.id`, correcting the generic
+comparator's uninformative top-level `None` case key without rewriting its raw output.
+
+### Compose smoke
+
+The repository's base/dev Compose files run as `drr-refactor-smoke-codex26final` with a
+fresh database on port 55440 and Web/API proxy on 55441. An isolation-only temporary
+overlay replaces `/app/data` with `smoke/app-data` and mounts corpus, profiles, presets
+and golden inputs read-only. Existing local settings and usage records are not shared.
+The original harness is otherwise preserved in `smoke/run.sh`; no product Compose file
+changes are included in this pass.
+
+Readiness, retrieve and review return HTTP 200. Review returns `SUPPORTED` and one citation
+to NVDA FY2024 Item 7, following retrieve, grade, check and report, with estimated cost
+USD 0.0011389. The citation contains the stored document/source identity and span. The
+smoke source-status delta is empty. Teardown is restricted to this disposable project.
+This is local Compose evidence, not a deployed-service check.
+
+### Verification commands and artifacts
+
+Every shell invocation used `ulimit -v 4000000`. The final unit command is
+`PYTHONPYCACHEPREFIX=/tmp/a2-pycache DATABASE_URL=postgresql+asyncpg://filing:filing@127.0.0.1:55439/filing .venv/bin/python -m pytest -m "not live_postgres" -q -p no:cacheprovider tests`.
+The full coverage harness separately provisions isolated PostgreSQL and runs
+`-m live_postgres --require-live-postgres`. The three excluded acceptance cases require a
+wipe image, a restored public artifact bundle/DSN or prepared local-prod data; skipped or
+mocked tests are not substituted for those checks.
+
+`run_web_checks.sh .../web-final` records 1,261 passed tests and zero exits for typecheck,
+API generation check, build and post-build typecheck; React/act warnings are absent.
+Whole-project basedpyright records 432 files, zero errors and zero warnings. Scoped Ruff,
+format checks and `git diff --check` pass. Full unit results and final post-documentation
+checks are recorded in report section 13.5 and the delivered PR's verification summary.
