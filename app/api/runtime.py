@@ -56,6 +56,7 @@ from app.config import (
 )
 from app.db.models import Chunk, Document, EvaluationSnapshot, Run, Trace
 from app.db.queries import join_current_parse
+from app.db.session_factory import SessionFactory
 from app.evals.snapshots import SnapshotService
 from app.ingestion.company_names import CompanyNames, read_company_names
 from app.llm.local_connection import LocalConnectionManager
@@ -89,14 +90,6 @@ from app.workflow.types import WorkflowRequest, WorkflowState
 type ParseStatus = Literal["parsed", "needs_profile_update"]
 
 _PARSE_STATUS = TypeAdapter[ParseStatus](ParseStatus)
-
-
-class SessionFactory(Protocol):
-    """Build one caller-owned async session context."""
-
-    def __call__(self) -> AsyncSession:
-        """Return one caller-owned async session."""
-        ...
 
 
 class RetrievalService(Protocol):

@@ -1,6 +1,6 @@
 """Read stored review runs, their traces and evaluation results without running any work."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import cast
 
 from sqlalchemy import select
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.errors import translate_runtime_errors
 from app.api.schemas import EvalResultResource
 from app.db.models import EvalResult, Run, Trace
+from app.db.session_factory import SessionFactory
 from app.observability.persistence import record_to_step, records_to_report
 from app.observability.types import JsonObject, RunReport, StepTrace
 
@@ -26,7 +27,7 @@ class RunRecords:
     so a stored record is only projected back out and never re-executes workflow code.
     """
 
-    def __init__(self, session_factory: Callable[[], AsyncSession]) -> None:
+    def __init__(self, session_factory: SessionFactory) -> None:
         self._session_factory = session_factory
 
     async def get_run(self, run_id: str) -> RunReport | None:

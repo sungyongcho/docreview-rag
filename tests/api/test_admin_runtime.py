@@ -9,8 +9,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.api.admin_runtime import RuntimeAdminApiServices
-from app.api.runtime import RuntimeApiServices, SessionFactory
+from app.api.runtime import RuntimeApiServices
 from app.corpus_admin import CorpusStatus
+from app.db.session_factory import SessionFactory
 from app.operator.jobs import StoredJob
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 

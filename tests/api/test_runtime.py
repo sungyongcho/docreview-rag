@@ -8,8 +8,9 @@ import pytest
 
 from app.api.errors import ApiProblemError
 from app.api.review_profile import ReviewSessionProfile
-from app.api.runtime import RuntimeApiServices, SessionFactory
+from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest
+from app.db.session_factory import SessionFactory
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import local_provider_budget
 from app.llm.local_inventory import LocalModelInventory

@@ -1,13 +1,10 @@
 """Resolve issuer selections and each routed request's retrieval scope against the manifest."""
 
 import asyncio
-from collections.abc import Callable
 import logging
 from pathlib import Path
 import re
 from typing import cast
-
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ApiProblemError
 from app.api.review_profile import (
@@ -18,6 +15,7 @@ from app.api.review_profile import (
 )
 from app.api.scope_diagnostics import manifest_problem
 from app.config import get_settings
+from app.db.session_factory import SessionFactory
 from app.observability.types import JsonObject
 from app.operator.jobs import JobStore
 from app.retrieval.scope import (
@@ -42,7 +40,7 @@ class ScopeResolver:
         Corpus directory holding ``manifest.json``; ``None`` reads the configured one.
     scope_index : ManifestScopeIndex | None
         Index to serve until the manifest file is first observed; ``None`` loads it.
-    session_factory : Callable[[], AsyncSession]
+    session_factory : SessionFactory
         Session boundary used only to attach recent corpus-job context to a failure.
     bm25 : ServerBM25
         Server BM25 values that fill what a retrieval plan leaves unstated.
@@ -57,7 +55,7 @@ class ScopeResolver:
         *,
         corpus_root: Path | None,
         scope_index: ManifestScopeIndex | None,
-        session_factory: Callable[[], AsyncSession],
+        session_factory: SessionFactory,
         bm25: ServerBM25,
         developer: bool,
         secret_values: tuple[str, ...],

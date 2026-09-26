@@ -10,7 +10,6 @@ from app.api.review_profile import ReviewSessionProfile
 from app.api.schemas import RetrieveRequest, ReviewRequest
 from app.llm.local import LocalLLMProvider
 from app.llm.local_connection import LocalConnectionManager
-from app.llm.local_engine import resolve_local_protocol
 from app.llm.local_inventory import LocalModelInventory
 from app.llm.openai_limits import OpenAILimitsManager
 from app.llm.provider import LLMProvider
@@ -184,7 +183,7 @@ class ReviewEngines:
         provider = LocalLLMProvider(
             base_url=inventory.base_url,
             model_name=model,
-            protocol=resolve_local_protocol(inventory.base_url, inventory.protocol),
+            protocol=inventory.protocol,
             api_key=inventory.api_key,
             timeout_s=self._local_timeout_s,
             context_window=budget.max_input_tokens + budget.max_output_tokens,

@@ -12,8 +12,9 @@ import pytest
 from app import cli
 from app.api.app import create_api_app
 from app.api.review_profile import ReviewSessionProfile
-from app.api.runtime import RuntimeApiServices, SessionFactory
+from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest
+from app.db.session_factory import SessionFactory
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
 from app.observability.types import build_run_report
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
