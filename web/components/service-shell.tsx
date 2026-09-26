@@ -8,8 +8,7 @@ import { NotificationCenter } from "@/components/notification-center";
 import { NotificationSignals } from "@/components/notification-signals";
 import type { NotificationTarget, NotificationDetail } from "@/lib/notification-registry";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
-import { scopeFailurePatch, scopeFailureProgress, publicScopeFailure, isReviewLimitation, reviewLimitationMessage } from "@/lib/scope-failure";
-import { ScopeFailureSummary } from "@/components/scope-failure-summary";
+import { scopeFailurePatch, scopeFailureProgress, publicScopeFailure, reviewLimitationMessage } from "@/lib/scope-failure";
 import { BrowserStorageSupport } from "@/components/browser-storage";
 import { applyFreshStartReset, FRESH_START_RECEIPT_KEY, browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
 import { useI18n } from "@/lib/i18n";
@@ -24,13 +23,11 @@ import { CreatorSignature } from "@/components/creator-signature";
 import { GuidesNavigation } from "@/components/guides-navigation";
 import type { DisclosureStage } from "@/components/review-stage-details";
 import { RunDetailsPanel } from "@/components/run-details-panel";
-import { EvidenceCandidates } from "@/components/evidence-candidates";
 import { LanguageSwitch } from "@/lib/i18n";
 import { localCpuWarning, localModelIssue, selectedLocalModel } from "@/lib/local-models";
 
 import {
   Activity,
-  ArrowUpRight,
   CircleHelp,
   FlaskConical,
   Hammer,
@@ -55,10 +52,12 @@ import { ConversationSettings, type ConversationSettingsTab } from "@/components
 import { LocalEngineSettings } from "@/components/local-engine-settings";
 import { ComposerBanner, ComposerToolbar, composerBanner } from "@/components/composer-toolbar";
 import { HelpOverlay } from "@/components/help-overlay";
-import { MarkdownMessage } from "@/components/markdown-message";
+import { restoreInterruptedConversations } from "@/components/interrupted-reviews";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding, type TourView } from "@/components/onboarding";
-import { PathDecisionBadge, ReviewProgressSteps, reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer } from "@/components/review-progress";
+import { ReviewMessage } from "@/components/review-message";
+import { reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer } from "@/components/review-progress";
+import { extractTrace, runDiagnostics, terminalAnswer, terminalCitationCount, terminalEvidenceLabel, terminalFailureFix } from "@/components/review-response";
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { DevModeBubble, DevPromotionProvider } from "@/components/dev-mode-bubble";
@@ -75,7 +74,6 @@ import {
 } from "@/lib/api";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { profileCompatibilityIssue } from "@/lib/profile-compatibility";
-import { failureMessage, failureReport } from "@/lib/pipeline";
 import { helpScreen } from "@/lib/help-content";
 import { helpTopicScreen } from "@/lib/help-search";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
@@ -99,20 +97,6 @@ interface NavigationEntry {
 /** Render the shared interface with the running server's DEV or PROD permissions. */
 export function ServiceShell() {
   return <div><div><NotificationProvider><ServiceSession /></NotificationProvider></div></div>;
-}
-
-// Application status text, not a generated answer. It is stored as this canonical English source and
-// translated when rendered, so a conversation saved in one language reads correctly in the other.
-const INTERRUPTION_NOTICE = "The request was interrupted. Send the question again.";
-
-/** Identify the app's own interruption notice by its exact stored text; nothing else is matched. */
-function isInterruptionNotice(message: { role: string; text?: string }): boolean {
-  return message.role === "assistant" && message.text?.trim() === INTERRUPTION_NOTICE;
-}
-
-/** Restored requests cannot resume themselves after a reload or browser import. */
-function restoreInterruptedConversations(saved: Conversation[]): Conversation[] {
-  return saved.map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: INTERRUPTION_NOTICE, execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
 }
 
 function ServiceSession() {
@@ -1301,69 +1285,6 @@ function ServiceSession() {
   );
 }
 
-interface ReviewMessageProps {
-  onOpenFix?: (category: NonNullable<ChatMessage["failureFix"]>["category"]) => void;
-  message: ChatMessage;
-  catalogMode?: "live" | "published";
-  onStop?: () => void;
-  onSwitchScope?: () => void;
-  onOpenDetails?: (stage?: DisclosureStage) => void;
-  /** The newest message carrying evidence; only that one gets the `review.evidence` help hook. */
-  latestEvidence: boolean;
-  busy: boolean;
-  onMark: (chunkId: number, mode: "pin" | "exclude") => void;
-  onUseSelected: () => void;
-}
-
-/** Verdict pill derived from the terminal label; conversation replies carry no label and get no pill. */
-function verdictPill(message: ChatMessage): { className: string; text: string } | null {
-  if (message.evidenceLabel === "Cited evidence") {
-    const count = message.citations ?? message.evidence?.length ?? 0;
-    return { className: "supported", text: `Supported · ${count} citation${count === 1 ? "" : "s"}` };
-  }
-  if (message.evidenceLabel === "Related evidence — not direct support") return { className: "not-in-docs", text: "Not in documents" };
-  if (message.evidenceLabel === "Retrieved candidates — answer not generated") return { className: "failed", text: "Answer not generated" };
-  const decision = message.execution?.pathDecision;
-  if (isReviewLimitation(decision) && decision?.stopping_reason === "unsupported_request") return { className: "unsupported-request", text: "Unsupported request" };
-  return null;
-}
-
-function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails, onOpenFix }: ReviewMessageProps) {
-  const { t } = useI18n();
-  const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
-  const pill = message.role === "assistant" ? verdictPill(message) : null;
-  const article = useRef<HTMLElement>(null);
-  /** Reveal only this message's evidence list when its report stage links to candidates. */
-  function showEvidence() {
-    const evidence = article.current?.querySelector<HTMLDetailsElement>("details.evidence");
-    if (!evidence) return;
-    evidence.open = true;
-    evidence.querySelector<HTMLElement>("summary")?.focus({ preventScroll: true });
-    evidence.scrollIntoView?.({ block: "nearest" });
-  }
-  return (
-    <article ref={article} className={`message ${message.role}${message.pending ? " pending" : ""}`} data-message-id={message.id} aria-busy={message.pending || undefined}>
-      <div className="message-role">{message.role === "user" ? t("You") : t("DocReview RAG")}</div>
-      <div className="message-body">
-        {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
-        {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} catalogMode={catalogMode} />}
-        {message.role === "assistant" ? (message.text ? <MarkdownMessage>{isReviewLimitation(message.execution?.pathDecision) ? reviewLimitationMessage(message.execution!.pathDecision!, t) : message.scopeFailure ? t("Query scope metadata is unavailable.") : isInterruptionNotice(message) ? t(INTERRUPTION_NOTICE) : message.evidenceLabel === "Retrieved candidates — answer not generated" ? t(message.text) : message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
-        {message.scopeFailure && <ScopeFailureSummary message={message} developer={catalogMode === "live"} onOpenFix={onOpenFix} />}
-        {message.execution && <div className="review-execution-wrap"><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps showDetailsAction={false} catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{onOpenDetails && <div className="review-stage-actions"><button className="button review-summary-action" type="button" data-run-details-open onClick={() => onOpenDetails()}>{t("Open run details")}<ArrowUpRight size={14} aria-hidden="true" /></button></div>}</div>}
-        {message.evidence?.length ? (
-          <>
-            <details className="evidence" data-help={latestEvidence ? "review.evidence" : undefined}>
-              <summary data-tour="evidence-toggle">{t(message.evidenceLabel === "Cited evidence" ? "Retrieved evidence candidates" : message.evidenceLabel ?? "Retrieved candidates")} · {message.evidence.length}</summary>
-              <EvidenceCandidates key={message.id} message={message} busy={busy} onMark={onMark} onUseSelected={onUseSelected} />
-            </details>
-          </>
-        ) : null}
-        {message.role === "assistant" && !message.execution && (message.performance || message.diagnostics?.length || message.trace) && onOpenDetails && <button className="button ghost" type="button" data-run-details-open data-help="review.run-trace" onClick={() => onOpenDetails()}>{t("Run details")}</button>}
-      </div>
-    </article>
-  );
-}
-
 function isInfrastructureFailure(reason: unknown): boolean {
   return reason instanceof TypeError || (
     reason instanceof ApiError
@@ -1379,102 +1300,4 @@ function healthBadge(kind: ReturnType<typeof useRuntimeHealth>["kind"]): string 
 
 function healthLabel(kind: ReturnType<typeof useRuntimeHealth>["kind"]): string {
   return kind === "api_down" ? "API down" : kind.replace("_", " ");
-}
-
-export function terminalAnswer(payload: Record<string, unknown>): string {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = root.report as Record<string, unknown> | null;
-  if (report?.report_kind === "conversation" && typeof report.answer === "string") return report.answer;
-  if (report?.label === "SUPPORTED" && typeof report.answer === "string") return report.answer;
-  if (report?.label === "NOT_IN_DOCS") {
-    // The card adds the "related evidence" notice itself, so the text carries only the rationale.
-    return typeof report.rationale === "string" ? report.rationale : "The filings do not contain direct support for this question.";
-  }
-  const failure = root.failure as Record<string, unknown> | null;
-  if (failure) return failureMessage(failure);
-  throw new Error("Review completed without a valid terminal report or failure.");
-}
-
-/** Evidence label for a terminal report; conversation replies and other unlabelled reports get none. */
-function terminalEvidenceLabel(payload: Record<string, unknown>): ChatMessage["evidenceLabel"] {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = root.report as Record<string, unknown> | null;
-  if (report?.label === "SUPPORTED") return "Cited evidence";
-  if (report?.label === "NOT_IN_DOCS") return "Related evidence — not direct support";
-  if (report) return undefined;
-  return "Retrieved candidates — answer not generated";
-}
-
-/** Citations the report made, as opposed to the candidate pool the stream sent earlier. */
-function terminalCitationCount(payload: Record<string, unknown>): number | undefined {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = root.report as Record<string, unknown> | null;
-  return Array.isArray(report?.citations) ? report.citations.length : undefined;
-}
-
-function extractTrace(payload: Record<string, unknown>): string {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const values = ["status", "total_requests", "total_input_tokens", "total_output_tokens", "total_time_seconds"];
-  return values.filter((key) => root[key] !== undefined).map((key) => `${key}=${String(root[key])}`).join(" · ");
-}
-
-const RUN_FACTS: ReadonlyArray<readonly [string, string]> = [
-  ["status", "Status"],
-  ["run_id", "Run id"],
-  ["iterations", "Iterations"],
-  ["total_requests", "Provider requests"],
-  ["total_input_tokens", "Input tokens"],
-  ["total_output_tokens", "Output tokens"],
-  ["total_estimated_cost_usd", "Estimated cost"],
-  ["total_time_seconds", "Elapsed seconds"],
-];
-
-/** Failure fields worth naming, keyed by the shape that carries them. */
-const FAILURE_FACTS: ReadonlyArray<readonly [string, string]> = [
-  ["code", "Failure"],
-  ["resource", "Exhausted resource"],
-  ["limit", "Limit"],
-  ["observed", "Observed"],
-  ["blocked_node", "Blocked at"],
-  ["status", "Provider status"],
-  ["node", "Node"],
-  ["attempts", "Attempts"],
-  ["error_type", "Error type"],
-  ["message", "Message"],
-];
-
-/**
- * Flatten one terminal response into labelled rows.
- *
- * The run identifier is included deliberately: it is the only handle a reader has for
- * correlating a failure with `/runs/{id}` and its step traces, and the browser was
- * discarding it. Node paths are joined rather than dropped so the route a run took
- * before failing is visible.
- */
-/** The settings destination for a terminal failure, when the failure names one. */
-function terminalFailureFix(payload: Record<string, unknown>): ChatMessage["failureFix"] {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const failure = root.failure as Record<string, unknown> | null;
-  return failure ? failureReport(failure).fix : undefined;
-}
-
-function runDiagnostics(payload: Record<string, unknown>): Array<{ label: string; value: string }> {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const rows: Array<{ label: string; value: string }> = [];
-  for (const [key, label] of RUN_FACTS) {
-    if (root[key] !== undefined && root[key] !== null) rows.push({ label, value: String(root[key]) });
-  }
-  if (Array.isArray(root.node_path) && root.node_path.length) {
-    rows.push({ label: "Node path", value: root.node_path.join(" → ") });
-  }
-  const failure = root.failure as Record<string, unknown> | null;
-  if (failure) {
-    for (const [key, label] of FAILURE_FACTS) {
-      if (failure[key] !== undefined && failure[key] !== null) rows.push({ label, value: String(failure[key]) });
-    }
-    if (Array.isArray(failure.details) && failure.details.length) {
-      rows.push({ label: "Details", value: failure.details.map(String).join(" · ") });
-    }
-  }
-  return rows;
 }

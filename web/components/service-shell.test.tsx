@@ -7,7 +7,8 @@ import type { DocumentFacets, Readiness, OperatorJob } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
 import { tourTargets } from "./onboarding-test-support";
-import { ServiceShell, terminalAnswer } from "./service-shell";
+import { terminalAnswer } from "./review-response";
+import { ServiceShell } from "./service-shell";
 
 beforeEach(() => { configureBrowserStorage(undefined); window.history.replaceState(null, "", "/"); });
 
