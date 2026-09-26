@@ -37,16 +37,18 @@ from app.db.models import (
 )
 from app.retrieval._sql import (
     TEXT_SEARCH_CONFIG,
-    TIE_BREAK_COLLATION,
     apply_filters,
     hit_columns,
     hit_order_by,
     positive_websearch_text,
+    provenance_tie_breakers,
     relaxed_websearch_query,
 )
 from app.retrieval.types import ChunkHit, RetrievalFilters, finite_float
 
 BM25_IDF_VARIANTS: tuple[BM25Idf, ...] = get_args(BM25Idf)
+# Column that carries the corpus-statistics count beside the ranked hits.
+READINESS_COLUMN = "corpus_stats"
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,16 +464,13 @@ async def bm25_search(
     ]
 
 
-READINESS_COLUMN = "corpus_stats"
-
-
 def _with_readiness(hits_statement: Select[Any], filters: RetrievalFilters) -> Select[Any]:
     """Attach the corpus-statistics count to the ranked hits in one statement.
 
     The count is the outer side of a left join, so the statement returns one
     NULL-extended row carrying the count even when the search finds nothing. The hit
-    order is restated on the subquery columns with the same tie-breakers as
-    ``hit_order_by``, because a subquery's order does not survive the join.
+    order is applied again on the subquery columns with the tie-breakers
+    ``hit_order_by`` uses, because a subquery's order does not survive the join.
     """
     hits = hits_statement.subquery("bm25_hits")
     if filters.snapshot_id is None:
@@ -486,12 +485,5 @@ def _with_readiness(hits_statement: Select[Any], filters: RetrievalFilters) -> S
     return (
         select(counted.c[READINESS_COLUMN], *hits.c)
         .select_from(counted.outerjoin(hits, true()))
-        .order_by(
-            hits.c.score.desc(),
-            hits.c.doc_id.collate(TIE_BREAK_COLLATION).asc(),
-            hits.c.source_sha256.collate(TIE_BREAK_COLLATION).asc(),
-            hits.c.start_char.asc(),
-            hits.c.end_char.asc(),
-            hits.c.chunk_id.asc(),
-        )
+        .order_by(hits.c.score.desc(), *provenance_tie_breakers(hits.c, hits.c.chunk_id))
     )
