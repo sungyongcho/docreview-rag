@@ -74,6 +74,7 @@ async def _exercise_rerun(module) -> None:
                 .join(Chunk, Chunk.id == ChunkEmbedding.chunk_id)
                 .where(Chunk.ordinal == 0)
             )
+            assert preserved is not None
             assert list(preserved) == [1.0] + [0.0] * (DIM - 1)
             original_id = await connection.scalar(select(Chunk.id).where(Chunk.ordinal == 0))
             reordered = module.SeedBatch(
@@ -91,6 +92,7 @@ async def _exercise_rerun(module) -> None:
                 .join(Chunk, Chunk.id == ChunkEmbedding.chunk_id)
                 .where(Chunk.ordinal == 1)
             )
+            assert reordered_vector is not None
             assert list(reordered_vector) == list(preserved)
             async with AsyncSession(bind=connection, expire_on_commit=False) as session:
                 await module.persist_seed_batch(session, batch)

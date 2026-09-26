@@ -5,10 +5,10 @@ import os
 from pathlib import Path
 import shutil
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 import pytest
 
-from app.ingestion.chunk import ChunkConfig, chunk_filing
+from app.ingestion.chunk import Chunk, ChunkConfig, TableFragment, chunk_filing
 from app.ingestion.parser import Block
 from app.ingestion.tables import structured_table
 from app.ingestion.tokens import MAX_INPUT_CHARACTERS, count_tokens
@@ -20,6 +20,16 @@ def _chunks(html: str, **budget):
     filing = build_filing([Block("table", "", html=html, source_pos=0, end_pos=len(html))])
     filing.source_length = len(html)
     return chunk_filing(filing, ChunkConfig(**budget))
+
+
+def _declared_span(cell: Tag, attribute: str) -> int:
+    """Read a rowspan or colspan exactly as written; HTML treats a missing one as 1."""
+    value = cell.get(attribute)
+    if value is None:
+        return 1
+    # Only multi-valued attributes such as class come back as lists.
+    assert isinstance(value, str)
+    return int(value)
 
 
 def _raw_source_cells(html: str) -> dict[tuple[int, int, int, int], str]:
@@ -34,7 +44,7 @@ def _raw_source_cells(html: str) -> dict[tuple[int, int, int, int], str]:
         for cell in row.find_all(["td", "th", "te", "tu"], recursive=False):
             while (row_index, column) in occupied:
                 column += 1
-            rowspan, colspan = int(cell.get("rowspan", 1)), int(cell.get("colspan", 1))
+            rowspan, colspan = _declared_span(cell, "rowspan"), _declared_span(cell, "colspan")
             visible = "".join(cell.get_text().split())
             if visible:
                 cells[row_index, column, rowspan, colspan] = visible
@@ -50,6 +60,12 @@ def _raw_source_cells(html: str) -> dict[tuple[int, int, int, int], str]:
 def _source_key(cell):
     """Identify the original HTML cell rather than its normalized output column."""
     return cell.row, cell.column, cell.rowspan, cell.colspan
+
+
+def _table_fragment(chunk: Chunk) -> TableFragment:
+    """Return the cell provenance that every chunk cut from a table block carries."""
+    assert chunk.table_fragment is not None
+    return chunk.table_fragment
 
 
 def _assert_raw_source_coverage(html: str, chunks):
@@ -152,9 +168,9 @@ def test_wide_rows_and_long_cells_split_at_cells_and_sentences():
     assert len(chunks) > 2
     assert all(count_tokens(chunk.content) <= 100 for chunk in chunks)
     assert any("(9,876)" in chunk.body for chunk in chunks)
-    assert all(chunk.table_fragment.header_rows == (0,) for chunk in chunks)
+    assert all(_table_fragment(chunk).header_rows == (0,) for chunk in chunks)
     _assert_cell_coverage(structured_table(html), chunks)
-    assert all(fragment.sources for chunk in chunks for fragment in chunk.table_fragment.cells)
+    assert all(fragment.sources for chunk in chunks for fragment in _table_fragment(chunk).cells)
 
 
 def test_indivisible_cell_fails_with_row_and_column():
@@ -246,6 +262,8 @@ def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(tmp_path,
                 table = structured_table(block.html)
                 if count_tokens(table.render()) <= 8192:
                     continue
+                assert block.html is not None
+                assert block.source_pos is not None
                 span = (block.source_pos, block.end_pos)
                 oversized.add(span)
                 parts = [
@@ -264,12 +282,13 @@ def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(tmp_path,
                     for block in section.blocks
                     if (block.source_pos, block.end_pos) == (caption_start, caption_end)
                 )
+                assert caption_block.html is not None
                 caption_raw = _raw_source_cells(caption_block.html)
                 for part in parts:
                     assert unit in part.context_header
                     references = [
                         caption
-                        for caption in part.table_fragment.caption_sources
+                        for caption in _table_fragment(part).caption_sources
                         if (caption.start_char, caption.end_char) == (caption_start, caption_end)
                     ]
                     assert len(references) == 1
@@ -281,7 +300,7 @@ def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(tmp_path,
                     if span[0] != 5067120:
                         assert "(기준일 : 2024년 12월 31일 )" in part.context_header
                         assert "(기준일 : 2024년 12월 31일 )" in caption.text
-                    assert asdict(part.table_fragment)["header_cells"]
+                    assert asdict(_table_fragment(part))["header_cells"]
         assert oversized == (expected if filing.source.document.registry == "dart" else set())
 
 
@@ -311,7 +330,7 @@ def test_unit_column_preserves_original_scale_header_and_cell_relationships():
     _assert_raw_source_coverage(html, chunks)
     assert any(
         cell.text == "USD millions" and cell.column == 1
-        for cell in chunks[0].table_fragment.header_cells
+        for cell in _table_fragment(chunks[0]).header_cells
     )
 
 
@@ -344,10 +363,10 @@ def test_adjacent_date_unit_caption_records_its_own_span_without_changing_data_s
         assert (chunk.start_char, chunk.end_char) == (start, following)
         assert "(단위 : 백만원, 천주, %)" in chunk.context_header
         assert "(기준일 : 2024년 12월 31일 )" in chunk.context_header
-        (source,) = chunk.table_fragment.caption_sources
+        (source,) = _table_fragment(chunk).caption_sources
         assert (source.start_char, source.end_char) == (0, start)
         assert {_source_key(cell): "".join(cell.text.split()) for cell in source.cells} == raw
-    assert all(not chunk.table_fragment.caption_sources for chunk in second)
+    assert all(not _table_fragment(chunk).caption_sources for chunk in second)
     assert all("단위" not in chunk.context_header for chunk in second)
 
 
@@ -372,7 +391,7 @@ def test_caption_provenance_does_not_cross_a_context_boundary(boundary):
     chunks = chunk_filing(build_filing(blocks))
     table_chunk = next(chunk for chunk in chunks if chunk.kind == "table")
     assert "단위" not in table_chunk.context_header
-    assert table_chunk.table_fragment.caption_sources == ()
+    assert _table_fragment(table_chunk).caption_sources == ()
 
 
 def test_internal_caption_cells_and_multilevel_header_spans_survive_serialization():
@@ -385,7 +404,7 @@ def test_internal_caption_cells_and_multilevel_header_spans_survive_serializatio
     )
     chunks = _chunks(html)
     _assert_raw_source_coverage(html, chunks)
-    metadata = asdict(chunks[0].table_fragment)
+    metadata = asdict(_table_fragment(chunks[0]))
     assert any(cell["rowspan"] == 2 for cell in metadata["header_cells"])
     assert any(cell["colspan"] == 2 for cell in metadata["header_cells"])
     assert metadata["caption_sources"][0]["start_char"] == 0

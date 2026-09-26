@@ -75,6 +75,7 @@ def test_default_pairs_are_exact_and_independent_of_disk(tmp_path):
     expected = {
         ("sec", issuer, year) for issuer in ("NVDA", "AMD") for year in range(2019, 2025)
     } | {("dart", issuer, year) for issuer in ("005930", "000660") for year in range(2022, 2025)}
+    assert isinstance(draft["pairs"], list)
     assert {(p["registry"], p["issuer"], p["year"]) for p in draft["pairs"]} == expected
     assert len(draft["pairs"]) == 18
     write_selection_catalog(tmp_path)
@@ -163,6 +164,7 @@ def test_conflicting_primary_blocks_readiness_and_execution(tmp_path, latest_sta
         row for row in source_inventory(tmp_path) if row.document_id == primary.document_id
     )
     assert blocked.on_disk and not blocked.ready and not blocked.can_redownload
+    assert blocked.blocker is not None
     assert "Conflicting primary sources" in blocked.blocker
     with pytest.raises(ValueError, match="Conflicting primary sources"):
         record_selection(
@@ -247,6 +249,7 @@ def test_source_snapshot_accepts_the_strict_api_resource(tmp_path):
     snapshot = asyncio.run(service.snapshot())
     resource = CorpusSnapshotResource.model_validate(asdict(snapshot))
     assert len(resource.sources) == 4
+    assert resource.acquisition_draft is not None
     assert len(resource.acquisition_draft.pairs) == 18
     assert len(resource.acquisition_companies) == 7
 
@@ -274,6 +277,7 @@ def test_distinct_filings_require_explicit_document_ids(tmp_path):
     catalog = write_selection_catalog(tmp_path)
     original = catalog.documents[0]
     filing_id = original.filing_id[:-6] + "999999"
+    assert original.sec is not None
     duplicate = original.model_copy(
         update={
             "document_id": original.document_id + "-other",
@@ -438,6 +442,7 @@ def test_registered_archive_inventory_cache_and_integrity_gate(
         path.write_bytes(b"x" * archive.byte_length)
     row = source_inventory(tmp_path)[0]
     assert row.on_disk and not row.ready and row.can_redownload
+    assert row.blocker is not None
     assert "Registered DART archive" in row.blocker and archive.path in row.blocker
     assert len(reads) == (2 if damage == "missing" else 3)
     assert not source_inventory(tmp_path)[0].ready

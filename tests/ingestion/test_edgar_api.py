@@ -6,6 +6,7 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -364,7 +365,7 @@ def test_reusable_acquisition_downloads_missing_files_and_reports_progress(tmp_p
 # --- discovery ---
 
 
-def submissions_payload(rows, *, pages=()):
+def submissions_payload(rows, *, pages=()) -> dict[str, Any]:
     """Build a submissions document in SEC's column-wise shape."""
     columns = {
         name: [row[index] for row in rows] for index, name in enumerate(edgar_api.FILING_COLUMNS)
@@ -472,6 +473,7 @@ def test_discovered_entry_uses_common_normalized_metadata():
     assert built.issuer_id == "0001045810"
     assert built.filing_id == TEN_K[1]
     assert built.fiscal_year == 2024
+    assert built.sec is not None
     assert built.sec.primary_document == "nvda-20240128.htm"
     assert not hasattr(built, "file")
 

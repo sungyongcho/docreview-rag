@@ -1,6 +1,7 @@
 """Exact source deletion approvals never delete derived or past job inputs."""
 
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -101,7 +102,9 @@ def test_queue_requires_fresh_confirmation_and_cannot_retry_deletion(tmp_path):
 
     async def scenario():
         """Exercise service queue validation and terminal provenance in a disposable corpus."""
-        service = RuntimeCorpusAdminService(settings=Settings(mode="dev", corpus_dir=tmp_path))
+        # MODE is a settings alias, which the synthesized constructor signature cannot name.
+        dev_mode: dict[str, Any] = {"mode": "dev"}
+        service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path, **dev_mode))
         preview = await service.preview_source_deletion((catalog.documents[0].document_id,))
         command = AdminCommand(
             "delete_sources", deletion_token=preview["token"], confirm_delete=True

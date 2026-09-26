@@ -1,10 +1,13 @@
 """Publishing registries resolve only explicitly typed filing sources."""
 
+from collections.abc import MutableMapping
+from typing import cast
+
 import pytest
 
 from app.ingestion.dart import DART_PARTS, parse_dart_filing
 from app.ingestion.edgar import CANONICAL, parse_filing
-from app.ingestion.registry import REGISTRIES, registry_for, section_title
+from app.ingestion.registry import REGISTRIES, Registry, registry_for, section_title
 from tests.ingestion.support import filing_document, filing_source
 
 
@@ -27,7 +30,8 @@ def test_unknown_registry_fails_closed():
 def test_registry_configuration_is_immutable_and_has_no_chunk_profiles():
     """Keep source syntax in adapters and processing budgets in the shared contract."""
     with pytest.raises(TypeError):
-        REGISTRIES["other"] = REGISTRIES["sec"]
+        # Write through a mutable view on purpose: the read-only proxy must refuse it.
+        cast(MutableMapping[str, Registry], REGISTRIES)["other"] = REGISTRIES["sec"]
     assert registry_for("dart").language == "ko"
     assert registry_for("sec").language == "en"
     assert registry_for("sec").section_label("7") == "Item 7"
