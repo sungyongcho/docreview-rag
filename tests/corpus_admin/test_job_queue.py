@@ -40,14 +40,14 @@ def test_runtime_queue_runs_one_job_at_a_time_in_submission_order(tmp_path: Path
         first = await service.enqueue(AdminCommand("rebuild_bm25"))
         second = await service.enqueue(AdminCommand("backfill_embeddings"))
         await asyncio.sleep(0)
-        board = await service.jobs()
+        board = await service._job_queue.jobs()
         assert board.active is not None
         assert board.active.job_id == first.job_id
         assert [job.job_id for job in board.queued] == [second.job_id]
 
         gate.set()
         await service._job_queue._queue.join()
-        board = await service.jobs()
+        board = await service._job_queue.jobs()
 
         assert calls == ["rebuild_bm25", "backfill_embeddings"]
         assert board.active is None
@@ -83,14 +83,14 @@ def test_failed_job_is_redacted_and_retryable(tmp_path: Path) -> None:
         )
         failed = await service.enqueue(AdminCommand("backfill_embeddings"))
         await service._job_queue._queue.join()
-        board = await service.jobs()
+        board = await service._job_queue.jobs()
         assert board.history[0].status == "failed"
         assert secret not in board.history[0].message
         assert "[REDACTED]" in board.history[0].message
 
         retried = await service.retry(failed.job_id)
         await service._job_queue._queue.join()
-        board = await service.jobs()
+        board = await service._job_queue.jobs()
         assert retried.job_id != failed.job_id
         assert board.history[0].status == "succeeded"
         assert board.history[0].result_refs is not None
@@ -124,7 +124,7 @@ def test_queued_job_can_be_cancelled_without_running(tmp_path: Path) -> None:
         cancelled = await service.cancel(second.job_id)
         gate.set()
         await service._job_queue._queue.join()
-        board = await service.jobs()
+        board = await service._job_queue.jobs()
 
         assert calls == [first.command.kind]
         assert cancelled.status == "cancelled"
@@ -157,7 +157,7 @@ def test_running_backfill_cancels_at_the_next_batch_boundary(tmp_path: Path) -> 
         cancelled = await service.cancel(job.job_id)
         gate.set()
         await service._job_queue._queue.join()
-        board = await service.jobs()
+        board = await service._job_queue.jobs()
 
         assert cancelled.status == "cancelled"
         assert board.history[0].status == "cancelled"
@@ -198,7 +198,8 @@ def test_worker_survives_ledger_failures_and_lands_the_terminal_state(tmp_path: 
         # succeeded write is always the last one for each job.
         assert store.puts.count("running") <= 2
         assert store.puts[-1] == "succeeded"
-        assert [job.status for job in (await service.jobs()).history] == ["succeeded", "succeeded"]
+        board = await service._job_queue.jobs()
+        assert [job.status for job in board.history] == ["succeeded", "succeeded"]
 
     asyncio.run(scenario())
 
@@ -218,7 +219,7 @@ def test_acquisition_result_keeps_selection_in_completed_job(tmp_path):
         )
         await service.enqueue(AdminCommand("acquire_edgar", identifiers=("NVDA",), years=(2024,)))
         await service._job_queue._queue.join()
-        job = (await service.jobs()).history[0]
+        job = (await service._job_queue.jobs()).history[0]
         assert job.status == "succeeded"
         progress = stored_progress(job.result_refs)
         assert progress is not None
@@ -294,7 +295,7 @@ def test_restored_embedding_usage_ledger_cannot_be_retried_or_read_as_a_command(
         )
         store.rows[row.job_id] = replace(row, status="failed")
         service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
-        assert not (await service.jobs()).history
+        assert not (await service._job_queue.jobs()).history
         with pytest.raises(ValueError, match="cannot be executed"):
             await service.retry(row.job_id)
 

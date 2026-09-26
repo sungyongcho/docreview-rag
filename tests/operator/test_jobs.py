@@ -185,7 +185,7 @@ async def _exercise_corpus_worker(tmp_path) -> tuple[bool, str]:
             created_id = created.job_id
             await service._job_queue._queue.join()
             await asyncio.sleep(0.1)
-            board = await service.jobs()
+            board = await service._job_queue.jobs()
             persisted = await store.get(created.job_id)
             assert board.history[0].status == "succeeded"
             assert persisted is not None

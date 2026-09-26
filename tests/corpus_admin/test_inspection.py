@@ -138,7 +138,7 @@ def test_status_recomputes_after_the_max_age_and_on_invalidation(tmp_path, monke
         await service.status(max_age_s=2.0)
         clock["now"] += 2.0
         await service.status(max_age_s=2.0)
-        service.invalidate_status()
+        service._inspector.invalidate_status()
         await service.status(max_age_s=2.0)
         await service.status(max_age_s=0.0)
 

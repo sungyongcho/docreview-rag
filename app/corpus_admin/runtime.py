@@ -25,7 +25,6 @@ from app.corpus_admin.types import (
     CorpusSnapshot,
     CorpusStatus,
     DocumentDetail,
-    JobBoard,
 )
 from app.db.session_factory import SessionFactory
 from app.ingestion.source_deletion import SourceDeletion
@@ -91,10 +90,6 @@ class RuntimeCorpusAdminService:
         """
         return await self._inspector.status(max_age_s=max_age_s)
 
-    def invalidate_status(self) -> None:
-        """Drop the memoized reading so the next status call measures again."""
-        self._inspector.invalidate_status()
-
     async def snapshot(
         self,
         *,
@@ -136,10 +131,6 @@ class RuntimeCorpusAdminService:
     async def cancel(self, job_id: str) -> AdminJob:
         """Cancel queued work or request cooperative running-job cancellation."""
         return await self._job_queue.cancel(job_id)
-
-    async def jobs(self) -> JobBoard:
-        """Return one active job, FIFO queue, and newest-first bounded history."""
-        return await self._job_queue.jobs()
 
     async def recover_jobs(self) -> None:
         """Mark stale process-owned jobs interrupted once before accepting work."""
