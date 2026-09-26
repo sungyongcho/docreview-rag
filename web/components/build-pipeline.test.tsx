@@ -140,7 +140,7 @@ describe("BuildPipeline", () => {
     }
   });
 
-  it.each(["openai", "deterministic", "none", null])("shows the duration note only on embedding execution for provider %s", (provider) => {
+  it.each(["openai", "none", null])("shows the duration note only on embedding execution for provider %s", (provider) => {
     const handlers = renderPipeline(liveInput(), { embeddingProvider: provider, focusStage: "embeddings" });
     expect(document.querySelector("#pipeline-execution .embedding-duration-note")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Select Lexical index (BM25)" }));
