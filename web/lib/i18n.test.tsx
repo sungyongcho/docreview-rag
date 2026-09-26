@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
@@ -44,6 +45,13 @@ function sourceFiles(directories: string[], extension: RegExp): string[] {
     }
   }
   return files;
+}
+
+/** Files the repository ships under the given directories. Local golden drafts, caches and
+ * other untracked files stay out, so the result is the same on every checkout. */
+function trackedFiles(directories: string[], extension: RegExp): string[] {
+  const listed = execFileSync("git", ["ls-files", "-z", "--", ...directories], { encoding: "utf8" });
+  return listed.split("\0").filter((name) => name !== "" && extension.test(name));
 }
 
 function escapeRegExp(text: string) {
@@ -106,7 +114,7 @@ function reachableUiText() {
     visit(tree);
   }
   for (const file of sourceFiles(UI_DIRECTORIES, /\.json$/)) texts.push(readFileSync(file, "utf8"));
-  for (const file of sourceFiles(SERVER_DIRECTORIES, /\.(py|json)$/)) texts.push(readFileSync(file, "utf8"));
+  for (const file of trackedFiles(SERVER_DIRECTORIES, /\.(py|json)$/)) texts.push(readFileSync(file, "utf8"));
   const joined = texts.join("\n");
   // The UI prints API identifiers such as `stable_hit` with spaces before translating them.
   return { corpus: `${joined}\n${joined.replaceAll("_", " ")}`, builtStrings };
