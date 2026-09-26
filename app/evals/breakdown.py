@@ -1,7 +1,8 @@
 """Group one complete scored golden suite by its declared taxonomy.
 
 This module performs no retrieval or I/O. It validates a complete case-to-score
-mapping before delegating every aggregate calculation to ``score_suite``.
+mapping before delegating every aggregate calculation to ``score_suite``, through the
+per-category grouping the decomposition comparison shares.
 """
 
 from __future__ import annotations
@@ -109,6 +110,35 @@ def _validated_pairs(
     return pairs
 
 
+def group_scores_by_category(
+    pairs: Sequence[tuple[GoldenCategory, CaseScore]],
+) -> tuple[GroupScore, ...]:
+    """Aggregate scored cases per golden category.
+
+    Parameters
+    ----------
+    pairs : Sequence[tuple[GoldenCategory, CaseScore]]
+        Each scored case's golden category and its retrieval score.
+
+    Returns
+    -------
+    tuple[GroupScore, ...]
+        Nonempty category aggregates in ``GoldenCategory`` declaration order.
+
+    Notes
+    -----
+    ``score_suite`` remains the single implementation of macro averaging. The
+    repeated scan is retained because the fixed taxonomy has at most five groups and
+    a one-pass bucket benchmark saved only microseconds while increasing peak memory.
+    """
+    results: list[GroupScore] = []
+    for group in get_args(GoldenCategory):
+        members = [score for category, score in pairs if category == group]
+        if members:
+            results.append(GroupScore(group=group, suite=score_suite(members)))
+    return tuple(results)
+
+
 def breakdown_by_category(
     cases: Sequence[GoldenCase],
     scores: Sequence[CaseScore],
@@ -131,17 +161,6 @@ def breakdown_by_category(
     ------
     ValueError
         If case-score pairing is incomplete or inconsistent.
-
-    Notes
-    -----
-    ``score_suite`` remains the single implementation of macro averaging. The
-    repeated scan is retained because the fixed taxonomy has at most five groups and
-    a one-pass bucket benchmark saved only microseconds while increasing peak memory.
     """
     pairs = _validated_pairs(cases, scores)
-    results: list[GroupScore] = []
-    for group in get_args(GoldenCategory):
-        members = [score for case, score in pairs if case.category == group]
-        if members:
-            results.append(GroupScore(group=group, suite=score_suite(members)))
-    return tuple(results)
+    return group_scores_by_category([(case.category, score) for case, score in pairs])

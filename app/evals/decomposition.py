@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from app.evals.breakdown import group_scores_by_category
 from app.evals.cli import positive_int
 from app.evals.identity import artifact_filename
 from app.evals.loader import DEFAULT_GOLDEN_PATH, load_golden_cases
@@ -19,7 +20,6 @@ from app.evals.retrieval_eval import (
     evaluate_retriever,
     write_evaluation_artifact,
 )
-from app.evals.scoring import CaseScore, score_suite
 from app.retrieval.hybrid import DEFAULT_RRF_K
 
 if TYPE_CHECKING:
@@ -48,25 +48,24 @@ def category_metrics(evaluation: RetrievalEvaluation) -> dict[str, dict[str, flo
     Notes
     -----
     Absent cases remain unscored, matching M3. Each category's numbers come from
-    :func:`~app.evals.scoring.score_suite` — the single implementation of macro
-    averaging — so the split shows whether decomposition moves ``multi_hop``
-    without regressing ``simple_lookup``, on exactly the suite-level arithmetic.
+    :func:`~app.evals.breakdown.group_scores_by_category` — the same per-category
+    :func:`~app.evals.scoring.score_suite` the taxonomy breakdown uses — so the split
+    shows whether decomposition moves ``multi_hop`` without regressing
+    ``simple_lookup``, on exactly the suite-level arithmetic. Categories are keyed in
+    name order.
     """
-    grouped: dict[str, list[CaseScore]] = {}
-    for case in evaluation.cases:
-        if case.score is None:
-            continue
-        grouped.setdefault(case.golden.category, []).append(case.score)
-    metrics: dict[str, dict[str, float]] = {}
-    for category in sorted(grouped):
-        suite_score = score_suite(grouped[category])
-        metrics[category] = {
-            "scored_case_count": float(suite_score.case_count),
-            "recall_at_k": suite_score.recall_at_k,
-            "hit_rate_at_k": suite_score.hit_rate_at_k,
-            "mrr": suite_score.mrr,
+    groups = group_scores_by_category(
+        [(case.golden.category, case.score) for case in evaluation.cases if case.score is not None]
+    )
+    return {
+        group.group: {
+            "scored_case_count": float(group.suite.case_count),
+            "recall_at_k": group.suite.recall_at_k,
+            "hit_rate_at_k": group.suite.hit_rate_at_k,
+            "mrr": group.suite.mrr,
         }
-    return metrics
+        for group in sorted(groups, key=lambda group: group.group)
+    }
 
 
 def _arm_payload(
