@@ -188,6 +188,76 @@ def _document_resource(document: Document, chunk_count: int) -> DocumentResource
     )
 
 
+type EngineResolver = Callable[[], Awaitable[tuple[LLMProvider, ProviderBudget]]]
+
+
+def _already_resolved(provider: LLMProvider, budget: ProviderBudget) -> EngineResolver:
+    """Hand an engine the caller already resolved to code that resolves one per call.
+
+    A review resolves its engine once, before any stage runs, and its query translations
+    must use that same provider and budget rather than resolving the engine again.
+    """
+
+    async def resolved() -> tuple[LLMProvider, ProviderBudget]:
+        """Return the engine resolved for this review."""
+        return provider, budget
+
+    return resolved
+
+
+async def _routed_query_variants(
+    query: str,
+    languages: tuple[str, ...],
+    resolve_engine: EngineResolver,
+) -> dict[str, str]:
+    """Translate the retrieval query into every scoped corpus language other than its own.
+
+    Each language lane is searched with text in its own language, so a Korean question
+    can still match English filings. The engine is resolved just before each translation,
+    which keeps a request that needs no translation free of any provider requirement.
+
+    Parameters
+    ----------
+    query : str
+        Retrieval query chosen by the path decision.
+    languages : tuple[str, ...]
+        Resolved scope languages; an unrestricted scope is translated into English only.
+    resolve_engine : EngineResolver
+        Supplies the provider and budget for one translation.
+
+    Returns
+    -------
+    dict[str, str]
+        Translated query per target language, in scope order.
+
+    Raises
+    ------
+    ApiProblemError
+        Typed 503 ``query_routing_failed`` when a translation fails.
+    """
+    routed_queries: dict[str, str] = {}
+    source_language = detect_query_language(query)
+    for language in languages or ("en",):
+        if language == source_language:
+            continue
+        provider, budget = await resolve_engine()
+        try:
+            async with stage("route"):
+                routed = await route_query(
+                    query,
+                    target_language=cast("Literal['en', 'ko']", language),
+                    llm_provider=provider,
+                    provider_budget=budget,
+                )
+        except QueryTranslationError as error:
+            raise unavailable(
+                "query_routing_failed",
+                f"Query routing failed for {language} ({type(error).__name__}).",
+            ) from error
+        routed_queries[language] = routed.translated_query
+    return routed_queries
+
+
 class RuntimeApiServices(ApiServices):
     """Compose API resources over one session per synchronous request.
 
@@ -498,25 +568,11 @@ class RuntimeApiServices(ApiServices):
                 retrieval_query = cast("str", path["retrieval_query"])
                 routed_queries: dict[str, str] = {}
                 if self._query_routing_enabled and profile.route_by_language:
-                    source_language = detect_query_language(retrieval_query)
-                    for language in scope.filters.languages or ("en",):
-                        if language == source_language:
-                            continue
-                        provider, budget = await self._engines.resolve_engine(request)
-                        try:
-                            async with stage("route"):
-                                routed = await route_query(
-                                    retrieval_query,
-                                    target_language=cast("Literal['en', 'ko']", language),
-                                    llm_provider=provider,
-                                    provider_budget=budget,
-                                )
-                        except QueryTranslationError as error:
-                            raise unavailable(
-                                "query_routing_failed",
-                                f"Query routing failed for {language} ({type(error).__name__}).",
-                            ) from error
-                        routed_queries[language] = routed.translated_query
+                    routed_queries = await _routed_query_variants(
+                        retrieval_query,
+                        scope.filters.languages,
+                        lambda: self._engines.resolve_engine(request),
+                    )
                 async with stage("retrieve"), self._session_factory() as session:
                     result = await self._retrieve_with_session(
                         session,
@@ -804,24 +860,11 @@ class RuntimeApiServices(ApiServices):
                 ) from error
         routed_queries: dict[str, str] = dict(snapshot.routing_queries) if snapshot else {}
         if snapshot is None and self._query_routing_enabled and profile.route_by_language:
-            source_language = detect_query_language(retrieval_query)
-            for language in scope.filters.languages or ("en",):
-                if language == source_language:
-                    continue
-                try:
-                    async with stage("route"):
-                        routed = await route_query(
-                            retrieval_query,
-                            target_language=cast("Literal['en', 'ko']", language),
-                            llm_provider=llm_provider,
-                            provider_budget=provider_budget,
-                        )
-                except QueryTranslationError as error:
-                    raise unavailable(
-                        "query_routing_failed",
-                        f"Query routing failed for {language} ({type(error).__name__}).",
-                    ) from error
-                routed_queries[language] = routed.translated_query
+            routed_queries = await _routed_query_variants(
+                retrieval_query,
+                scope.filters.languages,
+                _already_resolved(llm_provider, provider_budget),
+            )
         path["routing_queries"] = dict(routed_queries)
         workflow_request = WorkflowRequest(
             run_id=self._run_id_factory(),
