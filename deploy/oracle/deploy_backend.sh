@@ -28,6 +28,7 @@ if [[ "${mode}" != rollback && ! "${DOCREVIEW_IMAGE}" =~ ^[a-zA-Z0-9][a-zA-Z0-9.
 fi
 
 if [[ "${mode}" == first-install ]]; then
+  : "${ARTIFACT_DIR:?DEPLOY_ARTIFACT_DIR is required for first-install (the verified restore bundle directory)}"
   : "${POSTGRES_PASSWORD:?DEPLOY_POSTGRES_PASSWORD is required in .env}"
   [[ -d "${ARTIFACT_DIR}" ]] || { echo "Deployment artifact directory not found: ${ARTIFACT_DIR}" >&2; exit 1; }
   # A validated allowlist never includes database.private.dump or local metadata.

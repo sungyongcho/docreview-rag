@@ -17,7 +17,7 @@ from dotenv import dotenv_values
 
 from app.operator.lifecycle_receipts import receipt_path
 from deploy.gcp.verify_artifacts import (
-    EVALUATIONS,
+    PublicBundle,
     digest,
     extract_artifacts,
     validate_artifacts,
@@ -71,15 +71,16 @@ def artifact_directory(root: Path, explicit: Path | None) -> Path:
     return candidates[0].resolve()
 
 
-def validate_restored_files(bundle: Path, target: Path, manifest: dict) -> None:
+def validate_restored_files(bundle: PublicBundle, target: Path) -> None:
     """Check actual mounted source/evaluation bytes, including on a later reuse invocation."""
-    if json.loads((target / "corpus/manifest.json").read_text()) != manifest:
+    if json.loads((target / "corpus/manifest.json").read_text()) != bundle.manifest:
         raise ValueError("The restored corpus manifest differs from the selected bundle.")
-    checksums = json.loads((bundle / "checksums.json").read_text())
-    files = [(target / "corpus" / item["path"], item["sha256"]) for item in manifest["artifacts"]]
+    files = [
+        (target / "corpus" / item["path"], item["sha256"]) for item in bundle.manifest["artifacts"]
+    ]
     files.extend(
-        (target / "eval-runs" / name, checksums[f"eval_runs/{name}"]["sha256"])
-        for name in EVALUATIONS
+        (target / "eval-runs" / name, bundle.checksums[f"eval_runs/{name}"]["sha256"])
+        for name in bundle.evaluations
     )
     for path, expected in files:
         if path.is_symlink() or not path.resolve().is_relative_to(target.resolve()):
@@ -274,10 +275,10 @@ def prepare(root: Path, *, artifacts: Path | None = None, check: bool = False) -
     from scripts.stack.cli import require_running_mode
 
     require_running_mode(root, "prod")
-    bundle = artifact_directory(root, artifacts)
-    print(f"[1/5] Validate saved public bundle: {bundle}", flush=True)
-    manifest = validate_artifacts(bundle)
-    fingerprint = hashlib.sha256((bundle / "checksums.json").read_bytes()).hexdigest()
+    bundle_dir = artifact_directory(root, artifacts)
+    print(f"[1/5] Validate saved public bundle: {bundle_dir}", flush=True)
+    bundle = validate_artifacts(bundle_dir)
+    fingerprint = hashlib.sha256((bundle_dir / "checksums.json").read_bytes()).hexdigest()
     target = storage(root)
     database = LocalDatabase(root)
     receipt = receipt_path(root, "prod-prepare")
@@ -295,9 +296,9 @@ def prepare(root: Path, *, artifacts: Path | None = None, check: bool = False) -
             )
         recovering = previous.get("status") != "succeeded"
         try:
-            validate_restored_files(bundle, target, manifest)
+            validate_restored_files(bundle, target)
             report = database.report()
-            validate_database(manifest, report, allow_runtime_history=True)
+            validate_database(bundle, report, allow_runtime_history=True)
             if recovering:
                 database.validate_references()
         except (ValueError, OSError) as error:
@@ -314,7 +315,7 @@ def prepare(root: Path, *, artifacts: Path | None = None, check: bool = False) -
                     "prod-prepare",
                     status="succeeded",
                     bundle_sha256=fingerprint,
-                    documents=len(manifest["documents"]),
+                    documents=len(bundle.manifest["documents"]),
                     chunks=report["chunks"],
                     embeddings=report["matching_embeddings"],
                     readiness="ready",
@@ -328,7 +329,8 @@ def prepare(root: Path, *, artifacts: Path | None = None, check: bool = False) -
         )
     if check:
         print(
-            f"Bundle verified: {len(manifest['documents'])} documents. Local PROD is not prepared."
+            f"Bundle verified: {len(bundle.manifest['documents'])} documents. "
+            "Local PROD is not prepared."
         )
         return 0
     with preparation_lock(root):
@@ -336,7 +338,7 @@ def prepare(root: Path, *, artifacts: Path | None = None, check: bool = False) -
         current = json.loads(receipt.read_text()) if receipt.exists() else {}
         if current != previous:
             raise ValueError("Preparation state changed; no data was changed.")
-        validate_artifacts(bundle)
+        bundle = validate_artifacts(bundle_dir)
         for name in ("corpus", "eval-runs"):
             path = target / name
             if path.exists() and any(path.iterdir()):
@@ -395,16 +397,16 @@ def prepare(root: Path, *, artifacts: Path | None = None, check: bool = False) -
                 "filing",
                 "-d",
                 "filing",
-                input_file=bundle / "database.public.dump",
+                input_file=bundle.root / "database.public.dump",
             )
             print(
                 "[4/5] Verify restored identities, vectors, snapshots and empty private history.",
                 flush=True,
             )
             report = database.report()
-            validate_database(manifest, report)
+            validate_database(bundle, report)
             database.validate_references()
-            validate_restored_files(bundle, target, manifest)
+            validate_restored_files(bundle, target)
             print("[5/5] Start the local PROD API and verify actual search readiness.", flush=True)
             database.run("up", "-d", "--no-deps", "app")
             readiness = wait_search_ready(root)
@@ -413,7 +415,7 @@ def prepare(root: Path, *, artifacts: Path | None = None, check: bool = False) -
                 "prod-prepare",
                 status="succeeded",
                 bundle_sha256=fingerprint,
-                documents=len(manifest["documents"]),
+                documents=len(bundle.manifest["documents"]),
                 chunks=report["chunks"],
                 embeddings=report["matching_embeddings"],
                 readiness=readiness["status"],

@@ -1616,3 +1616,72 @@ The capture wrapper discarded those fields. All three temporary DB fingerprints 
 runs/traces/eval-results, and the corresponding tmpfs containers were removed. No user DB
 was searched or changed. No new paid run or provider lookup was attempted. Current per-case
 decomposition recording already prevents this specific evidence gap in future runs.
+
+## Current-format public evaluation bundle
+
+The application source used for regeneration is main `dd82ee1535642f985236f83984f90d395ef69c5c`.
+This change affects bundle validation/restoration and retired launcher defaults, not retrieval,
+scoring, provider logic or DEV/PROD data authority. Existing application/Web verification
+remains applicable. The new local bundle is `20260926-portfolio18`; generation scripts,
+original hashes and runtime logs are retained in `/tmp/public-eval-20260926/`.
+
+The original public dump was restored into an isolated PostgreSQL instance without its old
+evaluation/snapshot table data. Current `make_retriever(provider=None, strategy="lexical")`,
+`evaluate_retriever`, `persist_evaluation` and `SnapshotService.create` generated four new
+records using the exact original cases, profiles and source scope. The preserved embedding
+identity describes the saved vectors frozen in each snapshot; no embedding request was made.
+
+| Published run | Cases / scored positives | Recall = hit rate | MRR |
+| --- | --- | --- | --- |
+| DART Korean BM25, publication 1 | 28 / 24 | 0.7083333333333334 | 0.4847222222222222 |
+| DART English BM25, publication 2 | 28 / 24 | 0 | 0 |
+| DART Korean BM25, publication 3 | 28 / 24 | 0.7083333333333334 | 0.4847222222222222 |
+| DART Korean ts_rank_cd, publication 4 | 28 / 24 | 0.08333333333333333 | 0.049999999999999996 |
+
+Every quality value matches the corresponding original run. English lexical recall was
+already zero; it is not a newly introduced decline. Raw hit evidence and measured latency
+are newly generated; neither ranking-byte equivalence nor comparable benchmark latency is
+claimed. Golden case objects and their original dataset digests are unchanged. Source hashes
+for the original public dump, archive and four evaluation files match their original checksums.
+The private dump was never opened or copied.
+
+The first task DB's 2GB tmpfs filled while materializing snapshot 4, after all four evaluations
+and three snapshots had committed. A preserved checkpoint was restored into a 6GB task DB;
+only the rolled-back snapshot creation was repeated. PostgreSQL correctly retained its sequence
+gap, so snapshot IDs are 1, 2, 3 and 5. The diagnostic harness initially assumed consecutive IDs;
+it was corrected to read the actual result-to-snapshot mapping. No application workaround or
+score alteration resulted. Initial direct-backend local preparation lacked the required Next
+proxy path; the final fixture uses the actual local PROD Compose web/API topology.
+
+The final bundle is preserved at
+`/home/wwaya/.local/share/docreview/prod-artifacts/20260926-portfolio18`.
+Its `checksums.json` SHA-256 is
+`8c6198da6b79b4e1f293b08435ba1bdcdd42b999163951994b6ea7baa96f0a91`;
+`database.public.dump` SHA-256 is
+`f59f48a5d6e3ec685d26b36b8a046f5b891b05441fc572125f4f943cb2e52888`.
+The permanent copy and the tested staging bundle have identical public-file manifests.
+
+| Verification | Final result |
+| --- | --- |
+| `pytest -q tests/scripts/deploy/test_gcp_backend.py tests/scripts/stack/test_prod.py -m 'not live_postgres'` | 46 passed, 1 live test deselected; corrected duplicate-key fixture was also rerun separately and passed, not counted twice |
+| GCP setup/wrapper and Oracle deployment entrypoint tests with fake external commands | 10 passed; first-install blocks missing explicit artifacts before remote writes, update/rollback remain independent |
+| `tests/scripts/deploy/test_01_public_restore.py -m live_postgres --require-live-postgres` against the disposable generation DB and exact bundle | 1 passed |
+| `tests/scripts/stack/test_prod.py -m live_postgres --require-live-postgres` against the separate freshly prepared local PROD Compose volume | 1 passed, 15 unit cases deselected |
+| Actual `prod.prepare` into empty separate Compose storage | Passed all five stages, including fresh dump restoration, references and readiness; then current-format bundle verifier passed on the permanent copy |
+| Actual Next-proxied public dataset/evaluation routes for snapshot IDs 1, 2, 3, 5 | 8 HTTP 200 responses; 28 cases each, matching artifact quality metrics; `/ready` is PROD/readonly with 18 documents and 10,586 matching embeddings |
+| Scoped Ruff/format, basedpyright, shell syntax and diff check | Passed; basedpyright 0 errors/warnings |
+| Original old-format bundle through the current verifier | Expected rejection for missing evaluated identity; no compatibility fallback |
+
+The final reviewer independently compared all eight captured response bodies with the
+permanent bundle, checked exact case IDs, dataset digests, scores and result/snapshot links,
+and reviewed the checkpoint recovery. Generation and validation scripts/logs are diagnostic
+artifacts outside maintained source, not a runtime migration path. Initial failures above
+remain recorded; final passes do not relabel them as successful runs.
+
+No full Python/Web suite, coverage recollection, fresh application image build, paid call,
+provider-authentication check or deployment was performed for this bounded bundle change.
+The previously verified application image was reused with current unchanged Python application
+source. No original bundle, user database or existing local PROD storage was replaced.
+Task-owned containers/volumes were removed after verification; generated artifacts and logs
+remain. The code/refactoring scope and local bundle-detail gap are complete. Live deployment
+and the unrecoverable historical decomposition text are separate from that completion.

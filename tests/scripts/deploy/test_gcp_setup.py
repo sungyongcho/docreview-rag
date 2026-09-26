@@ -28,8 +28,15 @@ def launcher(tmp_path):
     checkout = tmp_path / "checkout"
     scripts = checkout / "deploy/gcp"
     scripts.mkdir(parents=True)
-    for name in ("setup.sh", "build_image.sh", "deploy_env_config.sh"):
+    for name in (
+        "setup.sh",
+        "build_image.sh",
+        "deploy_env_config.sh",
+        "deploy_all.sh",
+        "deploy_backend.sh",
+    ):
         shutil.copy2(ROOT / "deploy/gcp" / name, scripts / name)
+    shutil.copytree(ROOT / "deploy/gcp/lib", scripts / "lib")
     dotenv = checkout / ".env"
     dotenv.write_text(
         "DEPLOY_GCP_PROJECT=fixture-project\n"
@@ -47,6 +54,8 @@ def launcher(tmp_path):
         "    out.write(json.dumps(args) + '\\n')\n"
         "if args[:2] == ['auth', 'list']:\n"
         "    print('fixture@example.com')\n"
+        "if args[:2] == ['compute', 'ssh'] and 'mktemp -d' in args[-1]:\n"
+        "    print('/tmp/docreview-deploy.TEST')\n"
         "existing = set(os.environ.get('GCLOUD_EXISTING', '').split(','))\n"
         "if 'describe' in args and not existing.intersection(args):\n"
         "    sys.exit(1)\n",
@@ -68,6 +77,32 @@ def launcher(tmp_path):
         "DEPLOY_SUMMARY": "0",
     }
     return scripts, env, log
+
+
+@pytest.mark.parametrize("mode", ["first-install", "update", "rollback"])
+def test_backend_wrapper_requires_artifacts_only_for_first_install(launcher, mode):
+    """The wrapper preserves backend validation and leaves updates independent of bundles."""
+    scripts, env, log = launcher
+    env = {
+        **{key: value for key, value in env.items() if key != "DEPLOY_ARTIFACT_DIR"},
+        "GCLOUD_EXISTING": "fixture-project,docreview-rag",
+    }
+    result = subprocess.run(
+        ["bash", str(scripts / "deploy_all.sh"), "backend", "--mode", mode, "--yes"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    commands = command_log(log)
+    remote = [cmd for cmd in commands if cmd[:2] in (["compute", "ssh"], ["compute", "scp"])]
+    if mode == "first-install":
+        assert result.returncode != 0
+        assert "DEPLOY_ARTIFACT_DIR is required for first-install" in result.stderr
+        assert remote == []
+    else:
+        assert result.returncode == 0, result.stderr
+        assert any(f"'{mode}'" in cmd[-1] and "apply_backend.sh" in cmd[-1] for cmd in remote)
+        assert not any("database.public.dump" in " ".join(cmd) for cmd in remote)
 
 
 def test_setup_provisions_registry_and_service_account(launcher):

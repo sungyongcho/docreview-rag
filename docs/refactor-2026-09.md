@@ -1505,3 +1505,34 @@ therefore explain the answer leaving the top five. Existing local evidence does 
 the actual generated questions, so their semantic difference remains unrecoverable. No
 application-code regression was demonstrated and no scoring/prompt change was justified.
 See the final verification appendix for commands, outcomes and remaining limits.
+
+## 17. Current-format public evaluation bundle
+
+The user approved regenerating the public evaluation bundle and removing its remaining
+old-format dependencies. This closes section 16's bundle-detail limitation locally; it
+does not reconstruct the historical LLM decomposition text or authorize deployment.
+
+Four genuine lexical evaluations reused the original 112 source-bound golden cases and
+saved corpus/vectors, then ran current retrieval, scoring, persistence and snapshot creation.
+No provider was instantiated. A socket audit allowed only the disposable PostgreSQL port.
+The new bundle retains the original golden-file provenance separately from current evaluated
+case identity, scoring settings, new retrieval evidence and measured timestamps/latency.
+All four recall, hit-rate and MRR values match their original runs. Original bundle bytes
+were preserved; this is a new evaluation, not an in-place conversion or restored legacy reader.
+
+| Removed implementation | Current owner and preserved behavior | Independent non-author verdicts |
+| --- | --- | --- |
+| Four hardcoded September 9 evaluation names and `PUBLIC_FILES` | `PublicBundle` selects exactly four confined evaluation paths from checksums and owns the validated evidence used by extraction and restoration. Private dump/metadata remain excluded. | Coordinator, paths reviewer, final reviewer: remove |
+| GCP wrapper's duplicated first-install checks and retired bundle path | `deploy_backend.sh` retains required artifact/password and bundle verification before remote staging. Update/rollback require no bundle. | Coordinator, bundle reviewer, final reviewer: remove |
+| Oracle retired bundle path default | Explicit `DEPLOY_ARTIFACT_DIR` is required only by first-install, before source sync or remote writes. | Coordinator, bundle reviewer, final reviewer: remove |
+
+The old restore gate checked file hashes and row counts but could accept a bundle whose
+public detail returned 409. It now requires current evaluated identity and scoring, rejects
+duplicate JSON keys, and compares restored suite/config/metrics and snapshot source identities
+with the exact evaluation files. No application reader fallback is added. Existing source,
+vector, private-history, preservation and read-only reuse checks remain. No existing test
+or file was deleted. Paired CLI tutorials explain explicit selection and original preservation.
+
+Reviewer contributions in this session comprise the verifier/restore contract correction,
+removal of retired defaults and duplicate checks, genuine bundle regeneration, and validation.
+The evidence appendix distinguishes final checks, fixture failures and actions not performed.

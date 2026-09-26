@@ -109,6 +109,11 @@ DEV에는 `--ready`가 없습니다. `rag-dev corpus` 또는 웹의 데이터 �
 선택합니다. 번들이 없거나 후보가 여러 개면 원인과 다음 조치를 안내하고 중단합니다.
 다운로드나 유료 임베딩 생성을 자동 실행하지 않습니다.
 
+현재 형식으로 평가를 생성한 번들을 사용합니다. 원본 `20260909-portfolio18` 번들은
+기록 보존용으로 남겨 두며, 해당 번들의 구형 평가 기록은 지원하지 않습니다.
+원본과 새 번들을 함께 보관할 때는 `--artifacts` 또는 `DOCREVIEW_PROD_ARTIFACT_DIR`로
+현재 번들을 명시적으로 선택하세요.
+
 공개 문서 18개를 포함한 배포 번들만 지원합니다. 체크섬과 배포 형식을 검증하고
 `database.private.dump`는 복원하지 않습니다. PROD는 DEV의 `pg_data`와 별도인
 `prod_pg_data` 볼륨을 사용하며 파일은 `data/local-prod/{corpus,eval-runs,runtime}`에

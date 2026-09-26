@@ -1,7 +1,8 @@
 """Validate deployment arguments and preservation with fake cloud/container commands."""
 
+import asyncio
+from datetime import UTC, datetime, timedelta
 import hashlib
-import importlib.util
 import io
 import json
 import os
@@ -13,13 +14,12 @@ import tarfile
 
 import pytest
 
+from app.evals.identity import artifact_filename
+from app.evals.retrieval_eval import evaluate_retriever, write_evaluation_artifact
+from app.evals.types import EvaluationRetrieval, GoldenCase
+from deploy.gcp import verify_artifacts as artifacts
+
 ROOT = Path(__file__).resolve().parents[3]
-SPEC = importlib.util.spec_from_file_location(
-    "gcp_artifacts", ROOT / "deploy/gcp/verify_artifacts.py"
-)
-assert SPEC is not None and SPEC.loader is not None
-ARTIFACTS = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(ARTIFACTS)
 
 
 @pytest.fixture
@@ -63,8 +63,39 @@ def bundle(tmp_path):
             archive.addfile(member, io.BytesIO(source))
     (root / "database.public.dump").write_bytes(b"public-dump-fixture")
     (root / "database.private.dump").write_bytes(b"never-transfer-this")
-    for name in ARTIFACTS.EVALUATIONS:
-        (root / "eval_runs" / name).write_text('{"cases": [1], "metrics": {"mrr": 1}}')
+    golden_file = ROOT / "data/golden/dart_retrieval_ko.json"
+    golden = json.loads(golden_file.read_text())[0]
+    golden["answers"] = [
+        {
+            "doc_id": "005930-2024",
+            "source_sha256": hashlib.sha256(b"original").hexdigest(),
+            "start_char": 0,
+            "end_char": 4,
+        }
+    ]
+
+    async def no_hits(_query, _k):
+        """Measure a valid miss without external queries or provider calls."""
+        return EvaluationRetrieval(hits=())
+
+    for offset in range(4):
+        recorded_at = datetime(2026, 9, 26, tzinfo=UTC) + timedelta(seconds=offset)
+        evaluation = asyncio.run(
+            evaluate_retriever(
+                [GoldenCase.model_validate(golden)],
+                no_hits,
+                suite="dart-ko",
+                config={
+                    "admin_identity": {
+                        "golden_sha256": hashlib.sha256(golden_file.read_bytes()).hexdigest()
+                    }
+                },
+                recorded_at=recorded_at,
+            )
+        )
+        write_evaluation_artifact(
+            root / "eval_runs" / artifact_filename(recorded_at, "admin-dart-ko"), evaluation
+        )
     refresh_checksums(root)
     return root
 
@@ -78,7 +109,15 @@ def refresh_checksums(root):
                     "bytes": (root / name).stat().st_size,
                     "sha256": hashlib.sha256((root / name).read_bytes()).hexdigest(),
                 }
-                for name in ARTIFACTS.PUBLIC_FILES
+                for name in (
+                    "database.public.dump",
+                    "database.private.dump",
+                    "originals.tar.gz",
+                    *(
+                        str(path.relative_to(root))
+                        for path in sorted((root / "eval_runs").glob("*.json"))
+                    ),
+                )
             }
         )
     )
@@ -86,7 +125,10 @@ def refresh_checksums(root):
 
 def database_report(bundle):
     """Supply expected persisted identities independently from shell command responses."""
-    manifest = ARTIFACTS.validate_artifacts(bundle)
+    manifest = artifacts.validate_artifacts(bundle).manifest
+    evaluations = [
+        json.loads(path.read_text()) for path in sorted((bundle / "eval_runs").glob("*.json"))
+    ]
     return {
         "documents": sorted(row["document_id"] for row in manifest["documents"]),
         "chunks": 10586,
@@ -95,7 +137,31 @@ def database_report(bundle):
         "snapshots": 4,
         "public_ready_snapshots": 4,
         "complete_snapshot_documents": 4,
-        "evaluation_paths": sorted(f"/app/data/eval_runs/{name}" for name in ARTIFACTS.EVALUATIONS),
+        "evaluation_paths": [
+            f"/app/data/eval_runs/{path.name}"
+            for path in sorted((bundle / "eval_runs").glob("*.json"))
+        ],
+        "evaluations": [
+            {
+                "path": f"/app/data/eval_runs/{path.name}",
+                "suite": payload["suite"],
+                "config": payload["config"],
+                "metrics": {
+                    key: value
+                    for key, value in payload["metrics"].items()
+                    if key not in {"k", "scored_case_count"}
+                },
+                "snapshot_sources": [
+                    {
+                        "doc_id": "005930-2024",
+                        "source_sha256": hashlib.sha256(b"original").hexdigest(),
+                    }
+                ],
+            }
+            for path, payload in zip(
+                sorted((bundle / "eval_runs").glob("*.json")), evaluations, strict=True
+            )
+        ],
         "linked_evaluations": 4,
         "runs": 0,
         "traces": 0,
@@ -216,10 +282,43 @@ def test_launcher_requires_an_explicit_mode(launcher):
     assert command_log(log) == []
 
 
-def test_corrupted_bundle_blocks_cloud_staging(launcher, bundle):
-    """A mismatch is caught before any credential or artifact transfer."""
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "checksum",
+        "missing_file",
+        "old_identity",
+        "old_scoring",
+        "changed_case",
+        "unsafe_path",
+        "duplicate_key",
+    ],
+)
+def test_corrupted_bundle_blocks_cloud_staging(launcher, bundle, failure):
+    """Invalid files and unbound evaluation evidence fail before any cloud transfer."""
     script, env, log = launcher
-    (bundle / "database.public.dump").write_bytes(b"changed")
+    path = next((bundle / "eval_runs").glob("*.json"))
+    if failure == "checksum":
+        (bundle / "database.public.dump").write_bytes(b"changed")
+    elif failure == "missing_file":
+        path.unlink()
+    elif failure == "unsafe_path":
+        checksums = json.loads((bundle / "checksums.json").read_text())
+        checksums["eval_runs/../outside.json"] = checksums.pop(str(path.relative_to(bundle)))
+        (bundle / "checksums.json").write_text(json.dumps(checksums))
+    else:
+        payload = json.loads(path.read_text())
+        if failure == "old_identity":
+            payload["config"].pop("evaluated_golden_sha256")
+        elif failure == "old_scoring":
+            payload["config"].pop("scoring")
+        elif failure == "changed_case":
+            payload["cases"][0]["golden"]["question"] = "Changed after evaluation"
+        text = json.dumps(payload)
+        if failure == "duplicate_key":
+            text = text.replace('"suite": "dart-ko"', '"suite": "dart-ko", "suite": "dart-ko"')
+        path.write_text(text)
+        refresh_checksums(bundle)
     result = subprocess.run(["bash", str(script), "first-install"], env=env, capture_output=True)
     assert result.returncode != 0
     assert command_log(log) == []
@@ -332,11 +431,21 @@ def test_restore_failure_preserves_marker_and_blocks_retry(remote, failure):
     assert command_log(log) == before
 
 
-def test_invalid_database_report_blocks_public_start(remote):
-    """Successful pg_restore alone cannot pass incomplete snapshot acceptance."""
+@pytest.mark.parametrize("failure", ["snapshots", "path", "config", "metrics", "source"])
+def test_invalid_database_report_blocks_public_start(remote, failure):
+    """A restore cannot pass with incomplete snapshots or mismatched published evidence."""
     _, _, _, data, env, log = remote
     report = json.loads(env["DATABASE_REPORT"])
-    report["snapshots"] = 3
+    if failure == "snapshots":
+        report["snapshots"] = 3
+    elif failure == "path":
+        report["evaluation_paths"][0] = "/app/data/eval_runs/previous.json"
+    elif failure == "config":
+        report["evaluations"][0]["config"].pop("evaluated_golden_sha256")
+    elif failure == "metrics":
+        report["evaluations"][0]["metrics"]["mrr"] = 0.5
+    else:
+        report["evaluations"][0]["snapshot_sources"][0]["source_sha256"] = "0" * 64
     result = run_remote(remote, "first-install", DATABASE_REPORT=json.dumps(report))
     assert result.returncode != 0
     assert (data / ".restore-in-progress").exists()
@@ -407,7 +516,7 @@ def test_archive_rejects_traversal_and_links(bundle, name):
         archive.addfile(member)
     refresh_checksums(bundle)
     with pytest.raises(ValueError, match="Unsafe"):
-        ARTIFACTS.validate_artifacts(bundle)
+        artifacts.validate_artifacts(bundle)
 
 
 def test_extraction_refuses_preexisting_sources(bundle, tmp_path):
@@ -416,7 +525,7 @@ def test_extraction_refuses_preexisting_sources(bundle, tmp_path):
     (target / "corpus").mkdir(parents=True)
     (target / "corpus/keep").write_text("existing")
     with pytest.raises(ValueError, match="not empty"):
-        ARTIFACTS.extract_artifacts(bundle, target)
+        artifacts.extract_artifacts(artifacts.validate_artifacts(bundle), target)
     assert (target / "corpus/keep").read_text() == "existing"
 
 
