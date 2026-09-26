@@ -17,6 +17,7 @@ from app.api.review_profile import (
     ServerBM25,
     StrictProfileModel,
     with_server_bm25,
+    with_server_bm25_for_builtin,
 )
 
 BUILTIN_IDS = frozenset({"balanced", "korean", "accuracy"})
@@ -65,7 +66,13 @@ def effective_catalog(catalog: PresetCatalog, server: ServerBM25) -> PresetCatal
         return catalog
     presets = [
         preset.model_copy(
-            update={"retrieval": with_server_bm25(preset.retrieval, server, builtin=preset.builtin)}
+            update={
+                "retrieval": (
+                    with_server_bm25_for_builtin(preset.retrieval, server)
+                    if preset.builtin
+                    else with_server_bm25(preset.retrieval, server)
+                )
+            }
         )
         for preset in catalog.presets
     ]
