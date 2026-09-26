@@ -103,7 +103,7 @@ def test_readiness_status_extends_max_age_while_a_job_is_registered() -> None:
     corpus = _RecordingCorpus()
     services = RuntimeAdminApiServices(
         runtime=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-        corpus=corpus,  # type: ignore[arg-type]
+        corpus=cast(RuntimeCorpusAdminService, corpus),
     )
 
     async def scenario() -> None:
