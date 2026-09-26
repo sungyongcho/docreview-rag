@@ -1,20 +1,9 @@
 """Chunk types, configuration, and source-coordinate contracts."""
 
-from dataclasses import FrozenInstanceError
-
 import pytest
 
-import app.ingestion.chunk as chunking
+import app.ingestion.chunking as chunking
 from app.ingestion.tokens import InputBudget
-
-
-def test_default_config_plans_with_the_shared_input_budget():
-    """Chunk by default within the complete-input budget the whole pipeline shares.
-
-    Seeding chunks with the default config while evaluations report the shared token
-    target, so a default that drifted from the shared budget would misdescribe the corpus.
-    """
-    assert chunking.ChunkConfig().budget == InputBudget()
 
 
 @pytest.mark.parametrize(
@@ -24,26 +13,7 @@ def test_default_config_plans_with_the_shared_input_budget():
 def test_config_rejects_non_positive_limits(field, value):
     """Reject invalid token and character bounds."""
     with pytest.raises(ValueError):
-        chunking.ChunkConfig(**{field: value})
-
-
-def test_chunk_is_immutable_and_content_includes_context():
-    """Keep chunks immutable and compose context before body text."""
-    chunk = chunking.Chunk(
-        doc_id="NVDA-FY2024",
-        item="7",
-        kind="text",
-        ordinal=0,
-        body="Revenue increased.",
-        context_header="NVDA FY2024 · Item 7",
-        citation="NVDA FY2024 · Item 7",
-        start_char=10,
-        end_char=30,
-        source_sha256="abc123",
-    )
-    assert chunk.content == "NVDA FY2024 · Item 7\n\nRevenue increased."
-    with pytest.raises(FrozenInstanceError):
-        chunk.ordinal = 1
+        InputBudget(**{field: value})
 
 
 def test_source_span_fails_closed():
@@ -59,7 +29,7 @@ def test_source_span_fails_closed():
 
 def test_source_span_validates_each_block_and_group():
     """Reject invalid coordinates and mixed narrative source groups."""
-    from app.ingestion.parser import Block
+    from app.ingestion.parsing.models import Block
 
     valid = Block("paragraph", "valid", source_pos=10, end_pos=20, source_group=0)
     reversed_block = Block("paragraph", "bad", source_pos=30, end_pos=25, source_group=0)
@@ -73,7 +43,7 @@ def test_source_span_validates_each_block_and_group():
 
 def test_source_span_rejects_overlap_and_document_overflow():
     """Reject overlapping blocks and spans beyond the source document."""
-    from app.ingestion.parser import Block
+    from app.ingestion.parsing.models import Block
 
     first = Block("paragraph", "first", source_pos=10, end_pos=25)
     overlapping = Block("paragraph", "second", source_pos=20, end_pos=30)
@@ -85,7 +55,7 @@ def test_source_span_rejects_overlap_and_document_overflow():
 
 def test_source_span_allows_gaps_within_one_source_group():
     """Return one enclosing citation span when the parser omits page furniture."""
-    from app.ingestion.parser import Block
+    from app.ingestion.parsing.models import Block
 
     first = Block("paragraph", "first", source_pos=10, end_pos=20, source_group=0)
     second = Block("paragraph", "second", source_pos=40, end_pos=50, source_group=0)

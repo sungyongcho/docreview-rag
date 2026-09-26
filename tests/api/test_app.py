@@ -4,15 +4,15 @@ from typing import cast
 
 from fastapi.testclient import TestClient
 
-from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import PROD_SURFACE, create_api_app
+from app.api.dependencies import AdminDependencies
 
 
 def test_read_only_docs_include_admin_contracts_without_exposing_handlers() -> None:
     """Production documentation describes every operation but mounts no admin handler."""
     application = create_api_app(surface=PROD_SURFACE)
     dev_application = create_api_app(
-        admin_services=cast(RuntimeAdminApiServices, object()),
+        admin_services=cast(AdminDependencies, object()),
     )
     expected_schema = dev_application.openapi()
 

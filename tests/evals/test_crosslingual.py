@@ -12,10 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 import app.evals.crosslingual as crosslingual
 from app.evals.crosslingual import arguments, build_arms
-from app.evals.crosslingual_arms import CROSSLINGUAL_SUITE, CROSSLINGUAL_TARGET_TOKENS, run_arm
-from app.evals.crosslingual_diagnostics import gateable_matrix
-from app.ingestion.manifest import Manifest
-from app.llm.provider import OpenAILLMProvider
+from app.evals.experiments.crosslingual import (
+    CROSSLINGUAL_SUITE,
+    CROSSLINGUAL_TARGET_TOKENS,
+    run_arm,
+)
+from app.ingestion.sources.models import Manifest
+from app.llm.openai import OpenAILLMProvider
 from tests.evals.crosslingual_support import arm, hit, scripted, suite
 from tests.evals.support import EVALUATION_RECORDED_AT
 
@@ -99,27 +102,18 @@ def test_run_arm_records_the_suite_the_command_was_given(monkeypatch):
     assert arguments([]).suite == CROSSLINGUAL_SUITE
 
 
-def test_the_gate_is_refused_before_a_corpus_when_the_matrix_cannot_be_gated():
-    """Decide gate feasibility from the requested axes alone."""
-    # --handling defaults to direct, so plain --gate can never be judged; refusing it
-    # only after indexing would spend the whole matrix on a run destined to fail.
-    assert gateable_matrix(build_arms(arguments([]), "token-hash-384", target_tokens=2048)) is False
-    assert (
-        gateable_matrix(
-            build_arms(
-                arguments(["--handling", "routed", "--languages", "en"]),
-                "token-hash-384",
-                target_tokens=2048,
-            )
-        )
-        is False
-    )
-    assert (
-        gateable_matrix(
-            build_arms(arguments(["--handling", "routed"]), "token-hash-384", target_tokens=2048)
-        )
-        is True
-    )
+@pytest.mark.parametrize("axes", [[], ["--handling", "routed", "--languages", "en"]])
+def test_the_gate_is_refused_before_a_corpus_when_the_matrix_cannot_be_gated(monkeypatch, axes):
+    """Reject an impossible gate before loading a provider or reading corpus data."""
+
+    def forbidden(*args, **kwargs):
+        """Fail if a rejected request reaches an expensive input boundary."""
+        raise AssertionError("invalid gate reached corpus or provider construction")
+
+    monkeypatch.setattr(crosslingual, "get_embedding_provider", forbidden)
+    monkeypatch.setattr(crosslingual, "load_bilingual_suites", forbidden)
+    with pytest.raises(ValueError, match="--gate requires a hybrid arm"):
+        asyncio.run(crosslingual._run_cli(arguments(["--gate", *axes])))
 
 
 def test_the_command_rejects_a_candidate_pool_shallower_than_k_during_parsing():

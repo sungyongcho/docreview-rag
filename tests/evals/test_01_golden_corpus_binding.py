@@ -5,9 +5,9 @@ import re
 
 import pytest
 
-from app.evals.loader import DEFAULT_GOLDEN_PATH, DEFAULT_MANIFEST_PATH, load_golden_cases
-from app.evals.types import GoldenCase
-from tests.evals.golden import (
+from app.evals.golden.loading import DEFAULT_GOLDEN_PATH, DEFAULT_MANIFEST_PATH, load_golden_cases
+from app.evals.golden.models import GoldenCase
+from tests.evals.golden.support import (
     ABSENT_CASE_COUNT,
     CASE_COUNT,
     CASE_ID_PATTERN,

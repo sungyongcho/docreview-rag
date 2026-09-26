@@ -13,10 +13,12 @@ from dataclasses import dataclass, replace
 import os
 from pathlib import Path
 import time
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, inspect, select
 
-from app.corpus_admin.context import CorpusAdminContext
+if TYPE_CHECKING:
+    from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import (
     AdminDocument,
     CorpusSnapshot,
@@ -27,18 +29,11 @@ from app.corpus_admin.types import (
     SchemaStatus,
 )
 from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility
-from app.db.models import (
-    Base,
-    BM25CorpusStat,
-    Chunk,
-    ChunkEmbedding,
-    Document,
-    OperatorJob,
-)
-from app.db.queries import join_current_parse
-from app.ingestion.manifest import Manifest
-from app.ingestion.source_selection import acquisition_draft, source_inventory
-from app.retrieval.embeddings import matching_embedding
+from app.db.models import Base, BM25CorpusStat, Chunk, ChunkEmbedding, Document, OperatorJob
+from app.db.queries import document_chunk_counts
+from app.ingestion.sources.models import Manifest
+from app.ingestion.sources.selection import acquisition_draft, source_inventory
+from app.retrieval.indexing.embeddings import matching_embedding
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,19 +101,19 @@ class CorpusInspector:
 
     Parameters
     ----------
-    context : CorpusAdminContext
+    context : RuntimeCorpusAdminService
         Corpus root, database handles and embedding provider to read through.
     """
 
-    def __init__(self, context: CorpusAdminContext) -> None:
-        self._context = context
+    def __init__(self, context: RuntimeCorpusAdminService) -> None:
+        self._service = context
         self._status_lock = asyncio.Lock()
         self._status_cache: _StatusProbe | None = None
 
     async def schema_state(self) -> tuple[SchemaStatus, str, set[str]]:
         """Inspect compatibility and table presence without creating schema objects."""
         try:
-            async with self._context.database_engine.connect() as connection:
+            async with self._service.database_engine.connect() as connection:
                 await ensure_schema_compatibility(connection)
                 tables = await connection.run_sync(
                     lambda sync: set(inspect(sync).get_table_names())
@@ -126,7 +121,7 @@ class CorpusInspector:
         except SchemaDriftError as error:
             return "drifted", str(error), set()
         except Exception as error:  # noqa: BLE001 - translated into non-secret status
-            return "unavailable", self._context.redact(type(error).__name__), set()
+            return "unavailable", self._service.redact(type(error).__name__), set()
         if not tables:
             return "empty", "No corpus tables exist yet.", tables
         missing = sorted(set(Base.metadata.tables) - tables)
@@ -143,14 +138,14 @@ class CorpusInspector:
     def manifest_summaries(self) -> tuple[ManifestSummary, ...]:
         """Validate root catalogs and expose exact processing selections."""
         summaries = []
-        for path in sorted(self._context.corpus_root.glob("*.json")):
+        for path in sorted(self._service.corpus_root.glob("*.json")):
             if _is_root_catalog(path.name):
                 summaries.append(self._manifest_summary(path))
         return tuple(summaries)
 
     def _manifest_summary(self, path: Path) -> ManifestSummary:
         """Summarize one root catalog, or mark it invalid when it cannot be read safely."""
-        corpus_root = self._context.corpus_root
+        corpus_root = self._service.corpus_root
         try:
             if path.resolve().parent != corpus_root:
                 raise ValueError("manifest resolves outside the corpus root")
@@ -180,7 +175,7 @@ class CorpusInspector:
 
     def _artifacts_on_disk(self, manifest: Manifest) -> dict[str, bool]:
         """Map each artifact to whether its file exists inside the corpus root."""
-        corpus_root = self._context.corpus_root
+        corpus_root = self._service.corpus_root
         present: dict[str, bool] = {}
         for artifact in manifest.artifacts:
             source = (corpus_root / artifact.path).resolve()
@@ -193,7 +188,7 @@ class CorpusInspector:
         """Expose the exact documents and artifacts each processing selection names."""
         selections = []
         for selection in manifest.selections:
-            sources = manifest.selected_sources(selection.selection_id, self._context.corpus_root)
+            sources = manifest.selected_sources(selection.selection_id, self._service.corpus_root)
             selections.append(
                 ProcessingSelectionSummary(
                     selection.selection_id,
@@ -208,7 +203,7 @@ class CorpusInspector:
         """Return corpus and index counts only when their tables exist."""
         if not {"documents", "chunks"}.issubset(tables):
             return 0, 0, 0, False
-        async with self._context.session_factory() as session:
+        async with self._service.session_factory() as session:
             documents = int(await session.scalar(select(func.count()).select_from(Document)) or 0)
             chunks = int(await session.scalar(select(func.count()).select_from(Chunk)) or 0)
             embedded = int(
@@ -217,7 +212,7 @@ class CorpusInspector:
                     .select_from(Chunk)
                     .where(
                         select(ChunkEmbedding.chunk_id)
-                        .where(matching_embedding(self._context.embedding_provider.identity))
+                        .where(matching_embedding(self._service.embedding_provider.identity))
                         .exists()
                     )
                 )
@@ -234,14 +229,10 @@ class CorpusInspector:
         """Return deterministic document rows from a compatible populated schema."""
         if not {"documents", "chunks"}.issubset(tables):
             return ()
-        statement = (
-            select(Document, func.count(Chunk.id).label("chunk_count"))
-            .outerjoin(Chunk, Chunk.doc_id == Document.doc_id)
-            .group_by(Document.doc_id)
-            .order_by(Document.registry, Document.issuer, Document.fiscal_year, Document.doc_id)
+        statement = document_chunk_counts().order_by(
+            Document.registry, Document.issuer, Document.fiscal_year, Document.doc_id
         )
-        statement = join_current_parse(statement, load=True, grouped=True)
-        async with self._context.session_factory() as session:
+        async with self._service.session_factory() as session:
             rows = (await session.execute(statement)).all()
         return tuple(
             AdminDocument(
@@ -268,7 +259,7 @@ class CorpusInspector:
         """Remember an explicit completed rebuild even after chunk changes invalidate its rows."""
         if "operator_jobs" not in tables:
             return False
-        async with self._context.session_factory() as session:
+        async with self._service.session_factory() as session:
             return bool(
                 await session.scalar(
                     select(
@@ -303,7 +294,7 @@ class CorpusInspector:
                     rebuild_recorded = bm25_ready or await self._bm25_rebuild_recorded(tables)
                 except Exception as error:  # noqa: BLE001 - rendered as safe unavailable state
                     schema_status = "unavailable"
-                    schema_message = self._context.redact(type(error).__name__)
+                    schema_message = self._service.redact(type(error).__name__)
             probe = _StatusProbe(
                 schema_status=schema_status,
                 schema_message=schema_message,
@@ -330,8 +321,8 @@ class CorpusInspector:
             pending_embeddings=max(probe.chunks - probe.embedded_chunks, 0),
             bm25_ready=probe.bm25_ready,
             bm25_rebuild_recorded=probe.bm25_rebuild_recorded,
-            writable=os.access(self._context.corpus_root, os.W_OK | os.X_OK),
-            provider=self._context.settings.embedding_provider,
+            writable=os.access(self._service.corpus_root, os.W_OK | os.X_OK),
+            provider=self._service.settings.embedding_provider,
         )
 
     async def status(self, *, max_age_s: float = 0.0) -> CorpusStatus:
@@ -365,7 +356,7 @@ class CorpusInspector:
                 probe = replace(
                     probe,
                     schema_status="unavailable",
-                    schema_message=self._context.redact(type(error).__name__),
+                    schema_message=self._service.redact(type(error).__name__),
                 )
         filtered = tuple(
             document
@@ -379,12 +370,12 @@ class CorpusInspector:
                 parse_status=parse_status,
             )
         )
-        sources = source_inventory(self._context.corpus_root)
+        sources = source_inventory(self._service.corpus_root)
         return CorpusSnapshot(
             mode="live",
             status=self._status_from(probe),
             manifests=self.manifest_summaries(),
             sources=sources,
-            acquisition_draft=acquisition_draft(self._context.corpus_root),
+            acquisition_draft=acquisition_draft(self._service.corpus_root),
             documents=filtered,
         )

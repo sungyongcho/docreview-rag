@@ -11,10 +11,10 @@ import shutil
 import stat
 
 from app.atomic_write import write_text_atomically
-from app.ingestion.manifest import Manifest
-from app.ingestion.source_catalog import default_acquisition_draft
-from app.ingestion.source_selection import DRAFT_NAME
-from app.ingestion.source_storage import JOURNAL, source_lock
+from app.ingestion.sources.catalog import default_acquisition_draft
+from app.ingestion.sources.models import Manifest
+from app.ingestion.sources.selection import DRAFT_NAME
+from app.ingestion.sources.storage import JOURNAL, source_lock
 
 JOURNAL_NAME = ".schema-recreate-journal"
 

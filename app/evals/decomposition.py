@@ -4,182 +4,24 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from collections.abc import Sequence
 from decimal import Decimal
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from app.evals.breakdown import group_scores_by_category
 from app.evals.cli import positive_int
-from app.evals.identity import artifact_filename
-from app.evals.loader import DEFAULT_GOLDEN_PATH, load_golden_cases
-from app.evals.retrieval_eval import (
-    RetrievalEvaluation,
-    evaluate_retriever,
-    write_evaluation_artifact,
-)
-from app.evals.types import EvaluationRetrieval
-from app.retrieval.hybrid import DEFAULT_RRF_K
+from app.evals.execution.models import EvaluationRetrieval
+from app.evals.experiments.decomposition import run_decomposition_comparison
+from app.evals.golden.loading import DEFAULT_GOLDEN_PATH, load_golden_cases
+from app.retrieval.ranking.fusion import DEFAULT_RRF_K
 
 if TYPE_CHECKING:
-    from app.evals.arms import Retriever
-    from app.evals.types import GoldenCase
-    from app.llm.provider import OpenAILLMProvider
+    from app.llm.openai import OpenAILLMProvider
     from app.llm.schemas import ProviderBudget
 
 DECOMPOSITION_MAX_INPUT_TOKENS: Final[int] = 1_000
 DECOMPOSITION_MAX_OUTPUT_TOKENS: Final[int] = 300
-
-
-def category_metrics(evaluation: RetrievalEvaluation) -> dict[str, dict[str, float]]:
-    """Return macro retrieval metrics per golden category, scored cases only.
-
-    Parameters
-    ----------
-    evaluation : RetrievalEvaluation
-        Completed M3-compatible evaluation with optional per-case scores.
-
-    Returns
-    -------
-    dict[str, dict[str, float]]
-        Macro retrieval metrics keyed by golden category.
-
-    Notes
-    -----
-    Absent cases remain unscored, matching M3. Each category's numbers come from
-    :func:`~app.evals.breakdown.group_scores_by_category` — the same per-category
-    :func:`~app.evals.scoring.score_suite` the taxonomy breakdown uses — so the split
-    shows whether decomposition moves ``multi_hop`` without regressing
-    ``simple_lookup``, on exactly the suite-level arithmetic. Categories are keyed in
-    name order.
-    """
-    groups = group_scores_by_category(
-        [(case.golden.category, case.score) for case in evaluation.cases if case.score is not None]
-    )
-    return {
-        group.group: {
-            "scored_case_count": float(group.suite.case_count),
-            "recall_at_k": group.suite.recall_at_k,
-            "hit_rate_at_k": group.suite.hit_rate_at_k,
-            "mrr": group.suite.mrr,
-        }
-        for group in sorted(groups, key=lambda group: group.group)
-    }
-
-
-def _arm_payload(
-    evaluation: RetrievalEvaluation,
-    categories: dict[str, dict[str, float]],
-) -> dict[str, Any]:
-    """Pair one arm's suite metrics with its already-computed category split."""
-    return {
-        "metrics": evaluation.metric_values(),
-        "categories": categories,
-    }
-
-
-async def run_decomposition_comparison(
-    cases: Sequence[GoldenCase],
-    *,
-    baseline_retriever: Retriever,
-    decomposed_retriever: Retriever,
-    baseline_config: Mapping[str, Any],
-    decomposed_config: Mapping[str, Any],
-    suite: str,
-    artifact_dir: str | Path,
-    k: int = 5,
-    recorded_at: datetime | None = None,
-) -> dict[str, Any]:
-    """Evaluate both retrievers on one golden suite and write paired artifacts.
-
-    Parameters
-    ----------
-    cases : Sequence[GoldenCase]
-        Shared golden cases evaluated by both arms.
-    baseline_retriever : Retriever
-        Single-query retrieval callable.
-    decomposed_retriever : Retriever
-        Query-decomposing retrieval callable.
-    baseline_config : Mapping[str, Any]
-        Complete provenance for the baseline arm.
-    decomposed_config : Mapping[str, Any]
-        Complete provenance for the decomposed arm.
-    suite : str
-        Stable kebab-case evaluation suite name; it becomes part of each
-        artifact filename.
-    artifact_dir : str | Path
-        Destination directory for paired JSON artifacts.
-    k : int
-        Retrieval cutoff shared by both arms.
-    recorded_at : datetime | None
-        Optional timezone-aware timestamp shared by both artifacts.
-
-    Returns
-    -------
-    dict[str, Any]
-        Arm metrics, category deltas, and written artifact paths.
-
-    Raises
-    ------
-    ValueError
-        If the supplied timestamp is timezone-naive or the suite is not
-        kebab-case. Both are checked before any retrieval runs, so an invalid
-        run fails before it spends provider calls.
-    FileExistsError
-        If an artifact path already exists — two runs sharing one directory and
-        one timestamp must fail loudly rather than silently replace evidence.
-
-    Notes
-    -----
-    Both arms run through the unchanged M3 harness and share one timestamp, so their
-    artifact schemas and category deltas remain directly comparable.
-    """
-    moment = recorded_at or datetime.now(UTC)
-    paths = {
-        label: Path(artifact_dir) / artifact_filename(moment, f"{suite}-decomposition-{label}")
-        for label in ("baseline", "decomposed")
-    }
-    for path in paths.values():
-        if path.exists():
-            raise FileExistsError(f"evaluation artifact already exists: {path}")
-    baseline = await evaluate_retriever(
-        cases,
-        baseline_retriever,
-        suite=suite,
-        config=baseline_config,
-        k=k,
-        recorded_at=moment,
-    )
-    decomposed = await evaluate_retriever(
-        cases,
-        decomposed_retriever,
-        suite=suite,
-        config=decomposed_config,
-        k=k,
-        recorded_at=moment,
-    )
-    write_evaluation_artifact(paths["baseline"], baseline)
-    write_evaluation_artifact(paths["decomposed"], decomposed)
-    baseline_categories = category_metrics(baseline)
-    decomposed_categories = category_metrics(decomposed)
-    deltas = {
-        category: {
-            "recall_at_k": decomposed_categories[category]["recall_at_k"]
-            - baseline_categories[category]["recall_at_k"],
-            "mrr": decomposed_categories[category]["mrr"] - baseline_categories[category]["mrr"],
-        }
-        for category in sorted(set(baseline_categories) & set(decomposed_categories))
-    }
-    return {
-        "suite": suite,
-        "k": k,
-        "baseline": _arm_payload(baseline, baseline_categories),
-        "decomposed": _arm_payload(decomposed, decomposed_categories),
-        "category_deltas": deltas,
-        "artifacts": {label: str(path) for label, path in paths.items()},
-    }
 
 
 def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -217,7 +59,7 @@ def decomposition_boundary(
     ``Settings`` exactly as it does for the embedding provider.
     """
     from app.config import get_settings
-    from app.llm.provider import OpenAILLMProvider
+    from app.llm.openai import OpenAILLMProvider
     from app.llm.schemas import ProviderBudget
     from app.openai_models import resolve_openai_model
 
@@ -245,9 +87,10 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     """
     from app.config import get_settings
     from app.db.session import Session
-    from app.evals.decompose import make_decomposed_retriever
-    from app.retrieval.embeddings import get_embedding_provider
-    from app.retrieval.service import retrieve
+    from app.evals.experiments.decomposition import make_decomposed_retriever
+    from app.retrieval.embedding.provider import get_embedding_provider
+    from app.retrieval.search.plan import SearchPlan
+    from app.retrieval.search.service import retrieve
 
     cases = load_golden_cases(args.golden)
     embedding_provider = get_embedding_provider()
@@ -261,8 +104,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                 question,
                 provider=embedding_provider,
                 k=k,
-                candidate_k=args.candidate_k,
-                rrf_k=args.rrf_k,
+                plan=SearchPlan(candidate_k=args.candidate_k, rrf_k=args.rrf_k),
             )
             return EvaluationRetrieval(hits=result.hits)
 

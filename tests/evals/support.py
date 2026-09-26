@@ -4,9 +4,9 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 
-from app.evals.types import GoldenCase, GoldenSpan
-from app.ingestion.manifest import CorpusIdentity, Manifest
-from app.ingestion.parser import source_digest
+from app.evals.golden.models import GoldenCase, GoldenSpan
+from app.ingestion.parsing.html import source_digest
+from app.ingestion.sources.models import CorpusIdentity, Manifest
 from app.retrieval.types import ChunkHit
 from tests.ingestion.support import acquired_filing, filing_document
 

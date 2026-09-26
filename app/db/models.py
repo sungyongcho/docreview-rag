@@ -25,9 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from app.config import get_settings
-
-DIM = get_settings().embed_dim
+from app.config import EMBEDDING_DIMENSIONS
 
 # One authoritative copy of the language-dispatched index SQL. The evaluation
 # corpus renders its temporary chunks table from these same strings, so the
@@ -167,14 +165,16 @@ class ChunkEmbedding(Base):
     model: Mapped[str] = mapped_column(String(128), primary_key=True)
     dimensions: Mapped[int] = mapped_column(primary_key=True)
     tokenizer: Mapped[str] = mapped_column(String(128), primary_key=True)
-    embedding: Mapped[list[float]] = mapped_column(Vector(DIM), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     __table_args__ = (
         CheckConstraint("input_sha256 ~ '^[0-9a-f]{64}$'", name="ck_chunk_embeddings_digest"),
-        CheckConstraint(f"dimensions = {DIM}", name="ck_chunk_embeddings_dimensions"),
+        CheckConstraint(
+            f"dimensions = {EMBEDDING_DIMENSIONS}", name="ck_chunk_embeddings_dimensions"
+        ),
         CheckConstraint(
             "btrim(provider) <> '' AND btrim(model) <> '' AND btrim(tokenizer) <> ''",
             name="ck_chunk_embeddings_configuration",
@@ -512,7 +512,9 @@ class SnapshotChunk(Base):
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     embedding_dimensions: Mapped[int | None] = mapped_column(nullable=True)
     embedding_tokenizer: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(DIM), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSIONS), nullable=True
+    )
     content_tsv: Mapped[str] = mapped_column(
         TSVECTOR,
         Computed(CONTENT_TSV_SQL, persisted=True),

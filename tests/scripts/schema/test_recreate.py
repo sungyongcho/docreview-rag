@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from scripts.schema import recreate as command
-from tests.live_postgres import live_postgres_unavailable
+from tests.live_postgres import disposable_database_url
 
 
 @pytest.mark.parametrize("answer", ["", "yes"])
@@ -58,9 +58,7 @@ def test_remote_docker_is_rejected_before_contact(tmp_path, monkeypatch):
 @pytest.mark.live_postgres
 def test_recreate_rolls_back_foreign_dependencies_and_preserves_unrelated_data():
     """Use a disposable legacy DB to verify actual rollback and then successful ORM creation."""
-    url = os.environ.get("SCHEMA_TEST_ADMIN_URL")
-    if not url:
-        live_postgres_unavailable("SCHEMA_TEST_ADMIN_URL must identify an isolated test server")
+    url = disposable_database_url()
     name = "recreate_" + uuid4().hex
 
     async def scenario():

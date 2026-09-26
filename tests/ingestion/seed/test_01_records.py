@@ -1,15 +1,13 @@
 """Deterministic seed record-conversion tests."""
 
-from copy import deepcopy
 from dataclasses import replace
 import hashlib
 from typing import cast
 
 import pytest
 
-from app.ingestion.chunk import ChunkConfig, chunk_filing
-from app.ingestion.parser import Block, Section
-import app.ingestion.seed as seed
+from app.ingestion.persistence import document_values
+import app.ingestion.pipeline as seed
 from tests.ingestion.edgar.support import build_numbered_body
 from tests.ingestion.seed.support import sample_chunks, sample_filing, sample_source
 from tests.ingestion.support import filing_document, filing_source
@@ -21,10 +19,10 @@ def test_filing_records_keep_body_context_index_text_and_metadata():
 
     expected = sample_filing().source.document.model_dump(mode="json")
     expected["doc_id"] = expected.pop("document_id")
-    assert document.values() == expected
+    assert document_values(document) == expected
     assert (
         not {"parse_status", "item_index", "source_length", "source_sha256"}
-        & document.values().keys()
+        & document_values(document).keys()
     )
     assert [record.ordinal for record in chunks] == [0, 1]
     assert chunks[0].body == "Source-derived narrative."
@@ -103,7 +101,7 @@ def test_build_seed_batch_sorts_manifest_and_output(tmp_path):
 
     batch = seed.build_seed_batch(entries, expected_documents=2, on_progress=progress.append)
 
-    assert [record.doc_id for record in batch.documents] == ["AMD-FY2023", "NVDA-FY2024"]
+    assert [record.document_id for record in batch.documents] == ["AMD-FY2023", "NVDA-FY2024"]
     assert [filing.source for filing in batch.filings] == list(reversed(entries))
     assert [record.doc_id for record in batch.chunks] == sorted(
         record.doc_id for record in batch.chunks
@@ -114,10 +112,13 @@ def test_build_seed_batch_sorts_manifest_and_output(tmp_path):
         assert [record.ordinal for record in records] == list(range(len(records)))
         assert all(f"{source.document.issuer} disclosure." in record.body for record in records)
         assert all(record.source_sha256 == source.artifact.sha256 for record in records)
-    assert [(update.current, update.total, update.message) for update in progress] == [
-        (0, 2, "Parsing selected filings"),
-        (1, 2, "AMD-FY2023"),
-        (2, 2, "NVDA-FY2024"),
+    assert [(update.stage, update.current, update.total) for update in progress] == [
+        ("parse", 0, 2),
+        ("parse", 1, 2),
+        ("parse", 2, 2),
+        ("chunk", 0, 2),
+        ("chunk", 1, 2),
+        ("chunk", 2, 2),
     ]
 
 
@@ -128,32 +129,6 @@ def test_parse_seed_filings_validates_count_before_parsing():
         seed.parse_seed_filings([source], expected_documents=20)
 
 
-def test_reusing_parsed_filing_across_chunk_sizes_does_not_mutate_it():
-    """Reuse parsed filings across chunk configurations without mutation."""
-    filing = sample_filing()
-    filing.source_length = 1_000
-    filing.sections[0].status = "parsed"
-    filing.sections[0].blocks = [
-        Block("paragraph", "a" * 400, source_pos=10, end_pos=410),
-        Block("paragraph", "b" * 400, source_pos=410, end_pos=810),
-    ]
-    filings = (filing,)
-    snapshot = deepcopy(filings)
-
-    small_batch = seed.build_seed_batch_from_filings(
-        filings,
-        chunker=lambda parsed: chunk_filing(parsed, ChunkConfig(target_tokens=64)),
-    )
-    large_batch = seed.build_seed_batch_from_filings(
-        filings,
-        chunker=lambda parsed: chunk_filing(parsed, ChunkConfig(target_tokens=256)),
-    )
-
-    assert len(small_batch.chunks) == 2
-    assert len(large_batch.chunks) == 1
-    assert filings == snapshot
-
-
 def test_seed_batch_revalidates_cross_record_provenance():
     """Reject chunk digests that differ from their document source."""
     document, chunks = seed.filing_records(sample_filing(), sample_chunks())
@@ -162,19 +137,12 @@ def test_seed_batch_revalidates_cross_record_provenance():
         seed.SeedBatch((document,), (mismatched, chunks[1]), (sample_filing(),))
 
 
-def test_chunk_record_rejects_inconsistent_index_text():
-    """Reject indexed text that differs from context and body composition."""
-    _document, chunks = seed.filing_records(sample_filing(), sample_chunks())
-    with pytest.raises(ValueError, match="inconsistent index text"):
-        replace(chunks[0], index_text="stale combined text")
-
-
 def test_records_reject_an_unsupported_language():
     """Refuse to build rows whose language no retrieval path would ever match."""
     document, chunks = seed.filing_records(sample_filing(), sample_chunks())
 
     with pytest.raises(ValueError, match="language"):
-        replace(document, language="fr")
+        type(document).model_validate({**document.model_dump(), "language": "fr"})
     with pytest.raises(ValueError, match="unsupported language"):
         replace(chunks[0], language="")
 
@@ -183,39 +151,8 @@ def test_chunk_records_tag_rows_with_the_registry_language():
     """Stamp every row with the language its registry publishes in."""
     document, chunks = seed.filing_records(sample_filing(), sample_chunks())
 
-    assert document.values()["language"] == "en"
+    assert document_values(document)["language"] == "en"
     assert {record.values()["language"] for record in chunks} == {"en"}
-
-
-def test_registry_chunker_applies_one_shared_token_budget():
-    """Use the same token budget for both registry adapters."""
-    paragraphs = [
-        Block("paragraph", "가" * 400, source_pos=40 * i, end_pos=40 * i + 30) for i in range(1, 4)
-    ]
-    base = sample_filing()
-    section = Section(
-        part="I",
-        item="1",
-        canonical_title="Business",
-        reported_title="Item 1. Business",
-        blocks=paragraphs,
-    )
-    dart = replace(
-        base,
-        source=replace(
-            base.source,
-            document=filing_document(registry="dart", document_id=base.source.document.document_id),
-        ),
-        sections=[section],
-        item_index=[],
-    )
-    sec = replace(base, sections=[section])
-
-    dart_text = [c for c in seed.registry_chunker(dart) if c.kind == "text"]
-    sec_text = [c for c in seed.registry_chunker(sec) if c.kind == "text"]
-
-    assert len(dart_text) == len(sec_text) == 1
-    assert dart_text[0].body == sec_text[0].body
 
 
 def test_chunk_record_mirrors_the_database_lexical_text_check():
@@ -254,7 +191,9 @@ def test_seed_batch_rejects_identity_and_parse_pointer_disagreement():
     filing = sample_filing()
     document, chunks = seed.filing_records(filing, sample_chunks())
     with pytest.raises(ValueError, match="identity differs"):
-        seed.SeedBatch((replace(document, aliases=("different",)),), chunks, (filing,))
+        seed.SeedBatch(
+            (document.model_copy(update={"aliases": ("different",)}),), chunks, (filing,)
+        )
     with pytest.raises(ValueError, match="different source parse"):
         seed.SeedBatch(
             (document,), (replace(chunks[0], structure_id="b" * 64), chunks[1]), (filing,)

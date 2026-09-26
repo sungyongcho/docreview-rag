@@ -11,13 +11,16 @@ from typing import cast
 import pytest
 
 from app.db.session_factory import SessionFactory
-from app.evals.decompose import make_decomposed_retriever
-from app.evals.decomposition import category_metrics, run_decomposition_comparison
-from app.evals.retrieval_eval import RetrievalEvaluation
-from app.evals.scoring import CaseScore
-from app.evals.types import EvaluationRetrieval
-from app.llm.local_engine import local_provider_budget
-from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from app.evals.execution.evaluator import RetrievalEvaluation
+from app.evals.execution.models import EvaluationRetrieval
+from app.evals.experiments.decomposition import (
+    category_metrics,
+    make_decomposed_retriever,
+    run_decomposition_comparison,
+)
+from app.evals.results.scoring import CaseScore
+from app.llm.local.connection import local_provider_budget
+from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from tests.agent.support import FakeSessionFactory
 from tests.evals.support import EVALUATION_RECORDED_AT, absent_case, positive_case, relevant_hit
 from tests.llm.support import DeterministicLLMProvider, raw

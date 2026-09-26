@@ -22,7 +22,7 @@ def filing_document(
     """Construct valid common metadata directly for one synthetic filing."""
     from datetime import date
 
-    from app.ingestion.manifest import DartMetadata, DocumentReference, SecMetadata
+    from app.ingestion.sources.models import DartMetadata, DocumentReference, SecMetadata
 
     issuer = issuer or ("NVDA" if registry == "sec" else "005930")
     filing_id = filing_id or ("0001045810-24-000029" if registry == "sec" else "20250311001085")
@@ -58,7 +58,12 @@ def filing_source(path, *, document=None, encoding: Literal["utf-8", "euc-kr", "
     from datetime import UTC, datetime
     import hashlib
 
-    from app.ingestion.manifest import Acquisition, CorpusIdentity, FilingSource, SourceArtifact
+    from app.ingestion.sources.models import (
+        Acquisition,
+        CorpusIdentity,
+        FilingSource,
+        SourceArtifact,
+    )
 
     document = document or filing_document()
     payload = path.read_bytes()
@@ -96,8 +101,8 @@ def write_selection_catalog(root):
     import hashlib
     from pathlib import Path
 
-    from app.ingestion.manifest import Manifest
-    from app.ingestion.source_publication import fixed_path
+    from app.ingestion.sources.models import Manifest
+    from app.ingestion.sources.storage import fixed_path
 
     original = Manifest.read(Path(__file__).resolve().parents[2] / "data/corpus/manifest.json")
     documents = tuple(
@@ -138,10 +143,14 @@ def acquired_filing(root, *, document=None, payload=b"synthetic source"):
     import io
     import zipfile
 
-    from app.ingestion.acquisition import AcquiredFiling
-    from app.ingestion.dart_api import AnnualReport, CorpCode, DocumentArchive, archive_document
-    from app.ingestion.manifest import Acquisition, SourceArtifact
-    from app.ingestion.source_publication import fixed_path
+    from app.ingestion.acquisition.dart_archive import (
+        AnnualReport,
+        CorpCode,
+        DocumentArchive,
+        archive_document,
+    )
+    from app.ingestion.sources.models import AcquiredFiling, Acquisition, SourceArtifact
+    from app.ingestion.sources.storage import fixed_path
 
     document = document or filing_document()
     if document.registry == "dart":
@@ -162,7 +171,6 @@ def acquired_filing(root, *, document=None, payload=b"synthetic source"):
             ),
             CorpCode(document.issuer_id, document.issuer, document.issuer),
             fiscal_year=document.fiscal_year,
-            corpus_dir=root,
             document_reference=document,
         )
     digest = hashlib.sha256(payload).hexdigest()
@@ -185,7 +193,7 @@ def acquired_filing(root, *, document=None, payload=b"synthetic source"):
 
 def selected_document_ids(root, identifiers, years):
     """Extract explicit IDs from the synthetic catalog when constructing a test request."""
-    from app.ingestion.manifest import Manifest
+    from app.ingestion.sources.models import Manifest
 
     return tuple(
         d.document_id

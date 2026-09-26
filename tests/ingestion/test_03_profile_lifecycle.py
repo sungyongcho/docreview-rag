@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from types import ModuleType
 
-from app.ingestion.manifest import FilingSource
+from app.ingestion.sources.models import FilingSource
 from tests.ingestion.support import copy_filing_source
 
 

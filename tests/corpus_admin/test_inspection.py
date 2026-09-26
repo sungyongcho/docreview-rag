@@ -8,9 +8,9 @@ import pytest
 
 from app.config import Settings
 import app.corpus_admin.inspection as inspection
-from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.service import RuntimeCorpusAdminService
 from tests.corpus_admin.support import write_manifest
-from tests.live_postgres import live_postgres_unavailable
+from tests.live_postgres import isolated_session_factory
 
 
 def test_manifest_summaries_report_registry_and_sources_on_disk(tmp_path: Path) -> None:
@@ -169,24 +169,19 @@ def test_snapshot_refreshes_the_status_memo(tmp_path, monkeypatch):
 
 
 @pytest.mark.live_postgres
-def test_live_postgres_admin_status_matches_snapshot_status() -> None:
-    """The status path reports the same non-secret status as the full snapshot."""
-    service = RuntimeCorpusAdminService()
+def test_live_postgres_admin_status_matches_snapshot_status(tmp_path) -> None:
+    """The status and full snapshot agree on an isolated corpus and disposable schema."""
 
     async def both():
-        """Take one full snapshot and one fresh status reading on this event loop."""
-        # The shared engine may hold connections opened by an earlier asyncio.run loop;
-        # recycle them so this reading measures the database, not a stale pool.
-        from app.db.session import engine
+        """Read both projections through the same explicitly isolated database owner."""
+        async with isolated_session_factory() as factory:
+            service = RuntimeCorpusAdminService(
+                settings=Settings(corpus_dir=tmp_path),
+                session_factory=factory,
+                engine=factory.kw["bind"],
+            )
+            return await service.snapshot(), await service.status(max_age_s=0.0)
 
-        await engine.dispose()
-        return await service.snapshot(), await service.status(max_age_s=0.0)
-
-    try:
-        snapshot, status = asyncio.run(both())
-    except Exception as error:  # noqa: BLE001 - shared live-test availability policy
-        live_postgres_unavailable(str(error))
-
-    if not status.database_connected:
-        live_postgres_unavailable(status.schema_message)
+    snapshot, status = asyncio.run(both())
+    assert status.database_connected
     assert status == snapshot.status

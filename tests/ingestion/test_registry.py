@@ -5,9 +5,9 @@ from typing import cast
 
 import pytest
 
-from app.ingestion.dart import DART_PARTS, parse_dart_filing
-from app.ingestion.edgar import CANONICAL, parse_filing
-from app.ingestion.registry import REGISTRIES, Registry, registry_for, section_title
+from app.ingestion.parsing.dart import DART_PARTS, parse_dart_filing
+from app.ingestion.parsing.registry import REGISTRIES, Registry, registry_for, section_title
+from app.ingestion.parsing.sec import CANONICAL, parse_filing
 from tests.ingestion.support import filing_document, filing_source
 
 

@@ -11,16 +11,15 @@ from typing import Annotated, Final, Literal, Self, TypedDict
 from pydantic import Field, JsonValue, StrictFloat, StrictInt, StrictStr
 from pydantic.functional_validators import field_validator, model_validator
 
-from app.llm.schemas import (
-    LocalModelTiming,
+from app.contracts.validation import (
     NonBlank,
     NonNegativeDecimal,
     NonNegativeFloat,
     NonNegativeInt,
     PositiveInt,
     StrictSchema,
-    TokenUsageDetails,
 )
+from app.llm.schemas import LocalModelTiming, TokenUsageDetails
 
 WorkflowNode = Literal["gate", "route", "retrieve", "grade", "check", "report"]
 RunStatus = Literal["ok", "budget_exceeded", "schema_rejected", "error"]

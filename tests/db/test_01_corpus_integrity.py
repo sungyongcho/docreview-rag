@@ -8,9 +8,9 @@ from sqlalchemy import insert, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.config import get_settings
 from app.db.bootstrap import ensure_vector_extension
 from app.db.models import Base, Corpus, ProcessingSelection, SelectionArtifact, SourceArtifact
+from tests.live_postgres import disposable_database_url
 
 
 @pytest.mark.live_postgres
@@ -19,7 +19,7 @@ def test_corpus_references_are_enforced_by_postgres():
 
     async def exercise():
         """Keep all schema and test rows inside one rolled-back transaction."""
-        engine = create_async_engine(get_settings().database_url)
+        engine = create_async_engine(disposable_database_url())
         try:
             async with engine.connect() as connection:
                 await ensure_vector_extension(connection)

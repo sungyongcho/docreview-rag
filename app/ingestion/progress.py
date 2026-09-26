@@ -14,7 +14,7 @@ is the one place that draws those updates as a bar.
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from tqdm import tqdm
 
@@ -59,3 +59,17 @@ def operation_bar(description: str, *, unit: str = "step") -> Iterator[Operation
             bar.refresh()
 
         yield report
+
+
+def byte_progress(
+    publish: OperationProgressCallback | None, progress: OperationProgress
+) -> ByteProgress | None:
+    """Attach decoded byte counts to one operation's current filing or discovery step."""
+    if publish is None:
+        return None
+
+    def report(read: int, total: int | None) -> None:
+        """Publish the same operation position with updated stream detail."""
+        publish(replace(progress, detail_current=read, detail_total=total))
+
+    return report

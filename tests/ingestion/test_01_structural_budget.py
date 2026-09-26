@@ -6,10 +6,10 @@ from pathlib import Path
 from bs4 import BeautifulSoup, Tag
 import pytest
 
-from app.ingestion.chunk import Chunk, ChunkConfig, TableFragment, chunk_filing
-from app.ingestion.parser import Block
-from app.ingestion.tables import structured_table
-from app.ingestion.tokens import MAX_INPUT_CHARACTERS, count_tokens
+from app.ingestion.chunking import Chunk, TableFragment, chunk_filing
+from app.ingestion.parsing.models import Block
+from app.ingestion.parsing.tables import structured_table
+from app.ingestion.tokens import MAX_INPUT_CHARACTERS, InputBudget, count_tokens
 from tests.ingestion.chunk.support import build_filing
 from tests.ingestion.support import copy_filing_source
 
@@ -18,7 +18,7 @@ def _chunks(html: str, **budget):
     """Chunk one synthetic table with honest enclosing source coordinates."""
     filing = build_filing([Block("table", "", html=html, source_pos=0, end_pos=len(html))])
     filing.source_length = len(html)
-    return chunk_filing(filing, ChunkConfig(**budget))
+    return chunk_filing(filing, InputBudget(**budget))
 
 
 def _declared_span(cell: Tag, attribute: str) -> int:
@@ -187,7 +187,7 @@ def test_narrative_sentences_preserve_text_and_enclosing_spans():
     """Split sentence boundaries and retain the enclosing paragraph source span."""
     text = "A complete sentence with financial evidence. " * 30
     filing = build_filing([Block("paragraph", text, source_pos=10, end_pos=900)])
-    chunks = chunk_filing(filing, ChunkConfig(target_tokens=60, max_tokens=100))
+    chunks = chunk_filing(filing, InputBudget(target_tokens=60, max_tokens=100))
     assert len(chunks) > 1
     assert len({chunk.stable_key for chunk in chunks}) == len(chunks)
     assert "".join(chunk.body for chunk in chunks) == text
@@ -199,17 +199,17 @@ def test_indivisible_narrative_and_repeated_context_obey_hard_limits():
     """Reject full inputs exceeding character or token limits, including context."""
     filing = build_filing([Block("paragraph", "word " * 300, source_pos=10, end_pos=900)])
     with pytest.raises(ValueError, match="indivisible sentence"):
-        chunk_filing(filing, ChunkConfig(target_tokens=100, max_tokens=200))
+        chunk_filing(filing, InputBudget(target_tokens=100, max_tokens=200))
     filing.sections[0].blocks[0].text = "Short sentence."
     with pytest.raises(ValueError, match="indivisible sentence"):
-        chunk_filing(filing, ChunkConfig(max_chars=15))
+        chunk_filing(filing, InputBudget(max_chars=15))
 
 
 def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(tmp_path):
     """Verify the committed source selection while keeping learned profiles temporary."""
-    from app.ingestion import edgar
-    from app.ingestion.dart import parse_dart_filing
-    from app.ingestion.manifest import Manifest
+    from app.ingestion.parsing import sec as edgar
+    from app.ingestion.parsing.dart import parse_dart_filing
+    from app.ingestion.sources.models import Manifest
 
     catalog_path = Path(__file__).resolve().parents[2] / "data/corpus/manifest.json"
     catalog = Manifest.read(catalog_path)
@@ -343,7 +343,7 @@ def test_adjacent_date_unit_caption_records_its_own_span_without_changing_data_s
     ]
     filing = build_filing(blocks)
     filing.source_length = following + len(data)
-    chunks = chunk_filing(filing, ChunkConfig(target_tokens=160))
+    chunks = chunk_filing(filing, InputBudget(target_tokens=160))
     first = [chunk for chunk in chunks if chunk.start_char == start]
     second = [chunk for chunk in chunks if chunk.start_char == following]
     assert len(first) > 1 and second

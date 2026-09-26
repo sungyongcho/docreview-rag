@@ -8,13 +8,13 @@ import pytest
 from app.agent.types import (
     AgentAnswer,
     AgentBudget,
-    AgentCitation,
     AgentResult,
     AgentStep,
     Observation,
     StepUsage,
     ToolCall,
 )
+from app.contracts.evidence import EvidenceCitation
 
 
 def usage(**changes):
@@ -45,7 +45,7 @@ def supported_answer(*, chunk_id=7):
         label="SUPPORTED",
         answer="Revenue increased by ten percent.",
         citations=(
-            AgentCitation(
+            EvidenceCitation(
                 chunk_id=chunk_id,
                 doc_id="NVDA-FY2024",
                 citation="NVDA FY2024 · Item 7",

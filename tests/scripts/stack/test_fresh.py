@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.operator.lifecycle_receipts import receipt_path
+from app.operator.local.receipts import receipt_path
 from scripts.stack import fresh
 
 

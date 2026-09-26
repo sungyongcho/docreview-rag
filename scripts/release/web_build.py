@@ -30,10 +30,10 @@ def main() -> int:
             shutil.copyfile(root / "data" / "presets" / name, presets / name)
         tutorial = Path(temporary) / "docs" / "TUTORIAL"
         tutorial.mkdir(parents=True)
-        shutil.copyfile(
-            root / "docs" / "DEVELOPMENT_STORY_OUTLINE.md",
-            tutorial.parent / "DEVELOPMENT_STORY_OUTLINE.md",
-        )
+        for locale in ("en", "ko"):
+            name = f"DEVELOPMENT_STORY.{locale}.md"
+            shutil.copyfile(root / "docs" / name, tutorial.parent / name)
+        shutil.copyfile(root / "docs/TUTORIAL/capture-plan.json", tutorial / "capture-plan.json")
         registry = json.loads(
             (source / "lib" / "documentation-registry.json").read_text(encoding="utf-8")
         )

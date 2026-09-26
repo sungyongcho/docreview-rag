@@ -1,4 +1,4 @@
-"""Strict value objects for the M9 tool-calling agent."""
+"""Strict value objects for the tool-calling agent."""
 
 from decimal import Decimal
 from typing import Annotated, Literal, Self
@@ -6,17 +6,16 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, StrictInt, StrictStr
 from pydantic.functional_validators import model_validator
 
-from app.llm.schemas import (
-    AnswerLabel,
+from app.contracts.evidence import AnswerLabel, EvidenceCitation, validate_answer_citations
+from app.contracts.validation import (
     NonBlank,
     NonNegativeDecimal,
     NonNegativeFloat,
     NonNegativeInt,
     PositiveInt,
     StrictSchema,
-    TokenUsageDetails,
 )
-from app.retrieval.types import SourceSha256
+from app.llm.schemas import TokenUsageDetails
 
 type AgentStatus = Literal["ok", "budget_exceeded", "provider_error"]
 
@@ -109,50 +108,20 @@ class AgentStep(StrictSchema):
         return self
 
 
-class AgentCitation(StrictSchema):
-    """Complete immutable identity of one retrieved chunk supporting the answer."""
-
-    chunk_id: PositiveInt
-    doc_id: NonBlank
-    citation: NonBlank
-    start_char: NonNegativeInt
-    end_char: PositiveInt
-    source_sha256: SourceSha256
-
-    @model_validator(mode="after")
-    def validate_span(self) -> Self:
-        """Require a nonempty half-open source interval."""
-        if self.end_char <= self.start_char:
-            raise ValueError("end_char must be greater than start_char")
-        return self
-
-
 class AgentAnswer(StrictSchema):
-    """The structured final answer with the M4 label and citation contract."""
+    """The final supported or absent answer with verified source citations."""
 
     label: AnswerLabel
     answer: NonBlank
-    citations: tuple[AgentCitation, ...]
+    citations: tuple[EvidenceCitation, ...]
     rationale: NonBlank
 
     @model_validator(mode="after")
     def validate_label_contract(self) -> Self:
         """Keep supported and absent answers mutually exclusive."""
-        chunk_ids = [citation.chunk_id for citation in self.citations]
-        if len(chunk_ids) != len(set(chunk_ids)):
-            raise ValueError("citation chunk ids must be unique")
-        if self.label == "SUPPORTED":
-            if not self.citations:
-                raise ValueError("SUPPORTED answers require at least one citation")
-            if self.answer == "NOT_IN_DOCS":
-                raise ValueError("SUPPORTED answers require a supported answer")
-        else:
-            if self.answer != "NOT_IN_DOCS":
-                raise ValueError(
-                    'NOT_IN_DOCS answers must use exactly the string "NOT_IN_DOCS" as the answer'
-                )
-            if self.citations:
-                raise ValueError("NOT_IN_DOCS answers must not carry citations")
+        validate_answer_citations(
+            self.label, self.answer, tuple(citation.chunk_id for citation in self.citations)
+        )
         return self
 
 

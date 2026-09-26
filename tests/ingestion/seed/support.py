@@ -3,9 +3,10 @@
 from datetime import date
 from pathlib import Path
 
-from app.ingestion import seed
-from app.ingestion.chunk import Chunk
-from app.ingestion.manifest import (
+from app.ingestion import pipeline as seed
+from app.ingestion.chunking import Chunk
+from app.ingestion.parsing.models import ParsedFiling, Section
+from app.ingestion.sources.models import (
     Acquisition,
     CorpusIdentity,
     DocumentReference,
@@ -13,7 +14,6 @@ from app.ingestion.manifest import (
     SecMetadata,
     SourceArtifact,
 )
-from app.ingestion.parser import ParsedFiling, Section
 
 SOURCE_SHA256 = "a" * 64
 

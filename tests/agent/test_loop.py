@@ -9,12 +9,12 @@ from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
 from app.agent.loop import COMPACTED_OUTPUT, run_agent
-from app.agent.provider import DeterministicToolProvider, ToolCallingProvider
-from app.agent.registry import ToolRegistry
-from app.agent.tools import EvidenceExtractor, Tool
-from app.agent.types import AgentBudget, AgentCitation, ToolCall
+from app.agent.provider import ToolCallingProvider
+from app.agent.tools.registry import EvidenceExtractor, Tool, ToolRegistry
+from app.agent.types import AgentBudget, ToolCall
+from app.contracts.evidence import EvidenceCitation
 from app.llm.schemas import TokenPricing
-from tests.agent.support import turn
+from tests.agent.support import RecordingToolProvider, turn
 
 SOURCE_SHA256 = "a" * 64
 
@@ -49,7 +49,7 @@ def search_tool(run):
         parameters=SearchParams,
         run=run,
         evidence_ids=lambda output: tuple(
-            AgentCitation.model_validate(hit) for hit in output["hits"]
+            EvidenceCitation.model_validate(hit) for hit in output["hits"]
         ),
     )
 
@@ -105,7 +105,7 @@ def answer_arguments(chunk_id=7, *, label="SUPPORTED"):
 
 def run_loop(turns, *, registry=None, budget=None):
     """Run the agent over a queue of staged turns and return the result and provider."""
-    provider = DeterministicToolProvider(turns)
+    provider = RecordingToolProvider(turns)
     result = asyncio.run(
         run_agent(
             "How much did revenue increase?",
@@ -329,7 +329,7 @@ def test_exhausted_budget_stops_before_a_futile_request(
         turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-2"),)),
     ]
 
-    provider = DeterministicToolProvider(turns)
+    provider = RecordingToolProvider(turns)
     provider.pricing = TokenPricing(
         input_per_million_usd=input_price, output_per_million_usd=Decimal("0")
     )

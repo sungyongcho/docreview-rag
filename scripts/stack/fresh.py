@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from app.atomic_write import write_text_atomically
-from app.operator.lifecycle_receipts import receipt_path
+from app.operator.local.receipts import receipt_path
 from scripts.stack.operator import LocalOperator
 from scripts.stack.prompts import confirm
 from scripts.stack.terminal import activity, run_step

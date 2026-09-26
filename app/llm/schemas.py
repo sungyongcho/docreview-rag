@@ -1,4 +1,4 @@
-"""Strict structured-output, budget, and provider-result schemas for M4."""
+"""Strict structured-output, budget, and provider-result schemas."""
 
 from __future__ import annotations
 
@@ -9,24 +9,23 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     BeforeValidator,
-    ConfigDict,
     Field,
     StrictBool,
-    StrictFloat,
     StrictInt,
     StrictStr,
 )
 from pydantic.functional_validators import model_validator
 
-
-def _reject_blank(value: str) -> str:
-    """Reject text that is present but carries no visible character."""
-    if not value.strip():
-        raise ValueError("text must not be blank")
-    return value
-
-
-NonBlank = Annotated[StrictStr, Field(min_length=1), AfterValidator(_reject_blank)]
+from app.contracts.evidence import AnswerLabel, validate_answer_citations
+from app.contracts.validation import (
+    NonBlank,
+    NonNegativeDecimal,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveInt,
+    StrictSchema,
+    reject_blank,
+)
 
 #: Longest grade rationale kept: about twenty words, so five grades cost far less than the
 #: 600-token local output allowance the grade and check calls share.
@@ -50,13 +49,8 @@ BoundedReason = Annotated[
     StrictStr,
     BeforeValidator(_truncate_reason),
     Field(min_length=1, max_length=GRADE_REASON_MAX_CHARS),
-    AfterValidator(_reject_blank),
+    AfterValidator(reject_blank),
 ]
-NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
-PositiveInt = Annotated[StrictInt, Field(gt=0)]
-NonNegativeFloat = Annotated[StrictFloat, Field(ge=0, allow_inf_nan=False)]
-NonNegativeDecimal = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
-AnswerLabel = Literal["SUPPORTED", "NOT_IN_DOCS"]
 ProviderStatus = Literal[
     "ok",
     "schema_rejected",
@@ -64,12 +58,6 @@ ProviderStatus = Literal[
     "provider_error",
     "budget_exceeded",
 ]
-
-
-class StrictSchema(BaseModel):
-    """Frozen fail-closed base for all M4 boundary values."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
 class TokenUsageDetails(StrictSchema):
@@ -281,18 +269,7 @@ class AnswerDecision(StrictSchema):
     @model_validator(mode="after")
     def validate_label_contract(self) -> Self:
         """Keep supported and absent structured states mutually exclusive."""
-        if len(self.citation_chunk_ids) != len(set(self.citation_chunk_ids)):
-            raise ValueError("citation chunk ids must be unique")
-        if self.label == "SUPPORTED":
-            if not self.citation_chunk_ids:
-                raise ValueError("SUPPORTED decisions require at least one citation")
-            if self.answer == "NOT_IN_DOCS":
-                raise ValueError("SUPPORTED decisions require a supported answer")
-        else:
-            if self.answer != "NOT_IN_DOCS":
-                raise ValueError("NOT_IN_DOCS decisions must use the NOT_IN_DOCS answer")
-            if self.citation_chunk_ids:
-                raise ValueError("NOT_IN_DOCS decisions must not contain citations")
+        validate_answer_citations(self.label, self.answer, self.citation_chunk_ids)
         return self
 
 

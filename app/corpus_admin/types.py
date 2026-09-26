@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import json
 from typing import Annotated, Literal
 
-from pydantic import ConfigDict, Field, StrictBool, StrictInt, StrictStr
+from pydantic import ConfigDict, Field, StrictBool, StrictInt, StrictStr, TypeAdapter
 from pydantic.dataclasses import dataclass as validated_dataclass
 
-from app.ingestion.source_catalog import ACQUISITION_COMPANIES, AcquisitionCompany, approved_company
-from app.ingestion.source_selection import SourceInventory
+from app.ingestion.sources.catalog import (
+    ACQUISITION_COMPANIES,
+    AcquisitionCompany,
+    approved_company,
+)
+from app.ingestion.sources.selection import SourceInventory
+from app.operator.jobs.store import StoredJob
 
 type AdminJobKind = Literal[
     "acquire_edgar",
@@ -196,3 +202,27 @@ class AdminJob:
     finished_at: datetime | None = None
     error_code: str | None = None
     result_refs: dict[str, object] | None = None
+
+
+def command_payload(command: AdminCommand) -> dict[str, object]:
+    """Serialize one validated command for persistent retry provenance."""
+    payload: dict[str, object] = {
+        "identifiers": list(command.identifiers),
+        "years": list(command.years),
+        "manifest": command.manifest,
+        "selection_id": command.selection_id,
+        "expected_documents": command.expected_documents,
+    }
+    if command.document_ids is not None:
+        payload["document_ids"] = list(command.document_ids)
+    if command.deletion_token is not None:
+        payload.update(deletion_token=command.deletion_token, confirm_delete=command.confirm_delete)
+    return payload
+
+
+_COMMAND = TypeAdapter(AdminCommand)
+
+
+def command_from_stored(job: StoredJob) -> AdminCommand:
+    """Validate persisted JSON before restoring command and retry provenance."""
+    return _COMMAND.validate_json(json.dumps({**job.request_json, "kind": job.kind}), strict=True)

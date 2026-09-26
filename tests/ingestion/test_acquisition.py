@@ -4,15 +4,11 @@ from dataclasses import replace
 
 import pytest
 
-from app.ingestion.acquisition import (
-    AcquiredFiling,
-    current_primary,
-    publish_bytes,
-    read_catalog,
-    selection_identity,
-)
-from app.ingestion.manifest import Manifest
-from app.ingestion.source_publication import publish_acquired
+from app.ingestion.sources.catalog import read_catalog
+from app.ingestion.sources.models import AcquiredFiling, Manifest
+from app.ingestion.sources.publication import publish_acquired
+from app.ingestion.sources.selection import current_primary, selection_identity
+from app.ingestion.sources.storage import publish_bytes
 from tests.ingestion.support import acquired_filing, filing_document, filing_source
 
 

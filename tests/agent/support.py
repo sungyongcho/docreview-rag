@@ -4,7 +4,7 @@ from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.provider import ProviderTurn
+from app.agent.provider import DeterministicToolProvider, ProviderTurn
 
 
 def turn(**changes):
@@ -69,3 +69,20 @@ class FakeSessionFactory:
         self.sessions.append(session)
         # The duck-typed fake stands in for the AsyncSession a SessionFactory returns.
         return cast(AsyncSession, session)
+
+
+class RecordingToolProvider(DeterministicToolProvider):
+    """Observe requests at the provider boundary without production recording state."""
+
+    def __init__(self, turns):
+        super().__init__(turns)
+        self.requests = []
+
+    async def turn(self, instructions, input_items, tools, *, max_output_tokens):
+        """Snapshot replay items before the loop can compact a later exchange."""
+        self.requests.append(
+            (instructions, tuple(dict(item) for item in input_items), tuple(tools))
+        )
+        return await super().turn(
+            instructions, input_items, tools, max_output_tokens=max_output_tokens
+        )

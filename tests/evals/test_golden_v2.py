@@ -4,7 +4,7 @@ from collections import Counter
 from pathlib import Path
 import re
 
-from app.evals.loader import load_golden_cases
+from app.evals.golden.loading import load_golden_cases
 
 
 def test_v2_suites_share_verified_evidence_and_preserve_unapproved_status():

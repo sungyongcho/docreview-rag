@@ -6,8 +6,8 @@ import re
 
 from bs4 import BeautifulSoup
 
-from app.ingestion.parser import Block, ParsedFiling, Section
-from app.retrieval.language import HANGUL_RANGES
+from app.ingestion.parsing.models import Block, ParsedFiling, Section
+from app.query.language import HANGUL_RANGES
 from tests.ingestion.support import filing_source
 
 # The Hangul ranges come from the retrieval boundary that already declares all three

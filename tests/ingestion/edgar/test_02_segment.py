@@ -2,11 +2,7 @@
 
 from types import ModuleType
 
-from tests.ingestion.edgar.support import (
-    NUMBERED_ITEMS,
-    build_blocks,
-    build_numbered_body,
-)
+from tests.ingestion.edgar.support import NUMBERED_ITEMS, build_blocks, build_numbered_body
 
 
 def test_number_segmentation_supports_semantic_and_class_based_bold(

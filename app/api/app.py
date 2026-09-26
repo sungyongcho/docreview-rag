@@ -7,15 +7,16 @@ from fastapi import APIRouter, FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from app.api.admin_deps import get_admin_services
-from app.api.admin_runtime import RuntimeAdminApiServices
+from app.api.dependencies import AdminDependencies
 from app.api.deps import ApiServices, get_api_services
+from app.api.documents.portfolio import PublicPortfolioReader
+from app.api.documents.preparation import get_portfolio_reader, router as public_portfolio_router
 from app.api.errors import install_error_handlers
-from app.api.routes import api_router
-from app.api.routes.admin import router as admin_router
-from app.api.routes.public_portfolio import router as public_portfolio_router
-from app.api.routes.public_snapshot_details import router as public_snapshot_details_router
+from app.api.review.schemas import ErrorResponse
+from app.api.routing import admin_router, api_router
 from app.api.runtime_gate import RuntimeResetGate, install_reset_gate
-from app.api.schemas import ErrorResponse
+from app.api.snapshots.details import get_snapshot_details, router as public_snapshot_details_router
+from app.evals.snapshots.evidence import PublicSnapshotDetails
 
 COMMON_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     422: {"model": ErrorResponse, "description": "Request validation failed."},
@@ -53,9 +54,11 @@ PROD_SURFACE: Final = ApiSurface(reset_gate=False, docs_execution=False, admin_s
 
 def create_api_app(
     services: ApiServices | None = None,
-    admin_services: RuntimeAdminApiServices | None = None,
+    admin_services: AdminDependencies | None = None,
     *,
     surface: ApiSurface = DEV_SURFACE,
+    portfolio_reader: PublicPortfolioReader | None = None,
+    snapshot_details: PublicSnapshotDetails | None = None,
 ) -> FastAPI:
     """Create the M5 application without starting external services.
 
@@ -89,6 +92,10 @@ def create_api_app(
     )
     if gate is not None:
         install_reset_gate(app, gate)
+    if portfolio_reader is not None:
+        app.dependency_overrides[get_portfolio_reader] = lambda: portfolio_reader
+    if snapshot_details is not None:
+        app.dependency_overrides[get_snapshot_details] = lambda: snapshot_details
     install_error_handlers(app)
     app.include_router(api_router, responses=COMMON_ERROR_RESPONSES)
     app.include_router(public_snapshot_details_router, responses=COMMON_ERROR_RESPONSES)

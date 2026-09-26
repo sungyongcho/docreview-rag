@@ -5,9 +5,9 @@ import asyncio
 import httpx
 import pytest
 
-from app.llm.local_connection import LocalConnectionManager
-from app.release.app import _local_engine_readiness
+from app.llm.local.connection import LocalConnectionManager
 from app.release.config import ReleaseSettings
+from app.release.status import _local_engine_readiness
 from tests.support import load_settings
 
 

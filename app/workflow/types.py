@@ -4,18 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Self
 
-from pydantic import Field, StrictInt, StrictStr
+from pydantic import Field, StrictInt
 from pydantic.functional_validators import model_validator
 
-from app.llm.schemas import (
-    AnswerDecision,
-    BudgetExceeded,
-    NonBlank,
-    NonNegativeInt,
-    PositiveInt,
-    ProviderBudget,
-    StrictSchema,
-)
+from app.contracts.evidence import EvidenceCitation, validate_answer_citations
+from app.contracts.validation import NonBlank, NonNegativeInt, PositiveInt, StrictSchema
+from app.llm.schemas import AnswerDecision, BudgetExceeded, ProviderBudget
 from app.observability.types import Budget, RunId, RunStatus, StepTrace, WorkflowNode
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
@@ -193,24 +187,6 @@ type WorkflowReason = Annotated[
 ]
 
 
-class EvidenceCitation(StrictSchema):
-    """One validated machine and human citation exposed by a final report."""
-
-    chunk_id: PositiveInt
-    doc_id: NonBlank
-    citation: NonBlank
-    start_char: NonNegativeInt
-    end_char: PositiveInt
-    source_sha256: Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
-
-    @model_validator(mode="after")
-    def validate_span(self) -> Self:
-        """Require a nonempty half-open source interval."""
-        if self.end_char <= self.start_char:
-            raise ValueError("end_char must be greater than start_char")
-        return self
-
-
 class WorkflowReport(StrictSchema):
     """The guarded answer and its complete degradation provenance."""
 
@@ -224,14 +200,9 @@ class WorkflowReport(StrictSchema):
     @model_validator(mode="after")
     def validate_label_contract(self) -> Self:
         """Require citations for supported answers and forbid them for absence."""
-        chunk_ids = tuple(citation.chunk_id for citation in self.citations)
-        if len(chunk_ids) != len(set(chunk_ids)):
-            raise ValueError("report citations must be unique")
-        if self.label == "SUPPORTED":
-            if not self.citations or self.answer == "NOT_IN_DOCS":
-                raise ValueError("SUPPORTED reports require cited evidence and an answer")
-        elif self.citations or self.answer != "NOT_IN_DOCS":
-            raise ValueError("NOT_IN_DOCS reports require the NOT_IN_DOCS answer and no citations")
+        validate_answer_citations(
+            self.label, self.answer, tuple(citation.chunk_id for citation in self.citations)
+        )
         return self
 
 

@@ -15,7 +15,7 @@ from urllib.error import HTTPError
 
 from dotenv import dotenv_values
 
-from app.operator.lifecycle_receipts import receipt_path
+from app.operator.local.receipts import receipt_path
 from deploy.gcp.verify_artifacts import (
     PublicBundle,
     digest,

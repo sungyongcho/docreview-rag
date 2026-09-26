@@ -10,15 +10,10 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.config import get_settings
 import app.db.bootstrap as bootstrap
-from app.db.bootstrap import (
-    SchemaDriftError,
-    ensure_schema_compatibility,
-    ensure_vector_extension,
-)
+from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility, ensure_vector_extension
 from app.db.models import Base
-from tests.live_postgres import live_postgres_unavailable
+from tests.live_postgres import disposable_database_url, live_postgres_unavailable
 
 
 def test_schema_drift_error_lists_tables_columns_and_remedy() -> None:
@@ -134,7 +129,7 @@ async def _exercise_clean_schema(database_url: str) -> tuple[bool, str]:
 @pytest.mark.live_postgres
 def test_live_schema_drift_stops_without_a_destructive_recovery() -> None:
     """Raise SchemaDriftError naming chunks and its missing columns on a live table."""
-    reachable, detail = asyncio.run(_exercise_drift_detection(get_settings().database_url))
+    reachable, detail = asyncio.run(_exercise_drift_detection(disposable_database_url()))
     if not reachable:
         live_postgres_unavailable(detail)
 
@@ -142,7 +137,7 @@ def test_live_schema_drift_stops_without_a_destructive_recovery() -> None:
 @pytest.mark.live_postgres
 def test_live_schema_check_passes_on_freshly_created_tables() -> None:
     """Accept freshly created metadata tables without raising."""
-    reachable, detail = asyncio.run(_exercise_clean_schema(get_settings().database_url))
+    reachable, detail = asyncio.run(_exercise_clean_schema(disposable_database_url()))
     if not reachable:
         live_postgres_unavailable(detail)
 

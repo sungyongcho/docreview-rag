@@ -2,7 +2,7 @@
 
 import pytest
 
-import app.ingestion.chunk as chunk_module
+import app.ingestion.chunking as chunk_module
 
 
 @pytest.fixture(scope="session")

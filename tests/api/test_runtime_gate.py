@@ -13,20 +13,20 @@ from fastapi.testclient import TestClient
 import pytest
 from starlette.requests import ClientDisconnect
 
-from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import DEV_SURFACE, LIVE_ADMIN_SURFACE, create_api_app
+from app.api.dependencies import AdminDependencies
 from app.api.deps import ApiServices
-from app.api.evidence import EvidenceSelection
-from app.api.routes.stream import review_stream
+from app.api.review.evidence import EvidenceSelection
+from app.api.review.schemas import ReviewRequest
+from app.api.review.streaming import review_stream
 from app.api.runtime_gate import RuntimeResetGate, RuntimeResetMiddleware
-from app.api.schemas import ReviewRequest
 
 
 def test_control_requires_dev_opt_in_loopback_and_private_token(tmp_path, monkeypatch):
     """Expose no control on ordinary apps and reject unauthenticated loopback requests."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     for surface, admin in (
-        (DEV_SURFACE, cast(RuntimeAdminApiServices, object())),
+        (DEV_SURFACE, cast(AdminDependencies, object())),
         (LIVE_ADMIN_SURFACE, None),
     ):
         app = create_api_app(admin_services=admin, surface=surface)
@@ -35,7 +35,7 @@ def test_control_requires_dev_opt_in_loopback_and_private_token(tmp_path, monkey
         assert not list(tmp_path.glob("docreview-runtime-gate-*.json"))
 
     app = create_api_app(
-        admin_services=cast(RuntimeAdminApiServices, object()), surface=LIVE_ADMIN_SURFACE
+        admin_services=cast(AdminDependencies, object()), surface=LIVE_ADMIN_SURFACE
     )
     with TestClient(app, client=("127.0.0.1", 1000)) as client:
         files = list(tmp_path.glob("docreview-runtime-gate-*.json"))
@@ -64,7 +64,7 @@ def test_hold_blocks_admission_and_requires_exact_release(tmp_path, monkeypatch)
     """Keep read liveness accessible while mutations and DB reads wait for exact release."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     app = create_api_app(
-        admin_services=cast(RuntimeAdminApiServices, object()), surface=LIVE_ADMIN_SURFACE
+        admin_services=cast(AdminDependencies, object()), surface=LIVE_ADMIN_SURFACE
     )
 
     @app.get("/health")

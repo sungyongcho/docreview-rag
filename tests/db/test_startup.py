@@ -69,20 +69,18 @@ def test_prepare_uses_the_shared_bootstrap_and_releases_its_engine(monkeypatch):
 def test_live_startup_empty_compatible_and_drifted(monkeypatch):
     """Prepare a fresh database once and preserve rows while rejecting incomplete schema."""
     import asyncio
-    import os
     from uuid import uuid4
 
     from sqlalchemy import event, text
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from app.api.document_catalog import DocumentCatalog
+    from app.api.documents.catalog import DocumentCatalog
     from app.api.errors import ApiProblemError
     from app.db.bootstrap import prepare_empty_schema
-    from app.retrieval.embeddings import EmbeddingIdentity
+    from app.retrieval.embedding.provider import EmbeddingIdentity
+    from tests.live_postgres import disposable_database_url
 
-    admin_url = os.environ.get("SCHEMA_TEST_ADMIN_URL")
-    if not admin_url:
-        pytest.skip("SCHEMA_TEST_ADMIN_URL must point to a disposable PostgreSQL server")
+    admin_url = disposable_database_url()
     name = "startup_" + uuid4().hex
 
     async def scenario():

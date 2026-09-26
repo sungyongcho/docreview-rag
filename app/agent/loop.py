@@ -9,12 +9,15 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.agent.provider import ProviderTurn, ToolCallingProvider
-from app.agent.registry import ToolRegistry, execute_tool
-from app.agent.tools import FINAL_ANSWER_NAME, safe_runtime_error
+from app.agent.tools.registry import (
+    FINAL_ANSWER_NAME,
+    ToolRegistry,
+    execute_tool,
+    safe_runtime_error,
+)
 from app.agent.types import (
     AgentAnswer,
     AgentBudget,
-    AgentCitation,
     AgentResult,
     AgentStatus,
     AgentStep,
@@ -22,7 +25,8 @@ from app.agent.types import (
     StepUsage,
     ToolCall,
 )
-from app.llm.provider import strict_json_loads, strict_response_format, validation_errors
+from app.contracts.evidence import EvidenceCitation
+from app.llm.decoding import strict_json_loads, strict_response_format, validation_errors
 
 # The Responses API rejects max_output_tokens below 16, so a smaller remaining
 # allowance can only buy a failed request: the run is out of budget, and saying
@@ -103,7 +107,7 @@ def _parse_arguments(arguments_json: str) -> dict[str, Any]:
 async def _dispatch(
     call: ToolCall,
     registry: ToolRegistry,
-) -> tuple[Observation, tuple[AgentCitation, ...]]:
+) -> tuple[Observation, tuple[EvidenceCitation, ...]]:
     """Run one tool call and return an explicit, identity-checked observation.
 
     Parameters
@@ -115,7 +119,7 @@ async def _dispatch(
 
     Returns
     -------
-    tuple[Observation, tuple[AgentCitation, ...]]
+    tuple[Observation, tuple[EvidenceCitation, ...]]
         JSON observation plus complete evidence identities, or an error and no
         evidence when lookup, validation, execution, serialization, or extraction fails.
 
@@ -123,7 +127,7 @@ async def _dispatch(
     -----
     Tool exceptions never escape into the agent loop: lookup, validation,
     execution, and serialization run through the shared
-    :func:`~app.agent.registry.execute_tool` boundary, so this surface and the
+    :func:`~app.agent.tools.registry.execute_tool` boundary, so this surface and the
     MCP server report identical errors for identical failures. Evidence
     extraction stays here because only the loop grounds citations.
     """
@@ -146,9 +150,9 @@ async def _dispatch(
     try:
         evidence = tool.evidence_ids(output) if tool.evidence_ids is not None else ()
         if not isinstance(evidence, tuple) or any(
-            not isinstance(item, AgentCitation) for item in evidence
+            not isinstance(item, EvidenceCitation) for item in evidence
         ):
-            raise TypeError("evidence extractor must return AgentCitation values")
+            raise TypeError("evidence extractor must return EvidenceCitation values")
         evidence_ids = [item.chunk_id for item in evidence]
         if len(evidence_ids) != len(set(evidence_ids)):
             raise ValueError("evidence extractor returned duplicate chunk ids")
@@ -163,7 +167,7 @@ async def _dispatch(
 
 def _final_answer(
     call: ToolCall,
-    evidence: Mapping[int, AgentCitation],
+    evidence: Mapping[int, EvidenceCitation],
 ) -> tuple[AgentAnswer | None, str]:
     """Validate one final answer against every immutable identity the run observed.
 
@@ -171,7 +175,7 @@ def _final_answer(
     ----------
     call : ToolCall
         The loop-owned ``final_answer`` call.
-    evidence : Mapping[int, AgentCitation]
+    evidence : Mapping[int, EvidenceCitation]
         Complete source identities returned by successful tool observations.
 
     Returns
@@ -284,7 +288,7 @@ async def run_agent(
     input_items: list[dict[str, Any]] = [{"role": "user", "content": question}]
     exchange_ends: list[int] = []
     steps: list[AgentStep] = []
-    evidence: dict[int, AgentCitation] = {}
+    evidence: dict[int, EvidenceCitation] = {}
     total_input = 0
     total_output = 0
     total_cached_input = 0

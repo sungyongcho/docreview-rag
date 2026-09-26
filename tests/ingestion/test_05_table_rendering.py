@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup, Tag
 import pytest
 
-from app.ingestion.tables import structured_table, to_grid
+from app.ingestion.parsing.tables import place_cells, structured_table
 from tests.ingestion.golden import NVDA_FY2024_INCOME_MD, TABLES
 
 type BlocksByDoc = dict[str, tuple[BeautifulSoup, list[Tag], str]]
@@ -25,7 +25,7 @@ def test_corpus_table_collapse_matches_golden(
     empty = expanded = collapsed = 0
 
     for table in _tables(blocks):
-        grid = to_grid(table)
+        grid = place_cells(table)[0]
         expanded += sum(len(row) for row in grid)
         view = structured_table(table)
         collapsed += sum(len(row.cells) for row in (*view.headers, *view.rows))

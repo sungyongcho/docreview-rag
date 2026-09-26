@@ -2,8 +2,8 @@
 
 from datetime import UTC, datetime
 
-from app.api.schemas import (
-    DocumentResource,
+from app.api.review.schemas import DocumentResource
+from app.evals.contracts import (
     EvalResultResource,
     SnapshotComparisonResponse,
     SnapshotMetricDelta,

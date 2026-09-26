@@ -11,8 +11,7 @@ import mcp.types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.mcp_server import build_mcp_server
-from app.agent.registry import ToolRegistry
-from app.agent.tools import Tool, ToolError
+from app.agent.tools.registry import Tool, ToolError, ToolRegistry
 
 # The bridge handlers discard their request context, so the tests hand them None in its
 # place instead of building a live MCP session.

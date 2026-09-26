@@ -5,11 +5,11 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 import pytest
 
-from app.api.runtime import RuntimeApiServices
+from app.api.review.runtime import RuntimeApiServices
 from app.llm.openai_limits import OpenAILimitsManager
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
-from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from tests.support import load_settings
 
 

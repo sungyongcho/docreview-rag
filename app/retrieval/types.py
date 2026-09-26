@@ -5,22 +5,19 @@ import math
 from numbers import Real
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from pydantic.functional_validators import field_validator, model_validator
 
-from app.ingestion.chunk import ChunkKind, compose_index_text
+from app.contracts.evidence import SourceSha256
+from app.contracts.validation import FiniteFloat, NonNegativeInt, PositiveInt
+from app.ingestion.chunking import ChunkKind, compose_index_text
 
-ChunkId = Annotated[StrictInt, Field(gt=0)]
 DocId = Annotated[StrictStr, Field(min_length=1, max_length=32)]
 Issuer = Annotated[StrictStr, Field(min_length=1, max_length=32)]
-FiscalYear = Annotated[StrictInt, Field(gt=0)]
 Form = Annotated[StrictStr, Field(min_length=1, max_length=16)]
 Language = Annotated[StrictStr, Field(pattern=r"^[a-z]{2}$")]
 Registry = Annotated[StrictStr, Field(pattern=r"^[a-z][a-z0-9_-]*$")]
 Item = Annotated[StrictStr, Field(min_length=1, max_length=8)]
-SourceSha256 = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
-SnapshotId = Annotated[StrictInt, Field(gt=0)]
-Score = Annotated[StrictFloat, Field(allow_inf_nan=False)]
 
 
 class ChunkHit(BaseModel):
@@ -28,18 +25,18 @@ class ChunkHit(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    chunk_id: ChunkId
+    chunk_id: PositiveInt
     doc_id: DocId
     item: Item | None
     kind: ChunkKind
     citation: Annotated[StrictStr, Field(min_length=1)]
-    start_char: Annotated[StrictInt, Field(ge=0)]
-    end_char: Annotated[StrictInt, Field(gt=0)]
+    start_char: NonNegativeInt
+    end_char: PositiveInt
     source_sha256: SourceSha256
     body: Annotated[StrictStr, Field(min_length=1)]
     context_header: StrictStr
     index_text: Annotated[StrictStr, Field(min_length=1)]
-    score: Score
+    score: FiniteFloat
 
     @model_validator(mode="after")
     def validate_source_and_index_text(self) -> Self:
@@ -66,11 +63,11 @@ class RetrievalFilters(BaseModel):
     registries: tuple[Registry, ...] = ()
     languages: tuple[Language, ...] = ()
     issuers: tuple[Issuer, ...] = ()
-    fiscal_years: tuple[FiscalYear, ...] = ()
+    fiscal_years: tuple[PositiveInt, ...] = ()
     forms: tuple[Form, ...] = ()
     items: tuple[Item | None, ...] = ()
     kinds: tuple[ChunkKind, ...] = ()
-    snapshot_id: SnapshotId | None = None
+    snapshot_id: PositiveInt | None = None
 
     @field_validator("doc_ids", "registries", "languages", "issuers", "forms", mode="after")
     @classmethod

@@ -8,3 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # session and transaction. This module only names the shape; it creates no engine, so
 # importing it never loads settings or connects to anything.
 type SessionFactory = Callable[[], AsyncSession]
+
+
+def default_session_factory() -> AsyncSession:
+    """Create one caller-owned session, loading process settings only when requested."""
+    from app.db.session import Session
+
+    return Session()

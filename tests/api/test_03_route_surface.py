@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from app.api.schemas import EvalResultResource
+from app.evals.contracts import EvalResultResource
 
 
 def test_run_route_returns_resource_and_typed_404(

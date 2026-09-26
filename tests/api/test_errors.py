@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.errors import install_error_handlers, translate_runtime_errors
-from app.operator.jobs import JobPersistenceError
+from app.operator.jobs.execution import JobPersistenceError
 
 
 def test_unconfigured_service_returns_typed_503(client_factory):

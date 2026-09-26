@@ -12,9 +12,10 @@ from openai import OpenAIError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.schemas import ApiError, ErrorResponse, ValidationIssue
+from app.api.review.schemas import ApiError, ErrorResponse, ValidationIssue
+from app.evals.snapshots.evidence import SnapshotEvidenceError
 from app.observability.types import JsonObject
-from app.operator.jobs import JobPersistenceError
+from app.operator.jobs.execution import JobPersistenceError
 from app.release.ai_allowance import AIAllowanceError
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,12 @@ async def translate_runtime_errors() -> AsyncIterator[None]:
         raise
     except JobPersistenceError as error:
         raise unavailable("job_persistence_unavailable", str(error)) from error
+    except SnapshotEvidenceError as error:
+        raise ApiProblemError(
+            status_code=404 if error.code == "snapshot_not_found" else 409,
+            code=error.code,
+            message=str(error),
+        ) from error
     except ValueError as error:
         raise bad_request("invalid_request", str(error)) from error
     except OpenAIError as error:

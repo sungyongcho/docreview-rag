@@ -2,11 +2,13 @@
 
 from collections.abc import Callable, Sequence
 import time
+from unittest.mock import patch
 
 from pydantic import BaseModel
 
-from app.llm.provider import Clock, LLMProvider
-from app.llm.schemas import NonBlank, Prompt, ProviderBudget, RawProviderResponse, StrictSchema
+from app.contracts.validation import NonBlank, StrictSchema
+from app.llm.completion import Clock, LLMProvider
+from app.llm.schemas import Prompt, ProviderBudget, RawProviderResponse
 
 
 class ChatReply(StrictSchema):
@@ -40,9 +42,16 @@ class DeterministicLLMProvider(LLMProvider):
         self._budgets: list[ProviderBudget] = []
         self._projection = projected_input_tokens
 
-    def _projected_input_tokens(self, prompt: Prompt) -> int | None:
-        """Project only when a test injected a projection; fixtures otherwise report usage alone."""
-        return None if self._projection is None else self._projection(prompt)
+    async def complete(self, prompt, schema, budget):
+        """Control the tokenizer boundary while exercising the real completion loop."""
+
+        def estimate(prompt, *, model_name):
+            """Use only the projection deliberately supplied by this test scenario."""
+            del model_name
+            return None if self._projection is None else self._projection(prompt)
+
+        with patch("app.llm.completion.estimate_prompt_tokens", side_effect=estimate):
+            return await super().complete(prompt, schema, budget)
 
     @property
     def prompts(self) -> tuple[Prompt, ...]:

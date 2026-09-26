@@ -86,6 +86,8 @@ dev = [
 
 
 [tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+pythonpath = ["."]
 markers = [
     "live_postgres: executes SQL against the configured live PostgreSQL database",
 ]

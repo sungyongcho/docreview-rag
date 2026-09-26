@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 import time
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
-from app.llm.provider import BilledAttemptAllowanceError, LLMProvider
+from app.llm.completion import BilledAttemptAllowanceError, LLMProvider
 from app.llm.schemas import (
     AnswerDecision,
     ProviderBudget,
@@ -23,7 +23,6 @@ from app.observability.trace import (
 )
 from app.observability.types import (
     JsonObject,
-    JsonValue,
     RunReport,
     WorkflowNode,
     build_run_report,
@@ -31,7 +30,7 @@ from app.observability.types import (
     validate_elapsed_seconds,
 )
 from app.release.ai_allowance import AIAllowanceError
-from app.retrieval.service import RetrievalResult
+from app.retrieval.search.service import RetrievalResult
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
 from app.workflow.prompts import build_check_prompt, build_grade_prompt

@@ -9,7 +9,7 @@ from app.observability.persistence import report_to_records
 from app.observability.stages import record_stages, stage_metadata
 from app.observability.types import Budget, RunReport
 from app.release.ai_allowance import AIAllowanceError
-from app.retrieval.service import ComponentRankings, RetrievalResult
+from app.retrieval.search.service import ComponentRankings, RetrievalResult
 from app.workflow.runner import BilledRunAllowanceError, Retriever, run_workflow
 from app.workflow.types import ProviderFailure, WorkflowRequest
 from tests.llm.support import DeterministicLLMProvider, TickClock, raw as _raw

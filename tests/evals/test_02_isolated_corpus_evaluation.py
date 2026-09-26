@@ -16,19 +16,19 @@ from app.config import (
     DEFAULT_BM25_IDF,
     DEFAULT_BM25_K1,
     LexicalRanker,
-    get_settings,
 )
 from app.db.models import ChunkEmbedding
-from app.evals.arms import RetrievalStrategy, make_retriever
-from app.evals.corpus import temporary_corpus_session
-from app.evals.retrieval_eval import evaluate_retriever, persist_evaluation
-from app.evals.types import GoldenCase, GoldenSpan
-from app.ingestion.chunk import Chunk
-from app.ingestion.seed import SeedBatch, filing_records
-from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from app.evals.execution.evaluator import evaluate_retriever, persist_evaluation
+from app.evals.execution.retrievers import make_retriever
+from app.evals.experiments.corpus import temporary_corpus_session
+from app.evals.golden.models import GoldenCase, GoldenSpan
+from app.ingestion.chunking import Chunk
+from app.ingestion.pipeline import SeedBatch, filing_records
+from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
+from app.retrieval.search.plan import RetrievalStrategy
 from tests.evals.support import SOURCE_SHA256
 from tests.ingestion.seed.support import sample_filing
-from tests.live_postgres import live_postgres_unavailable
+from tests.live_postgres import disposable_database_url, live_postgres_unavailable
 
 
 def _batch() -> SeedBatch:
@@ -222,7 +222,7 @@ async def _exercise(database_url: URL) -> tuple[bool, str]:
 @pytest.mark.live_postgres
 def test_live_postgres_runs_isolated_matrix_and_regression_persistence():
     """Score every retrieval arm on an isolated corpus and gate the persisted runs."""
-    database_url = make_url(get_settings().database_url)
+    database_url = make_url(disposable_database_url())
     reachable, detail = asyncio.run(_exercise(database_url))
     if not reachable:
         live_postgres_unavailable(detail)

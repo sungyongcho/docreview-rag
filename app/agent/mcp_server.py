@@ -6,7 +6,7 @@ from mcp.server import Server
 from mcp.server.context import ServerRequestContext
 import mcp.types as mcp_types
 
-from app.agent.registry import ToolRegistry, execute_tool
+from app.agent.tools.registry import ToolRegistry, execute_tool
 
 SERVER_NAME = "docreview-agent"
 
@@ -34,9 +34,9 @@ def build_mcp_server(registry: ToolRegistry) -> Server:
     The published tool list is rendered once from :meth:`ToolRegistry.input_schemas`,
     the registry's own tolerant derivation, so this surface cannot drift from the
     registry. Every call dispatches through the shared
-    :func:`~app.agent.registry.execute_tool` boundary, so validation, execution,
+    :func:`~app.agent.tools.registry.execute_tool` boundary, so validation, execution,
     and serialization failures carry exactly the errors the agent loop reports —
-    a :class:`~app.agent.tools.ToolError` message verbatim, everything unexpected
+    a :class:`~app.agent.tools.registry.ToolError` message verbatim, everything unexpected
     redacted — as ``is_error`` data rather than protocol exceptions.
     """
     if not isinstance(registry, ToolRegistry):

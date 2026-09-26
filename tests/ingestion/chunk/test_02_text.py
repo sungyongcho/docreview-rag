@@ -2,8 +2,9 @@
 
 import pytest
 
-import app.ingestion.chunk as chunking
-from app.ingestion.parser import Block, Section
+import app.ingestion.chunking as chunking
+from app.ingestion.parsing.models import Block, Section
+from app.ingestion.tokens import InputBudget
 from tests.ingestion.chunk.support import build_filing
 
 
@@ -27,7 +28,7 @@ def test_text_chunks_respect_block_boundaries():
         Block("paragraph", "a" * 60, source_pos=10, end_pos=80),
         Block("paragraph", "b" * 60, source_pos=80, end_pos=150),
     ]
-    chunks = chunking.chunk_filing(build_filing(blocks), chunking.ChunkConfig(target_tokens=35))
+    chunks = chunking.chunk_filing(build_filing(blocks), InputBudget(target_tokens=35))
     assert [chunk.body for chunk in chunks] == ["a" * 60, "b" * 60]
     assert [(chunk.start_char, chunk.end_char) for chunk in chunks] == [(10, 80), (80, 150)]
 
@@ -35,7 +36,7 @@ def test_text_chunks_respect_block_boundaries():
 def test_single_long_paragraph_is_not_destroyed():
     """Keep one long paragraph intact even when it exceeds the soft target."""
     block = Block("paragraph", "x" * 200, source_pos=10, end_pos=220)
-    chunks = chunking.chunk_filing(build_filing([block]), chunking.ChunkConfig(target_tokens=20))
+    chunks = chunking.chunk_filing(build_filing([block]), InputBudget(target_tokens=20))
     assert len(chunks) == 1
     assert chunks[0].body == "x" * 200
 
@@ -46,7 +47,7 @@ def test_text_chunks_do_not_bridge_disjoint_source_ranges():
         Block("paragraph", "First range.", source_pos=10, end_pos=30, source_group=0),
         Block("paragraph", "Second range.", source_pos=100, end_pos=120, source_group=1),
     ]
-    chunks = chunking.chunk_filing(build_filing(blocks), chunking.ChunkConfig(target_tokens=1_000))
+    chunks = chunking.chunk_filing(build_filing(blocks), InputBudget(target_tokens=1_000))
     assert [chunk.body for chunk in chunks] == ["First range.", "Second range."]
     assert [(chunk.start_char, chunk.end_char) for chunk in chunks] == [(10, 30), (100, 120)]
 
@@ -99,7 +100,7 @@ def test_narrative_heading_becomes_repeated_context():
         Block("paragraph", "Cash increased.", source_pos=20, end_pos=40),
         Block("paragraph", "Debt decreased.", source_pos=40, end_pos=60),
     ]
-    chunks = chunking.chunk_filing(build_filing(blocks), chunking.ChunkConfig(target_tokens=20))
+    chunks = chunking.chunk_filing(build_filing(blocks), InputBudget(target_tokens=20))
     assert len(chunks) == 2
     assert all("Liquidity" in chunk.context_header for chunk in chunks)
     assert all("Liquidity" not in chunk.body for chunk in chunks)

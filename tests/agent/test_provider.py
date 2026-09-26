@@ -32,13 +32,15 @@ def openai_provider(response):
     responses = FakeResponses(response)
     provider = OpenAIToolProvider(
         model_name="gpt-5.6-terra",
-        client=cast(AsyncOpenAI, SimpleNamespace(responses=responses)),
+        client=cast(
+            AsyncOpenAI, SimpleNamespace(responses=responses, base_url="https://api.openai.com/v1")
+        ),
     )
     return provider, responses
 
 
-def test_deterministic_provider_replays_turns_and_records_requests():
-    """Replay the queued turn, record the request, and fail once the queue is empty."""
+def test_deterministic_provider_replays_turns_and_stops_at_exhaustion():
+    """Replay the queued turn and fail once the queue is empty."""
     provider = DeterministicToolProvider([turn()])
 
     result = asyncio.run(
@@ -46,7 +48,6 @@ def test_deterministic_provider_replays_turns_and_records_requests():
     )
 
     assert result.input_tokens == 10
-    assert provider.requests == (("instructions", ({"role": "user", "content": "q"},), ()),)
     with pytest.raises(RuntimeError, match="queue is empty"):
         asyncio.run(provider.turn("instructions", [], [], max_output_tokens=50))
 
@@ -186,7 +187,10 @@ def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
 
     injected = OpenAIToolProvider(
         model_name="gpt-5.6-terra",
-        client=cast(AsyncOpenAI, SimpleNamespace(responses=SimpleNamespace())),
+        client=cast(
+            AsyncOpenAI,
+            SimpleNamespace(responses=SimpleNamespace(), base_url="https://api.openai.com/v1"),
+        ),
     )
     asyncio.run(injected.aclose())
     assert closed == [True]

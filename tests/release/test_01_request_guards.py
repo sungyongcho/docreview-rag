@@ -12,11 +12,7 @@ import pytest
 from uvicorn.logging import AccessFormatter
 
 from app.release.ai_allowance import SharedAIAllowance, reserve_openai
-from app.release.middleware import (
-    ReleaseGuardMiddleware,
-    SecurityHeadersMiddleware,
-    client_host,
-)
+from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware, client_host
 from app.release.secrets import REDACTION, SecretRedactor, install_secret_redaction
 
 

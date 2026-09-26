@@ -3,14 +3,9 @@
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Self
+from typing import Final, Literal, Self
 
-from pydantic import (
-    Field,
-    SecretStr,
-    field_validator,
-    model_validator,
-)
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from app.openai_models import resolve_openai_model
@@ -23,6 +18,7 @@ BM25Idf = Literal["lucene", "robertson"]
 DEFAULT_BM25_K1 = 1.2
 DEFAULT_BM25_B = 0.75
 DEFAULT_BM25_IDF: BM25Idf = "lucene"
+EMBEDDING_DIMENSIONS: Final = 384
 
 
 class Settings(ProviderSettings):
@@ -35,7 +31,7 @@ class Settings(ProviderSettings):
     embedding_provider: EmbeddingProviderName = "deterministic"
     embedding_model: str = "text-embedding-3-large"
     sbert_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    embed_dim: Literal[384] = 384
+    embed_dim: Literal[384] = EMBEDDING_DIMENSIONS
     embedding_batch_size: int = Field(default=128, gt=0, le=2048)
     # Read only by the corpus acquisition command. The DART client takes the key as an
     # argument so no library code reaches the process environment for a credential.
@@ -63,7 +59,11 @@ class Settings(ProviderSettings):
     @classmethod
     def parse_embedding_dimension(cls, value: object) -> object:
         """Accept the fixed dimension from string-valued environment settings."""
-        return 384 if isinstance(value, str) and value.strip() == "384" else value
+        return (
+            EMBEDDING_DIMENSIONS
+            if isinstance(value, str) and value.strip() == str(EMBEDDING_DIMENSIONS)
+            else value
+        )
 
     @property
     def local_llm_enabled(self) -> bool:

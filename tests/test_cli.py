@@ -17,9 +17,10 @@ from sqlalchemy.exc import OperationalError
 from app import cli
 from app.config import Settings, get_settings
 from app.db import session as session_module
-from app.retrieval import embeddings, service
-from app.retrieval.embeddings import DeterministicEmbeddingProvider
-from app.retrieval.service import ComponentRankings, RetrievalResult
+from app.retrieval.embedding import provider as embeddings
+from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
+from app.retrieval.search import service
+from app.retrieval.search.service import ComponentRankings, RetrievalResult
 from tests.api.support import MemorySession
 from tests.retrieval.support import hit
 from tests.support import load_settings

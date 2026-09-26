@@ -2,25 +2,26 @@
 
 from decimal import Decimal
 from typing import cast
+from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
+from openai import AsyncOpenAI
 import pytest
 
 from app.api.deps import get_api_services
-from app.api.review_profile import PromptPolicy, ServerBM25
-from app.api.runtime import RuntimeApiServices
-from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.api.review.profiles import PromptPolicy
+from app.api.review.runtime import RuntimeApiServices
+from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import CorpusStatus
 from app.llm.schemas import RawProviderResponse
 from app.observability.types import RunReport, build_run_report
 from app.release.ai_allowance import reserve_openai
-from app.release.app import build_runtime_services, create_release_app
+from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
-from app.retrieval.embeddings import (
-    DeterministicEmbeddingProvider,
-    EmbeddingClient,
-    OpenAIEmbeddingProvider,
-)
+from app.release.runtime import build_runtime_services
+from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
+from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
+from app.retrieval.search.profiles import ServerBM25
 from app.workflow.types import WorkflowReport
 from tests.llm.support import DeterministicLLMProvider
 from tests.support import load_settings
@@ -321,7 +322,7 @@ def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypat
             [RawProviderResponse(output_text="{}", input_tokens=0, output_tokens=0)]
         )
 
-    monkeypatch.setattr("app.release.app.OpenAILLMProvider", provider_factory)
+    monkeypatch.setattr("app.release.runtime.OpenAILLMProvider", provider_factory)
     services = build_runtime_services(
         load_settings(ReleaseSettings, service_mode="runtime", env_file=None)
     )
@@ -337,6 +338,10 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> 
     for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
         monkeypatch.delenv(name, raising=False)
 
+    from tests.api.support import write_scope_manifest
+
+    (tmp_path / "data" / "corpus").mkdir(parents=True)
+    write_scope_manifest(tmp_path / "data" / "corpus", ())
     services = build_runtime_services(
         load_settings(ReleaseSettings, service_mode="runtime", env_file=None)
     )
@@ -344,18 +349,18 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> 
     import asyncio
 
     from app.api.errors import ApiProblemError
-    from app.api.review_profile import ReviewSessionProfile
-    from app.api.schemas import ReviewRequest
+    from app.api.review.profiles import ReviewSessionProfile
+    from app.api.review.schemas import ReviewRequest
 
-    async def retrieval(session, query, k, filters):
-        """Fail the test if a review on the unconfigured engine reaches retrieval."""
-        raise AssertionError("an unconfigured engine reached retrieval")
+    services._retrieval_service = AsyncMock(
+        side_effect=AssertionError("unconfigured engine reached retrieval")
+    )
 
     request = ReviewRequest(
         query="What are the risk factors?", session_profile=ReviewSessionProfile(engine="openai")
     )
     with pytest.raises(ApiProblemError) as refused:
-        asyncio.run(services.review_with_retrieval(request, retrieval))
+        asyncio.run(services.review(request))
     assert refused.value.status_code == 503
     assert refused.value.error.code == "provider_unavailable"
 
@@ -436,13 +441,13 @@ def test_release_uses_configured_embedding_identity_and_credential_slot(
     monkeypatch, tmp_path, environment
 ) -> None:
     """Use the indexed provider identity and the release's explicit credential slot."""
-    import app.release.app as release_app
+    import app.release.runtime as release_app
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
     monkeypatch.setenv("EMBEDDING_MODEL", "text-embedding-3-large")
     monkeypatch.setenv("MODE", environment)
-    selected = OpenAIEmbeddingProvider(client=cast(EmbeddingClient, object()))
+    selected = OpenAIEmbeddingProvider(client=cast(AsyncOpenAI, object()))
     captured = {}
 
     def embedding_factory(settings):

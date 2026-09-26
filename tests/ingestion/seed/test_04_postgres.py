@@ -7,8 +7,10 @@ from datetime import date
 import pytest
 from sqlalchemy import insert, select, text
 
-from app.db.models import DIM, Chunk, ChunkEmbedding, Document
-from app.ingestion.seed import SeedBatch, document_record, persist_seed_batch
+from app.config import EMBEDDING_DIMENSIONS
+from app.db.models import Chunk, ChunkEmbedding, Document
+from app.ingestion.persistence import persist_seed_batch
+from app.ingestion.pipeline import SeedBatch
 from tests.ingestion.seed.support import sample_batch
 from tests.live_postgres import isolated_session_factory
 
@@ -21,7 +23,7 @@ def test_postgresql_rerun_preserves_identity_and_replaces_changed_evidence():
         """Commit each seed operation separately and inspect its stored outcome."""
         async with isolated_session_factory() as factory:
             batch = sample_batch()
-            vector = [1.0] + [0.0] * (DIM - 1)
+            vector = [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1)
             async with factory() as session:
                 first = await persist_seed_batch(session, batch)
                 assert (first.documents, first.chunks) == (1, 2)
@@ -36,7 +38,7 @@ def test_postgresql_rerun_preserves_identity_and_replaces_changed_evidence():
                         input_sha256=original.index_text_sha256,
                         provider="deterministic",
                         model="test-model",
-                        dimensions=DIM,
+                        dimensions=EMBEDDING_DIMENSIONS,
                         tokenizer="test-tokenizer",
                         embedding=vector,
                     )
@@ -90,7 +92,7 @@ def test_postgresql_rerun_preserves_identity_and_replaces_changed_evidence():
                 filing.source,
                 document=document.model_copy(
                     update={
-                        "aliases": ["NVIDIA Corporation"],
+                        "aliases": ("NVIDIA Corporation",),
                         "report_period": date(2024, 1, 29),
                         "sec": document.sec.model_copy(update={"primary_document": "amended.html"}),
                     }
@@ -101,12 +103,11 @@ def test_postgresql_rerun_preserves_identity_and_replaces_changed_evidence():
                 batch.chunks[0],
                 body="Changed source-derived narrative.",
                 context_header="Updated NVIDIA context",
-                index_text="Updated NVIDIA context\n\nChanged source-derived narrative.",
                 start_char=12,
                 end_char=48,
             )
             changed_batch = SeedBatch(
-                (document_record(updated_filing),),
+                (updated_filing.source.document,),
                 (changed_chunk, batch.chunks[1]),
                 (updated_filing,),
             )

@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from app.llm.provider import OpenAILLMProvider
+from app.llm.openai import OpenAILLMProvider
 from app.observability.types import Budget
 from app.workflow.runner import run_workflow
 from app.workflow.types import WorkflowRequest

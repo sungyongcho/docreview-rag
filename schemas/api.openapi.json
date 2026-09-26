@@ -384,6 +384,7 @@
             "title": "Failed Stage"
           },
           "message": {
+            "minLength": 1,
             "title": "Message",
             "type": "string"
           },
@@ -706,6 +707,7 @@
         "description": "One retrieval-free canned or provider-backed casual response.",
         "properties": {
           "answer": {
+            "minLength": 1,
             "title": "Answer",
             "type": "string"
           },
@@ -1144,92 +1146,6 @@
           "provider"
         ],
         "title": "CorpusStatusResource",
-        "type": "object"
-      },
-      "CustomRetrievalProfile": {
-        "additionalProperties": false,
-        "description": "One explicit bounded retrieval plan used only by the Custom preset.",
-        "properties": {
-          "bm25_b": {
-            "default": 0.75,
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Bm25 B",
-            "type": "number"
-          },
-          "bm25_idf": {
-            "default": "lucene",
-            "enum": [
-              "lucene",
-              "robertson"
-            ],
-            "title": "Bm25 Idf",
-            "type": "string"
-          },
-          "bm25_k1": {
-            "default": 1.2,
-            "exclusiveMinimum": 0.0,
-            "title": "Bm25 K1",
-            "type": "number"
-          },
-          "candidate_k": {
-            "default": 20,
-            "exclusiveMinimum": 0.0,
-            "maximum": 500.0,
-            "title": "Candidate K",
-            "type": "integer"
-          },
-          "k": {
-            "default": 5,
-            "exclusiveMinimum": 0.0,
-            "maximum": 100.0,
-            "title": "K",
-            "type": "integer"
-          },
-          "lexical_ranker": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ts_rank_cd",
-                  "bm25"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "ts_rank_cd",
-            "title": "Lexical Ranker"
-          },
-          "reranker": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RerankerName"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "route_by_language": {
-            "default": false,
-            "title": "Route By Language",
-            "type": "boolean"
-          },
-          "rrf_k": {
-            "default": 60,
-            "exclusiveMinimum": 0.0,
-            "maximum": 10000.0,
-            "title": "Rrf K",
-            "type": "integer"
-          },
-          "strategy": {
-            "$ref": "#/components/schemas/RetrievalStrategy",
-            "default": "hybrid"
-          }
-        },
-        "title": "CustomRetrievalProfile",
         "type": "object"
       },
       "DocumentChunkPreviewResource": {
@@ -1711,14 +1627,17 @@
             "type": "integer"
           },
           "doc_id": {
+            "minLength": 1,
             "title": "Doc Id",
             "type": "string"
           },
           "filing_date": {
+            "minLength": 1,
             "title": "Filing Date",
             "type": "string"
           },
           "filing_id": {
+            "minLength": 1,
             "title": "Filing Id",
             "type": "string"
           },
@@ -1728,18 +1647,22 @@
             "type": "integer"
           },
           "form": {
+            "minLength": 1,
             "title": "Form",
             "type": "string"
           },
           "issuer": {
+            "minLength": 1,
             "title": "Issuer",
             "type": "string"
           },
           "issuer_id": {
+            "minLength": 1,
             "title": "Issuer Id",
             "type": "string"
           },
           "language": {
+            "minLength": 1,
             "title": "Language",
             "type": "string"
           },
@@ -1752,10 +1675,12 @@
             "type": "string"
           },
           "registry": {
+            "minLength": 1,
             "title": "Registry",
             "type": "string"
           },
           "report_period": {
+            "minLength": 1,
             "title": "Report Period",
             "type": "string"
           },
@@ -1770,6 +1695,7 @@
             "type": "string"
           },
           "source_url": {
+            "minLength": 1,
             "title": "Source Url",
             "type": "string"
           }
@@ -1946,10 +1872,14 @@
             "additionalProperties": {
               "type": "number"
             },
+            "propertyNames": {
+              "minLength": 1
+            },
             "title": "Metrics",
             "type": "object"
           },
           "raw_artifact_path": {
+            "minLength": 1,
             "title": "Raw Artifact Path",
             "type": "string"
           },
@@ -1959,6 +1889,7 @@
             "type": "integer"
           },
           "suite": {
+            "minLength": 1,
             "title": "Suite",
             "type": "string"
           }
@@ -2589,6 +2520,7 @@
         "description": "One inspectable candidate with filing and rank provenance.",
         "properties": {
           "body": {
+            "minLength": 1,
             "title": "Body",
             "type": "string"
           },
@@ -2598,6 +2530,7 @@
             "type": "integer"
           },
           "citation": {
+            "minLength": 1,
             "title": "Citation",
             "type": "string"
           },
@@ -2614,6 +2547,7 @@
             "type": "string"
           },
           "doc_id": {
+            "minLength": 1,
             "title": "Doc Id",
             "type": "string"
           },
@@ -2628,16 +2562,19 @@
             "type": "integer"
           },
           "form": {
+            "minLength": 1,
             "title": "Form",
             "type": "string"
           },
           "issuer": {
+            "minLength": 1,
             "title": "Issuer",
             "type": "string"
           },
           "item": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -2655,6 +2592,7 @@
             "type": "string"
           },
           "language": {
+            "minLength": 1,
             "title": "Language",
             "type": "string"
           },
@@ -2668,6 +2606,7 @@
             "type": "number"
           },
           "registry": {
+            "minLength": 1,
             "title": "Registry",
             "type": "string"
           },
@@ -2686,6 +2625,7 @@
           "section_title": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -2732,7 +2672,7 @@
       },
       "EvidenceCitation": {
         "additionalProperties": false,
-        "description": "One validated machine and human citation exposed by a final report.",
+        "description": "Complete immutable identity of a nonempty interval in one source chunk.",
         "properties": {
           "chunk_id": {
             "exclusiveMinimum": 0.0,
@@ -2781,6 +2721,7 @@
         "description": "One retrieved evidence unit with complete source identity.",
         "properties": {
           "body": {
+            "minLength": 1,
             "title": "Body",
             "type": "string"
           },
@@ -2790,6 +2731,7 @@
             "type": "integer"
           },
           "citation": {
+            "minLength": 1,
             "title": "Citation",
             "type": "string"
           },
@@ -2798,6 +2740,7 @@
             "type": "string"
           },
           "doc_id": {
+            "minLength": 1,
             "title": "Doc Id",
             "type": "string"
           },
@@ -2809,6 +2752,7 @@
           "item": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -2832,6 +2776,7 @@
           "section_title": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -6037,7 +5982,7 @@
       },
       "RetrievalProfile": {
         "additionalProperties": false,
-        "description": "One explicit retrieval plan that never mutates process-wide settings.",
+        "description": "One explicit bounded retrieval plan used only by the Custom preset.",
         "properties": {
           "bm25_b": {
             "default": 0.75,
@@ -6143,6 +6088,7 @@
             "type": "array"
           },
           "query": {
+            "minLength": 1,
             "title": "Query",
             "type": "string"
           },
@@ -6168,6 +6114,7 @@
           "candidate_token": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -6205,6 +6152,7 @@
             "title": "Path Decision"
           },
           "query": {
+            "minLength": 1,
             "title": "Query",
             "type": "string"
           },
@@ -6322,6 +6270,7 @@
             ]
           },
           "query": {
+            "minLength": 1,
             "title": "Query",
             "type": "string"
           },
@@ -6363,7 +6312,7 @@
           "custom_retrieval": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/CustomRetrievalProfile"
+                "$ref": "#/components/schemas/RetrievalProfile"
               },
               {
                 "type": "null"
@@ -6583,6 +6532,7 @@
             "type": "string"
           },
           "system_prompt": {
+            "minLength": 1,
             "title": "System Prompt",
             "type": "string"
           },
@@ -6652,6 +6602,7 @@
         "description": "One common stored case shown side by side across two snapshots.",
         "properties": {
           "baseline_question": {
+            "minLength": 1,
             "title": "Baseline Question",
             "type": "string"
           },
@@ -6668,6 +6619,7 @@
             "title": "Baseline Rank"
           },
           "candidate_question": {
+            "minLength": 1,
             "title": "Candidate Question",
             "type": "string"
           },
@@ -6684,6 +6636,7 @@
             "title": "Candidate Rank"
           },
           "case_id": {
+            "minLength": 1,
             "title": "Case Id",
             "type": "string"
           },
@@ -6763,6 +6716,7 @@
           "warning": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -6852,6 +6806,7 @@
             "title": "Delta"
           },
           "name": {
+            "minLength": 1,
             "title": "Name",
             "type": "string"
           }
@@ -6888,6 +6843,7 @@
             "$ref": "#/components/schemas/EvalResultResource"
           },
           "label": {
+            "minLength": 1,
             "title": "Label",
             "type": "string"
           },
@@ -6918,6 +6874,7 @@
           "suite_title": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -7508,7 +7465,7 @@
             "type": "string"
           },
           "retrieval": {
-            "$ref": "#/components/schemas/CustomRetrievalProfile"
+            "$ref": "#/components/schemas/RetrievalProfile"
           },
           "updated_at": {
             "anyOf": [
@@ -7899,6 +7856,7 @@
         "description": "One stable request-validation detail without echoing submitted values.",
         "properties": {
           "error_type": {
+            "minLength": 1,
             "title": "Error Type",
             "type": "string"
           },
@@ -7917,6 +7875,7 @@
             "type": "array"
           },
           "message": {
+            "minLength": 1,
             "title": "Message",
             "type": "string"
           }

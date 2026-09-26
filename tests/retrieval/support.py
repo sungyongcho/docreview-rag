@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from app.ingestion.chunk import compose_index_text
-from app.ingestion.parser import Block, ParsedFiling, Section
+from app.ingestion.chunking import compose_index_text
+from app.ingestion.parsing.models import Block, ParsedFiling, Section
 from app.retrieval.types import ChunkHit
 from tests.ingestion.support import filing_document, filing_source
 

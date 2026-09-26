@@ -120,16 +120,6 @@ def test_missing_question_is_a_usage_error_even_under_invalid_settings() -> None
     assert "ValidationError" not in result.stderr
 
 
-def test_cli_model_default_follows_the_agent_policy_default():
-    """The command must not pick a different (and pricier) default model than the policy."""
-    from app.agent.__main__ import arguments
-    from app.openai_models import resolve_openai_model
-
-    args = arguments(["--question", "q", "--provider", "openai"])
-
-    assert args.model in (None, resolve_openai_model("agent").model)
-
-
 def _slot_settings(key):
     """Build settings that select the dev key slot with the given key (None for no key)."""
     from app.config import Settings
@@ -172,7 +162,9 @@ def test_openai_provider_receives_the_mode_selected_key_and_the_engine_is_releas
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-            async def create(**_):
+            async def create(**request):
+                """Record the effective model before the simulated provider failure."""
+                captured["model"] = request["model"]
                 raise RuntimeError("offline")
 
             self.responses = type("Responses", (), {"create": staticmethod(create)})()
@@ -187,6 +179,7 @@ def test_openai_provider_receives_the_mode_selected_key_and_the_engine_is_releas
 
     assert result["status"] == "provider_error"
     assert captured.get("api_key") == "sk-local-slot-test"
+    assert captured["model"] == "gpt-5.6-luna"
     assert disposed == [True]
 
 
@@ -195,7 +188,7 @@ def test_mcp_dispatch_releases_the_engine_when_the_server_exits(monkeypatch, ser
     """Serve MCP without a question and release its pool on normal and exceptional exits."""
     from app.agent import __main__ as entrypoint, mcp_server
     import app.db.session as session_module
-    from app.retrieval.embeddings import DeterministicEmbeddingProvider
+    from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 
     events = []
 
@@ -215,7 +208,7 @@ def test_mcp_dispatch_releases_the_engine_when_the_server_exits(monkeypatch, ser
 
     monkeypatch.setattr(session_module, "engine", FakeEngine())
     monkeypatch.setattr(
-        "app.retrieval.embeddings.get_embedding_provider", DeterministicEmbeddingProvider
+        "app.retrieval.embedding.provider.get_embedding_provider", DeterministicEmbeddingProvider
     )
     monkeypatch.setattr(mcp_server, "serve_stdio", serve)
 

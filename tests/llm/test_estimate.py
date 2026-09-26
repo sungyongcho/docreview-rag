@@ -3,12 +3,7 @@
 import tiktoken
 
 import app.llm.estimate as estimate
-from app.llm.estimate import (
-    FRAMING_TOKENS,
-    RETRY_AFTER_S,
-    estimate_prompt_tokens,
-    prompt_encoding,
-)
+from app.llm.estimate import FRAMING_TOKENS, RETRY_AFTER_S, estimate_prompt_tokens, prompt_encoding
 from app.llm.schemas import Prompt
 
 

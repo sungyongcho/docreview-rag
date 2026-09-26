@@ -14,9 +14,10 @@ import tarfile
 
 import pytest
 
-from app.evals.identity import artifact_filename
-from app.evals.retrieval_eval import evaluate_retriever, write_evaluation_artifact
-from app.evals.types import EvaluationRetrieval, GoldenCase
+from app.evals.execution.evaluator import evaluate_retriever, write_evaluation_artifact
+from app.evals.execution.models import EvaluationRetrieval
+from app.evals.golden.models import GoldenCase
+from app.evals.results.identity import artifact_filename
 from deploy.gcp import verify_artifacts as artifacts
 
 ROOT = Path(__file__).resolve().parents[3]

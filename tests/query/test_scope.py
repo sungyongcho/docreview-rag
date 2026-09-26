@@ -1,0 +1,235 @@
+"""Manifest alias and query-scope regression tests."""
+
+from datetime import date
+from typing import Literal
+
+import pytest
+
+from app.ingestion.sources.models import DartMetadata, DocumentReference, SecMetadata
+from app.query.scope import ManifestScopeIndex, QueryScopeError, resolve_query_scope
+from app.retrieval.types import RetrievalFilters
+
+
+def _document(
+    registry: Literal["sec", "dart"],
+    issuer: str,
+    issuer_id: str,
+    filing_id: str,
+    aliases: tuple[str, ...],
+) -> DocumentReference:
+    """Construct current common filing metadata for the alias scope fixtures."""
+    return DocumentReference(
+        document_id=f"{issuer}-FY2024",
+        registry=registry,
+        language="en" if registry == "sec" else "ko",
+        issuer=issuer,
+        issuer_id=issuer_id,
+        filing_id=filing_id,
+        fiscal_year=2024,
+        form="10-K" if registry == "sec" else "사업보고서",
+        filing_date=date(2024, 2, 21) if registry == "sec" else date(2025, 3, 11),
+        report_period=date(2024, 1, 28) if registry == "sec" else date(2024, 12, 31),
+        source_url=f"https://example.test/{filing_id}",
+        aliases=aliases,
+        sec=SecMetadata(cik=issuer_id, accession=filing_id, primary_document="report.htm")
+        if registry == "sec"
+        else None,
+        dart=DartMetadata(
+            corp_code=issuer_id,
+            receipt_number=filing_id,
+            report_code="11011",
+            report_name="사업보고서 (2024.12)",
+        )
+        if registry == "dart"
+        else None,
+    )
+
+
+ENTRIES = (
+    _document(
+        "sec",
+        "NVDA",
+        "0001045810",
+        "0001045810-24-000029",
+        ("NVDA", "NVIDIA", "NVIDIA Corporation"),
+    ),
+    _document(
+        "dart",
+        "005930",
+        "00126380",
+        "20250311001085",
+        ("삼성전자", "Samsung Electronics", "005930"),
+    ),
+    _document("dart", "000660", "00164779", "20250319000665", ("SK하이닉스", "SK hynix", "000660")),
+)
+
+
+def index() -> ManifestScopeIndex:
+    """Return the minimal mixed-registry alias index."""
+    return ManifestScopeIndex.from_entries(ENTRIES)
+
+
+def test_display_name_resolves_only_when_that_company_has_documents() -> None:
+    """Reuse approved display names for present issuers without admitting absent catalog entries."""
+    entry = ENTRIES[0].model_copy(update={"aliases": ("NVDA", "NVIDIA CORP")})
+    scope_index = ManifestScopeIndex.from_entries((entry,))
+    assert [item.issuer for item in scope_index.named_target("NVIDIA")] == ["NVDA"]
+    assert resolve_query_scope("NVIDIA's revenue", scope_index).filters.issuers == ("NVDA",)
+    assert scope_index.named_target("Intel") == ()
+    assert scope_index.named_target("SanDisk") == ()
+    assert scope_index.named_target("NVIDIA competitor") == ()
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        pytest.param("삼성전자", id="manifest-korean-name"),
+        pytest.param("Samsung Electronics", id="manifest-english-name"),
+        pytest.param("005930", id="stock-code"),
+        pytest.param("삼성", id="everyday-korean-short-form"),
+        pytest.param("samsung", id="everyday-english-short-form"),
+    ],
+)
+def test_samsung_aliases_resolve_to_dart_korean(alias: str) -> None:
+    """Resolve every committed Samsung spelling, including everyday short forms."""
+    scope = resolve_query_scope(f"{alias} 매출", index())
+
+    assert scope.source == "alias"
+    assert scope.filters.issuers == ("005930",)
+    assert scope.filters.registries == ("dart",)
+    assert scope.filters.languages == ("ko",)
+
+
+@pytest.mark.parametrize(
+    ("query", "issuer", "registry"),
+    [
+        pytest.param("하이닉스의 주가는?", "000660", "dart", id="korean-name-with-a-particle"),
+        pytest.param("하닉 영업이익", "000660", "dart", id="korean-abbreviation"),
+        pytest.param("SK 하이닉스 매출", "000660", "dart", id="spaced-korean-name"),
+        pytest.param("hynix revenue", "000660", "dart", id="english-short-form"),
+        pytest.param("nvidia 의 주가는?", "NVDA", "sec", id="english-name-with-a-spaced-particle"),
+    ],
+)
+def test_everyday_company_spellings_resolve(query: str, issuer: str, registry: str) -> None:
+    """Korean names, transliterations and common short forms map to the catalog issuer."""
+    scope = resolve_query_scope(query, index())
+
+    assert scope.source == "alias"
+    assert scope.filters.issuers == (issuer,)
+    assert scope.filters.registries == (registry,)
+
+
+def test_everyday_spelling_resolves_classifier_extracted_names() -> None:
+    """The model path hands back the user's spelling; the same alias table resolves it."""
+    scope_index = index()
+
+    assert [item.issuer for item in scope_index.named_target("삼성")] == ["005930"]
+    assert [item.issuer for item in scope_index.named_target("하이닉스")] == ["000660"]
+    assert [item.issuer for item in scope_index.named_target("엔비디아")] == ["NVDA"]
+    # Catalog aliases only attach to issuers that have documents in the manifest.
+    assert scope_index.named_target("Intel") == ()
+    assert scope_index.named_target("암드") == ()
+    assert resolve_query_scope("암드 실적", scope_index).source == "query_language"
+
+
+def test_longest_alias_wins_over_its_short_form() -> None:
+    """삼성전자 must not be reported as the short alias 삼성 nested inside it."""
+    matches = index().match("삼성전자와 엔비디아 비교")
+
+    assert [(item.alias, item.issuer) for item in matches] == [
+        ("삼성전자", "005930"),
+        ("엔비디아", "NVDA"),
+    ]
+
+
+def test_multiple_issuers_and_scripts_remain_multiple() -> None:
+    """Keep Korean and English lexical lanes for a cross-registry comparison."""
+    scope = resolve_query_scope("삼성전자와 NVIDIA revenue 비교", index())
+
+    assert scope.filters.issuers == ("005930", "NVDA")
+    assert scope.filters.registries == ("dart", "sec")
+    assert scope.filters.languages == ("en", "ko")
+
+
+def test_explicit_issuer_suppresses_query_aliases() -> None:
+    """Honor an explicit drawer company without silently adding a query company."""
+    scope = resolve_query_scope(
+        "삼성전자와 비교",
+        index(),
+        explicit_filters=RetrievalFilters(issuers=("NVDA",)),
+    )
+
+    assert scope.source == "explicit"
+    assert scope.filters.issuers == ("NVDA",)
+    assert tuple(match.issuer for match in scope.suppressed_aliases) == ("005930",)
+
+
+def test_explicit_corpus_rejects_alias_from_another_registry() -> None:
+    """Refuse a DART issuer under explicit SEC scope instead of widening retrieval."""
+    with pytest.raises(QueryScopeError, match="outside the selected corpus") as caught:
+        resolve_query_scope("삼성전자 매출", index(), corpus_scope="sec")
+
+    assert caught.value.code == "query_scope_conflict"
+
+
+def test_alias_free_query_uses_every_visible_script() -> None:
+    """Fall back to both script languages when no company alias is present."""
+    scope = resolve_query_scope("메모리 revenue trend", index())
+
+    assert scope.source == "query_language"
+    assert scope.filters.languages == ("en", "ko")
+
+
+def test_normalized_alias_conflict_is_rejected() -> None:
+    """Reject an ambiguous alias before it can route a user to the wrong issuer."""
+    conflicting = (
+        *ENTRIES,
+        _document("sec", "AMD", "0000002488", "0000002488-24-000012", ("nvidia",)),
+    )
+
+    with pytest.raises(ValueError, match="maps to both"):
+        ManifestScopeIndex.from_entries(conflicting)
+
+
+def test_same_issuer_filings_merge_acquired_and_existing_aliases() -> None:
+    """An acquired official name must not disable routing for the entire corpus."""
+    older = _document(
+        "sec", "INTC", "0000050863", "0000050863-24-000010", ("INTC", "Intel", "Intel Corporation")
+    ).model_copy(update={"document_id": "INTC-FY2023", "fiscal_year": 2023})
+    newer = _document("sec", "INTC", "0000050863", "0000050863-25-000009", ("intc", "INTEL CORP"))
+    merged = ManifestScopeIndex.from_entries((*ENTRIES, older, newer))
+    intel = next(item for item in merged.issuers if item.issuer == "INTC")
+    assert intel.aliases == ("INTC", "Intel", "INTEL CORP", "Intel Corporation")
+    for alias in ("INTC", "Intel Corporation", "INTEL CORP"):
+        assert resolve_query_scope(f"{alias} revenue", merged).filters.issuers == ("INTC",)
+    assert resolve_query_scope(
+        "What drove NVIDIA data center revenue growth?", merged
+    ).filters.issuers == ("NVDA",)
+    assert merged.documents[older.document_id].fiscal_year == 2023
+    assert merged.documents[newer.document_id].fiscal_year == 2024
+
+
+def test_alias_union_does_not_accept_duplicates_inside_one_filing() -> None:
+    """Only equivalent names across filings are deduplicated; malformed entries still fail."""
+    malformed = ENTRIES[0].model_copy(update={"aliases": ("NVIDIA", " nvidia ")})
+    with pytest.raises(ValueError, match="normalized duplicate"):
+        ManifestScopeIndex.from_entries((malformed,))
+
+
+@pytest.mark.parametrize(
+    ("query", "expected", "issuer"),
+    [
+        ("ＮＶＤＡ Revenue and AMD demand", "  Revenue and AMD demand", "NVDA"),
+        ("Nvidia Corporation Revenue", "  Revenue", "NVDA"),
+        ("삼성전자 매출", "  매출", "005930"),
+        ("삼성전자 매출", "  매출", "005930"),
+        ("Samsung\t  Electronics Revenue", "  Revenue", "005930"),
+        ("NVDAX and NVDA Revenue", "NVDAX and   Revenue", "NVDA"),
+    ],
+)
+def test_alias_removal_uses_matching_unicode_spans(query, expected, issuer):
+    """Match and remove the same issuer without rewriting unrelated source text."""
+    scope_index = index()
+    assert {match.issuer for match in scope_index.match(query)} == {issuer}
+    assert scope_index.without_aliases(query) == expected
+    assert scope_index.match(scope_index.without_aliases(query)) == ()

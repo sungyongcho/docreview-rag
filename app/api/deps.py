@@ -7,17 +7,15 @@ from typing import Annotated, Protocol
 
 from fastapi import Depends
 
-from app.api.document_catalog import DocumentCatalog
+from app.api.documents.catalog import DocumentCatalog
 from app.api.errors import ApiProblemError
-from app.api.schemas import (
+from app.api.review.schemas import (
     DocumentResource,
-    EvalResultResource,
     RetrieveRequest,
     RetrieveResponse,
     ReviewRequest,
-    SnapshotComparisonResponse,
-    SnapshotResource,
 )
+from app.evals.contracts import EvalResultResource, SnapshotComparisonResponse, SnapshotResource
 from app.observability.types import RunReport, StepTrace
 from app.workflow.runner import NodeObserver
 

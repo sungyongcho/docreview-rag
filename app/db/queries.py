@@ -2,12 +2,12 @@
 
 from typing import Any
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import contains_eager
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.db.models import Document, DocumentParse, ParsedStructure
+from app.db.models import Chunk, Document, DocumentParse, ParsedStructure
 
 
 def join_current_parse(
@@ -37,3 +37,13 @@ def current_source_matches(
         .correlate_except(DocumentParse, ParsedStructure)
         .exists()
     )
+
+
+def document_chunk_counts() -> Select[tuple[Document, int]]:
+    """Read current filing metadata and chunk counts for API and corpus inventories."""
+    statement = (
+        select(Document, func.count(Chunk.id).label("chunk_count"))
+        .outerjoin(Chunk, Chunk.doc_id == Document.doc_id)
+        .group_by(Document.doc_id)
+    )
+    return join_current_parse(statement, load=True, grouped=True)

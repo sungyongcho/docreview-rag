@@ -4,9 +4,9 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.ingestion.manifest import Manifest, ProcessingSelection
-from app.operator.job_history import ARCHIVE_KEY
-from app.operator.jobs import JobDomain, JobStatus, JobStore, StoredJob
+from app.ingestion.sources.models import Manifest, ProcessingSelection
+from app.operator.jobs.history import ARCHIVE_KEY
+from app.operator.jobs.store import JobDomain, JobStatus, JobStore, StoredJob
 from tests.ingestion.support import filing_document, filing_source
 
 

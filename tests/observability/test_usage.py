@@ -2,16 +2,13 @@
 
 import asyncio
 from decimal import Decimal
-import os
-from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from sqlalchemy import MetaData, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.api.admin_runtime import RuntimeAdminApiServices
-from app.api.runtime import RuntimeApiServices
+from app.api.system.usage import usage_summary
 from app.db.models import Base, OperatorJob
 from app.llm.schemas import Prompt, ProviderBudget, RawProviderResponse, TokenPricing
 from app.observability.stages import record_stages, stage, stage_metadata
@@ -23,6 +20,7 @@ from app.observability.usage import (
     review_usage,
     usage_record,
 )
+from tests.live_postgres import disposable_database_url
 from tests.llm.support import ChatReply, DeterministicLLMProvider
 from tests.observability.support import persist_run_report, run_report, step_trace
 
@@ -147,9 +145,7 @@ def test_embedding_estimates_keep_unreported_input_explicit():
 @pytest.mark.live_postgres
 def test_live_usage_includes_archived_cli_batches_and_matches_provider_subtotals():
     """Exercise actual JSONB persistence and aggregation only in an explicitly isolated server."""
-    url = os.environ.get("USAGE_TEST_DATABASE_URL")
-    if not url:
-        pytest.skip("USAGE_TEST_DATABASE_URL must point to the isolated fixture server")
+    url = disposable_database_url()
 
     async def scenario():
         """Own only connection-local temporary tables, preserving every external table."""
@@ -224,9 +220,7 @@ def test_live_usage_includes_archived_cli_batches_and_matches_provider_subtotals
                 usage_entries = ledger.result_refs[USAGE_KEY]
                 assert isinstance(usage_entries, list)
                 assert usage_entries[0]["input_tokens"] == 100
-            service = object.__new__(RuntimeAdminApiServices)
-            service._runtime = cast(RuntimeApiServices, SimpleNamespace(session_factory=factory))
-            usage = await service.usage()
+            usage = await usage_summary(factory)
             assert usage.runs == 1 and usage.requests == 3 and usage.input_tokens == 130
             assert usage.estimated_cost_usd == Decimal("0.030013")
             assert sum(group.requests for group in usage.providers) == usage.requests
@@ -249,11 +243,9 @@ def test_direct_backfill_keeps_charged_cli_usage_when_vector_storage_fails(monke
     """The CLI's shared backfill path commits response usage before a later vector-write failure."""
     import hashlib
 
-    from app.retrieval import embeddings
+    from app.retrieval.indexing import embeddings
 
-    url = os.environ.get("USAGE_TEST_DATABASE_URL")
-    if not url:
-        pytest.skip("USAGE_TEST_DATABASE_URL must point to the isolated fixture server")
+    url = disposable_database_url()
 
     async def scenario():
         """Use one temporary ledger and a fake SDK response; never download or embed user data."""
@@ -277,25 +269,33 @@ def test_direct_backfill_keeps_charged_cli_usage_when_vector_storage_fails(monke
                 """Fail after the provider response to verify independent usage durability."""
                 raise ValueError("fixture vector write rejected")
 
-            async def create(**kwargs):
-                """Return one fake provider response with explicit reported token usage."""
-                return SimpleNamespace(
-                    data=[SimpleNamespace(index=0, embedding=[1.0] * 384)],
-                    usage=SimpleNamespace(prompt_tokens=17),
+            import httpx
+            from openai import AsyncOpenAI
+
+            from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
+
+            def respond(request):
+                """Return billed usage at the actual HTTP transport boundary."""
+                return httpx.Response(
+                    200,
+                    json={
+                        "object": "list",
+                        "model": "text-embedding-3-large",
+                        "data": [{"object": "embedding", "index": 0, "embedding": [1.0] * 384}],
+                        "usage": {"prompt_tokens": 17, "total_tokens": 17},
+                    },
                 )
 
             monkeypatch.setattr(embeddings, "_missing_batch", missing)
             monkeypatch.setattr(embeddings, "_store_batch", reject_store)
-            provider = embeddings.OpenAIEmbeddingProvider(
-                client=cast(
-                    embeddings.EmbeddingClient,
-                    SimpleNamespace(embeddings=SimpleNamespace(create=create)),
-                ),
-                credential_slot="dev",
-            )
-            async with factory() as session:
-                with pytest.raises(ValueError, match="vector write"):
-                    await embeddings.embed_missing_chunks(session, provider, batch_size=1)
+            async with AsyncOpenAI(
+                api_key="offline-test",
+                http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+            ) as client:
+                provider = OpenAIEmbeddingProvider(client=client, credential_slot="dev")
+                async with factory() as session:
+                    with pytest.raises(ValueError, match="vector write"):
+                        await embeddings.embed_missing_chunks(session, provider, batch_size=1)
             async with factory() as session:
                 row = (await session.execute(select(OperatorJob))).scalar_one()
                 assert (

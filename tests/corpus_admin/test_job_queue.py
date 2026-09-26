@@ -8,12 +8,12 @@ from pydantic import SecretStr
 import pytest
 
 from app.config import Settings
-from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.ingestion.progress import OperationProgress
 from app.operator.corpus_access import JobCancelledError
-from app.operator.jobs import JobPersistenceError
-from app.operator.progress import PROGRESS_KEY, stored_progress
+from app.operator.jobs.execution import JobPersistenceError
+from app.operator.jobs.progress import PROGRESS_KEY, stored_progress
 from tests.corpus_admin.support import LedgerStore
 
 

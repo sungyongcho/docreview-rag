@@ -6,8 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from app.api.app import COMMON_ERROR_RESPONSES, create_api_app
-from app.api.routes.admin import router as admin_router
-from app.operator.service import create_operator_app
+from app.api.routing import admin_router
+from app.operator.local.app import create_operator_app
 
 
 def export_schema() -> str:

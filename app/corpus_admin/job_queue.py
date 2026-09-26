@@ -19,26 +19,27 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
-from app.corpus_admin.stored_jobs import command_from_stored, command_payload
 from app.corpus_admin.types import (
     MAX_QUEUED_JOBS,
     AdminCommand,
     AdminJob,
     OperationOutcome,
+    command_from_stored,
+    command_payload,
 )
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
-from app.ingestion.source_deletion import SourceDeletion
-from app.ingestion.source_selection import record_selection
+from app.ingestion.sources.deletion import SourceDeletion
+from app.ingestion.sources.selection import record_selection
 from app.observability.usage import LEDGER_KIND, USAGE_KEY, UsageSink, merge_usage
 from app.operator.corpus_access import CorpusAccess, JobCancelledError
-from app.operator.jobs import (
+from app.operator.jobs.execution import (
     JobExecutionCoordinator,
     JobPersistenceError,
-    JobStore,
     JobTurnCancelledError,
     ProgressPersister,
 )
-from app.operator.progress import advance_progress, finish_progress, start_progress
+from app.operator.jobs.progress import advance_progress, finish_progress, start_progress
+from app.operator.jobs.store import JobStore
 
 #: Kinds that rewrite chunks, vectors or BM25 statistics, which search reads.
 #: ``enqueue`` turns ``ingest_selected`` into ``ingest_manifest``, so it never runs here.

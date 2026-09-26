@@ -4,11 +4,11 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from app.api.admin_runtime import RuntimeAdminApiServices
+from app.api.dependencies import AdminDependencies
 from app.api.errors import unavailable
 
 
-def get_admin_services() -> RuntimeAdminApiServices:
+def get_admin_services() -> AdminDependencies:
     """Require explicit local administrator composition."""
     raise unavailable(
         "admin_unavailable",
@@ -16,4 +16,4 @@ def get_admin_services() -> RuntimeAdminApiServices:
     )
 
 
-AdminServices = Annotated[RuntimeAdminApiServices, Depends(get_admin_services)]
+AdminServices = Annotated[AdminDependencies, Depends(get_admin_services)]

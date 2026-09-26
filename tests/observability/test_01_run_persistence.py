@@ -7,11 +7,9 @@ import pytest
 from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.admin_runtime import RuntimeAdminApiServices
-from app.api.runtime import RuntimeApiServices
+from app.api.system.usage import usage_summary
 from app.db.models import Run, Trace
-from app.observability.persistence import REDACTED
-from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from app.observability.redaction import REDACTED
 from tests.live_postgres import isolated_session_factory
 from tests.observability.support import persist_run_report, run_report, step_trace
 
@@ -120,11 +118,7 @@ async def _exercise_live_postgres() -> None:
                         )
                 assert getattr(failure.value.orig, "sqlstate", None) == sqlstate
 
-        usage = await RuntimeAdminApiServices(
-            runtime=RuntimeApiServices(
-                session_factory=factory, embedding_provider=DeterministicEmbeddingProvider()
-            )
-        ).usage()
+        usage = await usage_summary(factory)
         assert usage.runs == 1
         assert usage.requests == 3
         assert usage.input_tokens == 140

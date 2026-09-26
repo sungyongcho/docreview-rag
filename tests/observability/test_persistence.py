@@ -9,13 +9,8 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Run, Trace
-from app.observability.persistence import (
-    REDACTED,
-    persist_run_records,
-    records_to_report,
-    redact_sensitive_text,
-    report_to_records,
-)
+from app.observability.persistence import persist_run_records, records_to_report, report_to_records
+from app.observability.redaction import REDACTED, redact_sensitive_text
 from tests.observability.support import run_report, step_trace
 
 

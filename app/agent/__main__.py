@@ -1,4 +1,4 @@
-"""Command-line acceptance path for the M9 tool-calling agent."""
+"""Command-line entry point for the tool-calling filing agent."""
 
 import argparse
 import asyncio
@@ -94,8 +94,8 @@ def _demo_provider(question: str, k: int) -> DeterministicToolProvider:
     or re-constrained field breaks here at construction instead of surfacing as
     a silent runtime rejection.
     """
-    from app.agent.builtin_tools import SearchFilingsParams
     from app.agent.provider import DeterministicToolProvider, ProviderTurn
+    from app.agent.tools.filings import SearchFilingsParams
     from app.agent.types import AgentAnswer, ToolCall
 
     search_arguments = SearchFilingsParams(query=question, k=k).model_dump_json()
@@ -164,13 +164,13 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         If ``--provider openai`` is selected but the MODE-selected key slot is
         empty; the slot rule never falls back to another environment's credential.
     """
-    from app.agent.builtin_tools import build_default_registry
     from app.agent.loop import run_agent
     from app.agent.provider import OpenAIToolProvider, ToolCallingProvider
+    from app.agent.tools.filings import build_default_registry
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.db.session import Session, engine
-    from app.retrieval.embeddings import get_embedding_provider
+    from app.retrieval.embedding.provider import get_embedding_provider
 
     openai_provider: OpenAIToolProvider | None = None
     provider: ToolCallingProvider
@@ -214,10 +214,10 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
 
 async def _serve_mcp() -> None:
     """Serve the registry tools over MCP stdio with per-call sessions."""
-    from app.agent.builtin_tools import build_default_registry
     from app.agent.mcp_server import serve_stdio
+    from app.agent.tools.filings import build_default_registry
     from app.db.session import Session, engine
-    from app.retrieval.embeddings import get_embedding_provider
+    from app.retrieval.embedding.provider import get_embedding_provider
 
     try:
         registry = build_default_registry(
@@ -230,7 +230,7 @@ async def _serve_mcp() -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Run the M9 acceptance command and print machine-readable evidence.
+    """Run the filing agent and print machine-readable evidence.
 
     Raises
     ------

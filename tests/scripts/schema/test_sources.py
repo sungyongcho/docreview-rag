@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.ingestion.manifest import Manifest
-from app.ingestion.source_selection import acquisition_draft, source_inventory
+from app.ingestion.sources.models import Manifest
+from app.ingestion.sources.selection import acquisition_draft, source_inventory
 from scripts.schema import recreate
 from scripts.schema.sources import (
     SourceAccessError,
@@ -248,7 +248,7 @@ def test_failed_source_rollback_preserves_journal_and_reports_unconfirmed_recove
 
 def test_reset_clears_managed_inputs_and_preserves_unregistered_html(tmp_path):
     """Only registered or managed-namespace originals and pinned inputs enter the reset."""
-    from app.ingestion.source_selection import record_selection
+    from app.ingestion.sources.selection import record_selection
 
     corpus = tmp_path / "data/corpus"
     write_selection_catalog(corpus)

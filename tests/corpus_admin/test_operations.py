@@ -10,13 +10,11 @@ import pytest
 from app.config import Settings
 import app.corpus_admin.operations as operations
 from app.corpus_admin.operations import CorpusOperations
-from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand
 from app.db.session_factory import SessionFactory
-from app.retrieval.embeddings import (
-    DeterministicEmbeddingProvider,
-    EmbeddingBackfillResult,
-)
+from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
+from app.retrieval.indexing.embeddings import EmbeddingBackfillResult
 from tests.corpus_admin.support import write_manifest
 
 

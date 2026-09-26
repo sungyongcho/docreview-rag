@@ -6,7 +6,7 @@ from types import ModuleType
 
 import pytest
 
-from app.ingestion.manifest import FilingSource, Manifest
+from app.ingestion.sources.models import FilingSource, Manifest
 from tests.ingestion.support import copy_filing_source
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -15,19 +15,19 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture(scope="session")
 def parser_module() -> ModuleType:
     """Import the neutral parser-contract module from the repository source tree."""
-    return import_module("app.ingestion.parser")
+    return import_module("app.ingestion.parsing.html")
 
 
 @pytest.fixture(scope="session")
 def edgar_module() -> ModuleType:
     """Import the EDGAR adapter module from the repository source tree."""
-    return import_module("app.ingestion.edgar")
+    return import_module("app.ingestion.parsing.sec")
 
 
 @pytest.fixture(scope="session")
 def xref_module() -> ModuleType:
     """Import the xref module from the repository source tree."""
-    return import_module("app.ingestion.xref")
+    return import_module("app.ingestion.parsing.sec_xref")
 
 
 @pytest.fixture(scope="session")

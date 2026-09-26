@@ -7,12 +7,16 @@ import json
 import pytest
 
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, Settings
-from app.evals.measurement import assess_indexing_budget
-import app.evals.run as run
-from app.evals.run import arguments, main, run_matrix
-from app.evals.types import EvaluationRetrieval
-from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from app.evals.execution.measurement import assess_indexing_budget
+from app.evals.execution.models import EvaluationRetrieval
+import app.evals.experiments.matrix as run
+from app.evals.experiments.matrix import run_matrix
+from app.evals.run import arguments, main
+from app.ingestion.sources.models import Manifest, ProcessingSelection
+from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from tests.evals.support import positive_case, relevant_hit
+from tests.ingestion.edgar.support import build_numbered_body
+from tests.ingestion.support import filing_source
 
 
 class _Engine:
@@ -26,28 +30,36 @@ class _Engine:
         self.disposed = True
 
 
-def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
-    """Replace every I/O boundary of the runner and record the arms it binds."""
+def _install(monkeypatch, corpus_dir, *, indexing_seconds=1.0, arms=None):
+    """Use a real selected HTML source while replacing database and retrieval I/O."""
     bound = [] if arms is None else arms
     engine = _Engine()
 
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+    path = corpus_dir / "filing.html"
+    path.write_text(build_numbered_body(gap=2))
+    source = filing_source(path)
+    Manifest(
+        corpus=source.corpus,
+        documents=(source.document,),
+        artifacts=(source.artifact,),
+        selections=(
+            ProcessingSelection(
+                selection_id="sec-evaluation", artifact_ids=(source.artifact.artifact_id,)
+            ),
+        ),
+    ).write(corpus_dir / "manifest.json")
     monkeypatch.setattr(
-        run, "get_settings", lambda: Settings(embedding_provider="deterministic", review_model=None)
+        run,
+        "get_settings",
+        lambda: Settings(
+            corpus_dir=corpus_dir, embedding_provider="deterministic", review_model=None
+        ),
     )
     provider = DeterministicEmbeddingProvider(dimensions=8)
     monkeypatch.setattr(run, "get_embedding_provider", lambda _settings: provider)
     monkeypatch.setattr(
         run, "load_golden_cases", lambda _path, *, manifest_path, selection_id: [positive_case()]
-    )
-    monkeypatch.setattr(
-        run,
-        "load_chunking_filings",
-        lambda *, settings, manifest_name, selection_id, on_progress: (object(), object()),
-    )
-    monkeypatch.setattr(
-        run,
-        "build_chunking_batch",
-        lambda target, *, provider, parsed_filings, selection_id, settings, on_progress: object(),
     )
     monkeypatch.setattr(run, "create_async_engine", lambda *_a, **_k: engine)
 
@@ -64,12 +76,16 @@ def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
         on_progress,
     ):
         """Yield a stub session with fixed indexing evidence for one chunk target."""
+        assert _batch.documents == (source.document,)
+        assert _batch.chunks and all(
+            chunk.source_sha256 == source.artifact.sha256 for chunk in _batch.chunks
+        )
         yield (
             object(),
             assess_indexing_budget(
                 target_tokens=target_tokens,
-                document_count=2,
-                chunk_count=6,
+                document_count=len(_batch.documents),
+                chunk_count=len(_batch.chunks),
                 embedding_provider="deterministic",
                 target_phase_seconds=indexing_seconds,
             ),
@@ -93,8 +109,9 @@ def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
 
 def _execute(monkeypatch, argv, **install):
     """Run the command with every boundary stubbed and return its result dict."""
-    engine, bound = _install(monkeypatch, **install)
-    result = asyncio.run(run_matrix(**vars(arguments(argv))))
+    args = arguments(argv)
+    engine, bound = _install(monkeypatch, args.artifact_dir / "corpus", **install)
+    result = asyncio.run(run_matrix(**vars(args)))
     assert engine.disposed
     return result, bound
 
@@ -153,11 +170,11 @@ def test_a_bm25_only_budget_arm_records_the_parameters_it_measured(monkeypatch, 
 
 def test_the_command_exit_status_follows_the_measured_verdict(monkeypatch, tmp_path, capsys):
     """Exit nonzero on a blown budget so a regression cannot pass unnoticed."""
-    _install(monkeypatch, indexing_seconds=301.0)
+    _install(monkeypatch, tmp_path / "corpus", indexing_seconds=301.0)
     failed = main(["--artifact-dir", str(tmp_path / "fail")])
     capsys.readouterr()
 
-    _install(monkeypatch, indexing_seconds=1.0)
+    _install(monkeypatch, tmp_path / "corpus", indexing_seconds=1.0)
     passed = main(["--artifact-dir", str(tmp_path / "pass")])
     printed = capsys.readouterr().out
 

@@ -1,13 +1,16 @@
 """Database enforcement of filing identity, source provenance, and evaluation records."""
 
 import asyncio
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 from sqlalchemy import func, insert, null, select, update
 from sqlalchemy.exc import IntegrityError
 
+from app.config import EMBEDDING_DIMENSIONS
 from app.db.models import (
-    DIM,
     BM25CorpusStat,
     Chunk,
     ChunkEmbedding,
@@ -16,10 +19,33 @@ from app.db.models import (
     LexemeStat,
     ParsedStructure,
 )
-from app.ingestion.seed import persist_seed_batch
-from app.retrieval.bm25 import backfill_term_stats
+from app.ingestion.persistence import persist_seed_batch
+from app.retrieval.indexing.bm25 import backfill_term_stats
 from tests.ingestion.seed.support import sample_batch
 from tests.live_postgres import isolated_session
+
+
+def test_model_import_does_not_require_provider_configuration(tmp_path):
+    """Load the fixed schema while unrelated provider configuration is deliberately invalid."""
+    root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from app.db.models import ChunkEmbedding; "
+            "print(ChunkEmbedding.__table__.c.embedding.type.dim)",
+        ],
+        cwd=tmp_path,
+        env={
+            "PYTHONPATH": str(root),
+            "EMBEDDING_PROVIDER": "openai",
+            "REVIEW_MODEL": "invalid-provider-setting",
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "384"
 
 
 @pytest.mark.live_postgres
@@ -109,7 +135,7 @@ def test_chunks_reject_invalid_evidence_and_duplicate_identity():
                             input_sha256="a" * 64,
                             provider="test",
                             model="test",
-                            dimensions=DIM,
+                            dimensions=EMBEDDING_DIMENSIONS,
                             tokenizer="test",
                             embedding=None,
                         )

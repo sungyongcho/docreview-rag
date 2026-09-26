@@ -1,8 +1,8 @@
 """Table chunking and source-citation tests."""
 
-import app.ingestion.chunk as chunking
-from app.ingestion.parser import Block
-from app.ingestion.tables import structured_table
+import app.ingestion.chunking as chunking
+from app.ingestion.parsing.models import Block
+from app.ingestion.parsing.tables import structured_table
 from tests.ingestion.chunk.support import build_filing, markdown_cells
 
 

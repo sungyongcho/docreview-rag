@@ -11,7 +11,8 @@ from typing import Literal
 
 from pydantic import Field
 
-from app.llm.schemas import NonNegativeFloat, ProviderMetadata, StrictSchema
+from app.contracts.validation import NonNegativeFloat, StrictSchema
+from app.llm.schemas import ProviderMetadata
 from app.observability.types import JsonObject, WorkflowNode
 from app.observability.usage import provider_identity
 

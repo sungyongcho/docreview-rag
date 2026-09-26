@@ -83,7 +83,7 @@ class SharedAIAllowance:
             connection.close()
 
     def _rate_decision(
-        self, connection: sqlite3.Connection, client: str, now: float, consume: bool
+        self, connection: sqlite3.Connection, client: str, now: float
     ) -> RateLimitDecision:
         """Read or consume an IP window inside the caller's locked transaction."""
         connection.execute("DELETE FROM calls WHERE stamp <= ?", (now - 172800,))
@@ -103,12 +103,6 @@ class SharedAIAllowance:
             minute_reset if len(minute) >= self.per_minute else 0,
             day_reset if len(stamps) >= self.per_day else 0,
         )
-        if consume and allowed:
-            connection.execute("INSERT INTO calls VALUES (?, 'request', ?, 0)", (now, client))
-            minute.append(now)
-            stamps.append(now)
-            minute_reset = max(1, math.ceil(minute[0] + 60 - now))
-            day_reset = max(1, math.ceil(stamps[0] + 86400 - now))
         return RateLimitDecision(
             allowed,
             retry,
@@ -118,19 +112,15 @@ class SharedAIAllowance:
             day_reset,
         )
 
-    def _rate(self, client: str, consume: bool) -> RateLimitDecision:
+    def _rate(self, client: str) -> RateLimitDecision:
         """Read or consume rolling IP capacity in one durable transaction."""
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            return self._rate_decision(connection, client, time.time(), consume)
-
-    async def check(self, client: str) -> RateLimitDecision:
-        """Consume one OpenAI-bearing HTTP request for this IP."""
-        return await asyncio.to_thread(self._rate, client, True)
+            return self._rate_decision(connection, client, time.time())
 
     async def peek(self, client: str) -> RateLimitDecision:
         """Inspect an IP window without consuming it."""
-        return await asyncio.to_thread(self._rate, client, False)
+        return await asyncio.to_thread(self._rate, client)
 
     def _reserve(
         self, amount: Decimal, client: str | None = None
@@ -142,10 +132,10 @@ class SharedAIAllowance:
         ceiling = int(self.daily_limit * MICRO)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            now = datetime.now(UTC)
+            now = datetime.fromtimestamp(time.time(), UTC)
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             decision = (
-                self._rate_decision(connection, client, now.timestamp(), False)
+                self._rate_decision(connection, client, now.timestamp())
                 if client is not None
                 else None
             )
@@ -162,7 +152,10 @@ class SharedAIAllowance:
             allowed = spent + units <= ceiling
             if allowed:
                 if client is not None:
-                    decision = self._rate_decision(connection, client, now.timestamp(), True)
+                    connection.execute(
+                        "INSERT INTO calls VALUES (?, 'request', ?, 0)", (now.timestamp(), client)
+                    )
+                    decision = self._rate_decision(connection, client, now.timestamp())
                 if units:
                     connection.execute(
                         "INSERT INTO calls VALUES (?, 'openai', NULL, ?)",

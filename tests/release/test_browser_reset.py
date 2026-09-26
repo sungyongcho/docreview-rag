@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from app.release import browser_reset
+from app.release import status as browser_reset
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
 from tests.support import load_settings

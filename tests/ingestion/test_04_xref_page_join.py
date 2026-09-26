@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.ingestion.edgar import segment_by_xref
-from app.ingestion.parser import leaf_blocks, line_offsets, normalize
+from app.ingestion.parsing.html import leaf_blocks, line_offsets, normalize
+from app.ingestion.parsing.sec import segment_by_xref
 
 
 @pytest.fixture

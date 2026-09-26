@@ -12,7 +12,6 @@ export type RetrievalPresets = ReadonlyArray<{ id: string; retrieval: RetrievalP
 export type SuiteId = "sec-en" | "sec-ko" | "dart-en" | "dart-ko" | "sec-en_v2_astra" | "sec-ko_v2_astra" | "sec-mixed_v2_astra";
 
 export type RetrievalProfile = components["schemas"]["RetrievalProfile"];
-export type CustomRetrievalProfile = components["schemas"]["CustomRetrievalProfile"];
 
 export type CorpusScope = "auto" | "sec" | "dart";
 export type RetrievalPreset = "balanced" | "korean" | "accuracy" | "custom";

@@ -1597,56 +1597,6 @@ export interface components {
             writable: boolean;
         };
         /**
-         * CustomRetrievalProfile
-         * @description One explicit bounded retrieval plan used only by the Custom preset.
-         */
-        CustomRetrievalProfile: {
-            /**
-             * Bm25 B
-             * @default 0.75
-             */
-            bm25_b: number;
-            /**
-             * Bm25 Idf
-             * @default lucene
-             * @enum {string}
-             */
-            bm25_idf: "lucene" | "robertson";
-            /**
-             * Bm25 K1
-             * @default 1.2
-             */
-            bm25_k1: number;
-            /**
-             * Candidate K
-             * @default 20
-             */
-            candidate_k: number;
-            /**
-             * K
-             * @default 5
-             */
-            k: number;
-            /**
-             * Lexical Ranker
-             * @default ts_rank_cd
-             */
-            lexical_ranker: ("ts_rank_cd" | "bm25") | null;
-            reranker?: components["schemas"]["RerankerName"] | null;
-            /**
-             * Route By Language
-             * @default false
-             */
-            route_by_language: boolean;
-            /**
-             * Rrf K
-             * @default 60
-             */
-            rrf_k: number;
-            /** @default hybrid */
-            strategy: components["schemas"]["RetrievalStrategy"];
-        };
-        /**
          * DocumentChunkPreviewResource
          * @description One bounded source-cited chunk preview.
          */
@@ -2273,7 +2223,7 @@ export interface components {
         };
         /**
          * EvidenceCitation
-         * @description One validated machine and human citation exposed by a final report.
+         * @description Complete immutable identity of a nonempty interval in one source chunk.
          */
         EvidenceCitation: {
             /** Chunk Id */
@@ -3562,7 +3512,7 @@ export interface components {
         };
         /**
          * RetrievalProfile
-         * @description One explicit retrieval plan that never mutates process-wide settings.
+         * @description One explicit bounded retrieval plan used only by the Custom preset.
          */
         RetrievalProfile: {
             /**
@@ -3705,7 +3655,7 @@ export interface components {
              * @enum {string}
              */
             corpus_scope: "auto" | "sec" | "dart";
-            custom_retrieval?: components["schemas"]["CustomRetrievalProfile"] | null;
+            custom_retrieval?: components["schemas"]["RetrievalProfile"] | null;
             /**
              * Doc Ids
              * @default []
@@ -4151,7 +4101,7 @@ export interface components {
             id: string;
             /** Name */
             name: string;
-            retrieval: components["schemas"]["CustomRetrievalProfile"];
+            retrieval: components["schemas"]["RetrievalProfile"];
             /** Updated At */
             updated_at?: string | null;
         };

@@ -7,10 +7,16 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
+from openai import AsyncOpenAI
 import pytest
 
-from app.release.ai_allowance import SharedAIAllowance, active_allowance
-from app.retrieval.embeddings import EmbeddingClient, OpenAIEmbeddingProvider
+from app.release.ai_allowance import (
+    AIAllowanceError,
+    RequestAIAllowance,
+    SharedAIAllowance,
+    active_allowance,
+)
+from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
 from tests.support import load_settings
 
 
@@ -44,15 +50,18 @@ def test_rolling_windows_are_persistent_and_independent(tmp_path, monkeypatch):
         """Move the clock through both rolling windows."""
         path = tmp_path / "limits.sqlite3"
         limiter = SharedAIAllowance(path, Decimal("1"), 2, 3)
-        await limiter.check("ip")
+        await RequestAIAllowance(limiter, "ip").reserve_amount(Decimal(0))
         now[0] += 10
-        await limiter.check("ip")
+        await RequestAIAllowance(limiter, "ip").reserve_amount(Decimal(0))
         reopened = SharedAIAllowance(path, Decimal("1"), 2, 3)
-        assert (await reopened.check("ip")).retry_after_seconds == 50
+        with pytest.raises(AIAllowanceError) as refused:
+            await RequestAIAllowance(reopened, "ip").reserve_amount(Decimal(0))
+        assert refused.value.retry_after == 50
         assert (await reopened.peek("another-ip")).remaining_day == 3
         now[0] += 51
-        assert (await reopened.check("ip")).allowed
-        assert not (await reopened.check("ip")).allowed
+        assert (await RequestAIAllowance(reopened, "ip").reserve_amount(Decimal(0)))[0]
+        with pytest.raises(AIAllowanceError, match="request limit"):
+            await RequestAIAllowance(reopened, "ip").reserve_amount(Decimal(0))
         now[0] += 86400
         assert (await reopened.peek("ip")).remaining_day == 3
 
@@ -72,7 +81,7 @@ def test_utc_reset_does_not_reset_ip_window(tmp_path):
             connection.execute(
                 "INSERT INTO calls VALUES (?, 'openai', NULL, 1000000)", (yesterday.timestamp(),)
             )
-        await ledger.check("ip")
+        await RequestAIAllowance(ledger, "ip").reserve_amount(Decimal(0))
         assert (await ledger.status())[0] == 1
         assert (await ledger.peek("ip")).remaining_day == 24
 
@@ -88,7 +97,7 @@ def test_embedding_is_blocked_before_openai(tmp_path):
         await ledger.reserve_amount(Decimal("1"))
         create = AsyncMock()
         provider = OpenAIEmbeddingProvider(
-            client=cast(EmbeddingClient, SimpleNamespace(embeddings=SimpleNamespace(create=create)))
+            client=cast(AsyncOpenAI, SimpleNamespace(embeddings=SimpleNamespace(create=create)))
         )
         token = active_allowance.set(ledger)
         try:
@@ -183,8 +192,8 @@ def test_concurrent_calls_share_one_request_admission_and_denials_do_not_spend(t
 
 def _fake_openai():
     """Use the actual provider boundary with an injected client that never opens a socket."""
-    from app.llm.provider import OpenAILLMProvider
-    from app.workflow.gate import RoutingClassification
+    from app.llm.openai import OpenAILLMProvider
+    from app.query.intent import RoutingClassification
 
     response = SimpleNamespace(
         output_text=RoutingClassification(
@@ -209,11 +218,11 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
     from fastapi.testclient import TestClient
 
     from app.api.errors import install_error_handlers
-    from app.api.runtime import RuntimeApiServices
-    from app.api.schemas import RetrieveRequest
+    from app.api.review.runtime import RuntimeApiServices
+    from app.api.review.schemas import RetrieveRequest
     from app.release.config import ReleaseSettings
     from app.release.middleware import ReleaseGuardMiddleware
-    from app.retrieval.embeddings import DeterministicEmbeddingProvider
+    from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 
     ledger = SharedAIAllowance(tmp_path / "lexical.sqlite3", Decimal("1"), 1, 1)
     provider, create = _fake_openai()
@@ -267,8 +276,8 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
 def test_full_openai_input_and_output_cost_is_refused_before_dispatch(tmp_path):
     """A low dollar cap blocks a large legal token request before the client or ledger changes."""
     from app.llm.schemas import BudgetExceeded, Prompt
+    from app.query.intent import RoutingClassification
     from app.release.config import ReleaseSettings
-    from app.workflow.gate import RoutingClassification
 
     async def scenario():
         """Reproduce the previous $0.001 reservation for a $0.0252 possible call."""
@@ -301,8 +310,8 @@ def test_openai_preflight_includes_schema_and_allows_default_small_call(tmp_path
     from pydantic import BaseModel, Field
 
     from app.llm.schemas import BudgetExceeded, Prompt
+    from app.query.intent import RoutingClassification
     from app.release.config import ReleaseSettings
-    from app.workflow.gate import RoutingClassification
 
     class LargeSchema(BaseModel):
         """Use a schema whose description materially exceeds a small input ceiling."""
@@ -392,9 +401,9 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
 def test_five_visitors_fit_two_three_call_questions_with_luna(tmp_path):
     """Five visitors can each make two bounded questions within the $0.10 reservation cap."""
     from app.llm.schemas import Prompt
+    from app.query.intent import RoutingClassification
     from app.release.ai_allowance import RequestAIAllowance, active_request_allowance
     from app.release.config import ReleaseSettings
-    from app.workflow.gate import RoutingClassification
 
     async def scenario():
         """Exercise actual Luna preflight with maximum output reservations and fake responses."""

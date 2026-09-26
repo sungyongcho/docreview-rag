@@ -14,11 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import Settings, get_settings
-from app.evals.arms import LEXICAL_RANKERS, RETRIEVAL_STRATEGIES, make_retriever
-from app.evals.bilingual import KO_GOLDEN_PATH, load_bilingual_suites
 from app.evals.cli import positive_int, unit_ratio
-from app.evals.corpus import build_chunking_batch, temporary_corpus_session
-from app.evals.crosslingual_arms import (
+from app.evals.execution.evaluator import PersistedEvaluation, persist_evaluation
+from app.evals.execution.retrievers import LEXICAL_RANKERS, RETRIEVAL_STRATEGIES, make_retriever
+from app.evals.experiments.corpus import build_chunking_batch, temporary_corpus_session
+from app.evals.experiments.crosslingual import (
     CROSSLINGUAL_SUITE,
     HANDLING_CHOICES,
     LANGUAGE_CHOICES,
@@ -29,7 +29,9 @@ from app.evals.crosslingual_arms import (
     embedding_identity,
     run_arm,
 )
-from app.evals.crosslingual_diagnostics import (
+from app.evals.experiments.diagnostics import (
+    DEFAULT_MIN_RECALL_RATIO,
+    LANGUAGE_REGRESSION_TOLERANCES,
     LexicalCoverage,
     arm_comparison_markdown,
     gate_verdict,
@@ -37,24 +39,20 @@ from app.evals.crosslingual_diagnostics import (
     gated_assessments,
     language_category_markdown,
     lexical_candidate_coverage,
+    parity_markdown,
     parity_pairs,
     twin_query_alignment,
 )
-from app.evals.loader import DEFAULT_GOLDEN_PATH
-from app.evals.parity import (
-    DEFAULT_MIN_RECALL_RATIO,
-    LANGUAGE_REGRESSION_TOLERANCES,
-    parity_markdown,
-)
-from app.evals.retrieval_eval import PersistedEvaluation, persist_evaluation
+from app.evals.golden.bilingual import KO_GOLDEN_PATH, load_bilingual_suites
+from app.evals.golden.loading import DEFAULT_GOLDEN_PATH
+from app.ingestion.parsing.registry import registry_for
+from app.ingestion.pipeline import DEFAULT_MANIFEST_NAME, embedding_chunk_config
 from app.ingestion.progress import OperationProgress, OperationProgressCallback, operation_bar
-from app.ingestion.registry import registry_for
-from app.ingestion.seed import DEFAULT_MANIFEST_NAME, embedding_chunk_config
 from app.ingestion.tokens import TARGET_INPUT_TOKENS
-from app.llm.provider import LLMProvider
+from app.llm.completion import LLMProvider
 from app.llm.schemas import ProviderBudget
-from app.retrieval.embeddings import get_embedding_provider
-from app.retrieval.hybrid import DEFAULT_RRF_K
+from app.retrieval.embedding.provider import get_embedding_provider
+from app.retrieval.ranking.fusion import DEFAULT_RRF_K
 from app.retrieval.types import RetrievalFilters
 
 DART_CROSSLINGUAL_SUITE: Final[str] = "m10-dart-crosslingual-v1"
@@ -240,7 +238,7 @@ def translation_boundary(model_name: str, settings: Settings) -> tuple[LLMProvid
     embedding provider, which keeps a configured-but-unexported ``.env`` key working and
     keeps every paid boundary in this command sourced the same way.
     """
-    from app.llm.provider import OpenAILLMProvider
+    from app.llm.openai import OpenAILLMProvider
     from app.openai_models import resolve_openai_model
 
     selection = resolve_openai_model("translation", model_name)
@@ -291,8 +289,15 @@ async def _run_cli(
         if settings_provider == "sbert"
         else {"embedding_provider": settings_provider}
     )
-    provider = get_embedding_provider(settings)
     profile = CORPUS_PROFILES[args.corpus]
+    requested_arms = build_arms(
+        args, embedding_model, target_tokens=profile.target_tokens, settings=settings
+    )
+    if args.gate and not gateable_matrix(requested_arms):
+        raise ValueError(
+            "--gate requires a hybrid arm with routed or translated handling in both languages"
+        )
+    provider = get_embedding_provider(settings)
     manifest_path = settings.corpus_dir / profile.manifest_name
     suite = load_bilingual_suites(
         args.golden, args.ko_golden, manifest_path=manifest_path, selection_id=profile.selection_id
@@ -301,13 +306,6 @@ async def _run_cli(
         provider, target_tokens=profile.target_tokens
     ).target_tokens
     arms = build_arms(args, embedding_model, target_tokens=target_tokens, settings=settings)
-    # Refused here, not after the matrix has been measured: the answer depends only on
-    # the requested axes, and --handling defaults to direct, so plain --gate always
-    # takes this path.
-    if args.gate and not gateable_matrix(arms):
-        raise ValueError(
-            "--gate requires a hybrid arm with routed or translated handling in both languages"
-        )
     recorded_at = datetime.now(UTC)
 
     llm_provider = None

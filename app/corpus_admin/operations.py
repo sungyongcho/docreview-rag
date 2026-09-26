@@ -9,26 +9,29 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.corpus_admin.context import CorpusAdminContext
+if TYPE_CHECKING:
+    from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.inspection import CorpusInspector
 from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.db.bootstrap import bootstrap_schema
 from app.db.models import Chunk, ChunkEmbedding
-from app.ingestion.dart_api import acquire_dart
-from app.ingestion.edgar_api import DEFAULT_MANIFEST, acquire_edgar
-from app.ingestion.manifest import Manifest
+from app.ingestion.acquisition.dart import acquire_dart
+from app.ingestion.acquisition.sec import DEFAULT_MANIFEST, acquire_edgar
+from app.ingestion.persistence import persist_seed_batch
+from app.ingestion.pipeline import load_seed_batch
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
-from app.ingestion.seed import load_seed_batch, persist_seed_batch
-from app.ingestion.source_deletion import SourceDeletion
+from app.ingestion.sources.deletion import SourceDeletion
+from app.ingestion.sources.models import Manifest
 from app.observability.usage import UsageSink
-from app.retrieval.bm25 import backfill_term_stats
-from app.retrieval.embeddings import (
+from app.retrieval.embedding.provider import EmbeddingProvider
+from app.retrieval.indexing.bm25 import backfill_term_stats
+from app.retrieval.indexing.embeddings import (
     EmbeddingBackfillResult,
-    EmbeddingProvider,
     embed_missing_chunks,
     matching_embedding,
 )
@@ -53,7 +56,7 @@ class CorpusOperations:
 
     Parameters
     ----------
-    context : CorpusAdminContext
+    context : RuntimeCorpusAdminService
         Settings, corpus root, database handles and embedding provider to write with.
     inspector : CorpusInspector
         Schema state and root catalogs that decide whether a write may start.
@@ -63,11 +66,11 @@ class CorpusOperations:
 
     def __init__(
         self,
-        context: CorpusAdminContext,
+        context: RuntimeCorpusAdminService,
         inspector: CorpusInspector,
         source_deletion: SourceDeletion,
     ) -> None:
-        self._context = context
+        self._service = context
         self._inspector = inspector
         self._source_deletion = source_deletion
 
@@ -100,7 +103,7 @@ class CorpusOperations:
 
     def _resolve_manifest(self, name: str) -> Path:
         """Resolve one enumerated manifest name inside the configured corpus root."""
-        corpus_root = self._context.corpus_root
+        corpus_root = self._service.corpus_root
         candidate = (corpus_root / name).resolve()
         if candidate.parent != corpus_root:
             raise ValueError("manifest must be selected from the corpus root")
@@ -132,10 +135,10 @@ class CorpusOperations:
         """Fetch SEC filings into the common catalog and report the new selection."""
         publish(OperationProgress("prepare", 0, 1, "Preparing EDGAR acquisition"))
         result = await acquire_edgar(
-            self._context.corpus_root / DEFAULT_MANIFEST.name,
+            self._service.corpus_root / DEFAULT_MANIFEST.name,
             tickers=command.identifiers,
             years=command.years,
-            user_agent=self._context.settings.sec_user_agent or "",
+            user_agent=self._service.settings.sec_user_agent or "",
             on_progress=publish,
         )
         return OperationOutcome(
@@ -146,13 +149,13 @@ class CorpusOperations:
         self, command: AdminCommand, publish: OperationProgressCallback
     ) -> OperationOutcome:
         """Archive DART filings with the server's API key and report the new selection."""
-        secret = self._context.settings.dart_api_key
+        secret = self._service.settings.dart_api_key
         if secret is None:
             raise ValueError("DART_API_KEY is not configured")
         result = await acquire_dart(
             stock_codes=command.identifiers,
             fiscal_years=command.years,
-            corpus_dir=self._context.corpus_root,
+            corpus_dir=self._service.corpus_root,
             api_key=secret.get_secret_value(),
             on_progress=publish,
         )
@@ -168,7 +171,7 @@ class CorpusOperations:
         manifest = self._resolve_manifest(command.manifest)
         assert command.selection_id is not None
         # Reject an unknown selection before any parser work starts.
-        Manifest.read(manifest).selected_sources(command.selection_id, self._context.corpus_root)
+        Manifest.read(manifest).selected_sources(command.selection_id, self._service.corpus_root)
         loop = asyncio.get_running_loop()
 
         def publish_from_parser(progress: OperationProgress) -> None:
@@ -179,16 +182,16 @@ class CorpusOperations:
             load_seed_batch,
             manifest,
             selection_id=command.selection_id,
-            embedding_provider=self._context.embedding_provider,
+            embedding_provider=self._service.embedding_provider,
             expected_documents=command.expected_documents,
             on_progress=publish_from_parser,
         )
         # Let the parser's queued progress land before the next stage is published.
         await asyncio.sleep(0)
         publish(OperationProgress("schema", 0, 1, "Checking schema compatibility"))
-        await bootstrap_schema(self._context.database_engine)
+        await bootstrap_schema(self._service.database_engine)
         publish(OperationProgress("schema", 1, 1, "Schema compatible"))
-        async with self._context.session_factory() as session:
+        async with self._service.session_factory() as session:
             result = await persist_seed_batch(
                 session,
                 batch,
@@ -208,10 +211,10 @@ class CorpusOperations:
     ) -> OperationOutcome:
         """Embed missing chunks, then check the committed rows match what was reported."""
         document_ids = self._backfill_scope(command)
-        await bootstrap_schema(self._context.database_engine)
-        async with self._context.session_factory() as session:
+        await bootstrap_schema(self._service.database_engine)
+        async with self._service.session_factory() as session:
             ready_before, pending = await _embedding_state(
-                session, self._context.embedding_provider, document_ids
+                session, self._service.embedding_provider, document_ids
             )
 
         def on_batch(result: EmbeddingBackfillResult) -> None:
@@ -225,17 +228,17 @@ class CorpusOperations:
                 )
             )
 
-        async with self._context.session_factory() as session:
+        async with self._service.session_factory() as session:
             result = await embed_missing_chunks(
                 session,
-                self._context.embedding_provider,
+                self._service.embedding_provider,
                 on_batch=on_batch,
                 document_ids=document_ids,
                 on_usage=on_usage,
             )
-        async with self._context.session_factory() as session:
+        async with self._service.session_factory() as session:
             ready_after, pending_after = await _embedding_state(
-                session, self._context.embedding_provider, document_ids
+                session, self._service.embedding_provider, document_ids
             )
         # A backfill that reports rows the database does not hold must fail, not succeed.
         if ready_after < ready_before + result.embedded:
@@ -255,15 +258,15 @@ class CorpusOperations:
             raise ValueError("selected backfill requires manifest and selection_id")
         manifest_path = self._resolve_manifest(command.manifest)
         sources = Manifest.read(manifest_path).selected_sources(
-            command.selection_id, self._context.corpus_root
+            command.selection_id, self._service.corpus_root
         )
         return tuple(source.document.document_id for source in sources)
 
     async def _rebuild_bm25(self, publish: OperationProgressCallback) -> OperationOutcome:
         """Recompute BM25 term statistics for every chunk in the corpus."""
-        await bootstrap_schema(self._context.database_engine)
+        await bootstrap_schema(self._service.database_engine)
         publish(OperationProgress("bm25", 0, 1, "Rebuilding BM25 statistics"))
-        async with self._context.session_factory() as session:
+        async with self._service.session_factory() as session:
             result = await backfill_term_stats(session)
         publish(OperationProgress("bm25", 1, 1, "BM25 statistics rebuilt"))
         return OperationOutcome(f"Rebuilt BM25 statistics for {result.chunks} chunk(s)")

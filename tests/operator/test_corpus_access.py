@@ -5,9 +5,9 @@ import asyncio
 import pytest
 
 from app.api.errors import ApiProblemError
-from app.api.runtime import RuntimeApiServices
+from app.api.review.runtime import RuntimeApiServices
 from app.operator.corpus_access import CorpusAccess, CorpusUpdatingError
-from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 
 
 def test_writer_drains_existing_searches_and_rejects_new_requests():

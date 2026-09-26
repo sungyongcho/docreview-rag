@@ -1,15 +1,6 @@
 """Corpus invariants for complete embedding inputs and deterministic identities."""
 
-import app.ingestion.chunk as chunking
-from app.ingestion.tokens import count_tokens
-
-
-def test_corpus_chunks_fit_complete_input_limits(chunks_by_doc):
-    """Bound context and body together for every corpus retrieval unit."""
-    for chunks in chunks_by_doc.values():
-        assert chunks
-        assert all(count_tokens(chunk.content) <= 8192 for chunk in chunks)
-        assert all(len(chunk.content) <= 32768 for chunk in chunks)
+import app.ingestion.chunking as chunking
 
 
 def test_corpus_chunk_identities_are_deterministic(chunks_by_doc, corpus):

@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.db.bootstrap import ensure_vector_extension
+from app.db.bootstrap import ensure_bm25_stats_invalidation, ensure_vector_extension
 from app.db.models import Base
 
 EXPECT_LIVE_POSTGRES_ENV = "DOCREVIEW_EXPECT_LIVE_POSTGRES"
@@ -25,14 +25,20 @@ def live_postgres_unavailable(detail: str) -> NoReturn:
     pytest.skip(f"PostgreSQL is unavailable: {detail}")
 
 
-@asynccontextmanager
-async def isolated_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """Give committing or concurrent sessions one disposable schema on the test database."""
+def disposable_database_url() -> str:
+    """Require an explicit disposable target instead of reading application credentials."""
     url = os.environ.get("DOCREVIEW_TEST_DATABASE_URL")
     if not url:
         live_postgres_unavailable(
             "DOCREVIEW_TEST_DATABASE_URL must identify an isolated disposable test database"
         )
+    return url
+
+
+@asynccontextmanager
+async def isolated_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Give committing or concurrent sessions one disposable schema on the test database."""
+    url = disposable_database_url()
     schema = f"behavior_test_{uuid4().hex}"
     admin = create_async_engine(url, poolclass=NullPool)
     engine = create_async_engine(
@@ -57,6 +63,7 @@ async def isolated_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSe
                 await connection.run_sync(
                     lambda sync: Base.metadata.create_all(sync, checkfirst=False)
                 )
+                await ensure_bm25_stats_invalidation(connection, schema=schema)
             yield async_sessionmaker(engine, expire_on_commit=False)
         finally:
             async with admin.begin() as connection:

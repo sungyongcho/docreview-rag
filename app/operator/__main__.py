@@ -5,7 +5,7 @@ from pathlib import Path
 
 import uvicorn
 
-from app.operator.service import create_operator_app
+from app.operator.local.app import create_operator_app
 
 
 def main() -> None:

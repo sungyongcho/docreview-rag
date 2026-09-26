@@ -192,7 +192,7 @@ def _filters(args: argparse.Namespace) -> RetrievalFilters:
 
 def _evidence_payload(hit: ChunkHit) -> dict[str, object]:
     """Project the same public evidence fields exposed by the HTTP boundary."""
-    from app.api.schemas import EvidenceHit
+    from app.api.review.schemas import EvidenceHit
 
     return EvidenceHit.from_chunk_hit(hit).model_dump(mode="json")
 
@@ -201,13 +201,11 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
     """Retrieve cited evidence with the same ranking plan the configuration measured."""
     from app.db.session import Session
     from app.ingestion.progress import OperationProgress, operation_bar
-    from app.retrieval.embeddings import (
-        EmbeddingBackfillResult,
-        OpenAIEmbeddingProvider,
-        embed_missing_chunks,
-        get_embedding_provider,
-    )
-    from app.retrieval.service import retrieve
+    from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
+    from app.retrieval.embedding.provider import get_embedding_provider
+    from app.retrieval.indexing.embeddings import EmbeddingBackfillResult, embed_missing_chunks
+    from app.retrieval.search.plan import SearchPlan
+    from app.retrieval.search.service import retrieve
 
     settings = _provider_settings(get_settings(), args.provider)
     provider = get_embedding_provider(settings)
@@ -242,13 +240,15 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
             args.query,
             provider=provider,
             k=args.k,
-            candidate_k=args.candidate_k,
             filters=_filters(args),
-            route_by_language=settings.query_language_routing,
-            lexical_ranker=settings.lexical_ranker,
-            bm25_k1=settings.bm25_k1,
-            bm25_b=settings.bm25_b,
-            bm25_idf=settings.bm25_idf,
+            plan=SearchPlan(
+                candidate_k=args.candidate_k,
+                route_by_language=settings.query_language_routing,
+                lexical_ranker=settings.lexical_ranker,
+                bm25_k1=settings.bm25_k1,
+                bm25_b=settings.bm25_b,
+                bm25_idf=settings.bm25_idf,
+            ),
         )
     return {
         "status": "ok",
@@ -272,7 +272,7 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
 
 async def _ingest(args: argparse.Namespace) -> dict[str, object]:
     """Submit the same typed ingestion job used by the development web client."""
-    from app.api.admin_schemas import CorpusJobResource
+    from app.api.corpus.routes import CorpusJobResource
     from app.corpus_admin.types import AdminCommand
 
     request = AdminCommand(

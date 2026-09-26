@@ -2,7 +2,8 @@
 
 import pytest
 
-from app.evals.run import arguments, budget_arm_selection
+from app.evals.experiments.matrix import budget_arm_selection
+from app.evals.run import arguments
 
 
 def test_cli_defaults_to_the_isolated_deterministic_ten_arm_matrix():

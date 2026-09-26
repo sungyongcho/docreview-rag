@@ -9,7 +9,7 @@ import { Play, Search } from "lucide-react";
 import { useState } from "react";
 
 import { ApiError, previewRetrieval, previewReview, retrieveEvidence } from "@/lib/api";
-import { DEFAULT_SESSION_PROFILE, type CustomRetrievalProfile } from "@/lib/types";
+import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { DevLockedButton } from "@/components/dev-locked-button";
 import { failureMessage } from "@/lib/pipeline";
 import type { EvidenceHit, RetrievalProfile, ReviewRun } from "@/lib/types";
@@ -127,7 +127,7 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
       // A public surface has no admin preview; the public /retrieve answers with the same rankings for a custom profile.
       const payload = live
         ? await previewRetrieval(question.trim(), profile)
-        : await retrieveEvidence(question.trim(), { ...(publicProfile ?? DEFAULT_SESSION_PROFILE), retrieval_preset: "custom", custom_retrieval: profile as CustomRetrievalProfile });
+        : await retrieveEvidence(question.trim(), { ...(publicProfile ?? DEFAULT_SESSION_PROFILE), retrieval_preset: "custom", custom_retrieval: profile });
       setRetrieval(toRetrievalPreview({ query: question.trim(), profile, score_stage: "rrf", ...(payload as unknown as Record<string, unknown>) }));
       setShown("retrieval");
     } catch (reason) {

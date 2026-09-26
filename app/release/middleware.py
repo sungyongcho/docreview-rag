@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.api.review_profile import PromptPolicy, public_custom_retrieval_violation
+from app.api.review.profiles import PromptPolicy, public_custom_retrieval_violation
 from app.release.ai_allowance import (
     AIAllowanceError,
     RequestAIAllowance,

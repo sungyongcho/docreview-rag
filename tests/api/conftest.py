@@ -6,11 +6,12 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.api.app import create_api_app
-from app.api.review_profile import resolve_retrieval_profile
-from app.api.schemas import EvidenceHit, RetrieveResponse
+from app.api.review.profiles import resolve_retrieval_profile
+from app.api.review.schemas import EvidenceHit, RetrieveResponse
+from app.contracts.evidence import EvidenceCitation
 from app.observability.types import StepTrace, build_run_report
 from app.retrieval.types import ChunkHit
-from app.workflow.types import EvidenceCitation, ProviderFailure, WorkflowReport
+from app.workflow.types import ProviderFailure, WorkflowReport
 
 SOURCE_SHA256 = "d" * 64
 

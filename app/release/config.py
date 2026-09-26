@@ -5,10 +5,7 @@ from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import (
-    Field,
-    model_validator,
-)
+from pydantic import Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from app.llm.schemas import ProviderBudget

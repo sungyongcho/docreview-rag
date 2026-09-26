@@ -9,16 +9,14 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.db.models import Chunk, ChunkEmbedding
-from app.ingestion.seed import build_seed_batch_from_filings, persist_seed_batch_with_stats
-from app.retrieval.embeddings import (
-    DeterministicEmbeddingProvider,
-    PendingEmbedding,
-    _store_batch,
-    embed_missing_chunks,
-)
-from app.retrieval.lexical import lexical_search
-from app.retrieval.service import retrieve
-from app.retrieval.vector import vector_search
+from app.ingestion.persistence import persist_seed_batch_with_stats
+from app.ingestion.pipeline import build_seed_batch_from_filings
+from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
+from app.retrieval.indexing.embeddings import PendingEmbedding, _store_batch, embed_missing_chunks
+from app.retrieval.search.lexical import lexical_search
+from app.retrieval.search.plan import SearchPlan
+from app.retrieval.search.service import retrieve
+from app.retrieval.search.vector import vector_search
 from tests.live_postgres import isolated_session
 from tests.retrieval.support import retrieval_filing
 
@@ -44,7 +42,7 @@ async def _exercise_live_postgres(tmp_path: Path) -> None:
         assert await session.scalar(select(func.count()).select_from(ChunkEmbedding)) == 3
         await session.commit()
         retrieved = await retrieve(
-            session, "research expense", provider=provider, k=2, candidate_k=3
+            session, "research expense", provider=provider, k=2, plan=SearchPlan(candidate_k=3)
         )
         assert retrieved.hits[0].doc_id == filing.source.document.document_id
         assert "Research expense research expense" in retrieved.hits[0].body

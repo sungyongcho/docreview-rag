@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.ingestion.seed as seed
+import app.ingestion.persistence as persistence
 from tests.ingestion.seed.support import sample_batch
 
 
@@ -58,7 +58,7 @@ def test_persist_seed_batch_reports_committed_progress():
     session = _Session()
     progress = []
     result = asyncio.run(
-        seed.persist_seed_batch(
+        persistence.persist_seed_batch(
             cast(AsyncSession, session),
             sample_batch(),
             chunk_batch_size=1,
@@ -86,7 +86,9 @@ def test_persist_seed_batch_rolls_back_the_whole_batch_on_failure():
     session = _Session(fail_at=2)
     with pytest.raises(RuntimeError, match="simulated database failure"):
         asyncio.run(
-            seed.persist_seed_batch(cast(AsyncSession, session), sample_batch(), chunk_batch_size=1)
+            persistence.persist_seed_batch(
+                cast(AsyncSession, session), sample_batch(), chunk_batch_size=1
+            )
         )
     assert session.begins == 1
     assert session.commits == 0
@@ -97,7 +99,7 @@ def test_persist_seed_batch_rejects_ambiguous_nested_transaction():
     """Reject sessions that already own a transaction."""
     session = _Session(active=True)
     with pytest.raises(RuntimeError, match="without an active transaction"):
-        asyncio.run(seed.persist_seed_batch(cast(AsyncSession, session), sample_batch()))
+        asyncio.run(persistence.persist_seed_batch(cast(AsyncSession, session), sample_batch()))
     assert session.executed == []
 
 
@@ -105,7 +107,7 @@ def test_persist_seed_batch_rejects_nonpositive_batch_size():
     """Reject nonpositive chunk batch sizes before writing."""
     with pytest.raises(ValueError, match="batch size must be positive"):
         asyncio.run(
-            seed.persist_seed_batch(
+            persistence.persist_seed_batch(
                 cast(AsyncSession, _Session()), sample_batch(), chunk_batch_size=0
             )
         )
@@ -114,14 +116,16 @@ def test_persist_seed_batch_rejects_nonpositive_batch_size():
 def test_persistence_rebuilds_statistics_after_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
     """Rebuild lexical statistics after successful chunk persistence."""
     batch = sample_batch()
-    expected = seed.SeedResult(documents=1, chunks=2)
+    expected = persistence.SeedResult(documents=1, chunks=2)
     persist = AsyncMock(return_value=expected)
     rebuild = AsyncMock()
-    monkeypatch.setattr(seed, "persist_seed_batch", persist)
-    monkeypatch.setattr("app.retrieval.bm25.backfill_term_stats", rebuild)
+    monkeypatch.setattr(persistence, "persist_seed_batch", persist)
+    monkeypatch.setattr("app.retrieval.indexing.bm25.backfill_term_stats", rebuild)
     session = cast(AsyncSession, object())
 
-    result = asyncio.run(seed.persist_seed_batch_with_stats(session, batch, chunk_batch_size=7))
+    result = asyncio.run(
+        persistence.persist_seed_batch_with_stats(session, batch, chunk_batch_size=7)
+    )
 
     assert result == expected
     persist.assert_awaited_once_with(session, batch, chunk_batch_size=7, on_progress=None)

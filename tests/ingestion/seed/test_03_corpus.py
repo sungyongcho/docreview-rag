@@ -4,8 +4,8 @@ from collections import Counter
 
 import pytest
 
-from app.ingestion.chunk import compose_index_text
-import app.ingestion.seed as seed
+from app.ingestion.chunking import compose_index_text
+import app.ingestion.pipeline as seed
 from app.ingestion.tokens import MAX_INPUT_CHARACTERS, MAX_INPUT_TOKENS, count_tokens
 from tests.ingestion.golden import N_ITEMS
 
@@ -21,7 +21,7 @@ def corpus_batch(corpus):
 
 def test_batch_preserves_every_selected_document_and_bounded_chunk(corpus_batch, corpus):
     """Preserve every parsed document with unique, bounded, source-ordered retrieval units."""
-    documents = {record.doc_id for record in corpus_batch.documents}
+    documents = {record.document_id for record in corpus_batch.documents}
     assert documents == set(corpus)
     assert len(documents) == len(corpus_batch.documents)
     keys = [record.stable_key for record in corpus_batch.chunks]
@@ -39,7 +39,7 @@ def test_batch_preserves_every_selected_document_and_bounded_chunk(corpus_batch,
 
 def test_corpus_records_preserve_metadata_and_provenance(corpus_batch):
     """Keep registry identity and chunk provenance in every seed record."""
-    documents = {record.doc_id: record for record in corpus_batch.documents}
+    documents = {record.document_id: record for record in corpus_batch.documents}
     assert all(record.registry == "sec" for record in documents.values())
     assert all(
         record.source_url.startswith("https://www.sec.gov/") for record in documents.values()

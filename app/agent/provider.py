@@ -10,11 +10,10 @@ from openai.types.responses import ResponseInputParam, ToolParam
 from pydantic.functional_validators import model_validator
 
 from app.agent.types import ToolCall
-from app.llm.provider import openai_usage
-from app.llm.schemas import NonBlank, NonNegativeInt, TokenPricing, TokenUsageDetails
+from app.contracts.validation import NonBlank, NonNegativeInt
+from app.llm.openai import openai_usage
+from app.llm.schemas import TokenPricing, TokenUsageDetails
 from app.openai_models import ReasoningEffort, resolve_openai_model
-
-DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
 class ProviderTurn(TokenUsageDetails):
@@ -112,16 +111,6 @@ class DeterministicToolProvider(ToolCallingProvider):
             raise TypeError("turns must contain ProviderTurn values")
         self.model_name = model_name
         self._turns = list(turns)
-        self._requests: list[
-            tuple[str, tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]]
-        ] = []
-
-    @property
-    def requests(
-        self,
-    ) -> tuple[tuple[str, tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]], ...]:
-        """Return (instructions, input items, tool specs) per request, in order."""
-        return tuple(self._requests)
 
     async def turn(
         self,
@@ -132,10 +121,7 @@ class DeterministicToolProvider(ToolCallingProvider):
         max_output_tokens: int,
     ) -> ProviderTurn:
         """Record the request and return the next replayed turn."""
-        del max_output_tokens
-        self._requests.append(
-            (instructions, tuple(dict(item) for item in input_items), tuple(tools))
-        )
+        del instructions, input_items, tools, max_output_tokens
         if not self._turns:
             raise RuntimeError("deterministic tool provider turn queue is empty")
         return self._turns.pop(0)
@@ -180,21 +166,15 @@ class OpenAIToolProvider(ToolCallingProvider):
         else:
             self._owned_client = None
             self._client = client
-        # Recorded provenance mirrors where requests actually go: the owned
-        # client's resolved URL (env overrides included), or the SDK default when
-        # a caller injected an opaque client.
-        if client is None:
-            resolved = str(self._client.base_url)
-        else:
-            resolved = str(getattr(client, "base_url", "") or DEFAULT_BASE_URL)
+        # Record the endpoint the SDK actually uses, including caller configuration.
+        resolved = str(self._client.base_url)
         self.api_url = f"{resolved.rstrip('/')}/responses"
 
     async def aclose(self) -> None:
         """Close the HTTP client this provider opened for itself.
 
-        An injected client belongs to its caller and is left untouched, so a test
-        fake needs no shutdown surface. Without this the connection pool of every
-        provider built from an api key survives until interpreter exit.
+        A caller-supplied client remains the caller's responsibility. Providers
+        constructed from an API key release their own connection pool here.
         """
         if self._owned_client is not None:
             await self._owned_client.close()

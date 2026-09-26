@@ -6,7 +6,7 @@ from typing import Any
 
 from app.llm.schemas import ProviderBudget, ProviderMetadata, ProviderResult, TokenPricing
 from app.observability.types import RunReport
-from app.retrieval.service import ComponentRankings, RetrievalResult
+from app.retrieval.search.service import ComponentRankings, RetrievalResult
 from app.retrieval.types import ChunkHit
 
 SOURCE_SHA256 = "a" * 64

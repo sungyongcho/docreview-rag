@@ -2,7 +2,7 @@
 
 from bs4 import BeautifulSoup
 
-from app.ingestion.tables import structured_table
+from app.ingestion.parsing.tables import structured_table
 from tests.ingestion.chunk.support import (
     counter_contains,
     is_subsequence,

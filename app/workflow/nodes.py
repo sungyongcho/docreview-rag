@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel
 
+from app.contracts.evidence import EvidenceCitation
 from app.llm.schemas import (
     AnswerDecision,
     BudgetExceeded,
@@ -14,7 +15,7 @@ from app.llm.schemas import (
     RelevanceJudgment,
     SchemaRejected,
 )
-from app.retrieval.language import detect_query_language
+from app.query.language import detect_query_language
 from app.retrieval.types import ChunkHit
 from app.workflow.prompts import evidence_budget_chars, evidence_chars
 from app.workflow.types import (
@@ -23,7 +24,6 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
-    EvidenceCitation,
     GradeCoverageIncomplete,
     GradeOrCheckNode,
     GradeReferencesFiltered,
