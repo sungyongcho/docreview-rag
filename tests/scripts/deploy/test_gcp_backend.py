@@ -461,3 +461,27 @@ def test_production_compose_has_no_admin_bypass():
         and not mount.get("read_only", False)
         for mount in app["volumes"]
     )
+
+
+def test_first_install_stages_the_configured_origin_port(launcher):
+    """The origin port the firewall rule opens is the one the staged compose file publishes."""
+    script, env, log = launcher
+    result = subprocess.run(
+        ["bash", str(script), "first-install"],
+        env={**env, "DEPLOY_ORIGIN_PORT": "8443"},
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    config_copy = next(cmd for cmd in command_log(log) if any("Caddyfile" in arg for arg in cmd))
+    env_copy = next(Path(arg) for arg in config_copy if arg.endswith("/backend.env"))
+    assert "DOCREVIEW_ORIGIN_PORT=8443\n" in env_copy.read_text()
+
+
+def test_first_install_requires_an_explicit_artifact_directory(launcher):
+    """Without DEPLOY_ARTIFACT_DIR a first install fails before any cloud command."""
+    script, env, log = launcher
+    env = {k: v for k, v in env.items() if k != "DEPLOY_ARTIFACT_DIR"}
+    result = subprocess.run(["bash", str(script), "first-install"], env=env, capture_output=True)
+    assert result.returncode != 0
+    assert "DEPLOY_ARTIFACT_DIR" in result.stderr.decode()
+    assert command_log(log) == []
