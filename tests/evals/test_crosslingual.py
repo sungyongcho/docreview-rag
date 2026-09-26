@@ -1,6 +1,7 @@
 """Cross-lingual command: arguments, corpus profiles, arm expansion, and the paid boundary."""
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -13,6 +14,7 @@ import app.evals.crosslingual as crosslingual
 from app.evals.crosslingual import arguments, build_arms
 from app.evals.crosslingual_arms import CROSSLINGUAL_SUITE, CROSSLINGUAL_TARGET_TOKENS, run_arm
 from app.evals.crosslingual_diagnostics import gateable_matrix
+from app.ingestion.manifest import Manifest
 from app.llm.provider import OpenAILLMProvider
 from tests.evals.crosslingual_support import arm, hit, scripted, suite
 from tests.evals.support import EVALUATION_RECORDED_AT
@@ -201,9 +203,6 @@ def test_corpus_argument_resolves_suite_goldens_and_chunk_target():
     """--corpus dart binds the DART suite, goldens, manifest, and shared token target."""
     args = crosslingual.arguments(["--corpus", "dart"])
 
-    assert crosslingual.CORPUS_PROFILES["dart"].manifest_name == "manifest.json"
-    assert crosslingual.CORPUS_PROFILES["dart"].selection_id == "dart-evaluation"
-    assert crosslingual.CORPUS_PROFILES["edgar"].selection_id == "sec-evaluation"
     assert args.suite == crosslingual.DART_CROSSLINGUAL_SUITE
     assert args.golden.name == "dart_retrieval.json"
     assert args.ko_golden.name == "dart_retrieval_ko.json"
@@ -218,6 +217,20 @@ def test_corpus_argument_resolves_suite_goldens_and_chunk_target():
         edgar_args, "token-hash-384", target_tokens=2048, settings=Settings()
     )
     assert {arm.target_tokens for arm in edgar_built} == {2048}
+
+
+@pytest.mark.parametrize("corpus", ["edgar", "dart"])
+def test_each_corpus_profile_selects_only_its_own_registry_from_the_shipped_manifest(corpus):
+    """--corpus reads a manifest selection that exists and holds only that registry's filings."""
+    profile = crosslingual.CORPUS_PROFILES[corpus]
+    corpus_root = Path("data/corpus")
+
+    selected = Manifest.read(corpus_root / profile.manifest_name).selected_sources(
+        profile.selection_id, corpus_root
+    )
+
+    assert selected
+    assert {source.document.registry for source in selected} == {profile.registry}
 
 
 def test_crosslingual_metadata_records_the_effective_model_target():
