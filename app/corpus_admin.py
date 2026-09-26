@@ -1344,9 +1344,10 @@ class RuntimeCorpusAdminService:
                     async with self._execution_lock:
                         if self._jobs.get(queued.job_id, queued).status != "cancelled":
                             try:
+                                # enqueue rewrites ingest_selected to ingest_manifest
+                                # before queueing, so only these kinds reach the worker.
                                 changes_search = queued.command.kind in {
                                     "ingest_manifest",
-                                    "ingest_selected",
                                     "backfill_embeddings",
                                     "rebuild_bm25",
                                 }
