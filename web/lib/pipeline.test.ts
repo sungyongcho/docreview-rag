@@ -530,6 +530,49 @@ describe("derivePipeline", () => {
     expect(operator.failureMessage({ status: "schema_rejected", details: ["x"] })).toContain("Smaller local models");
   });
 
+  it("names a local timeout or unreachable host from the kind the backend reports", async () => {
+    // The backend names a local transport failure by its kind alone (`failure_kind` in
+    // app/llm/local_diagnostics.py), never by the httpx exception class.
+    const timeoutMessage = "ValueError: local model server request failed: timeout";
+    const unreachableMessages = [
+      "ValueError: local model server request failed: refused",
+      "ValueError: local model server request failed: dns",
+      "ValueError: local model server request failed: connection",
+    ];
+    const unguidedMessage = "ValueError: local model server request failed: http_503";
+    const failedWith = (message: string) => ({
+      code: "provider_failure",
+      node: "check",
+      status: "provider_error",
+      details: [message],
+    });
+    const neutralSentence = (message: string) =>
+      `The answer could not be generated (provider_error) at the check step. ${message}`;
+
+    // A public bundle cannot act on local advice, so the new kinds keep the neutral sentence too.
+    expect(failureReport(failedWith(timeoutMessage))).toEqual({
+      text: neutralSentence(timeoutMessage),
+    });
+
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const operator = await import("./pipeline");
+    const systemStatus = { label: "Open System status", category: "runtime" };
+
+    const timeout = operator.failureReport(failedWith(timeoutMessage));
+    expect(timeout.text).toContain("LOCAL_LLM_TIMEOUT_S");
+    expect(timeout.fix).toEqual(systemStatus);
+    for (const message of unreachableMessages) {
+      const unreachable = operator.failureReport(failedWith(message));
+      expect(unreachable.text, message).toContain("separately installed model server");
+      expect(unreachable.fix, message).toEqual(systemStatus);
+    }
+    // A kind without specific guidance keeps the backend's words instead of borrowing advice.
+    expect(operator.failureReport(failedWith(unguidedMessage))).toEqual({
+      text: neutralSentence(unguidedMessage),
+    });
+  });
+
   it("sends a budget failure to the settings category that owns the limit", async () => {
     // The wall clock lives in Run limits, not in Prompt & evidence; naming the wrong
     // category is what cost an afternoon when a local run kept stopping at 120 seconds.

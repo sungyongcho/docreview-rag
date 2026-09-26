@@ -521,15 +521,37 @@ interface FailureReport {
 /** Where the workflow Budget fields are edited; the label matches the Settings nav. */
 const RUN_LIMITS: FailureFix = { label: "Open run limits", category: "limits" };
 
+/** Kinds `failure_kind` in app/llm/local_diagnostics.py gives a host the app could not reach. */
+const UNREACHABLE_KINDS = new Set(["refused", "dns", "connection"]);
+
+/**
+ * Whether a provider failure is a local model timeout or an unreachable local model host.
+ *
+ * The backend reports a local transport failure as `local model server request failed: <kind>`.
+ * Runs stored before that change carry the httpx exception names instead, so those still count.
+ */
+function localTransportFailure(detail: string): "timeout" | "unreachable" | null {
+  const kind = /local model server request failed: (\w+)/.exec(detail)?.[1];
+  if (kind !== undefined) {
+    if (kind === "timeout") return "timeout";
+    if (UNREACHABLE_KINDS.has(kind)) return "unreachable";
+    return null;
+  }
+  if (/ReadTimeout|ConnectTimeout|TimeoutException/i.test(detail)) return "timeout";
+  if (/ConnectError|Connection refused|ConnectionError/i.test(detail)) return "unreachable";
+  return null;
+}
+
 /**
  * Explain one run failure and, where one exists, name the setting that would change it.
  *
  * Budget failures carry `resource`, which says which ceiling stopped the run; a
  * wall-clock stop is not a token budget and pointing at the wrong field wastes the
  * reader's time. Provider failures are matched on `status`, whose four values are a
- * closed contract. Only the exception class at the head of `details[0]` is read, because
- * the provider text after it is not one. Advice an operator alone can act on, and the
- * Settings categories a public build does not render, are withheld from that build.
+ * closed contract. Only the exception class at the head of `details[0]`, or the local
+ * transport kind the backend names after it, is read, because the rest of the provider
+ * text is not one. Advice an operator alone can act on, and the Settings categories a
+ * public build does not render, are withheld from that build.
  */
 export function failureReport(failure: Record<string, unknown>, developer = LOCAL_ENGINE_VISIBLE): FailureReport {
   if (failure.code === "query_scope_unavailable") {
@@ -600,13 +622,14 @@ export function failureReport(failure: Record<string, unknown>, developer = LOCA
   }
 
   if (status === "provider_error" && LOCAL_ENGINE_VISIBLE) {
-    if (/ReadTimeout|ConnectTimeout|TimeoutException/i.test(detail)) {
+    const transport = localTransportFailure(detail);
+    if (transport === "timeout") {
       return {
         text: `The model did not answer within the time limit${tried}. Raise LOCAL_LLM_TIMEOUT_S, or choose a smaller model.`,
         fix: { label: "Open System status", category: "runtime" },
       };
     }
-    if (/ConnectError|Connection refused|ConnectionError/i.test(detail)) {
+    if (transport === "unreachable") {
       return {
         text: "The model host is unreachable. Check that the separately installed model server is running and LOCAL_LLM_BASE_URL is reachable from the app.",
         fix: { label: "Open System status", category: "runtime" },
