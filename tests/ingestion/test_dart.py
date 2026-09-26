@@ -200,12 +200,17 @@ def test_segment_excludes_a_trailing_non_part_division():
 
 
 def test_parse_dart_filing_maps_registry_identity_without_derivation(tmp_path):
-    """fiscal_year comes from the manifest, not from the 2025 filing date."""
+    """Take every identity field from the manifest instead of deriving it.
+
+    The opaque document ID is not rebuilt from issuer-year, and fiscal_year is not
+    derived from the 2025 filing date.
+    """
     path = write_source(tmp_path, MINIMAL_SOURCE)
+    document = filing_document(registry="dart", document_id="report-identity")
 
-    filing, profile = parse_dart_filing(entry_for(path, MINIMAL_SOURCE))
+    filing, profile = parse_dart_filing(filing_source(path, document=document))
 
-    assert filing.source.document.document_id == "005930-FY2024"
+    assert filing.source.document.document_id == "report-identity"
     assert filing.source.document.registry == "dart"
     assert filing.source.document.issuer == "005930"
     assert filing.source.document.issuer_id == "00126380"
@@ -243,13 +248,3 @@ def test_parse_dart_filing_rejects_a_non_utf8_archive(tmp_path):
 
     with pytest.raises(DartParseError, match="Invalid DART source"):
         parse_dart_filing(entry_for(path, MINIMAL_SOURCE))
-
-
-def test_document_identity_is_explicit_and_not_rederived(tmp_path):
-    """Preserve the manifest document identity instead of rebuilding it from issuer-year."""
-    path = write_source(tmp_path, MINIMAL_SOURCE)
-    source = filing_source(
-        path, document=filing_document(registry="dart", document_id="report-identity")
-    )
-    filing, _ = parse_dart_filing(source)
-    assert filing.source.document.document_id == "report-identity"
