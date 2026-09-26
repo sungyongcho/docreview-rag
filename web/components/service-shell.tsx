@@ -4,9 +4,9 @@ import { usePublishedCorpus } from "@/lib/use-published-corpus";
 import { effectivePublishedProfile, publicTargetIds, pinPublicTargets, createPublicTargets } from "@/lib/published-scope";
 import { useConfirmation } from "./use-confirmation";
 import { NotificationSignals } from "@/components/notification-signals";
-import type { NotificationTarget, NotificationDetail } from "@/lib/notification-registry";
+import type { NotificationTarget } from "@/lib/notification-registry";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
-import { scopeFailurePatch, scopeFailureProgress, publicScopeFailure, reviewLimitationMessage } from "@/lib/scope-failure";
+import { publicScopeFailure } from "@/lib/scope-failure";
 import { BrowserStorageSupport } from "@/components/browser-storage";
 import { applyFreshStartReset, FRESH_START_RECEIPT_KEY, browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
 import { useI18n } from "@/lib/i18n";
@@ -36,8 +36,6 @@ import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspac
 import { Onboarding, type TourView } from "@/components/onboarding";
 import { ReviewMessage } from "@/components/review-message";
 import { ReviewWelcome } from "@/components/review-welcome";
-import { reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer } from "@/components/review-progress";
-import { extractTrace, runDiagnostics, terminalAnswer, terminalCitationCount, terminalEvidenceLabel, terminalFailureFix } from "@/components/review-response";
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { ServiceSidebar } from "@/components/service-sidebar";
 import { ServiceTopbar } from "@/components/service-topbar";
@@ -46,23 +44,20 @@ import { DevPromotionProvider } from "@/components/dev-mode-bubble";
 import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
 import { NotificationProvider, useNotifications } from "@/components/notifications";
-import {
-  ApiError,
-  getCapabilities,
-  getReleaseLimits,
-  retrieveEvidence,
-  streamReview,
-} from "@/lib/api";
+import { getCapabilities } from "@/lib/api";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { profileCompatibilityIssue } from "@/lib/profile-compatibility";
 import { helpScreen } from "@/lib/help-content";
 import { helpTopicScreen } from "@/lib/help-search";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
 import { loadConversations, loadHelpOpen, newConversation, ONBOARDING_KEY, saveConversations, saveHelpOpen } from "@/lib/storage";
-import type { Capabilities, ChatMessage, Conversation, EvidenceHit, PublishedSnapshot, RetrievalProfile, ReviewSessionDraft } from "@/lib/types";
+import type { Capabilities, ChatMessage, Conversation, PublishedSnapshot, RetrievalProfile, ReviewSessionDraft } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
 import { useRuntimeHealth } from "@/lib/use-runtime-health";
 import { useOperatorJobs } from "@/lib/use-operator-jobs";
+import { useConversationDraft } from "./use-conversation-draft";
+import { usePublicExecutionPolicy } from "./use-public-execution-policy";
+import { useReviewRequests } from "./use-review-requests";
 
 type View = "review" | "build" | "measure" | "system";
 
@@ -84,9 +79,6 @@ function ServiceSession() {
   const { confirm, confirmationDialog } = useConfirmation();
   const { t } = useI18n();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const currentConversations = useRef(conversations);
-  currentConversations.current = conversations;
-  const draftSavePending = useRef(false);
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<View>("review");
   const [navigationHistory, setNavigationHistory] = useState<NavigationEntry[]>([]);
@@ -103,7 +95,6 @@ function ServiceSession() {
   const [measureTab, setMeasureTab] = useState<MeasureTab>("playground");
   const [systemTab, setSystemTab] = useState<SystemTab>("status");
   const [measureResultId, setMeasureResultId] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   const [tourOpen, setTourOpen] = useState(false);
@@ -119,9 +110,6 @@ function ServiceSession() {
   const ragTrigger = useRef<HTMLButtonElement>(null);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | undefined>(undefined);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const [activeReview, setActiveReview] = useState<{ conversationId: string; messageId: string } | null>(null);
-  const currentConversationId = useRef(activeId);
-  currentConversationId.current = activeId;
   const messagesViewport = useRef<HTMLDivElement>(null);
   const followReview = useRef(true);
   const lastReview = useRef<{ conversationId: string; messageId: string } | null>(null);
@@ -159,7 +147,6 @@ function ServiceSession() {
   const initialized = useRef(false);
   const tourInitialized = useRef(false);
   const { notify } = useNotifications();
-  const notificationView = useRef(view);notificationView.current = view;
   const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check);
   const workPending = operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0;
 
@@ -263,42 +250,7 @@ function ServiceSession() {
     () => conversations.find((conversation) => conversation.id === activeId) ?? conversations[0],
     [activeId, conversations],
   );
-  const query = active?.draft ?? "";
-
-  /** Keep each conversation's composer independent without serializing on every keystroke. */
-  function setQuery(value: string | ((current: string) => string)) {
-    const targetId = active?.id;
-    setConversations((current) => current.map((conversation) => {
-      if (conversation.id !== targetId) return conversation;
-      const draft = typeof value === "function" ? value(conversation.draft ?? "") : value;
-      if (draft === (conversation.draft ?? "")) return conversation;
-      draftSavePending.current = true;
-      return { ...conversation, draft };
-    }));
-  }
-
-  /** Flush the latest conversation state before leaving the page or unmounting. */
-  const saveDraft = useCallback(() => {
-    if (!draftSavePending.current) return;
-    saveConversations(currentConversations.current);
-    draftSavePending.current = false;
-  }, []);
-  useEffect(() => {
-    if (!draftSavePending.current) return;
-    const timer = window.setTimeout(saveDraft, 300);
-    return () => window.clearTimeout(timer);
-  }, [conversations, saveDraft]);
-  useEffect(() => {
-    /** Mobile browsers may hide a page without delivering pagehide before termination. */
-    const saveWhenHidden = () => { if (document.visibilityState === "hidden") saveDraft(); };
-    window.addEventListener("pagehide", saveDraft);
-    document.addEventListener("visibilitychange", saveWhenHidden);
-    return () => {
-      window.removeEventListener("pagehide", saveDraft);
-      document.removeEventListener("visibilitychange", saveWhenHidden);
-      saveDraft();
-    };
-  }, [saveDraft]);
+  const { query, setQuery } = useConversationDraft(active, conversations, setConversations);
   useLayoutEffect(() => {
     const target = lastReview.current;
     if (view !== "review" || !target || target.conversationId !== active?.id) return;
@@ -309,19 +261,7 @@ function ServiceSession() {
     if (element && followReview.current) element.scrollTop = element.scrollHeight;
   }, [active?.messages, active?.id, view]);
 
-  const [publicPolicy, setPublicPolicy] = useState<ReviewSessionDraft["prompt_policy"] | null>(null);
-  const [publicPolicyFailed, setPublicPolicyFailed] = useState(false);
-  const [publicPolicyRevision, setPublicPolicyRevision] = useState(0);
-  useEffect(() => {
-    if (adminLive || !permissions) return;
-    let current = true;
-    setPublicPolicy(null); setPublicPolicyFailed(false);
-    void getReleaseLimits().then(limits => {
-      if (!limits.prompt_policy?.workflow_budget) throw new Error("Public execution policy unavailable");
-      if (current) setPublicPolicy(limits.prompt_policy);
-    }).catch(() => { if (current) setPublicPolicyFailed(true); });
-    return () => { current = false; };
-  }, [adminLive, permissions?.environment, publicPolicyRevision]);
+  const { policy: publicPolicy, failed: publicPolicyFailed, retry: retryPublicPolicy } = usePublicExecutionPolicy(adminLive, permissions);
 
   const storedSessionProfile = active?.profile ?? profile;
   const publicCorpus = usePublishedCorpus(!adminLive);
@@ -367,6 +307,11 @@ function ServiceSession() {
   const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
   const settingsValidationError = conversationSettingsError(activeSessionProfile);
   const sendBlocked = (!adminLive && !publicPolicy) || publicScopeBlocked || settingsValidationError !== null || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
+  const { busy, activeReview, submit, reviewSelectedEvidence, markEvidence } = useReviewRequests({
+    active, activeId, fallbackProfile: profile, sessionProfile: activeSessionProfile, localModel, sendBlocked, developer: adminLive, view, query, setQuery,
+    setConversations, reviewAbort, onReviewStarted: (target) => { lastReview.current = target; followReview.current = true; },
+    setDailyBudgetResetAt: setResetAt, checkRuntimeHealth: runtimeHealth.check,
+  });
 
   useEffect(() => {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
@@ -611,173 +556,6 @@ function ServiceSession() {
     setActiveId(conversation.id);
   }
 
-  function conversationTitle(messages: ChatMessage[]): string {
-    return (messages.find((message) => message.role === "user")?.text ?? "New review").slice(0, 52);
-  }
-
-  /**
-   * Replace the active conversation's messages. Reads the current list at update time
-   * so a change made while a review streams (a toolbar edit, a pin) is not reverted.
-   */
-  function updateActive(messages: ChatMessage[], selectedProfile?: ReviewSessionDraft | null) {
-    const targetId = activeId;
-    setConversations((current) => saveConversations(current.map((conversation) =>
-      conversation.id === targetId
-        ? {
-            ...conversation,
-            title: conversationTitle(messages),
-            updatedAt: new Date().toISOString(),
-            messages,
-            profile: selectedProfile === undefined ? conversation.profile : selectedProfile,
-          }
-        : conversation,
-    )));
-  }
-
-  /** Append submitted messages atomically to their original conversation. */
-  function appendMessage(conversationId: string, added: ChatMessage | ChatMessage[]) {
-    setConversations((current) => saveConversations(current.map((conversation) => {
-      if (conversation.id !== conversationId) return conversation;
-      const messages = [...conversation.messages, ...(Array.isArray(added) ? added : [added])];
-      return { ...conversation, title: conversationTitle(messages), updatedAt: new Date().toISOString(), messages };
-    })));
-  }
-
-  /** Update one reserved assistant identity without overwriting concurrent profile or evidence edits. */
-  function updateMessage(conversationId: string, messageId: string, patch: Partial<Omit<ChatMessage, "id" | "role">>, notificationDetail?: NotificationDetail) {
-    if (patch.pending === false && notificationView.current !== "review") {
-      const failed = patch.execution?.outcome === "failed";
-      const cancelled = patch.execution?.outcome === "cancelled";
-      const limited = patch.execution?.outcome === "limited";
-      notify(limited && patch.execution?.pathDecision ? reviewLimitationMessage(patch.execution.pathDecision, t) : failed ? patch.text ?? t("Review failed.") : t(cancelled ? "Review cancelled." : "Review completed."), failed ? "error" : cancelled || limited ? "warning" : "success", `review:${conversationId}:${messageId}`, undefined, { event: "review-result", target: { view: "review", conversationId }, title: limited ? "Request scope guidance" : failed ? "Review failed" : cancelled ? "Review cancelled" : "Review completed", detail: limited ? undefined : notificationDetail });
-    }
-    setConversations((current) => saveConversations(current.map((conversation) => conversation.id === conversationId ? { ...conversation, updatedAt: new Date().toISOString(), messages: conversation.messages.map((message) => message.id === messageId ? { ...message, ...patch } : message) } : conversation)));
-  }
-
-  /** One-off read of the reset time after a `daily_cost_limit` error so the banner can say when answers resume. */
-  function noteDailyBudget(reason: unknown) {
-    if (reason instanceof ApiError && reason.code === "daily_cost_limit") {
-      void getReleaseLimits().then((limits) => setResetAt(limits.daily_cost_reset_at_utc)).catch(() => undefined);
-    }
-  }
-
-  async function submit() {
-    const question = query.trim();
-    if (!question || busy || !active || sendBlocked) return;
-    setQuery("");
-    setBusy(true);
-    const requestStarted = Date.now();
-    let execution = initialReviewProgress(false, 0, (active.profile ?? profile).corpus_scope);
-
-    reviewAbort.current?.abort();
-    const controller = new AbortController();
-    reviewAbort.current = controller;
-    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: question };
-    const conversationId = active.id;
-    const assistantId = crypto.randomUUID();
-    const pending = [...active.messages, userMessage];
-    lastReview.current = { conversationId, messageId: assistantId };
-    setActiveReview(lastReview.current);
-    followReview.current = true;
-    let preparedEvidence: EvidenceHit[] = [];
-    const selectedProfile = { ...activeSessionProfile, local_model: localModel };
-    appendMessage(conversationId, [userMessage, { id: assistantId, role: "assistant", text: "", pending: true, execution, question }]);
-    try {
-      let evidence: EvidenceHit[] = [];
-      let candidateToken: string | undefined;
-      const history = pending
-        .slice(0, -1)
-        .filter((message) => !message.pending && message.text.trim() && (message.role === "user" || message.role === "assistant"))
-        .map((message) => ({ role: message.role, text: message.text }));
-      const response = await streamReview(
-        question,
-        selectedProfile,
-        null,
-        history,
-        (event) => { if (controller.signal.aborted) return; execution = reviewProgressFromEvent(event, execution); updateMessage(conversationId, assistantId, { execution }); },
-        controller.signal,
-        (payload) => {
-          if (controller.signal.aborted) return;
-          evidence = payload.candidates.length ? payload.candidates : payload.results;
-          preparedEvidence = evidence;
-          candidateToken = payload.candidate_token ?? undefined;
-          execution = candidateProgress(execution, evidence.length, payload.resolved_scope, payload.path_decision);
-          updateMessage(conversationId, assistantId, { execution });
-        },
-      );
-      if (controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
-      const answer = terminalAnswer(response);
-      const terminal = (response.run ?? response) as Record<string, unknown>;
-      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution, terminal.report);
-      setResetAt(null);
-      const assistant: Partial<ChatMessage> = {
-        pending: false,
-        text: answer,
-        execution,
-        performance: terminal.execution as Record<string, unknown> | undefined,
-        evidence,
-        evidenceLabel: terminalEvidenceLabel(response),
-        citations: terminalCitationCount(response),
-        trace: extractTrace(response),
-        diagnostics: runDiagnostics(response),
-        failureFix: terminalFailureFix(response),
-        question,
-        candidateToken,
-        pinnedChunkIds: [],
-        excludedChunkIds: [],
-      };
-      updateMessage(conversationId, assistantId, assistant, notificationErrorDetail(terminal.failure));
-    } catch (reason) {
-      execution = scopeFailureProgress(reason, execution);
-      execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
-      const scopeFailure = scopeFailurePatch(reason, adminLive);
-      if (scopeFailure && !controller.signal.aborted) {
-        updateMessage(conversationId, assistantId, { ...scopeFailure, pending: false, execution }, notificationErrorDetail(reason));
-        return;
-      }
-      if (isInfrastructureFailure(reason)) {
-        updateMessage(conversationId, assistantId, { pending: false, execution, text: reason instanceof Error ? reason.message : t("The review could not be completed.") }, notificationErrorDetail(reason));
-        if (currentConversationId.current === conversationId) setQuery((current) => current || question);
-        await runtimeHealth.check();
-        return;
-      }
-      let evidence = preparedEvidence;
-      // The provider gate and the daily cost limiter both reject before retrieval runs,
-      // so fetch the evidence separately for the evidence-only reply.
-      if (reason instanceof ApiError && reason.code === "provider_unavailable" && !evidence.length) {
-        try {
-          const retrieved = await retrieveEvidence(question, selectedProfile);
-          evidence = retrieved.candidates.length ? retrieved.candidates : retrieved.results;
-          execution = { ...execution, resolvedScope: resolvedScopeFromServer(retrieved.resolved_scope) ?? execution.resolvedScope };
-        } catch {
-          // Preserve the original provider error when retrieval is also unavailable.
-        }
-      }
-      noteDailyBudget(reason);
-      const message =
-        controller.signal.aborted ? t("Request cancelled") :
-        reason instanceof ApiError && reason.code === "daily_cost_limit"
-          ? notificationErrorMessage(reason)
-          : reason instanceof ApiError && reason.code === "provider_unavailable" && evidence.length
-            ? "No answer model is configured. Retrieved filing evidence is shown below without a generated answer. See Build › step 6."
-          : reason instanceof Error
-            ? reason.message
-            : "The review could not be completed.";
-      updateMessage(conversationId, assistantId, {
-        pending: false,
-        text: message,
-        execution,
-        evidence,
-        evidenceLabel: "Retrieved candidates — answer not generated",
-      }, notificationErrorDetail(reason));
-    } finally {
-      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check(true);
-      setBusy(false);
-      setActiveReview(null);
-      if (reviewAbort.current === controller) reviewAbort.current = null;
-    }
-  }
-
   function applyProfile(nextProfile: RetrievalProfile, source?: string) {
     const [suite] = source?.split(":") ?? [];
     const corpusScope = suite?.startsWith("dart") ? "dart" : suite?.startsWith("sec") ? "sec" : (active?.profile ?? profile).corpus_scope;
@@ -826,93 +604,6 @@ function ServiceSession() {
     updateSessionProfile(next);
     navigate({ view: "review" });
     notify(t("Snapshot {p0} applied to this review.", { p0: snapshot.label }), "success", "snapshot-review", undefined, { event: "snapshot-review-notice", target: { view: "review", conversationId: activeId } });
-  }
-
-  function markEvidence(messageId: string, chunkId: number, mode: "pin" | "exclude") {
-    if (!active) return;
-    const messages = active.messages.map((message) => {
-      if (message.id !== messageId) return message;
-      const pins = new Set(message.pinnedChunkIds ?? []);
-      const excludes = new Set(message.excludedChunkIds ?? []);
-      if (mode === "pin") {
-        excludes.delete(chunkId);
-        pins.has(chunkId) ? pins.delete(chunkId) : pins.add(chunkId);
-      } else {
-        pins.delete(chunkId);
-        excludes.has(chunkId) ? excludes.delete(chunkId) : excludes.add(chunkId);
-      }
-      return { ...message, pinnedChunkIds: [...pins], excludedChunkIds: [...excludes] };
-    });
-    updateActive(messages);
-  }
-
-  async function useSelectedEvidence(message: ChatMessage) {
-    if (!active || !message.question || !message.candidateToken || busy || sendBlocked) return;
-    setBusy(true);
-    const conversationId = active.id;
-    const selected = (message.evidence ?? []).filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)).length;
-    const requestStarted = Date.now();
-    let execution = initialReviewProgress(true, selected, (active.profile ?? profile).corpus_scope);
-    const assistantId = crypto.randomUUID();
-    lastReview.current = { conversationId, messageId: assistantId };
-    setActiveReview(lastReview.current);
-    followReview.current = true;
-    appendMessage(conversationId, { id: assistantId, role: "assistant", text: "", pending: true, execution, question: message.question });
-    const controller = new AbortController();
-    reviewAbort.current = controller;
-    try {
-      // Reuse the context that produced this candidate snapshot, excluding its question and later turns.
-      const messageIndex = active.messages.findIndex((item) => item.id === message.id);
-      const questionIndex = active.messages.slice(0, Math.max(0, messageIndex)).findLastIndex((item) => item.role === "user" && item.text === message.question);
-      const historyTurns = activeSessionProfile.prompt_policy.history_turns;
-      const originalHistory = active.messages.slice(0, Math.max(0, questionIndex))
-        .filter((item) => !item.pending && item.text.trim() && (item.role === "user" || item.role === "assistant"))
-        .map((item) => ({ role: item.role, text: item.text }));
-      const response = await streamReview(
-        message.question,
-        activeSessionProfile,
-        {
-          candidateToken: message.candidateToken,
-          pinned: message.pinnedChunkIds ?? [],
-          excluded: message.excludedChunkIds ?? [],
-        },
-        historyTurns > 0 ? originalHistory.slice(-historyTurns) : [],
-        (event) => { if (controller.signal.aborted) return; execution = reviewProgressFromEvent(event, execution); updateMessage(conversationId, assistantId, { execution }); },
-        controller.signal,
-      );
-      if (controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
-      setResetAt(null);
-      const terminal = (response.run ?? response) as Record<string, unknown>;
-      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution, terminal.report);
-      updateMessage(conversationId, assistantId, {
-        pending: false,
-        execution,
-        performance: terminal.execution as Record<string, unknown> | undefined,
-        text: terminalAnswer(response),
-        evidence: message.evidence?.filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)),
-        evidenceLabel: terminalEvidenceLabel(response),
-        citations: terminalCitationCount(response),
-        trace: extractTrace(response),
-        diagnostics: runDiagnostics(response),
-        failureFix: terminalFailureFix(response),
-      }, notificationErrorDetail(terminal.failure));
-    } catch (reason) {
-      execution = scopeFailureProgress(reason, execution);
-      execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
-      const scopeFailure = scopeFailurePatch(reason, adminLive);
-      if (scopeFailure && !controller.signal.aborted) {
-        updateMessage(conversationId, assistantId, { ...scopeFailure, pending: false, execution }, notificationErrorDetail(reason));
-        return;
-      }
-      updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution }, notificationErrorDetail(reason));
-      noteDailyBudget(reason);
-      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Selected evidence review failed."), "error", "evidence-review", undefined, { event: "evidence-review-error", detail: notificationErrorDetail(reason) });
-    } finally {
-      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check(true);
-      setBusy(false);
-      setActiveReview(null);
-      if (reviewAbort.current === controller) reviewAbort.current = null;
-    }
   }
 
   function closeTour() {
@@ -1080,7 +771,7 @@ function ServiceSession() {
                   onStop={message.pending && activeReview?.conversationId === active?.id && activeReview.messageId === message.id ? () => reviewAbort.current?.abort() : undefined}
                   onSwitchScope={!busy ? () => { updateSessionProfile({ corpus_scope: "auto" }); setQuery(message.question ?? ""); } : undefined}
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
-                  onUseSelected={() => void useSelectedEvidence(message)}
+                  onUseSelected={() => void reviewSelectedEvidence(message)}
                   onOpenDetails={(stage) => openRunDetails(message.id, stage)}
                   onOpenFix={openFailureFix}
                 />
@@ -1111,7 +802,7 @@ function ServiceSession() {
 
             {!adminLive && <p className="helper" role="status">{t(publicCorpus.status === "loading" ? "Loading published filings…" : publicCorpus.status === "error" ? "Published filings could not be loaded." : !publicCorpus.documents.length ? "No portfolio filings have been published yet." : publicScopeBlocked ? "Select at least one published filing to ask a question." : "Questions use the selected published filings.")}{unavailableScope && <> {t("Some saved filings are no longer published. Review your selection.")}</>}{publicCorpus.status === "error" && <button type="button" className="button ghost" onClick={publicCorpus.refresh}>{t("Retry")}</button>}</p>}
             {permissions && compatibilityIssue && <ProfileCompatibilityNotice key={`${activeId}:${compatibilityIssue}`} message={compatibilityIssue} conversationId={activeId} />}
-            {!adminLive && !publicPolicy && <p className="helper" role="status">{t(publicPolicyFailed ? "Server execution limits could not be loaded. Browser defaults are not the applied policy." : "Loading server execution limits…")}{publicPolicyFailed && <button type="button" className="button ghost" onClick={() => setPublicPolicyRevision(value => value + 1)}>{t("Retry")}</button>}</p>}
+            {!adminLive && !publicPolicy && <p className="helper" role="status">{t(publicPolicyFailed ? "Server execution limits could not be loaded. Browser defaults are not the applied policy." : "Loading server execution limits…")}{publicPolicyFailed && <button type="button" className="button ghost" onClick={retryPublicPolicy}>{t("Retry")}</button>}</p>}
             <QuestionComposer
               inputRef={composerInput}
               query={query}
@@ -1228,12 +919,5 @@ function ServiceSession() {
       />
     </main>
     </DevPromotionProvider>
-  );
-}
-
-function isInfrastructureFailure(reason: unknown): boolean {
-  return reason instanceof TypeError || (
-    reason instanceof ApiError
-    && ["database_unavailable", "service_unavailable"].includes(reason.code)
   );
 }
