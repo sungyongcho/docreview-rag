@@ -7,7 +7,7 @@ export type StageId = "filings" | "index" | "embeddings" | "lexical" | "ask" | "
 export type StageStatus = "done" | "action" | "running" | "queued" | "failed" | "blocked" | "readonly" | "unknown";
 export type StageActionKind = "acquire" | "ingest_all" | "embed" | "bm25" | "ask" | "recheck" | "evaluate" | "compare";
 
-export interface StageAction {
+interface StageAction {
   label: string;
   kind: StageActionKind;
 }
@@ -507,12 +507,12 @@ function answerModelDraft(readiness: Readiness | null): Draft {
 }
 
 /** A settings destination that would let the reader change the limit they just hit. */
-export interface FailureFix {
+interface FailureFix {
   label: string;
   category: "limits" | "runtime" | "documents" | "jobs";
 }
 
-export interface FailureReport {
+interface FailureReport {
   text: string;
   /** Absent when no reachable setting would change the outcome. */
   fix?: FailureFix;

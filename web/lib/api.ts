@@ -100,7 +100,7 @@ async function request<T>(path: string, init?: TimedRequestInit): Promise<T> {
   return payload as T;
 }
 
-export interface RetrievePayload {
+interface RetrievePayload {
   path_decision?: ReviewPathDecision | null;
   results: EvidenceHit[];
   candidates: EvidenceHit[];
@@ -252,7 +252,7 @@ export async function streamReview(
 
 }
 
-export interface HealthResponse {
+interface HealthResponse {
   status: "ok";
   mode?: "canned" | "runtime";
 }

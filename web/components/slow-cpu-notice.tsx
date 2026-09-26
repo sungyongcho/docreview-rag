@@ -6,7 +6,7 @@ import { suggestLocalLimits } from "@/lib/local-limit-suggestion";
 import type { ReviewSessionDraft } from "@/lib/types";
 import { useNotifications } from "./notifications";
 
-export const SLOW_CPU_NOTICE_KEY = "slow-cpu";
+const SLOW_CPU_NOTICE_KEY = "slow-cpu";
 
 /** Surface the slow-model measurement as one pinned overlay toast whose action opens the limits editor.
  *

@@ -75,7 +75,7 @@ import { useNotifications } from "@/components/notifications";
 
 export type MeasureTab = "playground" | "golden" | "runs" | "compare" | "snapshots" | "presets";
 
-export interface MeasureWorkspaceProps {
+interface MeasureWorkspaceProps {
   publicProfile?: import("@/lib/types").ReviewSessionDraft;
   publicScopeBlocked?: boolean;
   capabilities?: Capabilities | null;

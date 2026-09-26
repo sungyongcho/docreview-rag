@@ -213,9 +213,9 @@ const sessionValues = new Map<string, string | null>();
 const knownValues = new Map<string, string | null>();
 const corruptValues = new Map<string, string>();
 const warnings = new Map<string, StorageWarning>();
-export interface StorageWarning { reason: "quota" | "unavailable" | "corrupt" | "version"; key: string; }
+interface StorageWarning { reason: "quota" | "unavailable" | "corrupt" | "version"; key: string; }
 interface StoredValue { version: number; value: string; }
-export interface BrowserStorageExport { format: "docreview-browser-storage"; version: 1; entries: Array<{ key: string; version: number; value: string }>; }
+interface BrowserStorageExport { format: "docreview-browser-storage"; version: 1; entries: Array<{ key: string; version: number; value: string }>; }
 
 /** Enable migrations only after the real server identifies this page as production. */
 export function configureBrowserStorage(environment?: "dev" | "prod"): void {

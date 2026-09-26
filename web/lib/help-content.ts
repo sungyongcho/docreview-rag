@@ -7,9 +7,9 @@
 import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 import type { Capabilities } from "./types";
 
-export type HelpCapability = Exclude<keyof Capabilities, "environment">;
+type HelpCapability = Exclude<keyof Capabilities, "environment">;
 export interface HelpAccess { capabilities?: Capabilities | null }
-export interface HelpGuide { summary: string; steps: readonly string[] }
+interface HelpGuide { summary: string; steps: readonly string[] }
 
 export type HelpScreen =
   | "build"

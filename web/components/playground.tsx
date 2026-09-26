@@ -16,7 +16,7 @@ import type { EvidenceHit, RetrievalProfile } from "@/lib/types";
 import { ProfileFields } from "@/components/profile-fields";
 import { useNotifications } from "@/components/notifications";
 
-export interface PlaygroundProps {
+interface PlaygroundProps {
   publicProfile?: import("@/lib/types").ReviewSessionDraft;
   publicScopeBlocked?: boolean;
   live: boolean;

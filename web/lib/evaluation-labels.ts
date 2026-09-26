@@ -2,11 +2,11 @@ import { translate, type Locale } from "./i18n";
 import type { GoldenRevision, GoldenSuite, RetrievalProfile, PublishedSnapshot } from "./types";
 
 /** Read only objects that can hold persisted evaluation metadata. */
-export function evaluationRecord(value: unknown): Record<string, unknown> {
+function evaluationRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-export interface EvaluationDatasetIdentity {
+interface EvaluationDatasetIdentity {
   key: string;
   filename: string | null;
   hash: string | null;

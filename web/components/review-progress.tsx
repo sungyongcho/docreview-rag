@@ -10,7 +10,7 @@ import type { CorpusScope, ReviewEventNode, ReviewExecution, ReviewResolvedScope
 
 import { ReviewStageDetails, type DisclosureStage } from "@/components/review-stage-details";
 
-export type ReviewNode = ReviewEventNode;
+type ReviewNode = ReviewEventNode;
 export type ReviewProgressState = ReviewExecution;
 
 export const REVIEW_STEPS = [
@@ -148,7 +148,7 @@ export function PathDecisionBadge({ decision, catalogMode }: { decision: ReviewP
 }
 
 /** The requested mode and confirmed applied routing remain distinct throughout execution. */
-export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgressState; onSwitchScope?: () => void }) {
+function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgressState; onSwitchScope?: () => void }) {
   const { t } = useI18n();
   const decision = state.pathDecision;
   const resolved = decision?.resolved_scope ?? state.resolvedScope;
@@ -177,7 +177,7 @@ export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgress
   </div>;
 }
 
-export function WaitingGlyph() {
+function WaitingGlyph() {
   return <span className="waiting-glyph" aria-hidden="true">◐</span>;
 }
 

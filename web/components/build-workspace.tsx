@@ -53,7 +53,7 @@ import type { RuntimeHealthKind } from "@/lib/use-runtime-health";
 export type BuildTab = "pipeline" | "documents" | "jobs";
 
 /** Cross-workspace destinations the Build pipeline links to. */
-export type BuildNavigationTarget =
+type BuildNavigationTarget =
   | { view: "review" }
   | { view: "system"; tab: "status" }
   | { view: "measure"; tab: "snapshots" | "runs" | "golden"; resultId?: number };

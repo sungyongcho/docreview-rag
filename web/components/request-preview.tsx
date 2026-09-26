@@ -28,7 +28,7 @@ export function presetDescription(profile: ReviewSessionDraft, preset: Retrieval
 
 const POLICY_LABELS: Record<string, string> = { history_turns: "Conversation history turns", max_context_chars: "Maximum evidence characters", evidence_overfetch: "Evidence overfetch", max_hits_per_document: "Maximum hits per document", max_iterations: "Maximum iterations", max_input_tokens: "Maximum input tokens", max_output_tokens: "Maximum output tokens", max_wall_clock_s: "Maximum wall clock seconds" };
 
-export type RequestPreviewSection = "filters" | "retrieval" | "evidence" | "limits";
+type RequestPreviewSection = "filters" | "retrieval" | "evidence" | "limits";
 
 /** Keep alternative preset descriptions in Search, separate from the next-request preview. */
 export function RetrievalPresetComparison({ profile, editable }: { profile: ReviewSessionDraft; editable: boolean }) {

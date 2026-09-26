@@ -6,7 +6,7 @@ const KEY = "docreview:retrieval-presets:v1";
 export const PRESETS_CHANGED = "docreview:retrieval-presets-changed";
 
 /** Validate the same retrieval combinations accepted by conversation requests. */
-export function retrievalError(p: RetrievalProfile): string | null {
+function retrievalError(p: RetrievalProfile): string | null {
   if (!p || !["hybrid", "vector", "lexical"].includes(p.strategy)) return "Choose a valid search strategy.";
   if (!Number.isInteger(p.k) || p.k < 1 || p.k > 100 || !Number.isInteger(p.candidate_k) || p.candidate_k < p.k || p.candidate_k > 500) return "Use 1–100 results and at least as many candidates (maximum 500).";
   if (!Number.isInteger(p.rrf_k) || p.rrf_k < 1 || p.rrf_k > 10000) return "RRF k must be an integer from 1 to 10000.";

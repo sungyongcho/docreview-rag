@@ -22,7 +22,7 @@ export interface ExperimentDefaults {
 
 }
 
-export type PromptPolicy = components["schemas"]["PromptPolicy"];
+type PromptPolicy = components["schemas"]["PromptPolicy"];
 
 export type ReviewSessionProfile = components["schemas"]["ReviewSessionProfile"];
 /** Fully initialized form state; wire requests may omit fields with server defaults. */
@@ -107,7 +107,7 @@ export interface ChatMessage {
   excludedChunkIds?: number[];
 }
 
-export interface ModelPolicyRole {
+interface ModelPolicyRole {
   default: string;
   allowed: string[];
   reasoning_effort: "low" | "medium" | null;
@@ -362,7 +362,7 @@ export interface LocalLLMConnection {
   selected_server_id?: string | null;
 }
 
-export interface LocalLLMServer {
+interface LocalLLMServer {
   id: string;
   name: string;
   base_url: string;

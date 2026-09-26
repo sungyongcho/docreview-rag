@@ -4,7 +4,7 @@ import { BUILTIN_PRESETS, type Capabilities } from "./types";
 
 export interface PresetCatalog { presets_version: string; unchanged?: boolean; presets: SavedPreset[]; errors: Array<{ file: string; error: string }> }
 export const PENDING_PRESET_NOTICE = "Preset storage is unavailable until server permissions are confirmed.";
-export type PresetStorageKind = "file" | "browser" | "pending";
+type PresetStorageKind = "file" | "browser" | "pending";
 type PresetPermissions = Pick<Capabilities, "environment" | "can_change_custom_retrieval">;
 let permissions: PresetPermissions | null = null;
 let permissionRevision = 0;

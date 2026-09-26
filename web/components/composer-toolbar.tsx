@@ -105,20 +105,20 @@ export function readinessStatusLabel(readiness: Readiness | null): string {
 }
 
 /** Number of active session filters shown on the Filters chip. */
-export function filterCount(profile: ReviewSessionDraft): number {
+function filterCount(profile: ReviewSessionDraft): number {
   return profile.doc_ids.length + profile.registries.length + profile.issuers.length + profile.fiscal_years.length + profile.forms.length + profile.sections.length + profile.languages.length;
 }
 
-export type ComposerBannerKind = "updating" | "empty" | "preparation" | "answer-model" | "budget";
+type ComposerBannerKind = "updating" | "empty" | "preparation" | "answer-model" | "budget";
 
-export interface ComposerBannerModel {
+interface ComposerBannerModel {
   kind: ComposerBannerKind;
   text: string;
   action?: "build" | "answer-model";
   step?: 2 | 3 | 4;
 }
 
-export interface ComposerBannerInput {
+interface ComposerBannerInput {
   readiness: Readiness | null;
   live: boolean;
   profile: ReviewSessionDraft;
@@ -152,7 +152,7 @@ export function composerBanner({ readiness, live, profile, resetAt, jobs = [] }:
   return null;
 }
 
-export interface ComposerBannerProps {
+interface ComposerBannerProps {
   banner: ComposerBannerModel | null;
   onOpenBuild: () => void;
   /** Deep link to Build › step 6 (answer model). */
