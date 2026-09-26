@@ -1,12 +1,15 @@
 """Public middleware, headers, and secret-redaction tests."""
 
+from collections.abc import Iterator
 from decimal import Decimal
+import io
 import logging
 import sys
 
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 import pytest
+from uvicorn.logging import AccessFormatter
 
 from app.release.ai_allowance import SharedAIAllowance, reserve_openai
 from app.release.middleware import (
@@ -14,7 +17,7 @@ from app.release.middleware import (
     SecurityHeadersMiddleware,
     client_host,
 )
-from app.release.secrets import REDACTION, SecretRedactionFilter
+from app.release.secrets import REDACTION, SecretRedactionFilter, install_secret_redaction
 
 
 def _guarded_app(
@@ -274,9 +277,82 @@ def test_server_secret_is_redacted_before_log_formatting() -> None:
     )
 
     assert SecretRedactionFilter((trace_secret,)).filter(exception_record)
-    assert REDACTION in exception_record.getMessage()
-    assert trace_secret not in exception_record.getMessage()
+    formatted = logging.Formatter().format(exception_record)
+    assert exception_record.getMessage() == "provider failed"
+    assert f"RuntimeError: provider rejected {REDACTION}" in formatted
+    assert trace_secret not in formatted
     assert exception_record.exc_info is None
+
+
+@pytest.fixture
+def stock_record_factory() -> Iterator[None]:
+    """Start from the stock record factory and restore whatever was installed before."""
+    previous = logging.getLogRecordFactory()
+    logging.setLogRecordFactory(logging.LogRecord)
+    yield
+    logging.setLogRecordFactory(previous)
+
+
+@pytest.mark.usefixtures("stock_record_factory")
+def test_installed_redaction_keeps_uvicorn_access_lines_formattable() -> None:
+    """Redact a secret in an access line while uvicorn's formatter still unpacks its args."""
+    secret = "sk-in-the-query"
+    install_secret_redaction((secret,))
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(
+        AccessFormatter(
+            fmt='%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
+            use_colors=False,
+        )
+    )
+    logger = logging.getLogger("uvicorn.access")
+    level = logger.level
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    try:
+        logger.info(
+            '%s - "%s %s HTTP/%s" %d',
+            "127.0.0.1:1234",
+            "GET",
+            f"/health?key={secret}",
+            "1.1",
+            200,
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(level)
+
+    assert f'127.0.0.1:1234 - "GET /health?key={REDACTION} HTTP/1.1" 200' in stream.getvalue()
+    assert secret not in stream.getvalue()
+
+
+@pytest.mark.usefixtures("stock_record_factory")
+def test_installed_redaction_covers_application_logger_tracebacks() -> None:
+    """Redact the message and traceback an application logger hands to the root handlers."""
+    secret, later_secret = "sk-in-the-traceback", "sk-installed-later"
+    install_secret_redaction((secret,))
+    install_secret_redaction((later_secret,))
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        try:
+            raise RuntimeError(f"provider rejected {secret}")
+        except RuntimeError as error:
+            logging.getLogger("app.api.errors").error(
+                "Unhandled API error on %s",
+                f"/review?key={later_secret}",
+                exc_info=(type(error), error, error.__traceback__),
+            )
+    finally:
+        root.removeHandler(handler)
+
+    assert f"Unhandled API error on /review?key={REDACTION}" in stream.getvalue()
+    assert f"RuntimeError: provider rejected {REDACTION}" in stream.getvalue()
+    assert secret not in stream.getvalue()
+    assert later_secret not in stream.getvalue()
 
 
 def test_public_proxy_marker_retains_cost_limits_without_charging_private_requests(
