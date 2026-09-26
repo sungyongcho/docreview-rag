@@ -33,11 +33,6 @@ export function targetRect(element: HTMLElement): TargetRect {
   };
 }
 
-/** jsdom measures nothing, so visibility filtering only applies where the document actually has layout. */
-function hasLayout(): boolean {
-  return document.documentElement.getBoundingClientRect().height > 0;
-}
-
 /**
  * Measure an element for a marker: the part of its box that is actually on screen, or null when the
  * element is hidden or scrolled out of the viewport or of a scrolling ancestor. Unlike `targetRect`
@@ -63,9 +58,6 @@ export function visibleRect(element: HTMLElement): TargetRect | null {
       left = Math.max(left, pane.left);
       right = Math.min(right, pane.right);
     }
-  }
-  if (!hasLayout()) {
-    return { top: box.top, left: box.left, right: box.right, bottom: box.bottom, width: box.width, height: box.height };
   }
   // The visible part of the target: empty means display:none, detached, or scrolled out of its pane.
   const visibleTop = Math.max(box.top, top);

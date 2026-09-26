@@ -4,31 +4,32 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+import app.ingestion.chunk as chunking
 from app.ingestion.tokens import InputBudget
 
 
-def test_default_config_plans_with_the_shared_input_budget(C):
+def test_default_config_plans_with_the_shared_input_budget():
     """Chunk by default within the complete-input budget the whole pipeline shares.
 
     Seeding chunks with the default config while evaluations report the shared token
     target, so a default that drifted from the shared budget would misdescribe the corpus.
     """
-    assert C.ChunkConfig().budget == InputBudget()
+    assert chunking.ChunkConfig().budget == InputBudget()
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     (("target_tokens", 0), ("target_tokens", -1), ("max_tokens", 8193), ("max_chars", 0)),
 )
-def test_config_rejects_non_positive_limits(C, field, value):
+def test_config_rejects_non_positive_limits(field, value):
     """Reject invalid token and character bounds."""
     with pytest.raises(ValueError):
-        C.ChunkConfig(**{field: value})
+        chunking.ChunkConfig(**{field: value})
 
 
-def test_chunk_is_immutable_and_content_includes_context(C):
+def test_chunk_is_immutable_and_content_includes_context():
     """Keep chunks immutable and compose context before body text."""
-    chunk = C.Chunk(
+    chunk = chunking.Chunk(
         doc_id="NVDA-FY2024",
         item="7",
         kind="text",
@@ -45,7 +46,7 @@ def test_chunk_is_immutable_and_content_includes_context(C):
         chunk.ordinal = 1
 
 
-def test_source_span_fails_closed(C):
+def test_source_span_fails_closed():
     """Reject chunk blocks that lack complete source coordinates."""
 
     class Missing:
@@ -53,40 +54,40 @@ def test_source_span_fails_closed(C):
         end_pos = None
 
     with pytest.raises(ValueError, match="source spans"):
-        C._source_span([Missing()])
+        chunking._source_span([Missing()])
 
 
-def test_source_span_validates_each_block_and_group(C):
+def test_source_span_validates_each_block_and_group():
     """Reject invalid coordinates and mixed narrative source groups."""
     from app.ingestion.parser import Block
 
     valid = Block("paragraph", "valid", source_pos=10, end_pos=20, source_group=0)
     reversed_block = Block("paragraph", "bad", source_pos=30, end_pos=25, source_group=0)
     with pytest.raises(ValueError, match="invalid block"):
-        C._source_span([valid, reversed_block])
+        chunking._source_span([valid, reversed_block])
 
     other_group = Block("paragraph", "other", source_pos=20, end_pos=30, source_group=1)
     with pytest.raises(ValueError, match="source groups"):
-        C._source_span([valid, other_group])
+        chunking._source_span([valid, other_group])
 
 
-def test_source_span_rejects_overlap_and_document_overflow(C):
+def test_source_span_rejects_overlap_and_document_overflow():
     """Reject overlapping blocks and spans beyond the source document."""
     from app.ingestion.parser import Block
 
     first = Block("paragraph", "first", source_pos=10, end_pos=25)
     overlapping = Block("paragraph", "second", source_pos=20, end_pos=30)
     with pytest.raises(ValueError, match="overlap"):
-        C._source_span([first, overlapping])
+        chunking._source_span([first, overlapping])
     with pytest.raises(ValueError, match="source length"):
-        C._source_span([first], source_length=20)
+        chunking._source_span([first], source_length=20)
 
 
-def test_source_span_allows_gaps_within_one_source_group(C):
+def test_source_span_allows_gaps_within_one_source_group():
     """Return one enclosing citation span when the parser omits page furniture."""
     from app.ingestion.parser import Block
 
     first = Block("paragraph", "first", source_pos=10, end_pos=20, source_group=0)
     second = Block("paragraph", "second", source_pos=40, end_pos=50, source_group=0)
 
-    assert C._source_span([first, second]) == (10, 50)
+    assert chunking._source_span([first, second]) == (10, 50)

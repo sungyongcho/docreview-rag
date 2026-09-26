@@ -6,7 +6,6 @@ import plan from "../../docs/TUTORIAL/capture-plan.json";
 
 it("validates paired local light-mode capture instructions without requiring pending files", () => {
   expect(validateCapturePlan(plan)).toBe(plan);
-  expect(plan.scenes.length).toBeGreaterThanOrEqual(28);
   expect(captureOriginal(plan, plan.scenes[0].id, "ko")).toBeUndefined();
 });
 

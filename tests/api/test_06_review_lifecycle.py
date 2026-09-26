@@ -1,4 +1,4 @@
-"""M5.3 cross-lane HTTP, CLI, workflow, and runtime integration proofs."""
+"""HTTP review execution across retrieval, providers, workflow, and persistence."""
 
 import asyncio
 from decimal import Decimal
@@ -6,68 +6,27 @@ import json
 from typing import cast
 
 from fastapi.testclient import TestClient
+import httpx
 from openai import OpenAIError
 import pytest
 
-from app import cli
 from app.api.app import create_api_app
 from app.api.review_profile import ReviewSessionProfile
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest
 from app.db.session_factory import SessionFactory
+from app.llm.local import LocalLLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
-from app.observability.types import build_run_report
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.scope import ManifestScopeIndex
 from app.retrieval.service import ComponentRankings, RetrievalResult
-from app.workflow.types import NodeError, initial_state
+from tests.api.support import MemorySession
 from tests.ingestion.support import filing_document
-from tests.llm.support import DeterministicLLMProvider
-
-
-class FakeTransaction:
-    """Minimal async transaction context for the runtime adapter test."""
-
-    def __init__(self, session):
-        self.session = session
-
-    async def __aenter__(self):
-        self.session.transaction_open = True
-        return self.session
-
-    async def __aexit__(self, error_type, error, traceback):
-        self.session.transaction_open = False
-
-
-class FakeSession:
-    """Session context that records transaction ownership without database I/O."""
-
-    def __init__(self):
-        self.transaction_open = False
-        self.rollbacks = 0
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, error_type, error, traceback):
-        return None
-
-    def in_transaction(self):
-        """Report whether this fake session currently holds a transaction."""
-        return self.transaction_open
-
-    async def rollback(self):
-        """Count the rollback and clear the transaction flag."""
-        self.rollbacks += 1
-        self.transaction_open = False
-
-    def begin(self):
-        """Open a transaction against this fake session."""
-        return FakeTransaction(self)
+from tests.llm.support import DeterministicLLMProvider, raw
 
 
 def provider_budget() -> ProviderBudget:
-    """Return an explicit zero-price budget for a no-call integration provider."""
+    """Return an explicit zero-price allowance for offline provider responses."""
     return ProviderBudget(
         max_input_tokens=1_000,
         max_output_tokens=1_000,
@@ -79,70 +38,77 @@ def provider_budget() -> ProviderBudget:
     )
 
 
-def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
-    hit,
-    successful_run,
-):
-    """Carry one query through retrieval, the workflow, and persistence on one session."""
+def test_http_review_grades_evidence_and_persists_the_returned_report(hit):
+    """Run real provider parsing and workflow guards between offline I/O boundaries."""
+    unrelated_body = "The board met in June."
+    unrelated = hit.model_copy(
+        update={
+            "chunk_id": 8,
+            "body": unrelated_body,
+            "index_text": f"{hit.context_header}\n\n{unrelated_body}",
+            "start_char": 200,
+            "end_char": 230,
+        }
+    )
     sessions = []
     retrieval_calls = []
-    workflow_calls = []
+    model_calls = []
     persisted = []
-    llm_provider = DeterministicLLMProvider(())
+    replies = [
+        {
+            "grades": [
+                {"chunk_id": hit.chunk_id, "relevant": True, "reason": "States revenue growth."},
+                {"chunk_id": unrelated.chunk_id, "relevant": False, "reason": "Board meeting."},
+            ]
+        },
+        {
+            "label": "SUPPORTED",
+            "answer": hit.body,
+            "citation_chunk_ids": [hit.chunk_id],
+            "reason": "The filing states the increase.",
+        },
+    ]
 
     def session_factory():
-        """Hand out a fresh fake session and remember it."""
-        session = FakeSession()
+        """Track request sessions so model calls can check transaction ownership."""
+        session = MemorySession()
         sessions.append(session)
         return session
 
     async def retrieval_service(session, query, *, provider, k, filters, **plan):
-        """Record the retrieval call and its plan, returning one hit on an open transaction."""
+        """Simulate retrieval opening a database transaction and returning ranked evidence."""
         session.transaction_open = True
-        retrieval_calls.append((session, query, provider, k, filters, plan))
+        retrieval_calls.append({"query": query, "filters": filters, "plan": plan})
         return RetrievalResult(
-            candidates=(hit,),
-            hits=(hit,),
+            candidates=(hit, unrelated),
+            hits=(hit, unrelated),
             score_stage="rrf",
-            component_rankings=ComponentRankings(vector=(hit.chunk_id,), lexical=()),
+            component_rankings=ComponentRankings(
+                vector=(hit.chunk_id, unrelated.chunk_id), lexical=()
+            ),
         )
 
-    async def workflow_service(request, *, retriever, provider, on_node=None):
-        """Record the workflow call and return the staged report."""
-        result = await retriever(request.query, request.k, request.filters)
+    def respond(request):
+        """Answer the actual adapter without keeping retrieval's transaction open."""
         assert sessions[-1].transaction_open is False
-        workflow_calls.append((request, provider, result))
-        if on_node is not None:
-            await on_node(
-                "retrieve",
-                initial_state(request).model_copy(
-                    update={
-                        "retrieved_hits": result.hits,
-                        "evidence": result.hits,
-                    }
-                ),
-            )
-        return successful_run.model_copy(update={"run_id": request.run_id})
+        model_calls.append(json.loads(request.content))
+        assert replies, "unexpected model retry or additional workflow call"
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": json.dumps(replies.pop(0))},
+                "prompt_eval_count": 10,
+                "eval_count": 5,
+            },
+        )
 
     async def run_persister(session, run, traces):
-        """Record the sanitized records that reached persistence."""
+        """Capture real sanitized records while the runtime owns the write transaction."""
+        assert session.transaction_open is True
         persisted.append((session, run, tuple(traces)))
         return run
 
-    services = RuntimeApiServices(
-        embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, session_factory),
-        llm_providers={"openai": llm_provider},
-        provider_budgets={"openai": provider_budget()},
-        retrieval_service=retrieval_service,
-        workflow_service=workflow_service,
-        run_persister=run_persister,
-        run_id_factory=lambda: "run-integration",
-        scope_index=ManifestScopeIndex.from_entries(
-            (filing_document(issuer="ACME", document_id=hit.doc_id),)
-        ),
-    )
-    explicit_profile = {
+    profile = {
         "retrieval_preset": "custom",
         "custom_retrieval": {"k": 3, "route_by_language": True},
         "doc_ids": [hit.doc_id],
@@ -151,40 +117,98 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
         "prompt_policy": {"max_context_chars": 10000, "workflow_budget": {"max_iterations": 4}},
     }
 
-    with TestClient(create_api_app(services)) as client:
-        retrieved = client.post(
-            "/retrieve",
-            json={"query": "Revenue?", "session_profile": explicit_profile},
-        )
-        reviewed = client.post(
-            "/review",
-            json={"query": "Revenue?", "session_profile": explicit_profile},
-        )
+    async def exercise():
+        """Use in-process HTTP for both evidence preview and the resulting review."""
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as provider_client:
+            provider = LocalLLMProvider(
+                base_url="http://model.test",
+                model_name="test-model",
+                protocol="ollama",
+                client=provider_client,
+            )
+            services = RuntimeApiServices(
+                embedding_provider=DeterministicEmbeddingProvider(),
+                session_factory=cast(SessionFactory, session_factory),
+                llm_providers={"openai": provider},
+                provider_budgets={"openai": provider_budget()},
+                retrieval_service=retrieval_service,
+                run_persister=run_persister,
+                scope_index=ManifestScopeIndex.from_entries(
+                    (filing_document(issuer="ACME", document_id=hit.doc_id),)
+                ),
+            )
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=create_api_app(services)),
+                base_url="http://api.test",
+            ) as client:
+                request = {"query": "Revenue?", "session_profile": profile}
+                return await client.post("/retrieve", json=request), await client.post(
+                    "/review", json=request
+                )
 
-    assert retrieved.status_code == 200
-    assert retrieved.json()["results"][0]["chunk_id"] == hit.chunk_id
-    assert reviewed.status_code == 200
-    assert reviewed.json()["run_id"] == "run-integration"
-    execution = reviewed.json()["execution"]
+    retrieved, reviewed = asyncio.run(exercise())
+
+    assert retrieved.status_code == 200, retrieved.text
+    assert retrieved.json()["query"] == "Revenue?"
+    assert retrieved.json()["results"][0] == {
+        "chunk_id": hit.chunk_id,
+        "doc_id": hit.doc_id,
+        "item": "7",
+        "section_title": "Management's Discussion and Analysis",
+        "kind": "text",
+        "citation": hit.citation,
+        "start_char": hit.start_char,
+        "end_char": hit.end_char,
+        "source_sha256": hit.source_sha256,
+        "body": hit.body,
+        "context_header": hit.context_header,
+        "score": hit.score,
+    }
+    assert retrieved.json()["resolved_profile"]["k"] == 3
+    assert [item["chunk_id"] for item in retrieved.json()["results"]] == [hit.chunk_id, 8]
+    assert reviewed.status_code == 200, reviewed.text
+    result = reviewed.json()
+    assert result["report"]["answer"] == hit.body
+    assert result["report"]["label"] == "SUPPORTED"
+    assert result["report"]["citations"] == [
+        {
+            "chunk_id": hit.chunk_id,
+            "doc_id": hit.doc_id,
+            "citation": hit.citation,
+            "start_char": hit.start_char,
+            "end_char": hit.end_char,
+            "source_sha256": hit.source_sha256,
+        }
+    ]
+    execution = result["execution"]
     assert execution["effective_settings"]["effective_provider_budget"]["max_input_tokens"] == 1000
-    assert execution["stage_results"][0]["candidates"][0]["chunk_id"] == hit.chunk_id
-    assert [call[1] for call in retrieval_calls] == ["Revenue?", "Revenue?"]
-    assert all(isinstance(call[2], DeterministicEmbeddingProvider) for call in retrieval_calls)
-    # The configured ranking plan reaches every retrieval, HTTP and workflow alike.
-    assert all(call[5]["lexical_ranker"] == "ts_rank_cd" for call in retrieval_calls)
-    assert all(call[5]["route_by_language"] is True for call in retrieval_calls)
-    assert all(call[4].doc_ids == (hit.doc_id,) for call in retrieval_calls)
-    assert all(call[4].registries == ("sec",) for call in retrieval_calls)
-    assert all(call[4].kinds == (hit.kind,) for call in retrieval_calls)
-    assert workflow_calls[0][0].k == 3
-    assert workflow_calls[0][0].max_context_chars == 10000
-    assert workflow_calls[0][0].budget.max_iterations == 4
-    assert workflow_calls[0][0].run_id == "run-integration"
-    assert workflow_calls[0][1] is llm_provider
-    assert workflow_calls[0][2].hits == (hit,)
-    assert persisted[0][1].run_id == "run-integration"
-    assert persisted[0][0] is sessions[1]
-    assert sessions[1].rollbacks == 1
+    assert execution["effective_settings"]["max_context_chars"] == 10000
+    assert execution["effective_settings"]["run_limits"]["max_iterations"] == 4
+    stages = execution["stage_results"]
+    grade = next(stage for stage in stages if stage["node"] == "grade")
+    assert grade["kept_chunk_ids"] == [hit.chunk_id]
+    assert grade["rejected_chunk_ids"] == [unrelated.chunk_id]
+    assert [call["node"] for call in execution["model_calls"]] == ["grade", "check"]
+    assert sum(call["input_tokens"] for call in execution["model_calls"]) == 20
+    assert not replies
+    assert hit.body in model_calls[0]["messages"][1]["content"]
+    assert unrelated.body in model_calls[0]["messages"][1]["content"]
+    assert hit.body in model_calls[1]["messages"][1]["content"]
+    assert unrelated.body not in model_calls[1]["messages"][1]["content"]
+    assert [call["query"] for call in retrieval_calls] == ["Revenue?", "Revenue?"]
+    for call in retrieval_calls:
+        assert call["plan"]["lexical_ranker"] == "ts_rank_cd"
+        assert call["plan"]["route_by_language"] is True
+        assert call["filters"].doc_ids == (hit.doc_id,)
+        assert call["filters"].registries == ("sec",)
+        assert call["filters"].kinds == (hit.kind,)
+    ((session, run, traces),) = persisted
+    assert run.run_id == result["run_id"]
+    assert run.report == result["report"]
+    assert [trace.node for trace in traces] == ["grade", "check"]
+    assert session is sessions[1]
+    assert session.rollbacks == 1
+    assert session.transaction_open is False
 
 
 def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(hit):
@@ -202,7 +226,7 @@ def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(hi
 
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, FakeSession),
+        session_factory=cast(SessionFactory, MemorySession),
         retrieval_service=retrieval_service,
         scope_index=ManifestScopeIndex.from_entries(
             (filing_document(issuer="ACME", document_id=hit.doc_id),)
@@ -239,7 +263,7 @@ def test_korean_preset_retrieval_uses_the_issuer_language_without_translation(
 
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, FakeSession),
+        session_factory=cast(SessionFactory, MemorySession),
         retrieval_service=retrieval_service,
         query_routing_enabled=True,
         scope_index=ManifestScopeIndex.from_entries(
@@ -278,9 +302,9 @@ def test_korean_preset_retrieval_uses_the_issuer_language_without_translation(
     ],
 )
 def test_review_translation_respects_the_preset_and_actual_corpus_language(
-    successful_run, preset, query, expected_variants
+    preset, query, expected_variants
 ):
-    """Translate only an enabled cross-language request before the workflow boundary."""
+    """Pass enabled corpus-language variants through the runner into retrieval."""
     responses = (
         (
             RawProviderResponse(
@@ -300,10 +324,15 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
     provider = DeterministicLLMProvider(responses)
     observed = []
 
-    async def workflow_service(request, *, retriever, provider, on_node=None):
-        """Inspect runtime routing without generating an answer or accessing the database."""
-        observed.append(request)
-        return successful_run.model_copy(update={"run_id": request.run_id})
+    async def retrieval_service(session, query, *, provider, k, filters, **plan):
+        """Observe the actual retrieval input; empty evidence needs no answer model."""
+        observed.append((query, filters, plan["query_variants"]))
+        return RetrievalResult(
+            candidates=(),
+            hits=(),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(), lexical=()),
+        )
 
     async def run_persister(session, run, traces):
         """Keep this routing regression independent of persistence I/O."""
@@ -311,10 +340,10 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
 
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, FakeSession),
+        session_factory=cast(SessionFactory, MemorySession),
         llm_providers={"openai": provider},
         provider_budgets={"openai": provider_budget()},
-        workflow_service=workflow_service,
+        retrieval_service=retrieval_service,
         run_persister=run_persister,
         query_routing_enabled=True,
         scope_index=ManifestScopeIndex.from_entries(
@@ -329,25 +358,11 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
         )
     )
 
-    assert observed[0].query == query
-    assert observed[0].filters.languages == ("en",)
-    assert observed[0].routing_queries == expected_variants
+    ((retrieved_query, filters, variants),) = observed
+    assert retrieved_query == query
+    assert filters.languages == ("en",)
+    assert variants == (expected_variants or None)
     assert len(provider.prompts) == len(expected_variants)
-
-
-def test_cli_and_http_use_the_same_public_evidence_shape(
-    client_factory,
-    services,
-    hit,
-):
-    """Project evidence identically whether it leaves by the command line or HTTP."""
-    services.hits = (hit,)
-
-    response = client_factory(services).post("/retrieve", json={"query": "Revenue?"})
-
-    assert response.status_code == 200
-    assert cli._evidence_payload(hit) == response.json()["results"][0]
-    assert "index_text" not in cli._evidence_payload(hit)
 
 
 def test_default_runtime_is_live_but_review_is_fail_closed_without_provider():
@@ -366,16 +381,33 @@ def test_default_runtime_is_live_but_review_is_fail_closed_without_provider():
     assert "/retrieve" in openapi.json()["paths"]
 
 
-def test_semantically_invalid_filters_are_a_typed_400():
-    """Translate a domain ValueError into a client error instead of a 500."""
+@pytest.mark.parametrize(
+    "failure,status,code,message",
+    [
+        (
+            ValueError("lexical retrieval cannot span corpus languages"),
+            400,
+            "invalid_request",
+            "lexical retrieval cannot span corpus languages",
+        ),
+        (
+            OpenAIError("private embedding provider endpoint"),
+            503,
+            "provider_unavailable",
+            "Provider is unavailable (OpenAIError).",
+        ),
+    ],
+)
+def test_retrieval_failures_are_typed_and_hide_provider_details(failure, status, code, message):
+    """Translate retrieval-domain rejection and embedding-provider failure at the HTTP boundary."""
 
     async def rejecting_retrieval(session, query, *, provider, k, filters, **plan):
-        """Raise the language-plan rejection the retrieval stack produces."""
-        raise ValueError("lexical retrieval cannot span corpus languages")
+        """Fail where the retrieval plan or its embedding provider rejects the request."""
+        raise failure
 
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, FakeSession),
+        session_factory=cast(SessionFactory, MemorySession),
         retrieval_service=rejecting_retrieval,
     )
 
@@ -388,100 +420,88 @@ def test_semantically_invalid_filters_are_a_typed_400():
             },
         )
 
-    assert response.status_code == 400
+    assert response.status_code == status
     assert response.json()["error"] == {
-        "code": "invalid_request",
-        "message": "lexical retrieval cannot span corpus languages",
+        "code": code,
+        "message": message,
         "details": [],
     }
+    assert "private embedding provider endpoint" not in response.text
 
 
-def test_runtime_maps_provider_exceptions_to_nonsecret_503():
-    """Turn a provider failure into an unavailable answer that names no endpoint."""
-    sessions = []
-
-    def session_factory():
-        """Hand out a fresh fake session and remember it."""
-        session = FakeSession()
-        sessions.append(session)
-        return session
-
-    async def unavailable_workflow(request, *, retriever, provider, on_node=None):
-        """Raise the provider failure this exit is supposed to describe."""
-        raise OpenAIError("secret provider endpoint")
-
-    services = RuntimeApiServices(
-        embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, session_factory),
-        llm_providers={"openai": DeterministicLLMProvider(())},
-        provider_budgets={"openai": provider_budget()},
-        workflow_service=unavailable_workflow,
-    )
-
-    with TestClient(create_api_app(services), raise_server_exceptions=False) as client:
-        response = client.post(
-            "/review", json={"query": "Revenue?", "session_profile": {"issuers": ["NVDA"]}}
-        )
-
-    assert response.status_code == 503
-    assert response.json()["error"]["code"] == "provider_unavailable"
-    assert "secret provider endpoint" not in response.text
-
-
-def test_runtime_redacts_explicit_secrets_before_persisting_and_returning():
-    """Keep a declared secret out of both the stored record and the response."""
+def test_provider_failure_is_recorded_and_redacted_before_http_response(hit):
+    """A real provider failure leaves a typed 503 and a safe persisted run."""
     secret = "custom-sensitive-value"
-    failure = NodeError(
-        node="grade",
-        error_type="RuntimeError",
-        message=f"failed with {secret}",
-    )
-    raw_report = build_run_report(
-        run_id="run-secret",
-        status="error",
-        total_time_seconds=0.1,
-        system_prompt=f"Use {secret}",
-        node_path=("retrieve", "grade"),
-        steps=(),
-        report={"reason": failure.model_dump(mode="json")},
-    )
     persisted = []
 
-    async def workflow_service(request, *, retriever, provider, on_node=None):
-        """Record the workflow call and return the staged report."""
-        return raw_report
+    class UnavailableProvider(DeterministicLLMProvider):
+        """Fail at dispatch so the real provider and workflow failure handling run."""
+
+        async def _request(self, prompt, schema, budget):
+            """Model an upstream failure carrying a configured secret."""
+            raise RuntimeError(f"provider unavailable: {secret}")
+
+    async def retrieval_service(session, query, *, provider, k, filters, **plan):
+        """Supply evidence so the workflow must attempt its grade call."""
+        return RetrievalResult(
+            candidates=(hit,),
+            hits=(hit,),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(hit.chunk_id,), lexical=()),
+        )
 
     async def run_persister(session, run, traces):
-        """Record the sanitized records that reached persistence."""
+        """Retain the sanitized records generated by the failed workflow."""
         persisted.append((run, tuple(traces)))
         return run
 
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, FakeSession),
-        llm_providers={"openai": DeterministicLLMProvider(())},
+        session_factory=cast(SessionFactory, MemorySession),
+        llm_providers={"openai": UnavailableProvider(())},
         provider_budgets={"openai": provider_budget()},
-        workflow_service=workflow_service,
+        retrieval_service=retrieval_service,
         run_persister=run_persister,
         secret_values=(secret,),
+        scope_index=ManifestScopeIndex.from_entries(
+            (filing_document(issuer="ACME", document_id=hit.doc_id),)
+        ),
     )
+    with TestClient(create_api_app(services)) as client:
+        response = client.post(
+            "/review",
+            json={
+                "query": "Revenue?",
+                "session_profile": {
+                    "issuers": ["ACME"],
+                    "prompt_policy": {"additional_instructions": f"Use {secret}"},
+                },
+            },
+        )
 
-    request = ReviewRequest.model_validate(
-        {"query": "Revenue?", "session_profile": {"issuers": ["NVDA"]}}
-    )
-    result = asyncio.run(services.review(request))
-
-    persisted_run = persisted[0][0]
-    assert secret not in repr(result)
-    assert secret not in persisted_run.system_prompt
-    assert secret not in json.dumps(persisted_run.report)
+    assert response.status_code == 503
+    result = response.json()
+    assert result["status"] == "error"
+    assert result["failure"]["code"] == "provider_failure"
+    assert result["failure"]["status"] == "provider_error"
+    assert result["failure"]["node"] == "grade"
+    assert result["failure"]["attempts"] == 1
+    assert secret not in response.text
+    ((run, traces),) = persisted
+    assert run.run_id == result["run_id"]
+    assert run.report["reason"] == result["failure"]
+    assert secret not in run.system_prompt
+    assert secret not in json.dumps(run.request_context)
+    assert secret not in json.dumps(run.report)
+    assert len(traces) == 1 and traces[0].node == "grade"
+    assert secret not in str(traces[0].error)
 
 
 def test_allowance_denial_after_a_billed_call_keeps_the_run_on_record(hit):
     """A check call the shared allowance denies after the grade call was billed still
     persists the billed run, and the caller still receives the denial for its 429."""
     from app.release.ai_allowance import AIAllowanceError
-    from tests.llm.support import raw
+    from app.workflow.runner import BilledRunAllowanceError
 
     grade = json.dumps(
         {"grades": [{"chunk_id": hit.chunk_id, "relevant": True, "reason": "Direct evidence."}]}
@@ -515,12 +535,11 @@ def test_allowance_denial_after_a_billed_call_keeps_the_run_on_record(hit):
 
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, FakeSession),
+        session_factory=cast(SessionFactory, MemorySession),
         llm_providers={"openai": CappedProvider([raw(grade, input_tokens=900, output_tokens=40)])},
         provider_budgets={"openai": provider_budget()},
         retrieval_service=retrieval_service,
         run_persister=run_persister,
-        run_id_factory=lambda: "run-denied",
         scope_index=ManifestScopeIndex.from_entries(
             (filing_document(issuer="ACME", document_id=hit.doc_id),)
         ),
@@ -529,12 +548,12 @@ def test_allowance_denial_after_a_billed_call_keeps_the_run_on_record(hit):
         {"query": "Revenue?", "session_profile": {"issuers": ["ACME"]}}
     )
 
-    with pytest.raises(AIAllowanceError) as raised:
+    with pytest.raises(BilledRunAllowanceError) as raised:
         asyncio.run(services.review(request))
 
     assert (raised.value.code, raised.value.retry_after) == ("public_daily_limit", 60)
     ((run, traces),) = persisted
-    assert run.run_id == "run-denied"
+    assert run.run_id == raised.value.report.run_id
     assert run.status == "budget_exceeded"
     assert [trace.node for trace in traces] == ["grade"]
     assert run.report["reason"]["details"][0] == "public_daily_limit"

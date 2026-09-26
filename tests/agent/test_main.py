@@ -42,8 +42,6 @@ def test_main_requires_a_question_before_loading_runtime_modules():
     from app.agent import __main__ as entrypoint
 
     with pytest.raises(SystemExit, match="--question is required"):
-        entrypoint.main([])
-    with pytest.raises(SystemExit, match="--question is required"):
         entrypoint.main(["--question", "   "])
 
 

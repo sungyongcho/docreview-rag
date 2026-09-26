@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 from typing import Any, cast
+from unittest.mock import Mock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,15 +69,17 @@ def test_missing_extra_raises_an_actionable_runtime_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "sentence_transformers", None)
 
     with pytest.raises(RuntimeError, match=r"uv sync --extra cpu"):
-        cross_encoder.CrossEncoderReranker()._load()
+        asyncio.run(cross_encoder.CrossEncoderReranker().score("query", ["document"]))
 
 
-def test_empty_candidate_list_does_not_load_a_model():
+def test_empty_candidate_list_does_not_load_a_model(monkeypatch):
     """Return no scores without loading a model for empty candidates."""
+    constructor = Mock(side_effect=AssertionError("Empty candidates must not load model weights"))
+    fake_sentence_transformers(monkeypatch, CrossEncoder=constructor)
     reranker = cross_encoder.CrossEncoderReranker()
 
     assert asyncio.run(reranker.score("query", [])) == []
-    assert reranker._encoder.value is None
+    constructor.assert_not_called()
 
 
 def test_score_preserves_pair_order_and_runs_model_off_loop(monkeypatch):

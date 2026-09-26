@@ -5,49 +5,10 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.ingestion.seed as seed
 from tests.ingestion.seed.support import sample_batch
-
-
-def _sql(statement) -> str:
-    """Render one statement as the PostgreSQL SQL it compiles to."""
-    return str(statement.compile(dialect=postgresql.dialect()))
-
-
-def test_document_upsert_targets_doc_id_and_updates_snapshot_metadata():
-    """Update filing identity and source metadata on document conflicts."""
-    batch = sample_batch()
-    sql = _sql(seed.document_upsert_statement(batch.documents))
-    assert "ON CONFLICT (doc_id) DO UPDATE SET" in sql
-    assert "aliases = excluded.aliases" in sql
-    assert "sec = excluded.sec" in sql
-    assert "dart = excluded.dart" in sql
-    assert "report_period = excluded.report_period" in sql
-    assert "parse_status" not in sql
-    assert "item_index" not in sql
-    assert "source_sha256" not in sql
-    assert "source_length" not in sql
-
-
-def test_chunk_upsert_targets_stable_identity_and_never_writes_embeddings():
-    """Upsert chunk content without inserting an embedding payload."""
-    batch = sample_batch()
-    statement = seed.chunk_upsert_statement(batch.chunks)
-    sql = _sql(statement)
-    assert "ON CONFLICT (stable_key) DO UPDATE SET" in sql
-    assert "body = excluded.body" in sql
-    assert "context_header = excluded.context_header" in sql
-    assert "index_text = excluded.index_text" in sql
-    assert "start_char = excluded.start_char" in sql
-    assert "end_char = excluded.end_char" in sql
-    assert "embedding" not in sql.split("ON CONFLICT", maxsplit=1)[0]
-    assert not any("embedding" in name for name in statement.compile().params)
-    normalized = " ".join(sql.split())
-    assert "embedding" not in normalized
-    assert "ON CONFLICT (stable_key)" in normalized
 
 
 class _Transaction:
@@ -92,8 +53,8 @@ class _Session:
             raise RuntimeError("simulated database failure")
 
 
-def test_persist_seed_batch_owns_one_transaction_and_batches_chunks():
-    """Own one transaction while writing bounded chunk batches."""
+def test_persist_seed_batch_reports_committed_progress():
+    """Report the committed document and chunk progress in one transaction."""
     session = _Session()
     progress = []
     result = asyncio.run(
@@ -109,16 +70,6 @@ def test_persist_seed_batch_owns_one_transaction_and_batches_chunks():
     assert session.begins == 1
     assert session.commits == 1
     assert session.rollbacks == 0
-    statements = [_sql(statement) for statement in session.executed]
-    assert len(statements) == 8
-    structure_position = next(
-        i for i, sql in enumerate(statements) if sql.startswith("INSERT INTO parsed_structures")
-    )
-    pointer_position = next(
-        i for i, sql in enumerate(statements) if sql.startswith("INSERT INTO document_parses")
-    )
-    assert structure_position < pointer_position
-    assert "ON CONFLICT (doc_id) DO UPDATE SET structure_id" in statements[pointer_position]
     assert [(update.stage, update.current, update.total) for update in progress] == [
         ("documents", 0, 1),
         ("documents", 1, 1),

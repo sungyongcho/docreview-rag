@@ -18,7 +18,7 @@ from app.config import Settings, get_settings
 from app.corpus_admin.context import CorpusAdminContext
 from app.corpus_admin.inspection import CorpusInspector
 from app.corpus_admin.job_queue import CorpusJobQueue
-from app.corpus_admin.operations import CorpusOperations, OperationRunner
+from app.corpus_admin.operations import CorpusOperations
 from app.corpus_admin.types import (
     AdminCommand,
     AdminJob,
@@ -42,10 +42,8 @@ class RuntimeCorpusAdminService:
         engine: AsyncEngine | None = None,
         session_factory: SessionFactory = _default_session_factory,
         embedding_provider: EmbeddingProvider | None = None,
-        operation_runner: OperationRunner | None = None,
         job_store: JobStore | None = None,
         corpus_access: CorpusAccess | None = None,
-        execution_lock: asyncio.Lock | None = None,
         execution_coordinator: JobExecutionCoordinator | None = None,
     ) -> None:
         context = CorpusAdminContext(
@@ -57,9 +55,7 @@ class RuntimeCorpusAdminService:
         # Previews, queued deletions and their execution must share one set of approvals.
         self._source_deletion = SourceDeletion(context.corpus_root)
         self._inspector = CorpusInspector(context)
-        self._operations = CorpusOperations(
-            context, self._inspector, self._source_deletion, operation_runner
-        )
+        self._operations = CorpusOperations(context, self._inspector, self._source_deletion)
         self._job_queue = CorpusJobQueue(
             corpus_root=context.corpus_root,
             source_deletion=self._source_deletion,
@@ -68,7 +64,6 @@ class RuntimeCorpusAdminService:
             invalidate_status=self._inspector.invalidate_status,
             job_store=job_store or JobStore(session_factory=session_factory),
             corpus_access=corpus_access or CorpusAccess(),
-            execution_lock=execution_lock or asyncio.Lock(),
             execution_coordinator=execution_coordinator or JobExecutionCoordinator(),
         )
 

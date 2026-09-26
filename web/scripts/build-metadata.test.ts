@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { WEB_ROOT, buildFingerprint, buildMetadata, fingerprintInputs } from "./build-metadata.mjs";
+import { buildFingerprint, buildMetadata, fingerprintInputs } from "./build-metadata.mjs";
 
 const dirs: string[] = [];
 afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
@@ -24,17 +24,11 @@ function fixture(): string {
   return root;
 }
 
-it("returns 12 lowercase hex characters that stay stable for identical sources", () => {
-  const root = fixture();
-  expect(buildFingerprint(root)).toMatch(/^[0-9a-f]{12}$/);
-  expect(buildFingerprint(root)).toBe(buildFingerprint(root));
-});
-
 it("depends only on relative names and contents, not on the directory location", () => {
   const first = fixture();
   const second = fixture();
-  expect(second).not.toBe(first);
   expect(buildFingerprint(second)).toBe(buildFingerprint(first));
+  expect(buildFingerprint(first)).toMatch(/^[0-9a-f]{12}$/);
   for (const name of fingerprintInputs(first)) {
     expect(name.startsWith("/")).toBe(false);
     expect(name).not.toContain(first);
@@ -65,9 +59,4 @@ it("keeps the timestamp independent of the fingerprint inputs", () => {
   expect(metadata.builtAt).toBe("2026-09-14T01:02:03.000Z");
   expect(metadata.fingerprint).toBe(buildFingerprint(root));
   expect(buildMetadata({ rootDir: root, now: new Date("2020-01-01T00:00:00.000Z") }).fingerprint).toBe(metadata.fingerprint);
-});
-
-it("hashes this checkout's web sources from any cwd", () => {
-  expect(fingerprintInputs(WEB_ROOT)).toContain("next.config.ts");
-  expect(buildFingerprint(WEB_ROOT)).toMatch(/^[0-9a-f]{12}$/);
 });

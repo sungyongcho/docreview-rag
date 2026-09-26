@@ -62,9 +62,6 @@ SHA256_RE = re.compile(r"[0-9a-f]{64}", re.ASCII)
 PARSE_STATUSES = frozenset({"parsed", "needs_profile_update"})
 ITEM_STATUSES = frozenset({"parsed", "empty_disclosure", "incorporated_by_reference"})
 
-# One manifest entry in, one parsed filing and its segmentation profile out.
-type FilingParser = Callable[[FilingSource], tuple[ParsedFiling, dict[str, Any]]]
-
 
 @dataclass(frozen=True, slots=True)
 class DocumentRecord:
@@ -470,18 +467,17 @@ def parse_seed_filings(
     entries: Iterable[FilingSource],
     *,
     expected_documents: int | None = None,
-    parser: FilingParser | None = None,
     on_progress: OperationProgressCallback | None = None,
 ) -> tuple[ParsedFiling, ...]:
     """Parse copied manifest entries once in deterministic input-adapter order.
 
     Validate the expected count before invoking the parser. Each entry is parsed by the
-    registry it names unless ``parser`` overrides that for every entry.
+    registry it names.
     """
     ordered = _ordered_manifest_entries(entries, expected_documents)
     filings: list[ParsedFiling] = []
     for position, entry in enumerate(ordered, start=1):
-        filing, _profile = (parser or registry_for(entry.document.registry).parse)(entry)
+        filing, _profile = registry_for(entry.document.registry).parse(entry)
         filings.append(filing)
         if on_progress is not None:
             on_progress(
@@ -522,13 +518,12 @@ def build_seed_batch(
     entries: Iterable[FilingSource],
     *,
     expected_documents: int | None = None,
-    parser: FilingParser | None = None,
     chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker,
     on_progress: OperationProgressCallback | None = None,
 ) -> SeedBatch:
     """Parse and chunk manifest entries into a deterministic seed batch.
 
-    Each entry is parsed by the registry it names unless ``parser`` overrides that.
+    Each entry is parsed by the registry it names.
     """
     ordered = _ordered_manifest_entries(entries, expected_documents)
     documents: list[DocumentRecord] = []
@@ -537,7 +532,7 @@ def build_seed_batch(
     if on_progress is not None:
         on_progress(OperationProgress("prepare", 0, len(ordered), "Parsing selected filings"))
     for position, entry in enumerate(ordered, start=1):
-        filing, _profile = (parser or registry_for(entry.document.registry).parse)(entry)
+        filing, _profile = registry_for(entry.document.registry).parse(entry)
         filings.append(filing)
         document, filing_chunks = filing_records(filing, chunker(filing))
         documents.append(document)

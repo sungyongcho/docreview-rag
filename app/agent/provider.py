@@ -11,13 +11,13 @@ from pydantic.functional_validators import model_validator
 
 from app.agent.types import ToolCall
 from app.llm.provider import openai_usage
-from app.llm.schemas import NonBlank, NonNegativeInt, StrictSchema, TokenPricing
+from app.llm.schemas import NonBlank, NonNegativeInt, TokenPricing, TokenUsageDetails
 from app.openai_models import ReasoningEffort, resolve_openai_model
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
-class ProviderTurn(StrictSchema):
+class ProviderTurn(TokenUsageDetails):
     """One raw provider response: prose, requested tool calls, and usage.
 
     ``incomplete_reason`` names why a cut-off turn stopped (``max_output_tokens``
@@ -28,9 +28,6 @@ class ProviderTurn(StrictSchema):
     tool_calls: tuple[ToolCall, ...]
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
-    cached_input_tokens: NonNegativeInt = 0
-    cache_write_input_tokens: NonNegativeInt = 0
-    reasoning_tokens: NonNegativeInt = 0
     request_id: str | None = None
     incomplete: bool = False
     incomplete_reason: NonBlank | None = None
@@ -43,11 +40,7 @@ class ProviderTurn(StrictSchema):
             raise ValueError("provider tool call ids must be unique")
         if self.incomplete_reason is not None and not self.incomplete:
             raise ValueError("incomplete_reason requires an incomplete turn")
-        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
-            raise ValueError("detailed input tokens must not exceed input_tokens")
-        if self.reasoning_tokens > self.output_tokens:
-            raise ValueError("reasoning_tokens must not exceed output_tokens")
-        return self
+        return self._validate_token_totals(self.input_tokens, self.output_tokens)
 
 
 class ToolCallingProvider(ABC):

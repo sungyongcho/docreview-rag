@@ -12,8 +12,63 @@ from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.ingestion.progress import OperationProgress
 from app.operator.corpus_access import JobCancelledError
+from app.operator.jobs import JobPersistenceError
 from app.operator.progress import PROGRESS_KEY, stored_progress
 from tests.corpus_admin.support import LedgerStore
+
+
+def test_concurrent_admission_leaves_no_unexecutable_jobs(tmp_path: Path) -> None:
+    """Capacity rejection must not leave durable rows or tickets outside the worker queue."""
+
+    async def scenario() -> None:
+        """Overlap ledger writes while holding the worker, then drain every accepted job."""
+        gate = asyncio.Event()
+        recoveries = 0
+        executions = 0
+
+        class YieldingLedger(LedgerStore):
+            """Expose the same scheduling boundaries as an asynchronous database."""
+
+            async def interrupt_incomplete(self, domain):
+                nonlocal recoveries
+                recoveries += 1
+                await asyncio.sleep(0)
+                return await super().interrupt_incomplete(domain)
+
+            async def create(self, **values):
+                await asyncio.sleep(0)
+                return await super().create(**values)
+
+        async def runner(command, publish, on_usage=None):
+            nonlocal executions
+            await gate.wait()
+            executions += 1
+            return OperationOutcome("done")
+
+        store = YieldingLedger()
+        service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
+        service._job_queue._run_operation = runner
+        outcomes = await asyncio.gather(
+            *(service.enqueue(AdminCommand("rebuild_bm25")) for _ in range(12)),
+            return_exceptions=True,
+        )
+        gate.set()
+        await asyncio.wait_for(service._job_queue._queue.join(), 2)
+        accepted = [job for job in outcomes if not isinstance(job, BaseException)]
+        rejected = [error for error in outcomes if isinstance(error, BaseException)]
+        assert rejected
+        assert all(
+            isinstance(error, RuntimeError) and "queue is full" in str(error) for error in rejected
+        )
+        assert set(store.rows) == {job.job_id for job in accepted}
+        assert recoveries == 1
+        assert executions == len(accepted)
+        assert not service._job_queue._execution_coordinator.busy
+        later = await service.enqueue(AdminCommand("rebuild_bm25"))
+        await asyncio.wait_for(service._job_queue._queue.join(), 2)
+        assert store.rows[later.job_id].status == "succeeded"
+
+    asyncio.run(scenario())
 
 
 def test_runtime_queue_runs_one_job_at_a_time_in_submission_order(tmp_path: Path) -> None:
@@ -25,7 +80,7 @@ def test_runtime_queue_runs_one_job_at_a_time_in_submission_order(tmp_path: Path
         calls: list[str] = []
         store = LedgerStore()
 
-        async def runner(command, publish) -> OperationOutcome:
+        async def runner(command, publish, on_usage=None) -> OperationOutcome:
             """Record order while keeping the first job active long enough to queue another."""
             calls.append(command.kind)
             publish(OperationProgress("work", 1, 2, f"running {command.kind}"))
@@ -36,9 +91,9 @@ def test_runtime_queue_runs_one_job_at_a_time_in_submission_order(tmp_path: Path
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
-            operation_runner=runner,
             job_store=store,
         )
+        service._job_queue._run_operation = runner
         first = await service.enqueue(AdminCommand("rebuild_bm25"))
         second = await service.enqueue(AdminCommand("backfill_embeddings"))
         await asyncio.sleep(0)
@@ -67,7 +122,7 @@ def test_failed_job_is_redacted_and_retryable(tmp_path: Path) -> None:
         secret = "dart-test-secret-123"
         store = LedgerStore()
 
-        async def runner(command, publish) -> OperationOutcome:
+        async def runner(command, publish, on_usage=None) -> OperationOutcome:
             """Fail once with a secret-bearing message, then succeed."""
             nonlocal attempts
             del command, publish
@@ -78,9 +133,9 @@ def test_failed_job_is_redacted_and_retryable(tmp_path: Path) -> None:
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path, dart_api_key=SecretStr(secret)),
-            operation_runner=runner,
             job_store=store,
         )
+        service._job_queue._run_operation = runner
         failed = await service.enqueue(AdminCommand("backfill_embeddings"))
         await service._job_queue._queue.join()
         terminal = store.rows[failed.job_id]
@@ -106,7 +161,7 @@ def test_queued_job_can_be_cancelled_without_running(tmp_path: Path) -> None:
         calls: list[str] = []
         store = LedgerStore()
 
-        async def runner(command, publish) -> OperationOutcome:
+        async def runner(command, publish, on_usage=None) -> OperationOutcome:
             """Block the first command long enough to cancel its successor."""
             del publish
             calls.append(command.kind)
@@ -115,9 +170,9 @@ def test_queued_job_can_be_cancelled_without_running(tmp_path: Path) -> None:
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
-            operation_runner=runner,
             job_store=store,
         )
+        service._job_queue._run_operation = runner
         first = await service.enqueue(AdminCommand("rebuild_bm25"))
         second = await service.enqueue(AdminCommand("backfill_embeddings"))
         await asyncio.sleep(0)
@@ -131,37 +186,72 @@ def test_queued_job_can_be_cancelled_without_running(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_running_backfill_cancels_at_the_next_batch_boundary(tmp_path: Path) -> None:
-    """Cooperatively stop only a running operation with a declared safe boundary."""
+def test_running_backfill_cancels_after_saving_in_flight_usage(tmp_path: Path) -> None:
+    """Preserve charged usage and terminal state when cancellation overlaps a batch write."""
+    from app.observability.usage import USAGE_KEY, provider_identity, usage_record
 
     async def scenario() -> None:
-        """Request cancellation while a fake embedding batch is in flight."""
-        gate = asyncio.Event()
-        store = LedgerStore()
+        """Delay usage storage, request cancellation, then reach the safe batch boundary."""
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        finish = asyncio.Event()
 
-        async def runner(command, publish) -> OperationOutcome:
-            """Publish once, wait, then hit the cancellation-aware boundary."""
+        class DelayedUsageStore(LedgerStore):
+            """Keep one running usage snapshot in flight while cancellation begins."""
+
+            async def put(self, job_id, **fields):
+                """Wait only for a running snapshot that includes a charged batch."""
+                if fields["status"] == "running" and USAGE_KEY in fields["result_refs"]:
+                    entered.set()
+                    await release.wait()
+                return await super().put(job_id, **fields)
+
+        store = DelayedUsageStore()
+
+        async def runner(command, publish, on_usage=None) -> OperationOutcome:
+            """Persist one batch before reaching the cancellation-aware progress boundary."""
             assert command.kind == "backfill_embeddings"
             publish(OperationProgress("embedding", 1, 2, "first batch"))
-            await gate.wait()
+            await asyncio.sleep(0)
+            assert on_usage is not None
+            await on_usage(
+                usage_record(
+                    identity=provider_identity(provider="deterministic", local=True),
+                    model_name="probe",
+                    role="embedding",
+                    input_tokens=12,
+                )
+            )
+            await finish.wait()
             publish(OperationProgress("embedding", 2, 2, "second batch"))
             return OperationOutcome("unexpected completion")
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
-            operation_runner=runner,
             job_store=store,
         )
+        service._job_queue._run_operation = runner
         job = await service.enqueue(AdminCommand("backfill_embeddings"))
+        await entered.wait()
+        cancellation = asyncio.create_task(service.cancel(job.job_id))
         await asyncio.sleep(0)
-        cancelled = await service.cancel(job.job_id)
-        gate.set()
-        await service._job_queue._queue.join()
-        assert cancelled.status == "cancelled"
-        terminal = store.rows[job.job_id]
-        assert terminal.status == "cancelled"
-        assert terminal.message == "Cancelled by operator."
-        assert (terminal.current, terminal.total) == (1, 2)
+        try:
+            assert not cancellation.done()
+            release.set()
+            assert (await cancellation).status == "cancelled"
+            terminal = store.rows[job.job_id]
+            assert terminal.status == "cancelled"
+            assert terminal.message == "Cancelled by operator."
+            assert (terminal.current, terminal.total) == (1, 2)
+            usage = terminal.result_refs[USAGE_KEY]
+            assert isinstance(usage, list)
+            assert usage[0]["input_tokens"] == 12
+        finally:
+            release.set()
+            finish.set()
+            await cancellation
+            await service._job_queue._queue.join()
+        assert store.rows[job.job_id].status == "cancelled"
 
     asyncio.run(scenario())
 
@@ -173,7 +263,7 @@ def test_worker_survives_ledger_failures_and_lands_the_terminal_state(tmp_path: 
         """Fail the first two writes, then require succeeded rows and a live worker."""
         store = LedgerStore(failures=2)
 
-        async def runner(command, publish) -> OperationOutcome:
+        async def runner(command, publish, on_usage=None) -> OperationOutcome:
             """Publish a burst of progress in one turn, then finish."""
             for step in range(1, 6):
                 publish(OperationProgress("work", step, 5, f"{command.kind} {step}"))
@@ -182,9 +272,9 @@ def test_worker_survives_ledger_failures_and_lands_the_terminal_state(tmp_path: 
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
-            operation_runner=runner,
             job_store=store,
         )
+        service._job_queue._run_operation = runner
         first = await service.enqueue(AdminCommand("rebuild_bm25"))
         await service._job_queue._queue.join()
         second = await service.enqueue(AdminCommand("backfill_embeddings"))
@@ -201,6 +291,40 @@ def test_worker_survives_ledger_failures_and_lands_the_terminal_state(tmp_path: 
     asyncio.run(scenario())
 
 
+def test_unsaved_completion_blocks_history_until_the_snapshot_is_reconciled(tmp_path):
+    """A completed operation must not be exposed as queued after terminal storage fails."""
+
+    async def scenario():
+        """Lose the ledger, preserve the final result, then recover without rerunning work."""
+        store = LedgerStore(failures=99)
+        executions = 0
+
+        async def runner(command, publish, on_usage=None):
+            nonlocal executions
+            executions += 1
+            return OperationOutcome("completed before storage recovered")
+
+        service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
+        service._job_queue._run_operation = runner
+        job = await service.enqueue(AdminCommand("rebuild_bm25"))
+        await service._job_queue._queue.join()
+        assert store.rows[job.job_id].status == "queued"
+        with pytest.raises(JobPersistenceError):
+            await service.recover_jobs()
+        with pytest.raises(JobPersistenceError):
+            await service.enqueue(AdminCommand("rebuild_bm25"))
+        assert list(store.rows) == [job.job_id]
+
+        store.failures = 0
+        await service.recover_jobs()
+        assert store.rows[job.job_id].status == "succeeded"
+        assert store.rows[job.job_id].message == "completed before storage recovered"
+        assert executions == 1
+        assert not service._job_queue._execution_coordinator.busy
+
+    asyncio.run(scenario())
+
+
 def test_acquisition_result_keeps_selection_in_completed_job(tmp_path):
     """Keep machine-readable acquisition provenance on the shared job board."""
 
@@ -208,13 +332,12 @@ def test_acquisition_result_keeps_selection_in_completed_job(tmp_path):
         """Complete an injected operation through the real job queue."""
         store = LedgerStore()
 
-        async def runner(command, publish):
+        async def runner(command, publish, on_usage=None):
             """Return the same structured result as acquisition adapters."""
             return OperationOutcome("Fetched 1 filing", "manifest.json", "selected")
 
-        service = RuntimeCorpusAdminService(
-            settings=Settings(corpus_dir=tmp_path), operation_runner=runner, job_store=store
-        )
+        service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
+        service._job_queue._run_operation = runner
         created = await service.enqueue(
             AdminCommand("acquire_edgar", identifiers=("NVDA",), years=(2024,))
         )
@@ -328,14 +451,15 @@ def test_corpus_job_waits_for_search_before_running(tmp_path: Path) -> None:
     async def exercise():
         called = asyncio.Event()
 
-        async def runner(command, publish):
+        async def runner(command, publish, on_usage=None):
             """Observe when the worker is permitted to mutate the index."""
             called.set()
             return OperationOutcome("indexed")
 
         service = RuntimeCorpusAdminService(
-            settings=Settings(corpus_dir=tmp_path), operation_runner=runner, job_store=LedgerStore()
+            settings=Settings(corpus_dir=tmp_path), job_store=LedgerStore()
         )
+        service._job_queue._run_operation = runner
         async with service.corpus_access.search():
             await service.enqueue(AdminCommand("rebuild_bm25"))
             await asyncio.sleep(0)

@@ -27,7 +27,7 @@ def test_unknown_registry_fails_closed():
         registry_for("unknown")
 
 
-def test_registry_configuration_is_immutable_and_has_no_chunk_profiles():
+def test_registry_configuration_is_immutable_and_keeps_registry_labels():
     """Keep source syntax in adapters and processing budgets in the shared contract."""
     with pytest.raises(TypeError):
         # Write through a mutable view on purpose: the read-only proxy must refuse it.
@@ -38,7 +38,6 @@ def test_registry_configuration_is_immutable_and_has_no_chunk_profiles():
     assert "회사" in registry_for("dart").section_label("I")
     assert registry_for("sec").section_title("7") == "Management's Discussion and Analysis"
     assert registry_for("dart").section_title("II") == "사업의 내용"
-    assert not hasattr(registry_for("sec"), "chunk_target")
 
 
 def test_section_title_uses_only_the_named_registry():

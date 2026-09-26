@@ -5,6 +5,7 @@ from collections.abc import Sequence
 import sys
 import threading
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -39,8 +40,10 @@ def test_provider_rejects_invalid_construction(model, dimensions, batch_size):
         )
 
 
-def test_factory_builds_configured_sbert_provider_without_loading_model():
+def test_factory_builds_configured_sbert_provider_without_loading_model(monkeypatch):
     """Build the configured local provider without loading weights."""
+    constructor = Mock(side_effect=AssertionError("Provider selection must not load model weights"))
+    fake_sentence_transformers(monkeypatch, SentenceTransformer=constructor)
     settings = Settings(
         embedding_provider="sbert",
         sbert_model="sentence-transformers/test-model",
@@ -51,7 +54,7 @@ def test_factory_builds_configured_sbert_provider_without_loading_model():
     assert isinstance(provider, sbert.SentenceTransformerEmbeddingProvider)
     assert provider.model == "sentence-transformers/test-model"
     assert provider.dimensions == DIM
-    assert provider._encoder.value is None
+    constructor.assert_not_called()
 
 
 def test_missing_extra_raises_an_actionable_runtime_error(monkeypatch):
@@ -59,29 +62,49 @@ def test_missing_extra_raises_an_actionable_runtime_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "sentence_transformers", None)
 
     with pytest.raises(RuntimeError, match=r"uv sync --extra cpu"):
-        sbert.SentenceTransformerEmbeddingProvider()._load()
+        asyncio.run(sbert.SentenceTransformerEmbeddingProvider().embed_documents(["first"]))
 
 
-def test_load_rejects_a_model_with_the_wrong_dimension(monkeypatch):
-    """Reject local models whose output width differs from the database."""
+def test_wrong_dimension_is_rejected_without_caching_the_failed_model(monkeypatch):
+    """Retry construction after a dimension mismatch, then reuse the valid encoder."""
+    constructions = []
+    dimensions = iter([768, 2])
+
+    class Matrix:
+        """Return one valid encoded vector."""
+
+        def tolist(self):
+            """Expose the matrix conversion used by the dependency."""
+            return [[1.0, 0.0]]
 
     class Encoder:
+        """Offer an invalid first model followed by a valid replacement."""
+
         max_seq_length = 128
         tokenizer = staticmethod(fake_tokenizer)
 
         def __init__(self, model):
-            self.model = model
+            """Record construction and consume the next model dimension."""
+            constructions.append(model)
+            self.dimensions = next(dimensions)
 
         def get_sentence_embedding_dimension(self):
-            return 768
+            """Report the dimension of this model instance."""
+            return self.dimensions
+
+        def encode(self, inputs, **kwargs):
+            """Return vectors only after dimension validation has succeeded."""
+            return Matrix()
 
     fake_sentence_transformers(monkeypatch, SentenceTransformer=Encoder)
-    provider = sbert.SentenceTransformerEmbeddingProvider(dimensions=384)
+    provider = sbert.SentenceTransformerEmbeddingProvider(model="test-model", dimensions=2)
 
     with pytest.raises(ValueError, match=r"produces 768 dimensions"):
-        provider._load()
+        asyncio.run(provider.embed_documents(["first"]))
 
-    assert provider._encoder.value is None
+    assert asyncio.run(provider.embed_documents(["second"])) == [[1.0, 0.0]]
+    assert asyncio.run(provider.embed_documents(["third"])) == [[1.0, 0.0]]
+    assert constructions == ["test-model", "test-model"]
 
 
 def test_embed_documents_reuses_the_model_and_runs_model_off_loop(monkeypatch):
@@ -128,9 +151,9 @@ def test_embed_documents_reuses_the_model_and_runs_model_off_loop(monkeypatch):
     )
 
     vectors = asyncio.run(provider.embed_documents(["first", "second"]))
-    assert provider._load() is provider._encoder.value
+    repeated = asyncio.run(provider.embed_documents(["first", "second"]))
 
-    assert vectors == [[1.0, 0.0], [0.0, 1.0]]
+    assert vectors == repeated == [[1.0, 0.0], [0.0, 1.0]]
     assert calls == {
         "constructed": 1,
         "model": "sentence-transformers/fake",
@@ -145,12 +168,14 @@ def test_embed_documents_reuses_the_model_and_runs_model_off_loop(monkeypatch):
     assert calls["encode_thread"] != main_thread
 
 
-def test_empty_batch_does_not_load_a_model():
+def test_empty_batch_does_not_load_a_model(monkeypatch):
     """Return an empty batch without loading model weights."""
+    constructor = Mock(side_effect=AssertionError("Empty batches must not load model weights"))
+    fake_sentence_transformers(monkeypatch, SentenceTransformer=constructor)
     provider = sbert.SentenceTransformerEmbeddingProvider()
 
     assert asyncio.run(provider.embed_documents([])) == []
-    assert provider._encoder.value is None
+    constructor.assert_not_called()
 
 
 def test_provider_output_still_passes_through_shared_validation(monkeypatch):

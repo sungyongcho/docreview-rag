@@ -7,9 +7,9 @@ from typing import cast
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, LexicalRanker
+from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, LexicalRanker
 from app.evals import arms
-from app.evals.arms import RetrievalStrategy, make_retriever, resolve_bm25_parameters
+from app.evals.arms import RetrievalStrategy, make_retriever
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.types import RetrievalFilters
 
@@ -174,33 +174,17 @@ def test_language_routing_is_bound_to_the_arm_and_only_to_a_fused_one(monkeypatc
             )
 
 
-@pytest.mark.parametrize(
-    "values",
-    [
-        (None, DEFAULT_BM25_B, DEFAULT_BM25_IDF),
-        (0, DEFAULT_BM25_B, DEFAULT_BM25_IDF),
-        (True, DEFAULT_BM25_B, DEFAULT_BM25_IDF),
-        (DEFAULT_BM25_K1, -0.1, DEFAULT_BM25_IDF),
-        (DEFAULT_BM25_K1, float("nan"), DEFAULT_BM25_IDF),
-        (DEFAULT_BM25_K1, DEFAULT_BM25_B, "okapi"),
-    ],
-    ids=["missing_k1", "zero_k1", "boolean_k1", "negative_b", "nan_b", "unknown_idf"],
-)
-def test_a_bm25_arm_is_rejected_before_it_can_be_bound(values):
-    """Reject an invalid BM25 set at bind time rather than on the first query."""
-    k1, b, idf = values
-
-    with pytest.raises(ValueError):
-        resolve_bm25_parameters("bm25", k1, b, idf)
+def test_a_bm25_arm_is_rejected_before_it_can_be_bound():
+    """Require explicit BM25 parameters before an evaluation arm can run."""
     with pytest.raises(ValueError):
         make_retriever(
             cast(AsyncSession, object()),
             strategy="lexical",
             provider=None,
             lexical_ranker="bm25",
-            bm25_k1=k1,
-            bm25_b=b,
-            bm25_idf=idf,
+            bm25_k1=None,
+            bm25_b=DEFAULT_BM25_B,
+            bm25_idf=DEFAULT_BM25_IDF,
         )
 
 

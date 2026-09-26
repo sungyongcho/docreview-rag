@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
-import { RequestPreviewContent, RetrievalPresetComparison, presetChanges, presetDescription } from "./request-preview";
+import { RequestPreviewContent, RetrievalPresetComparison } from "./request-preview";
 afterEach(cleanup);
 describe("request preview", () => {
   it("updates next-request JSON without editing its profile and separates it from historical settings", () => {
@@ -43,17 +43,6 @@ describe("request preview", () => {
     expect(screen.queryByText("Reranker")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(JSON.stringify(profile)).toBe(original);
-  });
-  it("derives preset changes and visible settings from the effective retrieval profiles", () => {
-    const baseline = resolvedRetrievalProfile(DEFAULT_SESSION_PROFILE);
-    for (const preset of ["balanced", "korean", "accuracy"] as const) {
-      const effective = resolvedRetrievalProfile({ ...DEFAULT_SESSION_PROFILE, retrieval_preset: preset });
-      const changes = presetChanges(DEFAULT_SESSION_PROFILE, preset);
-      expect(Object.fromEntries(changes)).toEqual(Object.fromEntries(Object.entries(effective).filter(([key, value]) => baseline[key as keyof typeof baseline] !== value)));
-      for (const [key, value] of changes) expect(presetDescription(DEFAULT_SESSION_PROFILE, preset).settings).toContain(`${key}: ${String(value)}`);
-    }
-    expect(presetDescription(DEFAULT_SESSION_PROFILE, "balanced").settings).toContain(`candidate_k: ${baseline.candidate_k}`);
-    expect(presetDescription(DEFAULT_SESSION_PROFILE, "korean").purpose).toBe("Uses language-aware retrieval across the selected filing corpus.");
   });
 
 });

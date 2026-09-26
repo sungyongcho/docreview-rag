@@ -73,11 +73,13 @@ function upload(text: string) {
 
 it("rejects invalid imports before confirmation and preserves existing settings", async () => {
   configureBrowserStorage("prod"); browserStorage().setItem("docreview:theme", "dark");
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  const stored = localStorage.getItem("docreview:theme");
   render(<NotificationProvider><BrowserStorageSettings /></NotificationProvider>);
   upload("{broken JSON");
   await screen.findByRole("alert");
-  expect(confirm).not.toHaveBeenCalled(); expect(browserStorage().getItem("docreview:theme")).toBe("dark");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(localStorage.getItem("docreview:theme")).toBe(stored);
+  expect(browserStorage().getItem("docreview:theme")).toBe("dark");
 });
 
 it("leaves valid imports unchanged when confirmation is declined, then restores after consent", async () => {

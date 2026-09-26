@@ -1,6 +1,7 @@
 """Provider results adapted into strict observability traces."""
 
 from decimal import Decimal
+import json
 
 from app.llm.schemas import AnswerDecision, ProviderMetadata, ProviderResult, SchemaRejected
 from app.observability.trace import step_trace_from_provider_result
@@ -45,10 +46,15 @@ def test_provider_results_map_to_traces_with_canonical_refusal_json_or_no_error(
     assert refused.retries == 1
     # The provider already charged this against its budget; the trace copies it.
     assert refused.estimated_cost_usd == Decimal("0.0000092")
-    assert refused.error == (
-        '{"refusal":{"attempts":2,"errors":["label is required"],'
-        '"status":"schema_rejected"},"status":"schema_rejected"}'
-    )
+    assert refused.error is not None
+    assert json.loads(refused.error) == {
+        "status": "schema_rejected",
+        "refusal": {
+            "status": "schema_rejected",
+            "attempts": 2,
+            "errors": ["label is required"],
+        },
+    }
 
     succeeded = step_trace_from_provider_result(
         ProviderResult[AnswerDecision](

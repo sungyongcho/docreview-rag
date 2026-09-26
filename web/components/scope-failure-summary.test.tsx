@@ -46,8 +46,10 @@ it("hides all DEV diagnostic fields from a public failure and a saved DEV failur
 it("marks the pre-decision error at stage zero and leaves stages one to five unrun", () => {
   const progress = finishReviewProgress(scopeFailureProgress(error, initialReviewProgress()), "failed", 10);
   expect([0, 1, 2, 3, 4].map(i => phaseStatus(progress, i))).toEqual(Array(5).fill("not-run"));
-  const { container } = render(<ReviewProgressSteps state={progress} />);
-  expect(container.querySelector(".review-progress-steps li")).toHaveClass("failed");
+  expect(progress.pathStatus).toBe("failed");
+  render(<ReviewProgressSteps state={progress} />);
+  expect(screen.getAllByText("Not performed in this request")).toHaveLength(5);
+  expect(screen.queryByText("Execution complete")).not.toBeInTheDocument();
 });
 
 it("keeps path telemetry separate from later scope resolution failures", () => {

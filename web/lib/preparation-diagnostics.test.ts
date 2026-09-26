@@ -62,10 +62,16 @@ describe("diagnosePreparation", () => {
     expect(diagnosePreparation("filings", pipeline, { ...runtime, databaseConnected: false }).terminalSteps[0].command).toBe("rag-dev start");
   });
 
-  it("prepares an empty schema without claiming that it was prepared", () => {
-    const diagnosis = diagnosePreparation("index", snapshot("index", "action"), { ...HEALTHY, schemaStatus: "empty" });
+  it.each(["filings", "index"] as const)("requires job storage before %s can run on an empty schema", (id) => {
+    const diagnosis = diagnosePreparation(id, snapshot(id, "action"), { ...HEALTHY, schemaStatus: "empty" });
     expect(diagnosis.state).toBe("blocked");
     expect(diagnosis.terminalSteps[0].command).toBe("uv run python -m scripts.schema prepare");
+  });
+
+  it("does not call acquisition ready when job storage cannot be verified", () => {
+    const pipeline = snapshot("filings", "action");
+    expect(diagnosePreparation("filings", pipeline, { ...HEALTHY, schemaStatus: "unavailable" })).toMatchObject({ state: "blocked", title: "Database schema is unavailable" });
+    expect(diagnosePreparation("filings", pipeline, { ...HEALTHY, schemaStatus: null }).state).toBe("checking");
   });
 
   it("does not trust stale completion when database health is unavailable", () => {

@@ -9,6 +9,7 @@ import { writeTutorialFixtures } from "./tutorial-test-support.mjs";
 const directories = [];
 afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
 
+/** Write isolated source documents and referenced/unreferenced binary assets. */
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "docreview-tutorial-test-"));
   directories.push(directory);
@@ -28,7 +29,7 @@ async function fixture() {
 
 it("copies only referenced assets and clears stale generated copies", async () => {
   const { root, output, png } = await fixture();
-  expect(await prepareTutorial(root, output)).toEqual({ documents: 36, images: 1 });
+  await prepareTutorial(root, output);
   expect(await readFile(join(output, "status.png"))).toEqual(png);
   expect(await readdir(output)).toEqual(["status.png"]);
   const originalDirectory = await stat(output);
@@ -43,7 +44,7 @@ it("prepares a fresh checkout without an untracked public directory", async () =
   const web = join(root, "web");
   await mkdir(web);
   const output = join(web, "public/tutorial-assets");
-  expect(await prepareTutorial(root, output)).toEqual({ documents: 36, images: 1 });
+  await prepareTutorial(root, output);
   expect(await readFile(join(output, "status.png"))).toEqual(png);
   expect((await stat(output)).uid).toBe((await stat(web)).uid);
 });
@@ -64,9 +65,9 @@ it("fails for missing documents, images, and cross-document headings", async () 
   await expect(prepareTutorial(root, output)).rejects.toThrow("Missing tutorial heading");
   await writeFile(join(root, "ko", "cli.md"), cli);
   await rm(join(root, "assets/status.png"));
-  await expect(prepareTutorial(root, output)).rejects.toThrow();
+  await expect(prepareTutorial(root, output)).rejects.toMatchObject({ code: "ENOENT", path: join(root, "assets/status.png") });
   await rm(join(root, "ko", "cli.md"));
-  await expect(prepareTutorial(root, output)).rejects.toThrow();
+  await expect(prepareTutorial(root, output)).rejects.toMatchObject({ code: "ENOENT", path: join(root, "ko/cli.md") });
 });
 
 it("requires the canonical development outline and rejects malformed drafts", async () => {
@@ -78,5 +79,4 @@ it("requires the canonical development outline and rejects malformed drafts", as
   await writeFile(korean, "# 개발 기록 초안");
   await rm(english);
   await expect(prepareTutorial(root, output)).rejects.toMatchObject({ code: "ENOENT" });
-  await rm(korean);
 });

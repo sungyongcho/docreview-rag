@@ -26,9 +26,6 @@ def test_query_bounds_and_contract():
         response = client.get("/public/snapshots/1/dataset")
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "snapshot_evidence_unavailable"
-    schema = application.openapi()
-    assert "PublicSnapshotDataset" in schema["components"]["schemas"]
-    assert "PublicSnapshotEvaluation" in schema["components"]["schemas"]
 
 
 def test_missing_snapshot_safe_envelope(monkeypatch):

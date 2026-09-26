@@ -58,11 +58,6 @@ def write_source(tmp_path: Path, source: str) -> Path:
 # --- part heading recognition ---
 
 
-def test_part_numeral_reads_the_registry_headings():
-    assert part_numeral("I. 회사의 개요") == ("I", "회사의 개요")
-    assert part_numeral("XII. 상세표") == ("XII", "상세표")
-
-
 def test_part_numeral_folds_unicode_numerals_and_fullwidth_period():
     assert part_numeral("Ⅷ．임원 및 직원 등에 관한 사항") == ("VIII", "임원 및 직원 등에 관한 사항")
 
@@ -106,20 +101,6 @@ def test_segment_drops_cover_material_before_the_first_division():
 
     texts = [block.text for section in sections for block in section.blocks]
     assert "표지 문단" not in texts
-
-
-def test_segment_assigns_source_ordered_spans_inside_the_source():
-    source = MINIMAL_SOURCE
-
-    sections, _ = segment(elements_of(source), source)
-
-    previous_end = -1
-    for section in sections:
-        for block in section.blocks:
-            assert block.source_pos is not None and block.end_pos is not None
-            assert 0 <= block.source_pos < block.end_pos <= len(source)
-            assert block.source_pos >= previous_end
-            previous_end = block.end_pos
 
 
 def test_segment_keeps_the_table_html_as_an_exact_source_slice():

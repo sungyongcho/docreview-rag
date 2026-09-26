@@ -10,6 +10,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
+import logging
 from pathlib import Path
 from typing import Any, Final, cast
 from uuid import uuid4
@@ -61,6 +62,7 @@ from app.evals.suites import (
 from app.evals.types import GoldenCase
 from app.operator.jobs import (
     JobExecutionCoordinator,
+    JobPersistenceError,
     JobStore,
     JobTurnCancelledError,
     ProgressPersister,
@@ -72,6 +74,7 @@ from app.retrieval.types import RetrievalFilters
 
 MAX_EVALUATION_JOBS: Final[int] = 20
 MAX_QUEUED_EVALUATIONS: Final[int] = 8
+logger = logging.getLogger(__name__)
 
 
 class EvaluationAlreadyQueuedError(ValueError):
@@ -102,7 +105,6 @@ class EvaluationAdminService:
         provider: EmbeddingProvider | None = None,
         artifact_dir: Path | None = None,
         job_store: JobStore | None = None,
-        execution_lock: asyncio.Lock | None = None,
         execution_coordinator: JobExecutionCoordinator | None = None,
         corpus_status: Callable[[], Awaitable[CorpusStatus]] | None = None,
     ) -> None:
@@ -117,9 +119,7 @@ class EvaluationAdminService:
         self._jobs: dict[str, EvaluationJobResource] = {}
         self._worker: asyncio.Task[None] | None = None
         self._job_store = job_store or JobStore(session_factory=session_factory)
-        self._execution_lock = execution_lock or asyncio.Lock()
         self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
-        self._recovered_jobs = False
         self._enqueue_lock = asyncio.Lock()
         self._corpus_status = corpus_status
         self._persister = ProgressPersister(self._persist_current_job)
@@ -396,6 +396,7 @@ class EvaluationAdminService:
             result_refs={"retry_of": retry_of} if retry_of is not None else {},
         )
         self._jobs[job_id] = job
+        self._persister.start(job_id)
         await self._execution_coordinator.register(
             job_id,
             job.created_at,
@@ -470,11 +471,9 @@ class EvaluationAdminService:
         return cancelled
 
     async def recover_jobs(self) -> None:
-        """Interrupt stale process-owned evaluations once before accepting work."""
-        if self._recovered_jobs:
-            return
-        await self._job_store.interrupt_incomplete("evaluation")
-        self._recovered_jobs = True
+        """Reconcile final writes and interrupt previous-process jobs before exposing history."""
+        await self._persister.retry_pending()
+        await self._job_store.recover("evaluation")
 
     async def _persist_job(
         self,
@@ -641,7 +640,7 @@ class EvaluationAdminService:
         )
 
     async def _execute_job(self, job_id: str) -> None:
-        """Execute one evaluation while the shared operator lock is held."""
+        """Execute one evaluation while it owns the shared execution turn."""
         job = self._jobs[job_id].model_copy(
             update={
                 "status": "running",
@@ -729,14 +728,17 @@ class EvaluationAdminService:
                 if self._jobs[job_id].status == "cancelled":
                     continue
                 async with self._execution_coordinator.turn(job_id):
-                    async with self._execution_lock:
-                        if self._jobs[job_id].status != "cancelled":
-                            try:
-                                await self._execute_job(job_id)
-                            except Exception as error:  # noqa: BLE001 - the worker outlives one job
-                                await self._abandon_job(job_id, error)
+                    if self._jobs[job_id].status != "cancelled":
+                        try:
+                            await self._execute_job(job_id)
+                        except JobPersistenceError:
+                            raise
+                        except Exception as error:  # noqa: BLE001 - the worker outlives one job
+                            await self._abandon_job(job_id, error)
             except JobTurnCancelledError:
                 pass
+            except JobPersistenceError as error:
+                logger.error("%s (%s)", error, type(error.__cause__).__name__)
             finally:
                 await self._persister.flush(job_id)
                 self._jobs.pop(job_id, None)

@@ -6,6 +6,7 @@ import { previewSourceDeletion } from "@/lib/api";
 import type { SourceDeletionPreview } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
 import { useRetainedPanelActive } from "./retained-panel";
+import { useModalLifecycle } from "./use-modal-lifecycle";
 import "./source-delete-dialog.css";
 
 interface Props {
@@ -40,27 +41,7 @@ export function SourceDeleteDialog({ documentIds, disabled, onConfirm, onOpenJob
     setOpen(false); setPreview(null); setPhase(null); setError(""); setQueued(false);
   }
 
-  useEffect(() => {
-    if (!visible) return;
-    dialog.current?.focus();
-    return () => { if (!trigger.current?.closest("[hidden], [inert]") && !trigger.current?.disabled) trigger.current?.focus(); };
-  }, [visible]);
-  useEffect(() => {
-    if (!visible) return;
-    /** Keep keyboard focus inside the active portal and allow cancellation before confirmation. */
-    function key(event: KeyboardEvent) {
-      if (event.key === "Escape" && !submitting.current) { event.preventDefault(); close(); }
-      if (event.key !== "Tab" || !dialog.current) return;
-      const controls = [...dialog.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]')];
-      const first = controls[0], last = controls.at(-1);
-      if (!controls.includes(document.activeElement as HTMLElement)) { event.preventDefault(); (event.shiftKey ? last : first)?.focus(); }
-      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-      if (!controls.length) { event.preventDefault(); dialog.current.focus(); }
-    }
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [visible]);
+  const onModalKeyDown = useModalLifecycle(dialog, { active: visible, onDismiss: close, initialFocus: "panel", restoreFocus: trigger });
   useEffect(() => {
     if (!preview) return;
     const timer = window.setTimeout(() => {
@@ -97,7 +78,7 @@ export function SourceDeleteDialog({ documentIds, disabled, onConfirm, onOpenJob
 
   return <>
     <span className="source-delete-trigger"><button ref={trigger} className="button danger-button" type="button" disabled={disabled || !documentIds.length || Boolean(phase)} aria-haspopup="dialog" aria-expanded={visible} aria-describedby={hintId} onClick={() => void inspect()}>{t("Delete all downloaded originals")}</button><span id={hintId} role="tooltip">{t("All downloaded originals will be deleted. You can download them again.")}</span></span>
-    {visible && createPortal(<div className="wipe-scrim"><section ref={dialog} tabIndex={-1} className="wipe-dialog source-delete-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={warningId}>
+    {visible && createPortal(<div className="wipe-scrim"><section ref={dialog} onKeyDown={onModalKeyDown} tabIndex={-1} className="wipe-dialog source-delete-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={warningId}>
       <header><h2 id={titleId}>{t("Delete all downloaded originals?")}</h2></header>
       <p id={warningId} className="notice error">{t("Deleting originals removes acquired source files. Clearing a selection only deselects them. To use deleted originals again, download them again in Filings.")}</p>
       <p>{t("Database documents, chunks, embeddings, and past job inputs are preserved.")}</p>

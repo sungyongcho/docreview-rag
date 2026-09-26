@@ -7,9 +7,9 @@ import pytest
 from app.ingestion.chunk import compose_index_text
 import app.ingestion.seed as seed
 from app.ingestion.tokens import MAX_INPUT_CHARACTERS, MAX_INPUT_TOKENS, count_tokens
-from tests.ingestion.golden import BLOCKS
+from tests.ingestion.golden import N_ITEMS
 
-EXPECTED_DOCUMENT_IDS = tuple(sorted(BLOCKS))
+EXPECTED_DOCUMENT_IDS = tuple(sorted(N_ITEMS))
 
 
 @pytest.fixture(scope="module")
@@ -53,15 +53,6 @@ def test_corpus_records_preserve_metadata_and_provenance(corpus_batch):
         filings[doc_id].parse_status == "parsed"
         for doc_id in EXPECTED_DOCUMENT_IDS
         if doc_id in documents
-    )
-
-    xref_documents = [filing for filing in filings.values() if filing.item_index]
-    if not xref_documents:
-        pytest.skip("no xref-segmented filing is present in the corpus")
-    assert any(
-        entry["status"] in {"empty_disclosure", "incorporated_by_reference"}
-        for record in xref_documents
-        for entry in record.item_index
     )
 
     for record in corpus_batch.chunks:

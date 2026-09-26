@@ -206,7 +206,7 @@ def test_ingest_selected_job_uses_existing_manifest_job_contract(tmp_path):
     async def scenario():
         """Use an isolated in-memory queue, with no database or actual parsing."""
 
-        async def runner(command, publish):
+        async def runner(command, publish, on_usage=None):
             """Capture resolved command references and fail once to exercise retry."""
             calls.append(command)
             if len(calls) == 1:
@@ -216,8 +216,9 @@ def test_ingest_selected_job_uses_existing_manifest_job_contract(tmp_path):
             )
 
         service = RuntimeCorpusAdminService(
-            settings=Settings(corpus_dir=tmp_path), operation_runner=runner, job_store=LedgerStore()
+            settings=Settings(corpus_dir=tmp_path), job_store=LedgerStore()
         )
+        service._job_queue._run_operation = runner
         job = await service.enqueue(
             AdminCommand(
                 "ingest_selected",

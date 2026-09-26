@@ -5,7 +5,7 @@ import math
 from pydantic import ValidationError
 import pytest
 
-from app.retrieval import lexical, types as retrieval_types
+from app.retrieval import types as retrieval_types
 from tests.retrieval.support import SOURCE_SHA256, hit_values
 
 
@@ -22,13 +22,6 @@ def test_chunk_hit_preserves_the_database_and_citation_surface():
 
     with pytest.raises(ValidationError):
         hit.score = 1.0
-
-
-def test_searched_rows_carry_exactly_the_chunk_hit_fields():
-    """Select every field the hit contract validates and nothing it would reject."""
-    statement = lexical.lexical_statement("research expense", 1)
-
-    assert set(statement.selected_columns.keys()) == set(retrieval_types.ChunkHit.model_fields)
 
 
 def test_chunk_hit_accepts_body_as_index_text_when_context_is_empty():

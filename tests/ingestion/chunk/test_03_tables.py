@@ -1,11 +1,12 @@
 """Table chunking and source-citation tests."""
 
+import app.ingestion.chunk as chunking
 from app.ingestion.parser import Block
 from app.ingestion.tables import structured_table
 from tests.ingestion.chunk.support import build_filing, markdown_cells
 
 
-def test_each_renderable_source_table_has_complete_fragment_coverage(C, corpus, chunks_by_doc):
+def test_each_renderable_source_table_has_complete_fragment_coverage(corpus, chunks_by_doc):
     """Map each source table to a distinct enclosing span with typed fragment membership."""
     for doc_id, (filing, _raw) in corpus.items():
         renderable = sum(
@@ -37,7 +38,7 @@ def test_table_row_width_is_stable(chunks_by_doc):
             assert len(widths) == 1, f"{doc_id} chunk {chunk.ordinal}: ragged markdown"
 
 
-def test_escaped_cell_pipe_does_not_change_markdown_width(C):
+def test_escaped_cell_pipe_does_not_change_markdown_width():
     """Treat an escaped literal pipe as cell content rather than a separator."""
     html = """<table>
       <tr><td>Metric</td><td>2024</td><td>2023</td></tr>
@@ -45,13 +46,13 @@ def test_escaped_cell_pipe_does_not_change_markdown_width(C):
     </table>"""
     block = Block("table", "", html=html, source_pos=10, end_pos=200)
 
-    chunk = C.chunk_filing(build_filing([block]))[0]
+    chunk = chunking.chunk_filing(build_filing([block]))[0]
     widths = {len(markdown_cells(line)) for line in chunk.body.splitlines()}
 
     assert widths == {3}
 
 
-def test_caption_only_table_annotates_the_next_table_chunk(C):
+def test_caption_only_table_annotates_the_next_table_chunk():
     """Carry a preceding unit-annotation table into the next table's context."""
     caption = Block(
         "table",
@@ -68,7 +69,7 @@ def test_caption_only_table_annotates_the_next_table_chunk(C):
         source_pos=80,
         end_pos=300,
     )
-    chunks = C.chunk_filing(build_filing([caption, data]))
+    chunks = chunking.chunk_filing(build_filing([caption, data]))
 
     assert len(chunks) == 1
     assert chunks[0].kind == "table"
@@ -76,7 +77,7 @@ def test_caption_only_table_annotates_the_next_table_chunk(C):
     assert "| 매출액 | 300,870 |" in chunks[0].body
 
 
-def test_caption_paragraph_annotates_the_next_table_chunk(C):
+def test_caption_paragraph_annotates_the_next_table_chunk():
     """A paragraph that is nothing but a unit caption becomes the table's context."""
     heading = Block("heading", "재무 현황", level=2, source_pos=10, end_pos=30)
     caption = Block("paragraph", "(단위 : 백만원)", source_pos=30, end_pos=60)
@@ -88,7 +89,7 @@ def test_caption_paragraph_annotates_the_next_table_chunk(C):
         source_pos=60,
         end_pos=300,
     )
-    chunks = C.chunk_filing(build_filing([heading, caption, data]))
+    chunks = chunking.chunk_filing(build_filing([heading, caption, data]))
 
     assert len(chunks) == 1
     assert chunks[0].kind == "table"
@@ -98,11 +99,11 @@ def test_caption_paragraph_annotates_the_next_table_chunk(C):
     assert "(단위 : 백만원)" not in chunks[0].body
 
 
-def test_caption_paragraph_without_a_table_is_dropped(C):
+def test_caption_paragraph_without_a_table_is_dropped():
     """A caption paragraph followed by narrative vanishes; the narrative still chunks."""
     caption = Block("paragraph", "(단위 : 백만원)", source_pos=10, end_pos=40)
     para = Block("paragraph", "Revenue grew this year.", source_pos=40, end_pos=120)
-    chunks = C.chunk_filing(build_filing([caption, para]))
+    chunks = chunking.chunk_filing(build_filing([caption, para]))
 
     assert len(chunks) == 1
     assert chunks[0].kind == "text"

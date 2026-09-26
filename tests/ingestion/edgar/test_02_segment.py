@@ -31,6 +31,11 @@ def test_number_segmentation_supports_semantic_and_class_based_bold(
     assert soup.find("style") is None
     assert strategy["type"] == "number"
     assert [section.item for section in sections] == ["1", "1A", "7", "8", "9"]
+    assert (sections[0].part, sections[0].canonical_title) == ("I", "Business")
+    assert (sections[2].part, sections[2].canonical_title) == (
+        "II",
+        "Management's Discussion and Analysis",
+    )
 
 
 def test_heading_length_limit_is_inclusive_during_detection_and_segmentation(

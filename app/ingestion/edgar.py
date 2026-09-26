@@ -729,22 +729,17 @@ def build_profile(soup: BeautifulSoup, blocks: list[Tag], doc_id: str) -> dict:
     }
 
 
-PROFILES = Path("data/profiles")
-
-
-def load_profile(issuer: str, year: int) -> dict | None:
-    """Return a year-specific profile, falling back to the default, or None if absent."""
-    path = PROFILES / f"{issuer}.json"
+def load_profile(path: Path, year: int) -> dict | None:
+    """Read the filing's issuer profile, using its default year when the year is absent."""
     if not path.exists():
         return None
     data = json.loads(path.read_text())
     return data["profiles"].get(str(year)) or data["profiles"].get(data["default_year"])
 
 
-def save_profile(issuer: str, year: int, profile: dict) -> None:
-    """Persist a year-specific profile and refresh default-year tracking."""
-    PROFILES.mkdir(parents=True, exist_ok=True)
-    path = PROFILES / f"{issuer}.json"
+def save_profile(path: Path, issuer: str, year: int, profile: dict) -> None:
+    """Persist a year-specific profile beside its issuer's corpus sources."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     data = (
         json.loads(path.read_text())
         if path.exists()
@@ -876,7 +871,8 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
         source_sha256=source_digest(raw),
     )
 
-    profile = load_profile(issuer, year)
+    profile_path = source.corpus_root / "sec" / issuer / "profile.json"
+    profile = load_profile(profile_path, year)
     bootstrapped = profile is None
     out.profile_used = "saved"
     if bootstrapped:
@@ -887,7 +883,7 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
     problems = validate(sections, profile, index) if sections else ["no sections"]
 
     if bootstrapped and not problems:
-        save_profile(issuer, year, profile)
+        save_profile(profile_path, issuer, year, profile)
 
     if problems:
         # On failure, relearn from this filing and store only this year after success (F4).
@@ -895,7 +891,7 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
         r_sections, r_index = segment(soup, blocks, relearned["segmentation"], offsets, len(raw))
         r_problems = validate(r_sections, relearned, r_index) if r_sections else ["no sections"]
         if not r_problems:
-            save_profile(issuer, year, relearned)  # save only a successful profile
+            save_profile(profile_path, issuer, year, relearned)  # save only a successful profile
             profile, sections, index, problems = relearned, r_sections, r_index, r_problems
             out.profile_used = "relearned"
 

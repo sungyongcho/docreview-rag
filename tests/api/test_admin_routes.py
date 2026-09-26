@@ -15,7 +15,6 @@ from app.api.admin_schemas import (
     DocumentFacetValue,
     DocumentInventoryResponse,
     EvaluationJobResource,
-    EvaluationJobsResponse,
     EvaluationRunRequest,
     GoldenCanonicalResource,
     OperatorJobsResponse,
@@ -162,10 +161,6 @@ class FakeAdminServices:
         """Echo one safe operation kind."""
         return _corpus_job(request)
 
-    async def suites(self):
-        """Return no suites for this route fixture."""
-        return ()
-
     async def golden_canonical(self, suite_id):
         """Return one read-only canonical case collection."""
         return GoldenCanonicalResource(
@@ -185,10 +180,6 @@ class FakeAdminServices:
             message="Queued",
             created_at=datetime(2026, 9, 1, tzinfo=UTC),
         )
-
-    async def evaluation_jobs(self):
-        """Return an empty evaluation job list."""
-        return EvaluationJobsResponse(jobs=())
 
     async def operator_job(self, job_id):
         """Return no persisted unified job for this route fixture."""
@@ -212,18 +203,6 @@ class FakeAdminServices:
             latest_run_at=None,
             models=(),
         )
-
-    async def compare(self, candidate_id, baseline_id):
-        """Leave comparison unused in this focused route test."""
-        raise AssertionError((candidate_id, baseline_id))
-
-    async def retrieval_preview(self, request):
-        """Leave preview unused in this focused route test."""
-        raise AssertionError(request)
-
-    async def review_preview(self, request):
-        """Leave review unused in this focused route test."""
-        raise AssertionError(request)
 
     async def source_deletion_preview(
         self, request: SourceDeletionRequest

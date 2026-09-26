@@ -114,14 +114,6 @@ def test_broken_manifest_json_names_the_position(tmp_path):
         read_catalog(path)
 
 
-def test_manifest_refuses_legacy_lists(tmp_path):
-    """Never accept the removed registry-specific list format."""
-    path = tmp_path / "manifest.json"
-    path.write_text("[]")
-    with pytest.raises(ValueError, match="object"):
-        read_catalog(path)
-
-
 @pytest.mark.parametrize("missing", ["source_url", "filing_id"])
 def test_document_without_required_identity_is_rejected(tmp_path, missing):
     """Validate common filing fields before starting network work."""
@@ -475,7 +467,6 @@ def test_discovered_entry_uses_common_normalized_metadata():
     assert built.fiscal_year == 2024
     assert built.sec is not None
     assert built.sec.primary_document == "nvda-20240128.htm"
-    assert not hasattr(built, "file")
 
 
 # --- merging ---

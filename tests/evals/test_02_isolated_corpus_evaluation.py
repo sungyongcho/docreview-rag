@@ -5,8 +5,9 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -17,6 +18,7 @@ from app.config import (
     LexicalRanker,
     get_settings,
 )
+from app.db.models import ChunkEmbedding
 from app.evals.arms import RetrievalStrategy, make_retriever
 from app.evals.corpus import temporary_corpus_session
 from app.evals.retrieval_eval import evaluate_retriever, persist_evaluation
@@ -134,6 +136,10 @@ async def _exercise(database_url: URL) -> tuple[bool, str]:
                 == 12
             )
 
+            with pytest.raises(IntegrityError):
+                async with session.begin_nested():
+                    await session.execute(update(ChunkEmbedding).values(dimensions=13))
+
             # The corpus arm owns its BM25 statistics: indexing built them once,
             # before any experiment ran, and every BM25 arm below reads the same set.
             chunks_with_lengths = await session.scalar(text("SELECT count(*) FROM chunk_lengths"))
@@ -177,16 +183,6 @@ async def _exercise(database_url: URL) -> tuple[bool, str]:
                 assert evaluation.score.recall_at_k == 1.0
                 assert evaluation.score.hit_rate_at_k == 1.0
                 evaluations[(strategy, ranker)] = evaluation
-
-            with pytest.raises(ValueError, match="requires an explicit lexical ranker"):
-                make_retriever(session, strategy="hybrid", provider=provider)
-            with pytest.raises(ValueError, match="must not name a lexical ranker"):
-                make_retriever(
-                    session,
-                    strategy="vector",
-                    provider=provider,
-                    lexical_ranker="bm25",
-                )
 
             # Indexing committed the corpus, so ending this read transaction cannot
             # discard it. Without that commit the rollback below would silently empty

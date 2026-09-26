@@ -81,6 +81,16 @@ def filing_source(path, *, document=None, encoding: Literal["utf-8", "euc-kr", "
     )
 
 
+def copy_filing_source(source, corpus_root):
+    """Copy verified source bytes into a separate corpus for tests that learn profiles."""
+    from dataclasses import replace
+
+    target = corpus_root / source.artifact.path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source.artifact.read_bytes(source.corpus_root))
+    return replace(source, corpus_root=corpus_root)
+
+
 def write_selection_catalog(root):
     """Publish four synthetic SEC source files using real catalog identities."""
     import hashlib

@@ -1,38 +1,11 @@
 """Guard shell reset orchestration without deleting data or rebuilding services."""
 
 import argparse
+from unittest.mock import Mock
 
 import pytest
 
 from scripts.stack import commands as commands, fresh
-
-
-class FakeClient:
-    """Record shared web endpoints and provide a deterministic reset result."""
-
-    def __init__(self, status="succeeded"):
-        """Select the final reset outcome."""
-        self.calls = []
-        self.origin = "http://127.0.0.1:8000"
-        self.status = status
-
-    def request(self, path, body=None):
-        """Return one shared reset result without external effects."""
-        self.calls.append((path, body))
-        return {
-            "id": "reset-1",
-            "status": self.status,
-            "completed": ["database_removed", "runtime_files_removed"],
-            "removed_files": 0,
-        }
-
-
-@pytest.fixture
-def reset(monkeypatch):
-    """Replace only the operator connection, leaving status parsing real."""
-    client = FakeClient()
-    monkeypatch.setattr(commands, "operator_client", lambda root: client)
-    return client
 
 
 def test_corpus_submits_the_web_job_contract(tmp_path, monkeypatch):
@@ -159,11 +132,18 @@ def test_rejection_uses_only_the_generic_message(monkeypatch, payload):
     assert len(calls) == 1
 
 
-def test_status_is_read_only_without_configuration(reset, tmp_path, capsys):
+def test_status_is_read_only_without_configuration(monkeypatch, tmp_path, capsys):
     """A removed .env does not prevent status inspection or cause a reset submission."""
-    client = reset
+    client = Mock()
+    client.request.return_value = {
+        "id": "reset-1",
+        "status": "succeeded",
+        "completed": ["database_removed", "runtime_files_removed"],
+        "removed_files": 0,
+    }
+    monkeypatch.setattr(commands, "operator_client", lambda root: client)
     assert commands.reset_status(tmp_path) == 0
-    assert client.calls == [("/wipe", None)]
+    client.request.assert_called_once_with("/wipe")
     assert "Reset status: succeeded" in capsys.readouterr().out
 
 
@@ -187,8 +167,6 @@ def test_operator_connection_uses_recorded_origin_without_env(tmp_path, monkeypa
 @pytest.fixture
 def fresh_io(monkeypatch):
     """Keep orchestration checks isolated; real filesystem guards run in test_fresh."""
-    from unittest.mock import Mock
-
     monkeypatch.setattr(fresh.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt: "Y")
     monkeypatch.setattr(fresh, "inventory", lambda *a, **k: {"files": {}, "directories": []})

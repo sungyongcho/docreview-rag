@@ -17,11 +17,6 @@ class ThreadSafeLazy[T]:
         self._value: T | None = None
         self._lock = Lock()
 
-    @property
-    def value(self) -> T | None:
-        """Return the cached value without constructing it."""
-        return self._value
-
     def get(self, factory: Callable[[], T]) -> T:
         """Return the cached value, constructing it once when absent."""
         cached = self._value

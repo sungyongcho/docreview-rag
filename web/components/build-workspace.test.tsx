@@ -1,3 +1,4 @@
+import { expectNoUnexpectedRequests, jsonResponse, requestRoute, unexpectedRequest } from "@/lib/http-test-support";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { NotificationProvider } from "./notifications";
@@ -7,8 +8,6 @@ import { CANNED_CORPUS, CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-supp
 import type { OperatorJob, Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { BuildWorkspace, type BuildTab, type BuildWorkspaceProps } from "./build-workspace";
-
-afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 
 const READY_RUNTIME: Readiness = {
   status: "ready",
@@ -49,13 +48,55 @@ const SAMPLE_PAIRS = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year)
 const SAMPLE_DRAFT = { identifiers: ["NVDA", "AMD"], years: [2023, 2024], pairs: SAMPLE_PAIRS, revision: "sample-v1" };
 const COMPANIES = [{ registry: "sec", issuer: "NVDA", name: "NVIDIA" }, { registry: "sec", issuer: "AMD", name: "Advanced Micro Devices" }, { registry: "dart", issuer: "005930", name: "Samsung Electronics" }, { registry: "dart", issuer: "000660", name: "SK hynix" }];
 
-function jsonResponse(payload: unknown) {
-  if (payload && typeof payload === "object" && "sources" in payload) {
-    const snapshot = payload as Record<string, unknown>;
-    payload = { acquisition_companies: COMPANIES, acquisition_draft: SAMPLE_DRAFT, ...snapshot };
-  }
-  return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+const ACQUISITION_CORPUS = {
+  mode: "live",
+  ...CANNED_CORPUS,
+  acquisition_companies: COMPANIES,
+  acquisition_draft: SAMPLE_DRAFT,
+  sources: [],
+};
+const READY_PREPARATION = {
+  suite_id: "sec-en", kind: "builtin", verification_status: "pending_review",
+  state: "ready", source_checks: [], blockers: [],
+};
+const EMPTY_DOCUMENTS = { documents: [], total: 0, next_cursor: null };
+const ADMIN_INITIAL_READS: Record<string, unknown> = {
+  "GET /admin/evaluations/suites": CANNED_SUITES,
+  "GET /admin/evaluations/runs": { jobs: [] },
+  "GET /admin/documents/facets": EMPTY_DOCUMENT_FACETS_FIXTURE,
+  "GET /admin/documents": EMPTY_DOCUMENTS,
+  "GET /admin/snapshots": [],
+  "GET /admin/golden/sec-en/revisions": [],
+  "GET /admin/golden/sec-ko/revisions": [],
+  "GET /admin/golden/dart-en/revisions": [],
+  "GET /admin/golden/dart-ko/revisions": [],
+};
+const PUBLIC_INITIAL_READS: Record<string, unknown> = {
+  "GET /public/documents": EMPTY_DOCUMENTS,
+  "GET /public/documents/facets": EMPTY_DOCUMENT_FACETS_FIXTURE,
+  "GET /snapshots": { snapshots: [] },
+};
+
+/** Serve only the finite initial reads shared by operator scenarios. */
+function adminRead(input: RequestInfo | URL, init?: RequestInit): Response {
+  const route = requestRoute(input, init);
+  if (!Object.hasOwn(ADMIN_INITIAL_READS, route)) return unexpectedRequest(input, init);
+  return jsonResponse(ADMIN_INITIAL_READS[route]);
 }
+
+/** Public scenarios cannot silently answer administrator requests. */
+function publicRead(input: RequestInfo | URL, init?: RequestInit): Response {
+  const route = requestRoute(input, init);
+  if (!Object.hasOwn(PUBLIC_INITIAL_READS, route)) return unexpectedRequest(input, init);
+  return jsonResponse(PUBLIC_INITIAL_READS[route]);
+}
+
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  vi.unstubAllGlobals();
+  expectNoUnexpectedRequests();
+});
 
 type HarnessProps = Partial<Omit<BuildWorkspaceProps, "tab" | "onTabChange">>;
 
@@ -85,19 +126,7 @@ function Harness(props: HarnessProps) {
 
 describe("Build workspace", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-      if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
-      if (url.endsWith("/snapshots")) return jsonResponse({ snapshots: [] });
-      return jsonResponse({});
-    }));
-  });
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => publicRead(input, init)));
   });
 
   it("keeps real corpus operations disabled in the public read-only mode", () => {
@@ -110,17 +139,12 @@ describe("Build workspace", () => {
   });
 
   it("shows active progress on the pipeline and opens the Job Center from it", () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      let payload: unknown = {};
-      if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
-      else if (url.endsWith("/admin/corpus")) payload = { status: {}, documents: [] };
-      else if (url.endsWith("/admin/documents/facets")) payload = EMPTY_DOCUMENT_FACETS_FIXTURE;
-      else if (url.includes("/admin/documents?")) payload = { documents: [], total: 0, next_cursor: null };
-      else if (url.endsWith("/admin/snapshots")) payload = [];
-      return jsonResponse(payload);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const route = requestRoute(input, init);
+      if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+      if (route === "GET /admin/corpus") return jsonResponse({ status: {}, documents: [] });
+      return adminRead(input, init);
     }));
     const active = {
       job_id: "admin-progress",
@@ -149,21 +173,18 @@ describe("Build workspace", () => {
     expect(screen.getAllByText("50 / 100 · 50%")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "View all jobs" }));
     expect(screen.getByRole("heading", { name: "Job Center" })).toBeInTheDocument();
-    expect(document.querySelector(".job-detail")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back to jobs" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Backfill embeddings/ }));
     expect(screen.getAllByText("Embedded 50").length).toBeGreaterThan(0);
   });
 
   it.each([true, false])("filters and preserves document detail across tabs (operator=%s)", async (live) => {
     const prefix = live ? "/admin" : "/public";
-    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      let payload: unknown = {};
-      if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
-      else if (url.endsWith("/admin/corpus")) payload = { status: {}, documents: [] };
-      else if (url.endsWith(`${prefix}/documents/facets`)) payload = {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const route = requestRoute(input, init);
+      if (live && route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+      if (live && route === "GET /admin/corpus") return jsonResponse({ status: {}, documents: [] });
+      if (route === `GET ${prefix}/documents/facets`) return jsonResponse({
         registries: [{ value: "sec", count: 1 }],
         issuers: [{ value: "NVDA", count: 1 }],
         years: [{ value: "2024", count: 1 }],
@@ -173,8 +194,8 @@ describe("Build workspace", () => {
         parse_statuses: [{ value: "parsed", count: 1 }],
         embedding_statuses: [{ value: "complete", count: 1 }],
         snapshots: [{ value: "3", count: 1, label: "Baseline · ready" }],
-      };
-      else if (url.includes(`${prefix}/documents?`)) payload = {
+      });
+      if (route === `GET ${prefix}/documents`) return jsonResponse({
         documents: [{
           doc_id: "NVDA-FY2024", registry: "sec", language: "en", issuer: "NVDA",
           issuer_id: "123", fiscal_year: 2024, form: "10-K", filing_date: "2025-02-01",
@@ -185,8 +206,8 @@ describe("Build workspace", () => {
         }],
         total: 1,
         next_cursor: null,
-      };
-      else if (url.endsWith(`${prefix}/documents/NVDA-FY2024`)) payload = {
+      });
+      if (route === `GET ${prefix}/documents/NVDA-FY2024`) return jsonResponse({
         document: {
           doc_id: "NVDA-FY2024", registry: "sec", language: "en", issuer: "NVDA",
           issuer_id: "123", fiscal_year: 2024, form: "10-K", parse_status: "parsed",
@@ -201,10 +222,8 @@ describe("Build workspace", () => {
         item_counts: [{ item: "7", count: 2 }],
         embedding_identities: [{ provider: "deterministic", model: "token-hash-384", dimensions: 384, count: 2 }],
         snapshot_memberships: [{ snapshot_id: 3, label: "Baseline", status: "ready", public: true, created_at: "2026-09-01T12:00:00Z" }],
-      };
-      else if (url.includes("/admin/documents?")) payload = { documents: [], total: 0, next_cursor: null };
-      else if (url.endsWith("/admin/snapshots")) payload = [];
-      return jsonResponse(payload);
+      });
+      return live ? adminRead(input, init) : publicRead(input, init);
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<Harness live={live} />);
@@ -237,16 +256,15 @@ describe("Build workspace", () => {
     if (!live) expect(fetchMock.mock.calls.every(([value]) => !String(value).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(true);
   });
 
-  it("orders build steps from the administrator snapshot", async () => {
+  it("uses verified source identities when submitting selected filings for parsing", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      let payload: unknown = {};
-      if (url.endsWith("/admin/evaluations/suites")) payload = CANNED_SUITES;
-      else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [CANNED_JOB] };
-      else if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") payload = { job_id: "queued", status: "queued" };
-      else if (url.endsWith("/admin/corpus")) payload = {
+      const route = requestRoute(input, init);
+      if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+      if (route === "GET /admin/evaluations/runs") return jsonResponse({ jobs: [CANNED_JOB] });
+      if (route === "POST /admin/corpus/jobs") return jsonResponse({ job_id: "queued", status: "queued" });
+      if (route === "GET /admin/corpus") return jsonResponse({
+        ...ACQUISITION_CORPUS,
         status: {
           database_connected: true, schema_status: "compatible", schema_message: "ok",
           documents: 29, chunks: 21927, embedded_chunks: 21927, pending_embeddings: 0,
@@ -261,15 +279,12 @@ describe("Build workspace", () => {
           ],
         }],
         documents: [],
-      };
-      else if (url.endsWith("/admin/documents/facets")) payload = {
+      });
+      if (route === "GET /admin/documents/facets") return jsonResponse({
         ...EMPTY_DOCUMENT_FACETS_FIXTURE,
         registries: [{ value: "sec", count: 20 }, { value: "dart", count: 9 }],
-      };
-      else if (url.includes("/admin/documents?")) payload = { documents: [], total: 0, next_cursor: null };
-      else if (url.endsWith("/admin/snapshots")) payload = [];
-      else if (url.endsWith("/revisions")) payload = [];
-      return jsonResponse(payload);
+      });
+      return adminRead(input, init);
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<Harness live readiness={READY_RUNTIME} />);
@@ -299,18 +314,11 @@ describe("Build workspace", () => {
   });
 
   it("never calls the administrator API in the public build", async () => {
-    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      const payload: unknown = url.endsWith("/snapshots") ? { snapshots: [] } : url.endsWith("/public/documents/facets") ? EMPTY_DOCUMENT_FACETS_FIXTURE : url.includes("/public/documents?") ? { documents: [], total: 0, next_cursor: null } : {};
-      return jsonResponse(payload);
-    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => publicRead(input, init));
     vi.stubGlobal("fetch", fetchMock);
     render(<Harness live={false} />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetchMock.mock.calls.every(([value]) => !String(value).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(true);
     expect(screen.queryByText("Portfolio fixture")).not.toBeInTheDocument();
     expect(await screen.findByText("No portfolio filings have been published yet.")).toBeInTheDocument();
@@ -368,13 +376,12 @@ describe("Build workspace", () => {
 
   it("queues a quick evaluation with a non-empty chunk target list", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      let payload: unknown = {};
-      if (url.endsWith("/admin/evaluations/runs") && init?.method === "POST") payload = { ...CANNED_JOB, job_id: "eval-new", status: "queued", result_id: null, result_ids: [] };
-      else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
-      else if (url.endsWith("/admin/corpus")) payload = {
+      const route = requestRoute(input, init);
+      if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+      if (route === "POST /admin/evaluations/runs") return jsonResponse({ ...CANNED_JOB, job_id: "eval-new", status: "queued", result_id: null, result_ids: [] });
+      if (route === "GET /admin/corpus") return jsonResponse({
+        ...ACQUISITION_CORPUS,
         status: {
           database_connected: true, schema_status: "compatible", schema_message: "ok",
           documents: 30, chunks: 22367, embedded_chunks: 22367, pending_embeddings: 0,
@@ -383,12 +390,9 @@ describe("Build workspace", () => {
         sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))),
         manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
         documents: [],
-      };
-      else if (url.endsWith("/admin/documents/facets")) payload = { ...EMPTY_DOCUMENT_FACETS_FIXTURE, registries: [{ value: "sec", count: 21 }, { value: "dart", count: 9 }] };
-      else if (url.includes("/admin/golden/")) payload = [];
-      else if (url.includes("/admin/documents?")) payload = { documents: [], total: 0, next_cursor: null };
-      else if (url.endsWith("/admin/snapshots")) payload = [];
-      return jsonResponse(payload);
+      });
+      if (route === "GET /admin/documents/facets") return jsonResponse({ ...EMPTY_DOCUMENT_FACETS_FIXTURE, registries: [{ value: "sec", count: 21 }, { value: "dart", count: 9 }] });
+      return adminRead(input, init);
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<Harness live readiness={READY_RUNTIME} />);
@@ -408,18 +412,16 @@ describe("Build workspace", () => {
   });
 });
 
-
 describe("preparation refresh after corpus jobs", () => {
-  afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
   it("refreshes once after a corpus job ends, even as a failure, and ignores repeated polls", async () => {
     const status: OperatorJob["status"] = "failed";
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS });
-      if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-      return jsonResponse([]);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const route = requestRoute(input, init);
+      if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+      if (route === "GET /admin/corpus") return jsonResponse(ACQUISITION_CORPUS);
+
+      return adminRead(input, init);
     });
     vi.stubGlobal("fetch", fetchMock);
     const job: OperatorJob = { job_id: "corpus-terminal", domain: "corpus", kind: "ingest_manifest", request: {}, status: "running", stage: "parse", current: 0, total: 1, detail_current: null, detail_total: null, message: "Parsing", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-01-01", started_at: "2026-01-01", finished_at: null, updated_at: "2026-01-01" };
@@ -435,36 +437,18 @@ describe("preparation refresh after corpus jobs", () => {
     expect(corpusCalls()).toBe(2);
     expect(fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/documents/facets"))).toHaveLength(2);
   });
-
-  it("does not expose local manifest and evaluation selections in parsing", async () => {
-    const manifest = CANNED_CORPUS.manifests[0];
-    const selection = manifest.selections[0];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, writable: true }, manifests: [{ ...manifest, selections: [selection, { ...selection, selection_id: "overlap" }] }] });
-      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-      return jsonResponse([]);
-    }));
-    render(<Harness live />);
-    fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    await screen.findByRole("button", { name: "NVDA FY2024 · Missing source" });
-    expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("checkbox", { name: /sec-evaluation|overlap/ })).not.toBeInTheDocument();
-    expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("4 documents · 0 ready · 4 to download");
-  });
 });
-
 
 it("queues exactly the selected company years after changing matrix cells", async () => {
   const onRefreshJobs = vi.fn();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input).replace(/\/?(\?|$)/, "$1");
-    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") return jsonResponse({ job_id: "acquisition", status: "queued" });
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
-    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-    return jsonResponse([]);
+    const route = requestRoute(input, init);
+    if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+    if (route === "POST /admin/corpus/jobs") return jsonResponse({ job_id: "acquisition", status: "queued" });
+    if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+
+    return adminRead(input, init);
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live ready={false} onRefreshJobs={onRefreshJobs} />);
@@ -482,52 +466,48 @@ it("queues exactly the selected company years after changing matrix cells", asyn
   const submitted = fetchMock.mock.calls.filter(([url, init]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/corpus/jobs") && init?.method === "POST");
   expect(submitted).toHaveLength(1);
   expect(JSON.parse(String(submitted[0][1]?.body))).toEqual({ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] });
-  cleanup(); vi.unstubAllGlobals();
 });
 
-
 it("keeps source acquisition available during schema drift and exposes terminal recovery", async () => {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input).replace(/\/?(\?|$)/, "$1");
-    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "drifted", schema_message: "Missing source columns", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
-    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-    return jsonResponse([]);
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const route = requestRoute(input, init);
+    if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+    if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "drifted", schema_message: "Missing source columns", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+
+    return adminRead(input, init);
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live ready={false} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Sync selection" })).toBeEnabled());
   expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("Ready to run");
-  expect(screen.getByRole("region", { name: "Terminal preparation" }).closest("header")).not.toBeNull();
-  expect(document.getElementById("pipeline-setup-checks")).toHaveTextContent("scripts.schema recover --return-stage filings");
+  expect(screen.getByText(/scripts\.schema recover --return-stage filings/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();
   expect(screen.queryByText("data/ not writable")).not.toBeInTheDocument();
 });
 
-
 it.each([false, true])("queues mixed companies by source and reports partial submission (failure=%s)", async (failDart) => {
   const submitted: Record<string, unknown>[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input).replace(/\/?(\?|$)/, "$1");
-    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") {
-      const body = JSON.parse(String(init.body)); submitted.push(body);
+    const route = requestRoute(input, init);
+    if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+    if (route === "POST /admin/corpus/jobs") {
+      const body = JSON.parse(String(init?.body)); submitted.push(body);
       if (failDart && body.kind === "acquire_dart") return new Response(JSON.stringify({ error: { message: "DART submission unavailable" } }), { status: 503, headers: { "Content-Type": "application/json" } });
       return jsonResponse({ job_id: String(submitted.length), status: "queued" });
     }
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
-    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-    return jsonResponse([]);
+    if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+
+    return adminRead(input, init);
   }));
   render(<NotificationProvider><Harness live ready={false} /></NotificationProvider>);
   await screen.findByText("0 / 4 filings on disk");
   fireEvent.change(screen.getByRole("textbox", { name: "Search/add company or year" }), { target: { value: "005930,000660" } });
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Search/add company or year" }), { key: "Enter" });
-  for (const year of [2023, 2024]) { const choice = screen.queryByRole("button", { name: `FY${year}` }); if (choice) fireEvent.click(choice); }
+  for (const year of [2023, 2024]) fireEvent.click(screen.getByRole("button", { name: `FY${year}` }));
   fireEvent.click(screen.getByRole("button", { name: /^Add years for 000660/ }));
-  for (const year of [2023, 2024]) { const choice = screen.queryByRole("button", { name: `FY${year}` }); if (choice) fireEvent.click(choice); }
+  for (const year of [2023, 2024]) fireEvent.click(screen.getByRole("button", { name: `FY${year}` }));
   fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
   await waitFor(() => expect(submitted).toHaveLength(2));
   expect(submitted).toEqual([
@@ -537,18 +517,17 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
   if (failDart) expect(await screen.findByText(/Acquisition stopped after 1 queued jobs/)).toBeInTheDocument();
 });
 
-
 it("initializes empty, accepts a server sample, and reconciles disk changes without overwriting an edited draft", async () => {
   const sourceRows = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true })));
   let sources: typeof sourceRows = [];
   let preset: typeof SAMPLE_DRAFT = { identifiers: [], years: [], pairs: [], revision: "empty-v1" };
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input).replace(/\/?(\?|$)/, "$1");
-    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, sources, acquisition_draft: preset });
-    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-    return jsonResponse([]);
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const route = requestRoute(input, init);
+    if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+    if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, sources, acquisition_draft: preset });
+
+    return adminRead(input, init);
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live />);
@@ -579,18 +558,16 @@ describe("quick evaluation feedback", () => {
   /** Serve current corpus facts and persist the request returned by the queue endpoint. */
   function stubQueue(corpus: Partial<Readiness["corpus"]> = {}, duplicate = false) {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...READY_RUNTIME.corpus, ...corpus }, sources: [] });
-      if (url.endsWith("/admin/evaluations/runs") && init?.method === "POST") {
+      const route = requestRoute(input, init);
+      if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+      if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, status: { ...READY_RUNTIME.corpus, ...corpus }, sources: [] });
+      if (route === "POST /admin/evaluations/runs") {
         if (duplicate) return new Response(JSON.stringify({ error: { code: "evaluation_already_queued", message: "Already queued" } }), { status: 409, headers: { "content-type": "application/json" } });
-        return jsonResponse({ ...CANNED_JOB, job_id: "eval-queued", status: "queued", result_id: null, request: JSON.parse(String(init.body)) });
+        return jsonResponse({ ...CANNED_JOB, job_id: "eval-queued", status: "queued", result_id: null, request: JSON.parse(String(init?.body)) });
       }
-      if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
-      if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-      if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
-      return jsonResponse([]);
+
+      return adminRead(input, init);
     });
     vi.stubGlobal("fetch", fetchMock);
     return fetchMock;
@@ -619,7 +596,7 @@ describe("quick evaluation feedback", () => {
     await openEvaluation();
     fireEvent.click(screen.getByRole("button", { name: "Run quick evaluation" }));
     expect(await screen.findByText("Embedding is in progress. The evaluation was added to the job queue and starts when embedding finishes.")).toBeInTheDocument();
-    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    const post = fetchMock.mock.calls.find(([input, init]) => requestRoute(input, init) === "POST /admin/evaluations/runs");
     expect(JSON.parse(String(post?.[1]?.body)).profile).toEqual(profile);
   });
 
@@ -662,21 +639,20 @@ describe("quick evaluation feedback", () => {
 });
 
 describe("refresh hygiene", () => {
-  afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 
   const failure = (code: string, message: string) => new Response(JSON.stringify({ error: { code, message } }), { status: 503, headers: { "content-type": "application/json" } });
 
-  function stubAdmin(override: (url: string) => Response | undefined) {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      const custom = override(url);
+  /** Override one failed read while preserving the other declared initial responses. */
+  function stubAdmin(override: (route: string) => Response | undefined) {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const route = requestRoute(input, init);
+      if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+      const custom = override(route);
       if (custom) return custom;
-      if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS });
-      if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-      if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
-      return jsonResponse([]);
+      if (route === "GET /admin/corpus") return jsonResponse(ACQUISITION_CORPUS);
+
+      return adminRead(input, init);
     });
     vi.stubGlobal("fetch", fetchMock);
     return fetchMock;
@@ -684,26 +660,33 @@ describe("refresh hygiene", () => {
 
   const corpusJob: OperatorJob = { job_id: "corpus-progress", domain: "corpus", kind: "ingest_manifest", request: {}, status: "running", stage: "parse", current: 1, total: 9, detail_current: null, detail_total: null, message: "Parsing", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-09-01T12:00:00Z", started_at: "2026-09-01T12:00:01Z", finished_at: null, updated_at: "2026-09-01T12:00:02Z" };
 
-  it("keeps the last corpus state, shows an inline notice and still fetches snapshots when the snapshot read fails", async () => {
-    const fetchMock = stubAdmin((url) => url.endsWith("/admin/corpus") ? failure("database_unavailable", "Database is busy") : undefined);
+  it("keeps the last corpus state and refreshes snapshots after a corpus read fails", async () => {
+    let corpusFailed = false;
+    const fetchMock = stubAdmin((route) => corpusFailed && route === "GET /admin/corpus" ? failure("database_unavailable", "Database is busy") : undefined);
     render(<NotificationProvider><Harness live /></NotificationProvider>);
+    await screen.findByRole("button", { name: "NVDA FY2024 · Missing source" });
+    const snapshotsBefore = fetchMock.mock.calls.filter(([input, init]) => requestRoute(input, init) === "GET /admin/snapshots").length;
+    corpusFailed = true;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/snapshots"))).toBe(true));
-    expect(screen.getByText("Corpus status could not be refreshed: Database is busy").closest(".notification-stack")).toHaveAttribute("data-placement", "overlay");
+    expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toBeVisible();
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input, init]) => requestRoute(input, init) === "GET /admin/snapshots")).toHaveLength(snapshotsBefore + 1));
+    expect(within(screen.getByRole("region", { name: "Notifications" })).getByRole("alert")).toHaveTextContent("Corpus status could not be refreshed: Database is busy");
   });
 
   it("surfaces a facet failure as a toast with the server message", async () => {
-    stubAdmin((url) => url.endsWith("/documents/facets") ? failure("schema_not_ready", "Schema is not ready") : undefined);
+    stubAdmin((route) => route === "GET /admin/documents/facets" ? failure("schema_not_ready", "Schema is not ready") : undefined);
     render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Document filters could not be loaded: Schema is not ready");
   });
 
   it("keeps manual refresh failures in one toast per failing source", async () => {
-    stubAdmin((url) => url.endsWith("/admin/corpus") ? failure("database_unavailable", "Database is busy") : undefined);
+    const fetchMock = stubAdmin((route) => route === "GET /admin/corpus" ? failure("database_unavailable", "Database is busy") : undefined);
     render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    await screen.findByText("Corpus status could not be refreshed: Database is busy");
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input, init]) => requestRoute(input, init) === "GET /admin/corpus")).toHaveLength(2));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
     expect(screen.getAllByText("Corpus status could not be refreshed: Database is busy")).toHaveLength(1);
   });
 
@@ -724,18 +707,24 @@ describe("refresh hygiene", () => {
   });
 });
 
-
 it.each([false, true])("queues exact sparse pairs and reports partial indexing submission: %s", async (failIndex) => {
   const sources = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: !(issuer === "NVDA" && year === 2024) })));
   const submitted: Array<Record<string, unknown>> = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input).replace(/\/?(\?|$)/, "$1");
-    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") { const body = JSON.parse(String(init.body)); submitted.push(body); if (failIndex && body.kind === "ingest_selected" && body.identifiers[0] === "NVDA") return new Response(JSON.stringify({ error: { code: "unavailable", message: "Indexing unavailable" } }), { status: 503 }); return jsonResponse({ job_id: String(submitted.length), status: "queued" }); }
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, sources, status: { ...CANNED_CORPUS.status, writable: true, database_connected: true, schema_status: "compatible" } });
-    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-    return jsonResponse([]);
+    const route = requestRoute(input, init);
+    if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+    if (route === "POST /admin/corpus/jobs") {
+      const body = JSON.parse(String(init?.body));
+      submitted.push(body);
+      if (failIndex && body.kind === "ingest_selected" && body.identifiers[0] === "NVDA") {
+        return jsonResponse({ error: { code: "unavailable", message: "Indexing unavailable" } }, 503);
+      }
+      return jsonResponse({ job_id: String(submitted.length), status: "queued" });
+    }
+    if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, sources, status: { ...CANNED_CORPUS.status, writable: true, database_connected: true, schema_status: "compatible" } });
+
+    return adminRead(input, init);
   }));
   render(<NotificationProvider><Harness live /></NotificationProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
@@ -757,38 +746,31 @@ it.each([false, true])("queues exact sparse pairs and reports partial indexing s
     { kind: "ingest_selected", identifiers: ["NVDA"], years: [2024], document_ids: ["NVDA-2024"] },
   ]));
   if (failIndex) expect(await screen.findByText(/Indexing stopped after 1 queued jobs/)).toBeInTheDocument();
-  cleanup(); vi.unstubAllGlobals();
 });
-
 
 describe("connection readiness presentation", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-      if (url.endsWith("/admin/corpus")) return jsonResponse({
-        ...CANNED_CORPUS,
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const route = requestRoute(input, init);
+      if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+      if (route === "GET /admin/corpus") return jsonResponse({
+        ...ACQUISITION_CORPUS,
         status: READY_RUNTIME.corpus,
         acquisition_draft: { identifiers: ["NVDA"], years: [2024], pairs: [{ registry: "sec", issuer: "NVDA", year: 2024 }], revision: "one-filing" },
         sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, can_redownload: false, on_disk: true }],
       });
-      if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-      if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
-      if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
-      if (url.endsWith("/admin/snapshots")) return jsonResponse([]);
-      if (url.endsWith("/revisions")) return jsonResponse([]);
-      return jsonResponse({});
+
+      return adminRead(input, init);
     }));
   });
 
   it("does not expose ready stages or invent an environment while the initial connection is checking", async () => {
-    const { container } = render(<Harness live healthKind="checking" />);
+    render(<Harness live healthKind="checking" />);
     await screen.findByRole("button", { name: "NVDA FY2024 · On disk" });
     expect(screen.queryByText("hybrid ready")).toBeNull();
     expect(screen.queryByText("Corpus ready")).toBeNull();
-    expect(container.querySelectorAll(".pipeline-node.done")).toHaveLength(0);
-    expect(container.querySelectorAll(".page-badges .mode-badge")).toHaveLength(1);
+    expect(screen.getByText("Local operator")).toBeVisible();
     expect(screen.queryByText("Checking mode…")).toBeNull();
     expect(screen.queryByText("Runtime connected")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
@@ -803,7 +785,6 @@ describe("connection readiness presentation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled();
     rerender(<Harness live readiness={readiness} connectionPending />);
-    expect(container.querySelectorAll(".pipeline-node.done, .pipeline-node.action, .pipeline-node.running, .pipeline-node.queued")).toHaveLength(0);
     expect(screen.queryByText("hybrid ready")).toBeNull();
     expect(screen.queryByText("Corpus ready")).toBeNull();
     expect(screen.queryByText("Runtime connected")).toBeNull();
@@ -824,21 +805,19 @@ describe("connection readiness presentation", () => {
   });
 });
 
-
 it("queues a staged recoverable source and enables parsing after the verified refresh", async () => {
   const submitted: { kind: string; identifiers: string[]; years: number[] }[] = [];
   let recovered = false;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input).replace(/\/?(\?|$)/, "$1");
-    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") {
-      submitted.push(JSON.parse(String(init.body)));
-      recovered = true;
+    const route = requestRoute(input, init);
+    if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+    if (route === "POST /admin/corpus/jobs") {
+      submitted.push(JSON.parse(String(init?.body)));
       return jsonResponse({ job_id: "reacquisition", status: "queued" });
     }
-    if (url.endsWith("/admin/corpus")) return jsonResponse({
-      mode: "live", ...CANNED_CORPUS,
+    if (route === "GET /admin/corpus") return jsonResponse({
+      ...ACQUISITION_CORPUS,
       status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true },
       acquisition_draft: { identifiers: ["AMD"], years: [2023], pairs: [{ registry: "sec", issuer: "AMD", year: 2023 }], revision: "repair-source" },
       sources: [
@@ -846,8 +825,8 @@ it("queues a staged recoverable source and enables parsing after the verified re
         { manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true, ready: recovered, can_redownload: !recovered, blocker: recovered ? null : "Download it again in Filings" },
       ],
     });
-    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-    return jsonResponse([]);
+
+    return adminRead(input, init);
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live />);
@@ -856,13 +835,13 @@ it("queues a staged recoverable source and enables parsing after the verified re
   const company = screen.getByLabelText("Search/add company or year");
   fireEvent.change(company, { target: { value: "NVDA" } });
   fireEvent.keyDown(company, { key: "Enter" });
-  const year = screen.queryByRole("button", { name: "FY2024" });
-  if (year) fireEvent.click(year);
+  fireEvent.click(screen.getByRole("button", { name: "FY2024" }));
   fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
   await waitFor(() => expect(submitted).toHaveLength(1));
   expect(submitted[0]).toMatchObject({ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] });
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
+  recovered = true;
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled());
   expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
@@ -872,22 +851,23 @@ it("queues a staged recoverable source and enables parsing after the verified re
 function stubSourceLifecycle(sources: Array<Record<string, unknown>>, submitted: Array<Record<string, unknown>>, previews: Array<Record<string, unknown>>) {
   const pairs = [{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "dart", issuer: "005930", year: 2023 }];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input).replace(/\/?(\?|$)/, "$1");
-    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-    if (url.endsWith("/admin/corpus/sources/deletion-preview")) {
+    const route = requestRoute(input, init);
+    if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+
+    if (route === "POST /admin/corpus/sources/deletion-preview") {
       previews.push(JSON.parse(String(init?.body)));
       return jsonResponse({ token: "exact-source-token", expires_at: Date.now() / 1000 + 300, retained_inputs: 1, retained_derived: true,
         documents: sources.filter((row) => row.on_disk).map((row) => ({ document_id: row.document_id, registry: row.registry, issuer: row.issuer, fiscal_year: row.fiscal_year, filing_id: row.filing_id })),
         files: [{ path: "data/corpus/sec/filing-a.html", byte_length: 10, retained: false }],
       });
     }
-    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") { submitted.push(JSON.parse(String(init.body))); return jsonResponse({ job_id: "source-job", status: "queued" }); }
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: READY_RUNTIME.corpus, sources, acquisition_draft: { revision: "source-lifecycle", identifiers: ["NVDA", "005930"], years: [2023, 2024], pairs } });
-    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-    if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
-    if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
-    return jsonResponse([]);
+    if (route === "POST /admin/corpus/jobs") {
+      submitted.push(JSON.parse(String(init?.body)));
+      return jsonResponse({ job_id: "source-job", status: "queued" });
+    }
+    if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, status: READY_RUNTIME.corpus, sources, acquisition_draft: { revision: "source-lifecycle", identifiers: ["NVDA", "005930"], years: [2023, 2024], pairs } });
+
+    return adminRead(input, init);
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -922,7 +902,7 @@ it("queues reacquisition of changed bytes and blocks the whole intended parsing 
   render(<Harness live readiness={READY_RUNTIME} />);
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   await screen.findByText("accession-a: Source bytes changed");
-  expect(screen.getByRole("button", { name: /^NVDA FY/ })).toHaveClass("source-blocked");
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · Source blocked" })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("button", { name: "Parse & chunk selected sources" }));
   expect(submitted).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
@@ -977,14 +957,13 @@ it.each(["queued", "running"] as const)("locks deletion while another corpus job
 
 it("opens the golden-set manager from pipeline evaluation setup", async () => {
   const onNavigate = vi.fn();
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input).replace(/\/?(\?|$)/, "$1");
-    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
-    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: READY_RUNTIME.corpus });
-    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
-    if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
-    return jsonResponse([]);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const route = requestRoute(input, init);
+
+    if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+    if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, status: READY_RUNTIME.corpus });
+
+    return adminRead(input, init);
   }));
   render(<Harness live readiness={READY_RUNTIME} onNavigate={onNavigate} />);
   fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));

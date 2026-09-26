@@ -4,16 +4,6 @@ import { ScopeDemo } from "./scope-demo";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it.each(["ko", "en"] as const)("renders localized labels in %s", (locale) => {
-  const ko = locale === "ko";
-  const { container } = render(<ScopeDemo locale={locale} />);
-  expect(screen.getByText(ko ? "코퍼스 범위 미니 실험" : "Corpus scope mini-lab")).toBeInTheDocument();
-  expect(screen.getByText(ko ? "설명용 범위 — 검색·모델 호출 없음" : "Illustrative scope — no search or model calls")).toBeInTheDocument();
-  expect(screen.getByRole("combobox", { name: ko ? "질문 언어" : "Question language" })).toBeInTheDocument();
-  expect(screen.getByRole("combobox", { name: ko ? "소스" : "Source" })).toBeInTheDocument();
-  expect(container.querySelectorAll('.scope-card[data-state="included"]')).toHaveLength(2);
-});
-
 it.each(["en", "ko"] as const)("keeps both sources in scope when the question renders in %s", (lang) => {
   const { container } = render(<ScopeDemo locale="en" />);
   fireEvent.change(screen.getByRole("combobox", { name: "Question language" }), { target: { value: lang } });

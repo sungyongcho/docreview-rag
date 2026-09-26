@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@/lib/types";
 import { RunDetailsPanel } from "./run-details-panel";
@@ -39,10 +39,9 @@ describe("Run details panel", () => {
     expect(screen.getByText(first.text)).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Draft question" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Show full question" }));
-    expect(heading).toHaveClass("is-expanded");
     expect(screen.getByRole("button", { name: "Collapse question" })).toHaveAttribute("aria-expanded", "true");
     fireEvent.click(screen.getByRole("button", { name: "Collapse question" }));
-    expect(heading).not.toHaveClass("is-expanded");
+    expect(screen.getByRole("button", { name: "Show full question" })).toHaveAttribute("aria-expanded", "false");
   });
 
   it("retains each message's section across switching and closing", () => {
@@ -75,20 +74,6 @@ describe("Run details panel", () => {
     fireEvent.click(opener);
     fireEvent.click(screen.getByRole("button", { name: "Close run details" }));
     expect(opener).toHaveFocus();
-  });
-
-  it("animates removal without leaving an edge handle and restores the selected section on reopen", () => {
-    vi.useFakeTimers();
-    const { container, rerender } = render(<RunDetailsPanel message={first} onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Trace" }));
-    expect(screen.queryByRole("button", { name: "Collapse run details" })).toBeNull();
-    rerender(<RunDetailsPanel message={null} onClose={vi.fn()} />);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(container.querySelector(".run-details-panel")).toHaveClass("is-leaving");
-    act(() => vi.advanceTimersByTime(180));
-    expect(container.querySelector(".run-details-panel")).toBeNull();
-    rerender(<RunDetailsPanel message={first} onClose={vi.fn()} />);
-    expect(screen.getByRole("tab", { name: "Trace" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("closes on conversation or composer input without discarding draft, focus or scroll", () => {

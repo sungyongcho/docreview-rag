@@ -67,16 +67,12 @@ def _request(*, budget=None, provider_budget=None):
     )
 
 
-@pytest.mark.parametrize(
-    "budget",
-    [Budget(), Budget(max_input_tokens=20, max_output_tokens=10)],
-    ids=["unbounded", "exactly_spent"],
-)
-def test_successful_runner_follows_all_nodes_and_preserves_raw_traces(budget):
+def test_successful_runner_preserves_raw_traces_when_the_token_budget_is_exactly_spent():
     """Visit every node once and keep each raw provider trace.
 
     A token budget the two calls spend exactly does not discard the finished answer.
     """
+    budget = Budget(max_input_tokens=20, max_output_tokens=10)
     grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
     check = (
         '{"label":"SUPPORTED","answer":"Revenue increased by ten percent.",'

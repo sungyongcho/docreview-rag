@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from app.llm.local_inventory import LocalModelInventory
+from app.llm.local_connection import LocalConnectionManager
 from app.release.app import _local_engine_readiness
 from app.release.config import ReleaseSettings
 from tests.support import load_settings
@@ -22,21 +22,38 @@ def settings_for(monkeypatch: pytest.MonkeyPatch, environment: str) -> ReleaseSe
     )
 
 
-def test_production_names_the_reason_and_never_probes_the_endpoint(monkeypatch) -> None:
-    """A published build must not reach out to a model host it is forbidden to use."""
+@pytest.mark.parametrize(
+    ("environment", "public_request", "reason"),
+    [
+        ("prod", False, "disabled_in_prod"),
+        ("prod", True, "disabled_in_prod"),
+        ("dev", True, "public_surface"),
+    ],
+)
+def test_public_readiness_never_probes_a_local_endpoint(
+    monkeypatch, tmp_path, environment, public_request, reason
+) -> None:
+    """PROD and proxy-marked DEV requests refuse discovery even with an enabled connection."""
 
-    def refuse(*args: object, **kwargs: object) -> None:
-        """Fail if production attempts any local inventory request."""
-        raise AssertionError("a production build probed the local model endpoint")
+    def refuse(request: httpx.Request) -> httpx.Response:
+        """Fail if a public request reaches any local inventory endpoint."""
+        raise AssertionError("a public request probed the local model endpoint")
 
-    monkeypatch.setattr(httpx.AsyncClient, "get", refuse)
+    connection = LocalConnectionManager(
+        initial_base_url="http://ollama:11434",
+        path=tmp_path / "connection.json",
+        transport=httpx.MockTransport(refuse),
+    )
+    result = asyncio.run(
+        _local_engine_readiness(
+            settings_for(monkeypatch, environment), connection, public_request=public_request
+        )
+    )
 
-    result = asyncio.run(_local_engine_readiness(settings_for(monkeypatch, "prod")))
-
-    assert result == {"enabled": False, "reason": "disabled_in_prod"}
+    assert result == {"enabled": False, "reason": reason}
 
 
-def test_development_probes_and_reports_the_model_it_found(monkeypatch) -> None:
+def test_development_probes_and_reports_the_model_it_found(monkeypatch, tmp_path) -> None:
     """A development build asks the host which models it actually holds."""
 
     seen: list[str] = []
@@ -48,10 +65,12 @@ def test_development_probes_and_reports_the_model_it_found(monkeypatch) -> None:
             return httpx.Response(200, json={"capabilities": ["completion"]})
         return httpx.Response(200, json={"models": [{"name": "gemma4:e4b"}]})
 
-    inventory = LocalModelInventory(
-        base_url="http://ollama:11434", transport=httpx.MockTransport(handler)
+    connection = LocalConnectionManager(
+        initial_base_url="http://ollama:11434",
+        path=tmp_path / "connection.json",
+        transport=httpx.MockTransport(handler),
     )
-    result = asyncio.run(_local_engine_readiness(settings_for(monkeypatch, "dev"), inventory))
+    result = asyncio.run(_local_engine_readiness(settings_for(monkeypatch, "dev"), connection))
 
     assert result["enabled"] is True
     assert result["model"] == "gemma4:e4b"

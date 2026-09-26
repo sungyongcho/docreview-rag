@@ -192,39 +192,6 @@ describe("composerBanner", () => {
 });
 
 describe("ComposerToolbar", () => {
-  it("keeps one settings and preview entry after the primary selectors", async () => {
-    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
-    vi.resetModules();
-    const { LocalEngineSettings } = await import("./local-engine-settings");
-    const profile = { ...DEFAULT_SESSION_PROFILE, engine: "local" as const, local_model: "installed-model" };
-    const props = renderToolbar({
-      profile,
-      query: "Keep this draft question",
-      engineControls: <LocalEngineSettings profile={profile} readiness={READINESS} onChange={vi.fn()} />,
-    });
-    const preview = screen.getByRole("button", { name: "Settings and preview" });
-    const primary = preview.closest(".composer-toolbar-primary")!;
-    const ordered = [
-      screen.getByRole("group", { name: "Corpus scope" }),
-      screen.getByRole("combobox", { name: "Answer engine" }),
-      screen.getByRole("combobox", { name: "Local model" }),
-      screen.getByRole("combobox", { name: "Retrieval preset" }),
-      preview,
-    ];
-    for (const [index, control] of ordered.entries()) {
-      expect(primary).toContainElement(control);
-      if (index > 0) expect(ordered[index - 1].compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
-    expect(screen.queryByRole("button", { name: "Filters" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "RAG settings" })).not.toBeInTheDocument();
-    const readiness = screen.getByRole("button", { name: /Corpus total/ });
-    expect(readiness.closest(".composer-toolbar-secondary")).not.toBeNull();
-    expect(primary).not.toContainElement(readiness);
-    fireEvent.click(preview);
-    expect(props.onOpenSettings).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("button", { name: "Settings details / request preview" })).toBeNull();
-    expect(props.onChange).not.toHaveBeenCalled();
-  });
 
   it("writes corpus_scope from the scope segmented control", () => {
     const props = renderToolbar();

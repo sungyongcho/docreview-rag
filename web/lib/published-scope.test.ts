@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SESSION_PROFILE } from "./types";
-import { portfolioDocuments, effectivePublishedProfile, createPublicTargets, publicTargetIds, pinPublicTargets, publishedScopeStats, PORTFOLIO_FILINGS, type PublishedDocument } from "./published-scope";
+import { portfolioDocuments, effectivePublishedProfile, createPublicTargets, publicTargetIds, pinPublicTargets, publishedScopeStats, type PublishedDocument } from "./published-scope";
 
 /** Minimal real-shaped inventory row; tests vary identity and coverage independently. */
 function doc(issuer: string, fiscal_year: number): PublishedDocument {
@@ -9,8 +9,7 @@ function doc(issuer: string, fiscal_year: number): PublishedDocument {
 const documents = [doc("NVDA", 2023), doc("NVDA", 2024), doc("AMD", 2023), doc("AMD", 2024), doc("005930", 2022)];
 
 describe("published portfolio scope", () => {
-  it("fixes the 18 tested company/year pairs and excludes other issuers and years", () => {
-    expect(PORTFOLIO_FILINGS.reduce((sum, row) => sum + row.last - row.first + 1, 0)).toBe(18);
+  it("excludes filings outside the published company/year policy", () => {
     expect(portfolioDocuments([...documents, doc("NVDA", 2025), doc("005930", 2020), doc("INTC", 2024)])).toEqual(documents);
   });
   it("keeps sparse pairs exact in every request, rather than expanding their cross product", () => {

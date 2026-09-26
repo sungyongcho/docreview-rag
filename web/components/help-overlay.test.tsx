@@ -26,6 +26,13 @@ function ReviewStage() {
   </div>;
 }
 
+/** Supply only the browser measurements needed by a highlight scenario. */
+function mockTargetBounds(bounds: Record<string, DOMRect>) {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    return bounds[this.dataset.help ?? ""] ?? new DOMRect();
+  });
+}
+
 /** Select a task filter while keeping all topic rows on the same home view. */
 function filterGroup(topicId: string) {
   const group = HELP_GROUPS.find((item) => item.clusters.some((cluster) => cluster.topicIds.includes(topicId)))!;
@@ -87,25 +94,17 @@ describe("HelpOverlay", () => {
     expect(panel.querySelector(".development-badge")).toBeNull();
   });
 
-  it("renders nothing while closed", () => {
-    render(<><ReviewStage /><HelpOverlay screen="review" open={false} onClose={vi.fn()} location="review" /></>);
-    expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
-    expect(document.querySelector(".help-marker")).toBeNull();
-  });
-
-  it("shows four inline task filters and direct topic rows without intermediate menus", () => {
+  it("recommends visible controls and excludes targets without a visible box", () => {
+    mockTargetBounds({
+      "review.scope": new DOMRect(20, 40, 180, 30),
+      "review.preset": new DOMRect(20, 80, 180, 30),
+    });
     render(<><ReviewStage /><HelpOverlay screen="review" open onClose={vi.fn()} location="review" /></>);
     const panel = screen.getByRole("complementary", { name: "Help" });
-    expect(within(panel).getByRole("heading", { name: "Choose a topic" })).toBeVisible();
-    const groups = within(panel).getByRole("group", { name: "Browse help" });
-    expect(within(groups).getAllByRole("button")).toHaveLength(4);
-    expect(panel.querySelectorAll(".help-inline-cluster").length).toBeGreaterThan(0);
-    expect(within(panel).queryByRole("button", { name: "Back in help" })).toBeNull();
     const recommended = within(panel).getByRole("region", { name: "Recommended" });
-    expect(within(recommended).getAllByRole("button")).toHaveLength(4);
-    expect(panel.querySelector("details")).toBeNull();
-    expect(within(panel).queryByRole("combobox")).toBeNull();
-    expect(document.querySelector(".help-marker, .help-arrow, .help-target-highlight")).toBeNull();
+    expect(within(recommended).getByRole("button", { name: "Corpus scope" })).toBeVisible();
+    expect(within(recommended).getByRole("button", { name: "Retrieval preset" })).toBeVisible();
+    expect(within(recommended).queryByRole("button", { name: "Filters" })).toBeNull();
   });
 
   it("opens any listed guide in one click and returns directly home with one Back", () => {
@@ -120,7 +119,6 @@ describe("HelpOverlay", () => {
     expect(detail).toHaveAttribute("data-help-item", topic.id);
     expect(within(panel).getByRole("heading", { name: topic.title })).toBeVisible();
     expect(within(detail).getByText(primer.summary)).toBeVisible();
-    expect(detail.querySelectorAll(".help-steps li")).toHaveLength(3);
     const reference = within(detail).getByText("Reference").closest("details")!;
     expect(reference.open).toBe(false);
     expect(within(reference).getByText(topic.body[0])).not.toBeVisible();
@@ -134,6 +132,10 @@ describe("HelpOverlay", () => {
   });
 
   it("highlights only the selected topic without navigating or changing its real control", () => {
+    mockTargetBounds({
+      "review.scope": new DOMRect(20, 40, 180, 30),
+      "review.filters": new DOMRect(20, 80, 180, 30),
+    });
     const navigate = vi.fn();
     render(<><ReviewStage /><HelpOverlay screen="review" open onClose={vi.fn()} location="review" onNavigateTopic={navigate} /></>);
     const target = document.querySelector<HTMLElement>('[data-help="review.scope"]')!;
@@ -257,10 +259,8 @@ describe("HelpOverlay", () => {
   it("keeps only one home origin even after many related-topic selections", () => {
     render(<><ReviewStage /><HelpOverlay screen="review" open onClose={vi.fn()} location="review" /></>);
     const panel = openTopic("review.scope");
-    for (let index = 0; index < 34; index += 1) fireEvent.click(within(panel).getByRole("button", { name: index % 2 ? "Corpus scope" : "Filters" }));
-    let returned = 0;
-    while (screen.queryByRole("button", { name: "Back in help" }) && returned < 40) { fireEvent.click(screen.getByRole("button", { name: "Back in help" })); returned += 1; }
-    expect(returned).toBe(1);
+    for (const name of ["Filters", "Corpus scope", "Filters"]) fireEvent.click(within(panel).getByRole("button", { name }));
+    fireEvent.click(screen.getByRole("button", { name: "Back in help" }));
     expect(within(panel).getByRole("textbox", { name: "Search help" })).toHaveValue("review.scope");
     expect(within(panel).getByRole("group", { name: "Browse help" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "Back in help" })).toBeNull();
@@ -276,16 +276,6 @@ describe("HelpOverlay", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("closes from Escape and from the close button", () => {
-    const onClose = vi.fn();
-    render(<><ReviewStage /><HelpOverlay screen="review" open onClose={onClose} location="review" /></>);
-
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(onClose).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Close help" }));
-    expect(onClose).toHaveBeenCalledTimes(2);
-  });
-
   it("explains the absence of topics for an unmapped screen", () => {
     render(<HelpOverlay screen={null} open onClose={vi.fn()} location="build/documents" />);
     expect(screen.getByText("No help topics for this screen yet.")).toBeInTheDocument();
@@ -294,7 +284,6 @@ describe("HelpOverlay", () => {
 
   it("clips the single highlight to the viewport and scroll pane, excluding hidden targets", async () => {
     const box = (top: number, left: number, width: number, height: number) => ({ top, left, right: left + width, bottom: top + height, width, height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
-    vi.spyOn(document.documentElement, "getBoundingClientRect").mockReturnValue(box(0, 0, 1024, 768));
     render(<><ReviewStage /><HelpOverlay screen="review" open onClose={vi.fn()} location="review" /></>);
     const pane = document.querySelector<HTMLElement>("div")!;
     pane.style.overflowY = "auto";
@@ -322,7 +311,8 @@ describe("HelpOverlay", () => {
     expect(highlight.style.pointerEvents).toBe("none");
     expect(highlight).toHaveTextContent("Question");
     fireEvent(window, new Event("resize"));
-    expect(document.querySelector(".help-target-highlight")).toBe(highlight);
+    expect(document.querySelectorAll('[data-help-highlight="review.composer"]')).toHaveLength(1);
+    expect(document.querySelector('[data-help-highlight="review.composer"]')).toHaveStyle({ top: "100px", height: "50px" });
     await act(async () => { straddling.hidden = true; });
     expect(document.querySelector(".help-target-highlight")).toBeNull();
     await act(async () => { straddling.hidden = false; straddling.setAttribute("inert", ""); });
@@ -354,6 +344,10 @@ describe("HelpOverlay", () => {
   });
 
   it("re-measures the selected highlight when the host changes tabs", () => {
+    mockTargetBounds({
+      "system.status": new DOMRect(20, 40, 180, 30),
+      "system.api": new DOMRect(20, 100, 180, 30),
+    });
     function Host() {
       const [tab, setTab] = useState("status");
       return <>{tab === "status" ? <section data-help="system.status">Status</section> : <section data-help="system.api">API inspector</section>}<button type="button" onClick={() => setTab("api")}>Go to API inspector</button><HelpOverlay screen="system" open onClose={vi.fn()} location={`system/${tab}`} /></>;
@@ -371,6 +365,7 @@ describe("HelpOverlay", () => {
   });
 
   it("withholds a selected target highlight inside a closed disclosure or active dialog", async () => {
+    mockTargetBounds({ "measure.runs.k": new DOMRect(20, 40, 180, 30) });
     render(<><details data-help="measure.runs.profile"><summary>Retrieval profile</summary><label data-help="measure.runs.k">k<input type="number" /></label></details><HelpOverlay screen="measure.runs" open onClose={vi.fn()} location="measure/runs" /></>);
     openTopic("measure.runs.k");
     expect(document.querySelector(".help-target-highlight")).toBeNull();

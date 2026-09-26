@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { I18nProvider, LOCALE_KEY } from "@/lib/i18n";
@@ -25,10 +24,4 @@ it.each(["en", "ko"] as const)("maps nested structured values and empty/missing 
   expect(screen.getByText(locale === "en" ? "None" : "없음")).toBeVisible();
   expect(screen.getByLabelText(locale === "en" ? "Not recorded for this run" : "이 실행에서 기록되지 않음")).toHaveTextContent("—");
   expect(document.querySelector("pre")).toBeNull();
-});
-
-it("lets the detail content grow and confines expansion to long tables", () => {
-  const styles = readFileSync("components/review-stage-details.css", "utf8");
-  expect(styles).not.toMatch(/max-height|overflow:\s*(auto|scroll)/);
-  expect(styles).toContain("grid-auto-flow: row dense");
 });

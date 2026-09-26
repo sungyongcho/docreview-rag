@@ -11,46 +11,6 @@ from app.api.schemas import (
 )
 
 
-def test_retrieve_route_returns_complete_evidence_identity(
-    client_factory,
-    services,
-    hit,
-):
-    """Return every field a citation needs, and forward the requested k."""
-    services.hits = (hit,)
-
-    response = client_factory(services).post(
-        "/retrieve",
-        json={
-            "query": "How much did revenue increase?",
-            "session_profile": {
-                "retrieval_preset": "custom",
-                "custom_retrieval": {"k": 3},
-            },
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["query"] == "How much did revenue increase?"
-    assert body["results"][0] == {
-        "chunk_id": 7,
-        "doc_id": "ACME-FY2024",
-        "item": "7",
-        "section_title": "Management's Discussion and Analysis",
-        "kind": "text",
-        "citation": "ACME FY2024 - Item 7",
-        "start_char": 100,
-        "end_char": 180,
-        "source_sha256": "d" * 64,
-        "body": "Revenue increased by ten percent.",
-        "context_header": "ACME FY2024 - Item 7",
-        "score": 1.0,
-    }
-    assert services.last_retrieve_request.session_profile.custom_retrieval.k == 3
-    assert body["resolved_profile"]["k"] == 3
-
-
 def test_documents_route_returns_typed_collection(client_factory, services):
     """Return the document collection with its chunk count and source digest."""
     services.documents = (

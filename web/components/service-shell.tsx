@@ -21,12 +21,13 @@ import type { DisclosureStage } from "@/components/review-stage-details";
 import { RunDetailsPanel } from "@/components/run-details-panel";
 import { localCpuWarning, localModelIssue, selectedLocalModel } from "@/lib/local-models";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RetainedPanel } from "@/components/retained-panel";
 import "./workspace-navigation.css";
-import { navigationLabel, navigationUrl, parseNavigationUrl, type NavigationTarget } from "@/lib/navigation";
+import { navigationLabel, type NavigationTarget } from "@/lib/navigation";
+import { useWorkspaceNavigation } from "./use-workspace-navigation";
 
-import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
+import { BuildWorkspace } from "@/components/build-workspace";
 import { ConversationSettings, type ConversationSettingsTab } from "@/components/conversation-settings";
 import { LocalEngineSettings } from "@/components/local-engine-settings";
 import { ComposerBanner, ComposerToolbar, composerBanner } from "@/components/composer-toolbar";
@@ -43,7 +44,7 @@ import { ServiceTopbar } from "@/components/service-topbar";
 import { SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { DevPromotionProvider } from "@/components/dev-mode-bubble";
 import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
-import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
+import { SystemWorkspace } from "@/components/system-workspace";
 import { NotificationProvider, useNotifications } from "@/components/notifications";
 import { getCapabilities } from "@/lib/api";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
@@ -62,17 +63,6 @@ import { useHelpTargetReveal } from "./use-help-target-reveal";
 import { usePublicExecutionPolicy } from "./use-public-execution-policy";
 import { useReviewRequests } from "./use-review-requests";
 
-type View = "review" | "build" | "measure" | "system";
-
-interface NavigationEntry {
-  position: number;
-  target: NavigationTarget;
-  conversationId: string;
-  conversationTab: ConversationSettingsTab | null;
-  scroll: Array<{ element: HTMLElement; top: number; left: number }>;
-  focus: HTMLElement | null;
-}
-
 /** Render the shared interface with the running server's DEV or PROD permissions. */
 export function ServiceShell() {
   return <div><div><NotificationProvider><ServiceSession /></NotificationProvider></div></div>;
@@ -83,22 +73,11 @@ function ServiceSession() {
   const { confirm, confirmationDialog } = useConfirmation();
   const { t } = useI18n();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeId, setActiveId] = useState("");
-  const [view, setView] = useState<View>("review");
-  const [navigationHistory, setNavigationHistory] = useState<NavigationEntry[]>([]);
-  const [navigationForward, setNavigationForward] = useState<NavigationEntry[]>([]);
-  const navigationPosition = useRef(0);
-  const revertingPosition = useRef<number | null>(null);
-  const [buildStage, setBuildStage] = useState<number | "setup" | undefined>(undefined);
-  const pendingReturn = useRef<NavigationEntry | null>(null);
-  const [unsavedGolden, setUnsavedGolden] = useState(false);
-  const goldenLeaveGuard = useRef<((action: () => void) => void) | null>(null);
-  const registerGoldenLeave = useCallback((guard: ((action: () => void) => void) | null) => { goldenLeaveGuard.current = guard; }, []);
-  const [buildTab, setBuildTab] = useState<BuildTab>("pipeline");
-  const [buildJobId, setBuildJobId] = useState<string | undefined>();
-  const [measureTab, setMeasureTab] = useState<MeasureTab>("playground");
-  const [systemTab, setSystemTab] = useState<SystemTab>("status");
-  const [measureResultId, setMeasureResultId] = useState<number | null>(null);
+  const adminBuild = process.env.NEXT_PUBLIC_ADMIN_MODE === "live";
+  const navigation = useWorkspaceNavigation(adminBuild, conversations.map(conversation => conversation.id));
+  const { view, activeId, buildTab, buildJobId, measureTab, measureResultId, systemTab, conversationTab, pendingStage,
+    navigate, initialize: initializeNavigation, routeFirstRun, deferLeave, setActiveId, setConversationTab, setMeasureResultId,
+    setUnsavedGolden, registerGoldenLeave, historyEntries, historyIndex, jumpNavigation } = navigation;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   const [tourOpen, setTourOpen] = useState(false);
@@ -108,7 +87,6 @@ function ServiceSession() {
   const [runDetailsStage, setRunDetailsStage] = useState<{ stage: DisclosureStage | null } | undefined>();
   const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [conversationTab, setConversationTab] = useState<ConversationSettingsTab | null>(null);
   const [conversationInputsValid, setConversationInputsValid] = useState(true);
   const ragTrigger = useRef<HTMLButtonElement>(null);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | undefined>(undefined);
@@ -119,22 +97,8 @@ function ServiceSession() {
   const lastScrolledMessage = useRef<ChatMessage | null>(null);
   /** `ReleaseLimits.daily_cost_reset_at_utc` captured after a `daily_cost_limit` error; cleared by the next successful review. */
   const [resetAt, setResetAt] = useState<string | null>(null);
-  /** Build stage card to scroll into view once the Build workspace has rendered. */
-  const [pendingStage, setPendingStage] = useState<number | "setup" | null>(null);
   const reviewAbort = useRef<AbortController | null>(null);
-  /** First-run routing fires once per page load and is cancelled by any explicit navigation before it. */
-  const firstRunRouted = useRef(false);
-  const recoveryRouted = useRef(false);
-  useEffect(() => {
-    if (recoveryRouted.current) return;
-    recoveryRouted.current = true;
-    const stage = new URLSearchParams(window.location.search).get("recovery_stage");
-    const stages: Record<string, number> = { filings: 1, index: 2, embeddings: 3, lexical: 4, ask: 5, answer_model: 6, evaluate: 7 };
-    if (!stage || !stages[stage]) return;
-    firstRunRouted.current = true;
-    setView("build"); setBuildTab("pipeline"); setBuildStage(stages[stage]); setPendingStage(stages[stage]);
-  }, []);
-  const adminBuild = process.env.NEXT_PUBLIC_ADMIN_MODE === "live";
+  useEffect(() => { if (view !== "review") setRunDetailsMessageId(null); }, [view]);
   const runtimeHealth = useRuntimeHealth();
   const permissions = capabilities && (!runtimeHealth.readiness?.environment || capabilities.environment === runtimeHealth.readiness.environment) ? capabilities : null;
   const environment = permissions?.environment ?? runtimeHealth.readiness?.environment;
@@ -203,18 +167,7 @@ function ServiceSession() {
         }
         setConversations(saved.some((conversation) => conversation.messages.some((message) => message.pending)) ? saveConversations(initial) : initial);
         const remembered = initial.find(item => item.id === loadActiveConversation()) ?? initial[0];
-        const target = parseNavigationUrl(window.location.href, initial.map((item) => item.id), remembered.id);
-        const selected = target?.view === "review" ? initial.find((item) => item.id === target.conversationId) ?? remembered : remembered;
-        setActiveId(selected.id);
-        const position = window.history.state?.docreviewNavigation?.position;
-        navigationPosition.current = Number.isSafeInteger(position) ? position : 0;
-        if (target) {
-          firstRunRouted.current = true;
-          setView(target.view);
-          if (target.view === "build") { setBuildTab(target.tab ?? "pipeline"); setBuildJobId(target.jobId); setBuildStage(target.stage); if (target.stage !== undefined) setPendingStage(target.stage); }
-          if (target.view === "measure") { setMeasureTab(target.tab ?? "playground"); setMeasureResultId(target.resultId ?? null); }
-          if (target.view === "system") setSystemTab(!adminBuild ? "status" : target.tab ?? "status");
-        }
+        initializeNavigation(initial.map((item) => item.id), remembered.id);
       }
       setCapabilities(adminBuild ? value : {
         ...value,
@@ -235,7 +188,7 @@ function ServiceSession() {
       setCapabilities(!adminBuild && (fallback === "prod" || fallback === "dev") ? { environment: fallback, browser_reset_id: null, can_configure_local_llm: false, can_edit_prompt_policy: false, can_edit_run_limits: false, can_edit_golden: false, can_build_snapshot: false, can_run_evaluation: false, can_change_custom_retrieval: false, can_query_snapshot: false, can_use_operations: false, can_compare_published_snapshots: true } : null);
     });
     return () => { cancelled = true; };
-  }, [adminBuild, runtimeHealth.checkedAt, runtimeHealth.readiness?.environment]);
+  }, [adminBuild, runtimeHealth.checkedAt, runtimeHealth.readiness?.environment, initializeNavigation]);
 
 
 
@@ -324,134 +277,9 @@ function ServiceSession() {
     })));
   }, [active?.id, activeSessionProfile.engine, activeSessionProfile.local_model, localModel, localAllowed, compatibilityIssue]);
 
-  useEffect(() => {
-    if (pendingStage === null || view !== "build" || buildTab !== "pipeline") return;
-    document.getElementById(`stage-${pendingStage}`)?.scrollIntoView({ block: "start" });
-    setPendingStage(null);
-  }, [pendingStage, view, buildTab]);
-
   function persist(next: Conversation[]) {
     setConversations(saveConversations(next));
   }
-
-  /** Return the explicit location represented by the retained workspace controls. */
-  function currentTarget(): NavigationTarget {
-    return view === "build" ? { view, tab: buildTab, ...(buildTab === "jobs" && buildJobId ? { jobId: buildJobId } : {}), ...(buildTab === "pipeline" && buildStage !== undefined ? { stage: buildStage } : {}) }
-      : view === "measure" ? { view, tab: measureTab, resultId: measureResultId }
-      : view === "system" ? { view, tab: systemTab } : { view, conversationId: active?.id ?? activeId };
-  }
-
-  /** Save only the visible origin; retained panels own their existing control state. */
-  function currentNavigation(): NavigationEntry {
-    const panel = document.querySelector<HTMLElement>(`[data-workspace="${view}"]`);
-    const scroll = Array.from(panel?.querySelectorAll<HTMLElement>("*") ?? [])
-      .filter((element) => !element.closest("[hidden]") && (element.scrollTop !== 0 || element.scrollLeft !== 0 || element.matches(".messages, .lab-shell")))
-      .map((element) => ({ element, top: element.scrollTop, left: element.scrollLeft }));
-    return { position: navigationPosition.current, target: currentTarget(), conversationId: active?.id ?? activeId, conversationTab, scroll, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
-  }
-
-  /** Keep navigation metadata local and preserve unrelated URL/Next history state. */
-  function writeNavigation(target: NavigationTarget, replace: boolean) {
-    const state = { ...window.history.state, docreviewNavigation: { position: navigationPosition.current } };
-    window.history[replace ? "replaceState" : "pushState"](state, "", navigationUrl(target, window.location.href));
-  }
-
-  function navigate(target: NavigationTarget, confirmed = false, returning = false) {
-    const normalized: NavigationTarget = target.view === "build" ? { ...target, tab: target.tab ?? buildTab }
-      : target.view === "measure" ? { ...target, tab: target.tab ?? measureTab, resultId: target.resultId === undefined ? measureResultId : target.resultId }
-      : target.view === "system" ? { ...target, tab: (!adminBuild) && target.tab !== undefined && target.tab !== "status" ? "status" : target.tab ?? systemTab }
-      : { ...target, conversationId: target.conversationId ?? active?.id ?? activeId };
-    const changed = normalized.view !== view
-      || (normalized.view === "build" && (normalized.tab !== buildTab || normalized.jobId !== buildJobId || (normalized.stage !== undefined && normalized.stage !== buildStage)))
-      || (normalized.view === "measure" && (normalized.tab !== measureTab || normalized.resultId !== measureResultId))
-      || (normalized.view === "system" && normalized.tab !== systemTab)
-      || (normalized.view === "review" && normalized.conversationId !== activeId);
-    if (!confirmed && changed && view === "measure" && unsavedGolden && goldenLeaveGuard.current) { goldenLeaveGuard.current(() => navigate(target, true)); return false; }
-    if (changed && !returning) {
-      const origin = currentNavigation();
-      setNavigationHistory((history) => [...history.slice(-29), origin]);
-      setNavigationForward([]);
-      navigationPosition.current += 1;
-      writeNavigation(normalized, false);
-    }
-    firstRunRouted.current = true;
-    if (normalized.view !== "review") setRunDetailsMessageId(null);
-    if (normalized.view === "build") {
-      if (normalized.tab) setBuildTab(normalized.tab);
-      setBuildStage(normalized.stage);
-      setBuildJobId(normalized.jobId);
-      if (normalized.stage !== undefined) setPendingStage(normalized.stage);
-    }
-    if (normalized.view === "measure") {
-      if (normalized.tab) setMeasureTab(normalized.tab);
-      if (normalized.resultId !== undefined) setMeasureResultId(normalized.resultId);
-    }
-    if (normalized.view === "system" && normalized.tab) setSystemTab(normalized.tab);
-    if (normalized.view === "review" && normalized.conversationId) {
-      setActiveId(normalized.conversationId);
-    }
-    setView(normalized.view);
-    return true;
-  }
-
-  /** The native traversal generates the same popstate path as browser back/forward. */
-  function jumpNavigation(position: number) {
-    const distance = position - navigationPosition.current;
-    if (distance) window.history.go(distance);
-  }
-
-  useEffect(() => {
-    if (!initialized.current || !active?.id) return;
-    writeNavigation(currentTarget(), true);
-  }, [view, buildTab, buildJobId, buildStage, measureTab, measureResultId, systemTab, active?.id]);
-
-  useEffect(() => {
-    if (!initialized.current || !active?.id) return;
-    /** Restore a visited entry, or a valid URL whose in-memory scroll snapshot expired. */
-    const pop = (event: PopStateEvent) => {
-      const requested = event.state?.docreviewNavigation?.position;
-      const nextPosition = Number.isSafeInteger(requested) ? requested : navigationPosition.current - 1;
-      if (revertingPosition.current === nextPosition) { revertingPosition.current = null; return; }
-      const target = parseNavigationUrl(window.location.href, conversations.map((item) => item.id), active.id) ?? { view: "review" as const, conversationId: active.id };
-      const origin = currentNavigation();
-      const all = [...navigationHistory, origin, ...navigationForward];
-      const index = all.findIndex((entry) => entry.position === nextPosition);
-      const entry = index >= 0 ? all[index] : null;
-      if (!navigate(target, false, true)) {
-        const distance = origin.position - nextPosition;
-        if (distance) { revertingPosition.current = origin.position; window.history.go(distance); }
-        else writeNavigation(origin.target, true);
-        return;
-      }
-      navigationPosition.current = nextPosition;
-      if (entry) {
-        setNavigationHistory(all.slice(0, index).slice(-30));
-        setNavigationForward(all.slice(index + 1, index + 31));
-        pendingReturn.current = entry;
-        const restored = conversations.find((item) => item.id === entry.conversationId);
-        if (restored) {
-          setActiveId(restored.id);
-        }
-        setConversationTab(entry.conversationTab);
-      } else if (nextPosition < origin.position) {
-        setNavigationHistory([]);
-        setNavigationForward([origin, ...navigationForward].slice(0, 30));
-      } else {
-        setNavigationHistory([...navigationHistory, origin].slice(-30));
-        setNavigationForward([]);
-      }
-    };
-    window.addEventListener("popstate", pop);
-    return () => window.removeEventListener("popstate", pop);
-  }, [view, buildTab, buildJobId, buildStage, measureTab, measureResultId, systemTab, activeId, active, conversations, query, conversationTab, navigationHistory, navigationForward, unsavedGolden, adminBuild]);
-
-  useLayoutEffect(() => {
-    const entry = pendingReturn.current;
-    if (!entry) return;
-    pendingReturn.current = null;
-    if (entry.focus?.isConnected && !entry.focus.closest("[hidden], [inert]")) entry.focus.focus({ preventScroll: true });
-    for (const { element, top, left } of entry.scroll) if (element.isConnected) { element.scrollTop = top; element.scrollLeft = left; }
-  }, [view, buildTab, measureTab, systemTab, activeId, navigationHistory, navigationForward]);
 
   function openConversationSettings(tab: ConversationSettingsTab) {
     if (!navigate({ view: "review" })) return;
@@ -511,13 +339,12 @@ function ServiceSession() {
   }
 
   function createReview(confirmed = false) {
-    if (!confirmed && view === "measure" && unsavedGolden && goldenLeaveGuard.current) { goldenLeaveGuard.current(() => createReview(true)); return; }
+    if (!confirmed && deferLeave(() => createReview(true))) return;
     const reusable = [active, ...conversations].find(item => item && item.messages.length === 0 && !profileCompatibilityIssue(item.profile, permissions));
     const conversation = reusable ?? newConversation(adminLive && permissions?.environment === "dev" ? undefined : newProdProfile(publicPolicy ?? undefined));
     if (reusable && activeId === reusable.id && view === "review") return;
     if (!reusable) persist([conversation, ...conversations]);
-    setActiveId(conversation.id);
-    navigate({ view: "review", conversationId: conversation.id }, true);
+    navigate({ view: "review", conversationId: conversation.id }, { confirmed: true });
   }
 
   function removeReview(id: string) {
@@ -624,10 +451,9 @@ function ServiceSession() {
   const readiness = runtimeHealth.readiness;
   /** First-run routing: an empty live corpus with nothing asked yet opens on Build, unless the user already went somewhere. */
   useEffect(() => {
-    if (firstRunRouted.current || !adminLive || readiness === null || !conversations.length) return;
-    firstRunRouted.current = true;
-    if (readiness.corpus.documents === 0 && conversations.every((conversation) => !conversation.messages.length)) setView("build");
-  }, [adminLive, readiness, conversations]);
+    if (!adminLive || readiness === null || !conversations.length) return;
+    routeFirstRun(readiness.corpus.documents === 0 && conversations.every((conversation) => !conversation.messages.length));
+  }, [adminLive, readiness, conversations, routeFirstRun]);
 
   /** Tour steps name a workspace; the shell switches there before the step's target is spotlighted. */
   function openTourStep(step: { view: TourView; tab?: string }) {
@@ -658,7 +484,6 @@ function ServiceSession() {
       notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Command could not start."), "error", "operations-run", undefined, { event: "operations-run-error", detail: notificationErrorDetail(reason) });
     }
   }
-  const historyEntries = [...navigationHistory.map(({ position, target }) => ({ position, target })), { position: navigationPosition.current, target: currentTarget() }, ...navigationForward.map(({ position, target }) => ({ position, target }))];
   const conversationTitles = Object.fromEntries(conversations.map((item) => [item.id, item.messages.length > 0 ? item.title : t("New chat")]));
   function closeSidebar() {
     setSidebarOpen(false);
@@ -697,9 +522,9 @@ function ServiceSession() {
           onToggleSidebar={() => setSidebarOpen((value) => !value)}
           modeLabel={modeLabel}
           historyEntries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))}
-          historyIndex={navigationHistory.length}
-          onHistoryBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }}
-          onHistoryForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }}
+          historyIndex={historyIndex}
+          onHistoryBack={() => { const previous = historyEntries[historyIndex - 1]; if (previous) jumpNavigation(previous.position); }}
+          onHistoryForward={() => { const next = historyEntries[historyIndex + 1]; if (next) jumpNavigation(next.position); }}
           onHistoryJump={(index) => jumpNavigation(historyEntries[index].position)}
           developer={adminLive}
           searchUpdating={runtimeHealth.readiness?.corpus.updating === true}
@@ -839,7 +664,7 @@ function ServiceSession() {
           jobBoard={operatorJobs.board}
           onRefreshJobs={() => void operatorJobs.refresh(true)}
           tab={measureTab}
-          onTabChange={(tab) => navigate({ view: "measure", tab }, true)}
+          onTabChange={(tab) => navigate({ view: "measure", tab }, { confirmed: true })}
           focusResultId={measureResultId}
           onResultSelectionChange={setMeasureResultId}
           helpTarget={pendingHelpTarget}

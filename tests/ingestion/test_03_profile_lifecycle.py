@@ -4,48 +4,23 @@ import json
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 from app.ingestion.manifest import FilingSource
-from tests.ingestion.golden import PROFILE_YEARS
-
-
-# Bootstrap result structure
-@pytest.mark.parametrize("ticker", sorted(PROFILE_YEARS))
-def test_bootstrapped_corpus_profile_shape(
-    ticker: str,
-    parsed: dict,
-    profiles_dir: Path,
-) -> None:
-    """Preserve the expected default year and explicitly learned years per ticker."""
-    default_year, years = PROFILE_YEARS[ticker]
-    data = json.loads((profiles_dir / f"{ticker}.json").read_text())
-
-    assert data["default_year"] == default_year
-    assert sorted(data["profiles"], key=int) == years
-
-
-def test_xref_profile_has_no_expected_item_count(parsed: dict, profiles_dir: Path) -> None:
-    """Omit expected_items for xref because each filing index supplies its own Items."""
-    profile_path = profiles_dir / "INTC.json"
-    if not profile_path.exists():
-        pytest.skip("Intel filings are not present in the corpus")
-    data = json.loads(profile_path.read_text())
-    profile = data["profiles"]["2019"]
-
-    assert profile["segmentation"] == {"type": "xref"}
-    assert "expected_items" not in profile["validation"]
+from tests.ingestion.support import copy_filing_source
 
 
 # Repeated learning and failed-profile recovery
 def test_profiles_converge_on_the_third_corpus_pass(
     edgar_module: ModuleType,
     manifest: tuple[FilingSource, ...],
-    isolated_profiles: Path,
+    tmp_path: Path,
 ) -> None:
     """Converge after missing historical years self-heal across three passes."""
     amd = sorted(
-        (entry for entry in manifest if entry.document.issuer == "AMD"),
+        (
+            copy_filing_source(entry, tmp_path)
+            for entry in manifest
+            if entry.document.issuer == "AMD"
+        ),
         key=lambda entry: entry.document.report_period,
     )
     passes = []
@@ -76,12 +51,15 @@ def test_profiles_converge_on_the_third_corpus_pass(
         2024: "saved",
     }
     assert passes[2] == dict.fromkeys(range(2019, 2025), "saved")
+    saved = json.loads((tmp_path / "sec/AMD/profile.json").read_text())
+    assert saved["issuer"] == "AMD"
+    assert saved["default_year"] == "2023"
 
 
 def test_failed_profile_is_relearned_before_it_is_saved(
     edgar_module: ModuleType,
     manifest: tuple[FilingSource, ...],
-    isolated_profiles: Path,
+    tmp_path: Path,
 ) -> None:
     """Persist only a profile that successfully reparses and validates the filing."""
     entry = next(
@@ -89,20 +67,23 @@ def test_failed_profile_is_relearned_before_it_is_saved(
         for item in manifest
         if item.document.issuer == "NVDA" and item.document.fiscal_year == 2024
     )
-    edgar_module.save_profile(
-        "NVDA",
-        2024,
-        {
-            "segmentation": {"type": "number", "rules": [{"font_size": 99.0}]},
-            "validation": {
-                "expected_items": 23,
-                "must_have": ["1", "1A", "7", "8"],
-            },
-        },
-    )
+    entry = copy_filing_source(entry, tmp_path / "corpus")
+    profile_path = entry.corpus_root / "sec/NVDA/profile.json"
+    invalid_profile = {
+        "segmentation": {"type": "number", "rules": [{"font_size": 99.0}]},
+        "validation": {"expected_items": 23, "must_have": ["1", "1A", "7", "8"]},
+    }
+    edgar_module.save_profile(profile_path, "NVDA", 2024, invalid_profile)
+    other_issuer = entry.corpus_root / "sec/AMD/profile.json"
+    other_corpus = tmp_path / "other-corpus/sec/NVDA/profile.json"
+    edgar_module.save_profile(other_issuer, "AMD", 2024, invalid_profile)
+    edgar_module.save_profile(other_corpus, "NVDA", 2024, invalid_profile)
+    unrelated = {path: path.read_bytes() for path in (other_issuer, other_corpus)}
+
     result, _profile = edgar_module.parse_filing(entry)
 
-    saved = json.loads((isolated_profiles / "NVDA.json").read_text())["profiles"]["2024"]
+    saved = json.loads(profile_path.read_text())["profiles"]["2024"]
     assert result.profile_used == "relearned"
     assert result.parse_status == "parsed"
     assert saved["segmentation"]["rules"][0]["font_size"] != 99.0
+    assert {path: path.read_bytes() for path in unrelated} == unrelated

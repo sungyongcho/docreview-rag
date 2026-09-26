@@ -104,15 +104,15 @@ def test_token_pricing_charges_cached_and_cache_write_input_at_policy_prices():
 
 
 @pytest.mark.parametrize(
-    ("changes", "expected_error"),
+    "changes",
     [
-        ({"max_input_tokens": True}, ValidationError),
-        ({"max_output_tokens": 0}, ValidationError),
-        ({"max_cost_usd": -Decimal("0.01")}, ValidationError),
-        ({"unknown": 1}, ValidationError),
+        {"max_input_tokens": True},
+        {"max_output_tokens": 0},
+        {"max_cost_usd": -Decimal("0.01")},
+        {"unknown": 1},
     ],
 )
-def test_provider_budget_requires_explicit_strict_limits_and_pricing(changes, expected_error):
+def test_provider_budget_requires_explicit_strict_limits_and_pricing(changes):
     """Require explicit strict limits and pricing on every budget."""
     values = {
         "max_input_tokens": 1_000,
@@ -125,7 +125,7 @@ def test_provider_budget_requires_explicit_strict_limits_and_pricing(changes, ex
     }
     values.update(changes)
 
-    with pytest.raises(expected_error):
+    with pytest.raises(ValidationError):
         ProviderBudget(**values)
 
 
@@ -197,16 +197,14 @@ def test_schema_rejection_is_typed_and_requires_final_errors():
         SchemaRejected(errors=())
 
 
-def test_budget_refusal_rejects_negative_evidence():
-    """Reject negative usage evidence on a budget refusal."""
+@pytest.mark.parametrize("field", ["used", "limit"])
+def test_budget_refusal_rejects_negative_evidence(field):
+    """Reject negative actual usage or a negative ceiling in the custom budget validator."""
+    values = {"which": "input_tokens", "used": 1, "limit": 10, "attempts": 1}
+    values[field] = -1
 
-    with pytest.raises(ValidationError):
-        BudgetExceeded(
-            which="input_tokens",
-            used=-1,
-            limit=10,
-            attempts=1,
-        )
+    with pytest.raises(ValidationError, match="budget evidence must be nonnegative"):
+        BudgetExceeded.model_validate(values)
 
 
 def test_provider_metadata_counts_sent_requests_and_allows_a_refusal_before_any_request():

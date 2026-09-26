@@ -39,8 +39,6 @@ class ReviewEngines:
         Configured provider per remote engine name.
     provider_budgets : dict[str, ProviderBudget]
         Explicit budget per engine name, including ``local`` when discovery is enabled.
-    local_inventory : LocalModelInventory | None
-        Fixed local discovery, used when no connection manager is configured.
     local_connection : LocalConnectionManager | None
         Saved local connection whose current inventory each new request pins.
     openai_limits : OpenAILimitsManager | None
@@ -60,7 +58,6 @@ class ReviewEngines:
         *,
         llm_providers: dict[str, LLMProvider],
         provider_budgets: dict[str, ProviderBudget],
-        local_inventory: LocalModelInventory | None,
         local_connection: LocalConnectionManager | None,
         openai_limits: OpenAILimitsManager | None,
         allow_local_engine: bool,
@@ -69,7 +66,6 @@ class ReviewEngines:
     ) -> None:
         self._llm_providers = llm_providers
         self._provider_budgets = provider_budgets
-        self._local_inventory = local_inventory
         self._local_connection = local_connection
         self._openai_limits = openai_limits
         self._allow_local_engine = allow_local_engine
@@ -81,12 +77,10 @@ class ReviewEngines:
 
     @property
     def local_inventory(self) -> LocalModelInventory | None:
-        """Expose current discovery for readiness while request work captures its own copy."""
-        if not self._allow_local_engine:
+        """Resolve the connection inventory before each request pins its own revision."""
+        if not self._allow_local_engine or self._local_connection is None:
             return None
-        if self._local_connection is not None:
-            return self._local_connection.current.inventory
-        return self._local_inventory
+        return self._local_connection.current.inventory
 
     @asynccontextmanager
     async def pin_request(self) -> AsyncIterator[None]:

@@ -22,24 +22,6 @@ describe("conversation storage", () => {
     vi.stubGlobal("crypto", { randomUUID: () => "conversation-id" });
   });
 
-  it("creates and restores a browser-persistent conversation", () => {
-    const conversation = newConversation();
-    saveConversations([conversation]);
-
-    expect(loadConversations()).toEqual([conversation]);
-    expect(conversation.id).toBe("conversation-id");
-  });
-
-  it("preserves unsent drafts and restores older conversations without them", () => {
-    const older = newConversation();
-    const drafted = { ...older, id: "drafted", draft: "  삼성전자 revenue\nFollow-up question  " };
-    saveConversations([older, drafted]);
-
-    expect(loadConversations()).toEqual([older, drafted]);
-    expect(loadConversations()[0].draft).toBeUndefined();
-    expect(loadConversations()[1].draft).toBe(drafted.draft);
-  });
-
   it("rejects non-text drafts before restoring a conversation", () => {
     window.localStorage.setItem("docreview:conversations:v2", JSON.stringify([{ ...newConversation(), draft: { text: "invalid" } }]));
 

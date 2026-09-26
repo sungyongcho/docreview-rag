@@ -132,7 +132,8 @@ def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
     results in year order, and require a real span."""
     calls = patch_retrieve(monkeypatch, [(hit(1, 0.5),), (hit(2, 0.5),)])
     factory = FakeSessionFactory()
-    registry = build_default_registry(factory, embedding_provider=DeterministicEmbeddingProvider())
+    embeddings = CountingEmbeddings()
+    registry = build_default_registry(factory, embedding_provider=embeddings)
     tool = registry.get("compare_years")
 
     params = tool.parameters.model_validate(
@@ -144,8 +145,9 @@ def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
     assert [year["fiscal_year"] for year in output["years"]] == [2023, 2024]
     assert evidence_ids(tool, output) == (1, 2)
     providers = [call[1]["provider"] for call in calls]
-    assert all(isinstance(provider, _QueryEmbeddingCache) for provider in providers)
-    assert len({id(provider) for provider in providers}) == 1
+    for provider in providers:
+        asyncio.run(provider.embed_query("revenue"))
+    assert embeddings.query_calls == 1
     (session,) = factory.sessions
     assert session.closed
     assert not session.in_transaction()

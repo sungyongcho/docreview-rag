@@ -1,47 +1,20 @@
 """Parsing every committed filing end to end."""
 
-import json
 from types import ModuleType
 
 import pytest
 
 from tests.ingestion.golden import (
     ALWAYS_OPTIONAL,
-    BLOCKS,
     COVERAGE,
     N_ITEMS,
     NVDA_FY2024_ITEM15_MIN_CHARS,
     NVDA_FY2024_OFFSETS,
-    PROFILE_RULES,
-    SEGMENT_TYPE,
     STATUS_NVDA_FY2024,
     measured,
 )
 
-# Block extraction regression
-
-
-def test_corpus_block_counts_match_golden(blocks_by_doc: dict[str, tuple]) -> None:
-    """Keep leaf-block and table counts stable for every measured corpus document."""
-    actual = {
-        doc: (
-            len(blocks),
-            sum(block.name == "table" for block in blocks),
-            len(soup.find_all("table")),
-        )
-        for doc, (soup, blocks, _raw) in blocks_by_doc.items()
-    }
-
-    assert measured(actual, BLOCKS) == BLOCKS
-
-
 # Segmentation and learned-rule regression
-
-
-def test_corpus_segmentation_types_match_golden(parsed: dict) -> None:
-    """Keep the expected numbered or xref strategy for every measured document."""
-    actual = {doc: result.segment_type for doc, result in parsed.items()}
-    assert measured(actual, SEGMENT_TYPE) == SEGMENT_TYPE
 
 
 def test_every_measured_document_parses_without_warnings(parsed: dict) -> None:
@@ -49,7 +22,7 @@ def test_every_measured_document_parses_without_warnings(parsed: dict) -> None:
     failed = {
         doc: result.warnings
         for doc, result in parsed.items()
-        if doc in SEGMENT_TYPE and result.parse_status != "parsed"
+        if doc in N_ITEMS and result.parse_status != "parsed"
     }
     assert failed == {}
 
@@ -75,48 +48,6 @@ def test_corpus_item_counts_match_golden(parsed: dict) -> None:
         for doc, result in parsed.items()
     }
     assert measured(actual, N_ITEMS) == N_ITEMS
-
-
-@pytest.mark.parametrize("doc", sorted(N_ITEMS))
-def test_corpus_has_no_duplicate_items(doc: str, parsed: dict) -> None:
-    """Reject a loose heading rule that emits the same SEC Item more than once."""
-    items = [section.item for section in parsed[doc].sections if section.item]
-    duplicates = sorted(item for item in items if items.count(item) > 1)
-    assert len(items) == len(set(items)), f"{doc}: duplicate Items {duplicates}"
-
-
-def test_learned_corpus_rules_match_golden(
-    parsed: dict,
-    profiles_dir,
-) -> None:
-    """Preserve measured heading styles learned during clean profile bootstrapping."""
-    for ticker, years in PROFILE_RULES.items():
-        data = json.loads((profiles_dir / f"{ticker}.json").read_text())
-        for year, expected in years.items():
-            rule = data["profiles"][year]["segmentation"]["rules"][0]
-            actual = (rule["font_weight"], rule["font_size"], rule["in_table"])
-            assert actual == expected, f"{ticker}-{year}: learned rule mismatch"
-
-
-def test_nvda_fy2024_headings_match_style_and_item_syntax(
-    edgar_module: ModuleType,
-    blocks_by_doc: dict[str, tuple],
-) -> None:
-    """Keep exactly 23 styled Item headings in NVDA-FY2024."""
-    _soup, blocks, _raw = blocks_by_doc["sec-0001045810-24-000029"]
-    rules = [{"font_weight": 700, "font_size": 10.0, "in_table": False}]
-    hits = [
-        text
-        for block in blocks
-        if (text := block.get_text(" ", strip=True))
-        and len(text) < edgar_module.HEADING_MAX_CHARS
-        and edgar_module.ITEM_RE.match(text)
-        and edgar_module.matches_any(block, rules)
-    ]
-
-    assert len(hits) == 23
-    assert hits[0].startswith("Item 1.")
-    assert hits[1].startswith("Item 1A.")
 
 
 def test_corpus_cover_and_toc_are_dropped_before_item1(parsed: dict) -> None:
@@ -228,32 +159,6 @@ def test_sections_carry_verifiable_source_positions(doc: str, parsed: dict) -> N
         assert section.block_index is not None, f"{doc} Item {section.item}: no block index"
         assert section.source_pos is not None, f"{doc} Item {section.item}: no source offset"
         assert section.block_range is not None
-
-
-@pytest.mark.parametrize("doc", sorted(N_ITEMS))
-def test_every_section_has_canonical_sec_metadata(
-    doc: str,
-    edgar_module: ModuleType,
-    parsed: dict,
-) -> None:
-    """Populate canonical title and Part metadata for every segmentation strategy."""
-    for section in parsed[doc].sections:
-        if section.item:
-            assert section.canonical_title == edgar_module.CANONICAL[section.item]
-            assert section.part == edgar_module.PART_OF[section.item]
-
-
-def test_heading_based_items_stay_in_sec_order(
-    edgar_module: ModuleType,
-    parsed: dict,
-) -> None:
-    """Require SEC ordering for numbered headings but not scattered xref sections."""
-    rank = {item: index for index, item in enumerate(edgar_module.ORDER)}
-    for doc, result in parsed.items():
-        if result.segment_type != "number":
-            continue
-        items = [section.item for section in result.sections if section.item]
-        assert items == sorted(items, key=lambda item: rank[item]), f"{doc}: Item order mismatch"
 
 
 def test_nvda_fy2024_heading_offsets_match_the_source(

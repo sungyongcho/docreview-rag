@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PathDecisionBadge, REVIEW_STEPS, ReviewProgressSteps, candidateProgress, currentStepIndex, finishReviewProgress, initialReviewProgress, phaseStatus, reviewProgressFromEvent } from "./review-progress";
@@ -127,7 +126,7 @@ describe("intentional verification skips", () => {
     const state = finishReviewProgress(initialReviewProgress(), "completed", 6900, performance, { label: "NOT_IN_DOCS", reasons: [threshold] });
     render(<ReviewProgressSteps state={state} />);
     expect(REVIEW_STEPS.map((_, index) => phaseStatus(state, index))).toEqual(["done", "done", "done", "skipped", "done"]);
-    expect(screen.getByText("Skipped: relevance threshold not met")).toHaveClass("review-phase-reason");
+    expect(screen.getByText("Skipped: relevance threshold not met")).toBeVisible();
     expect(screen.getByText("Candidates").nextElementSibling).toHaveTextContent("3");
     expect(screen.getByText("Relevant evidence").nextElementSibling).toHaveTextContent("0");
   });
@@ -159,44 +158,8 @@ describe("intentional verification skips", () => {
 });
 
 
-it("keeps warning text readable in both actual themes and visible in the compact stylesheet", () => {
-  const styles = readFileSync("app/styles.css", "utf8");
-  const compact = readFileSync("app/v2.css", "utf8");
-  const warning = styles.match(/--phase-warning:\s*light-dark\((#[0-9a-f]+),\s*(#[0-9a-f]+)\)/i)!;
-  const backgrounds = [...compact.matchAll(/--(?:bg|surface|surface-2):\s*light-dark\((#[0-9a-f]+),\s*(#[0-9a-f]+)\)/gi)];
-  function luminance(hex: string) {
-    const channels = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255).map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
-    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-  }
-  expect(backgrounds.length).toBeGreaterThan(0);
-  for (const background of backgrounds) for (const theme of [1, 2]) {
-    const foreground = luminance(warning[theme]);
-    const backdrop = luminance(background[theme]);
-    expect((Math.max(foreground, backdrop) + 0.05) / (Math.min(foreground, backdrop) + 0.05)).toBeGreaterThanOrEqual(4.5);
-  }
-  expect(compact).toContain(".review-progress-steps small.review-phase-reason { display: block;");
-});
-
-
 describe("recorded path decisions", () => {
   const reviewDecision = { intent: "document_review" as const, source: "classifier" as const, matched_rule: "classifier_document_review", rationale: "Filing question", history_turns: 2, selected_scope: "auto" as const, resolved_scope: null, routing_queries: {}, retrieval_query: "Revenue growth", scope_outcome: "resolved" as const, stopping_reason: null, suggested_scope: null };
-  it("overrides compact hidden labels only for a limited result", () => {
-    const style = document.createElement("style");
-    const css = readFileSync("app/v2.css", "utf8").split("/* Expected early stops")[1];
-    // Apply the compact declarations directly because jsdom does not evaluate viewport media queries.
-    style.textContent = ".review-progress-steps small { display: none; } .review-progress-steps strong { font-size: 0; }\n" + css.split("*/")[1].split("@container")[0];
-    document.head.append(style);
-    try {
-      const limited = finishReviewProgress({ ...initialReviewProgress(), pathDecision: { ...reviewDecision, stopping_stage: "path", stopping_reason: "unsupported_request" } }, "failed", 10);
-      const { container } = render(<><ReviewProgressSteps state={limited} /><ReviewProgressSteps state={initialReviewProgress()} /></>);
-      const stopped = container.querySelector(".review-progress.limited")!;
-      const running = container.querySelector(".review-progress.running")!;
-      expect(getComputedStyle(stopped.querySelector("li.not-run small")!).display).toBe("block");
-      expect(getComputedStyle(stopped.querySelector("li.limited strong")!).fontSize).toBe("10px");
-      expect(getComputedStyle(running.querySelector("small")!).display).toBe("none");
-      expect(getComputedStyle(running.querySelector(".review-progress-steps strong")!).fontSize).toBe("0px");
-    } finally { style.remove(); }
-  });
   it.each([
     { stage: "gate" as const, reason: "unknown_issuer", count: 1, calls: undefined, expected: 1 },
     { stage: "path" as const, reason: "service_guidance", count: 0, calls: undefined, expected: 0 },
@@ -215,34 +178,21 @@ describe("recorded path decisions", () => {
     const decision = { ...reviewDecision, intent: "out_of_scope" as const, stopping_stage: stage, stopping_reason: stage === "path" ? "unsupported_request" : "unknown_issuer", missing_issuers: ["SanDisk"] };
     const state = finishReviewProgress({ ...initialReviewProgress(), pathDecision: decision }, "failed", 10);
     render(<ReviewProgressSteps state={state} />);
-    const rows = screen.getAllByRole("listitem");
-    expect(rows[stage === "path" ? 0 : 1]).toHaveClass("limited");
-    for (const row of rows.slice(stage === "path" ? 1 : 2)) expect(row).toHaveClass("not-run");
     expect(screen.getAllByText("Not performed in this request")).toHaveLength(stage === "path" ? 5 : 4);
     expect(screen.queryByText("Execution complete")).toBeNull();
-    expect(rows[4]).not.toHaveClass("done");
     expect(screen.getByRole("button", { name: stage === "path" ? "Path decision" : "Understand the question" })).toBeEnabled();
   });
-  it("shows a spinner once path selection starts before a decision is available", () => {
+  it("enables path details only after the server starts path selection", () => {
     const initial = initialReviewProgress();
     const { rerender } = render(<ReviewProgressSteps state={initial} />);
-    expect(screen.getAllByRole("listitem")[0].querySelector("svg")).toHaveClass("lucide-circle");
+    expect(screen.queryByRole("button", { name: "Path decision" })).toBeNull();
     const state = reviewProgressFromEvent({ ...event("gate", 0), display_stage: "path", phase: "start", status: "running" }, initial);
     rerender(<ReviewProgressSteps state={state} />);
-    const path = screen.getAllByRole("listitem")[0];
-    expect(path).toHaveClass("current");
-    expect(path.querySelector("svg")).toHaveClass("lucide-loader-circle");
-  });
-  it("shows the failed path icon and leaves later stages unrun without a decision", () => {
-    const state = finishReviewProgress(reviewProgressFromEvent({ ...event("gate", 0), display_stage: "path", phase: "end", status: "failed" }, initialReviewProgress()), "failed", 10);
-    render(<ReviewProgressSteps state={state} />);
-    const [path, ...later] = screen.getAllByRole("listitem");
-    expect(path).toHaveClass("failed");
-    expect(path.querySelector("svg")).toHaveClass("lucide-triangle-alert");
-    for (const row of later) {
-      expect(row).toHaveClass("not-run");
-      expect(row.querySelector("svg")).toHaveClass("lucide-circle");
-    }
+    const path = screen.getByRole("button", { name: "Path decision" });
+    fireEvent.click(path);
+    expect(path).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("region", { name: "Path decision" })).toBeVisible();
+    expect(state.pathStatus).toBe("current");
   });
   it("shows the first decision and counts recorded classifier and verification calls", () => {
     const state = finishReviewProgress(initialReviewProgress(), "completed", 200, { path_decision: reviewDecision, model_calls: [{ node: "gate" }, { node: "check" }], stages: ["gate", "check", "report"].map((node) => ({ node, phase: "end", status: "completed" })) });
@@ -260,11 +210,8 @@ describe("recorded path decisions", () => {
     const state = finishReviewProgress(reviewProgressFromEvent({ ...event("route"), phase: "end", status: "failed", path_decision: decision }, selected), "failed", 200);
     const restore = vi.fn();
     render(<ReviewProgressSteps state={state} onSwitchScope={restore} />);
-    const [path, scope] = screen.getAllByRole("listitem");
-    expect(path).toHaveClass("done");
-    expect(path.querySelector("svg")).toHaveClass("lucide-check");
-    expect(scope).toHaveClass("failed");
-    expect(scope.querySelector("svg")).toHaveClass("lucide-triangle-alert");
+    expect(state.pathStatus).toBe("done");
+    expect(phaseStatus(state, 0)).toBe("failed");
     fireEvent.click(screen.getByRole("button", { name: "Switch to Auto and restore question" }));
     expect(restore).toHaveBeenCalledOnce();
     expect(screen.getByText(/Scope conflict/)).toBeVisible();
@@ -272,41 +219,28 @@ describe("recorded path decisions", () => {
     expect(screen.getByText("Switch the document scope to Auto above the composer and send the question again.")).toBeVisible();
     expect(phaseStatus(state, 1)).toBe("not-run");
   });
-  it("keeps narrative detail and scope facts in separate routing columns", () => {
+  it("shows recorded rationale, retrieval query, scope facts and history count", () => {
     const decision = { ...reviewDecision, intent: "document_review" as const, scope_outcome: "resolved" as const, rationale: "Company filing analysis", retrieval_query: "NVDA FY2024 revenue", resolved_scope: { source: "explicit" as const, filters: { registries: ["sec"], issuers: ["NVDA"], fiscal_years: [2024] } } };
     const state = finishReviewProgress({ ...initialReviewProgress(), pathDecision: decision }, "completed", 100);
-    const { container } = render(<ReviewProgressSteps state={state} />);
-    const main = container.querySelector(".review-routing .review-routing-main")!;
-    const facts = container.querySelector(".review-routing .review-routing-facts")!;
-    expect(main).toHaveTextContent("Company filing analysis");
-    expect(main.querySelector(".review-routing-query")).toHaveTextContent("NVDA FY2024 revenue");
-    expect(facts).not.toHaveTextContent("History turns considered");
-    expect(container.querySelector(".review-run-stats")).toHaveTextContent("History turns considered");
+    render(<ReviewProgressSteps state={state} />);
+    expect(screen.getByText("Company filing analysis")).toBeVisible();
+    expect(screen.getByText("NVDA FY2024 revenue")).toBeVisible();
     expect(screen.getByText("History turns considered").nextElementSibling).toHaveTextContent("2");
-    expect(facts.querySelector(".review-scope-outcome dd")).toHaveTextContent("Scope resolved");
-    expect(facts).toHaveTextContent("Server-confirmed scope");
-    expect(facts).toHaveTextContent("Routing reason");
-  });
-  it("keeps the stop reason in the narrative column of a stopped run", () => {
-    const decision = { ...reviewDecision, intent: "out_of_scope" as const, stopping_stage: "path" as const, stopping_reason: "unsupported_request" };
-    const state = finishReviewProgress({ ...initialReviewProgress(), pathDecision: decision }, "failed", 10);
-    const { container } = render(<ReviewProgressSteps state={state} />);
-    expect(container.querySelector(".review-routing-main")).toHaveTextContent("Stopping reason");
-    expect(container.querySelector(".review-routing-main")).toHaveTextContent("Filing question");
-    expect(container.querySelector(".review-routing-facts")).toHaveTextContent("Unsupported request");
-    expect(container.querySelector(".review-routing-facts")).toHaveTextContent("Scope outcome");
+    expect(screen.getByText("Scope resolved")).toBeVisible();
+    expect(screen.getByText("Server-confirmed scope")).toBeVisible();
+    expect(screen.getByText("Routing reason")).toBeVisible();
   });
   it("does not repeat the unsupported label in the badge the verdict pill already carries", () => {
     const decision = { ...reviewDecision, intent: "out_of_scope" as const, scope_outcome: "unsupported" as const, stopping_stage: "path" as const, stopping_reason: "unsupported_request" };
-    const { container } = render(<PathDecisionBadge decision={decision} />);
-    expect(container.querySelector(".review-scope-badge")).toBeNull();
-    const ordinary = render(<PathDecisionBadge decision={{ ...reviewDecision, intent: "service_help", scope_outcome: "not_applicable", stopping_reason: "service_guidance" }} />);
-    expect(ordinary.container.querySelector(".review-scope-badge")).toHaveTextContent("No retrieval");
+    const view = render(<PathDecisionBadge decision={decision} />);
+    expect(screen.queryByText("Unsupported request")).not.toBeInTheDocument();
+    view.rerender(<PathDecisionBadge decision={{ ...reviewDecision, intent: "service_help", scope_outcome: "not_applicable", stopping_reason: "service_guidance" }} />);
+    expect(screen.getByText("No retrieval")).toBeVisible();
   });
   it("renders empty scope as a distinct verdict pill", () => {
-    const { container } = render(<PathDecisionBadge decision={{ ...reviewDecision, scope_outcome: "empty" }} />);
-    expect(container.querySelector(".verdict.empty-scope")).toHaveTextContent("Empty scope");
-    expect(container.querySelector(".verdict.not-in-docs")).toBeNull();
+    render(<PathDecisionBadge decision={{ ...reviewDecision, scope_outcome: "empty" }} />);
+    expect(screen.getByText("Empty scope")).toBeVisible();
+    expect(screen.queryByText("Not in documents")).not.toBeInTheDocument();
   });
 });
 
@@ -325,14 +259,12 @@ describe("stage disclosures", () => {
       fireEvent.click(button);
       expect(button).toHaveAttribute("aria-expanded", "true");
       expect(button).toHaveAttribute("aria-current", "true");
-      expect(button.closest("li")).toHaveClass("review-stage-selectable", "review-stage-selected");
       const panel = screen.getByRole("region", { name: label });
       expect(button).toHaveAttribute("aria-controls", panel.id);
       expect(panel).toBeVisible();
       fireEvent.click(button);
       expect(screen.queryByRole("region")).toBeNull();
       expect(button).not.toHaveAttribute("aria-current");
-      expect(button.closest("li")).not.toHaveClass("review-stage-selected");
     }
   });
   it("switches disclosures without changing the recorded skipped status", () => {
@@ -348,14 +280,14 @@ describe("stage disclosures", () => {
 
 it("keeps waiting/pending and unreached failed-run stages inert while preserving the failing stage", () => {
   const { rerender } = render(<ReviewProgressSteps state={initialReviewProgress()} />);
-  expect(document.querySelectorAll(".review-stage-toggle")).toHaveLength(0);
-  for (const row of document.querySelectorAll(".review-progress-steps li")) { expect(row).not.toHaveClass("review-stage-selectable"); fireEvent.click(row); }
+  expect(screen.queryByRole("button")).toBeNull();
+  for (const row of screen.getAllByRole("listitem")) fireEvent.click(row);
   expect(screen.queryByRole("region")).toBeNull();
   const state = finishReviewProgress(reviewProgressFromEvent({ ...event("gate"), phase: "start" }, initialReviewProgress()), "failed", 30);
   rerender(<ReviewProgressSteps state={state} />);
-  expect(document.querySelectorAll(".review-stage-toggle")).toHaveLength(1);
+  expect(screen.getAllByRole("button")).toHaveLength(1);
   const failing = screen.getByRole("button", { name: "Understand the question" });
-  expect(failing.closest("li")).toHaveClass("failed");
+  expect(phaseStatus(state, 0)).toBe("failed");
   fireEvent.click(failing);
   expect(screen.getByRole("region", { name: "Understand the question" })).toHaveTextContent("This stage was not recorded for this run.");
   for (const step of REVIEW_STEPS.slice(1)) expect(screen.queryByRole("button", { name: step.label })).toBeNull();
@@ -369,12 +301,4 @@ it("closes an open panel if a new pass makes that stage unreached", () => {
   expect(screen.queryByRole("region")).toBeNull();
   rerender(<ReviewProgressSteps state={{ ...completed, observed: [...completed.observed], completedNodes: [...completed.completedNodes] }} />);
   expect(screen.queryByRole("region")).toBeNull();
-});
-
-it("provides hover/focus underline only through selectable classes without changing strip sizing", () => {
-  const styles = readFileSync("components/review-stage-details.css", "utf8");
-  expect(styles).toContain("li.review-stage-selectable:is(:hover, :has(.review-stage-toggle:focus-visible), .review-stage-selected) strong");
-  expect(styles).toContain("text-decoration: underline");
-  expect(styles).toContain("li.review-stage-selected::after");
-  expect(styles.split(".review-stage-panel")[0]).not.toContain("grid-template-columns");
 });

@@ -559,6 +559,7 @@ def test_production_compose_has_no_admin_bypass():
     assert app["user"] == "10001:10001"
     assert "ports" not in app
     assert app["environment"]["DOCREVIEW_ADMIN_MODE"] == "off"
+    assert not any(name.startswith("LOCAL_LLM") for name in app["environment"])
     assert app["environment"]["DOCREVIEW_OPENAI_MODEL"] == "gpt-5.6-luna"
     assert app["environment"]["REVIEW_MODEL"] == "gpt-5.6-luna"
     assert app["environment"]["DOCREVIEW_RATE_LIMIT_PER_MINUTE"] == "10"

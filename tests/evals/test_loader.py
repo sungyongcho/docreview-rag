@@ -8,6 +8,8 @@ from typing import Any
 import pytest
 
 from app.evals.loader import GoldenDataError, load_golden_cases
+from app.ingestion.manifest import Manifest, ProcessingSelection
+from tests.ingestion.support import filing_document, filing_source
 
 
 def _temporary_contract(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
@@ -20,51 +22,19 @@ def _temporary_contract(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
     digest = hashlib.sha256(raw.encode()).hexdigest()
 
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "corpus": {"corpus_id": "test", "name": "Test"},
-                "documents": [
-                    {
-                        "document_id": "TEST-FY2024",
-                        "registry": "sec",
-                        "language": "en",
-                        "issuer": "TEST",
-                        "issuer_id": "0000000001",
-                        "filing_id": "0000000001-24-000001",
-                        "fiscal_year": 2024,
-                        "form": "10-K",
-                        "filing_date": "2025-01-01",
-                        "report_period": "2024-12-31",
-                        "source_url": "https://example.org/source",
-                        "sec": {
-                            "cik": "0000000001",
-                            "accession": "0000000001-24-000001",
-                            "primary_document": "source.html",
-                        },
-                    }
-                ],
-                "artifacts": [
-                    {
-                        "artifact_id": "source",
-                        "document_id": "TEST-FY2024",
-                        "role": "primary",
-                        "path": "source.html",
-                        "sha256": digest,
-                        "byte_length": len(raw.encode()),
-                        "encoding": "utf-8",
-                        "acquisition": {
-                            "acquired_at": "2025-01-01T00:00:00Z",
-                            "url": "https://example.org/source",
-                            "media_type": "text/html",
-                        },
-                    }
-                ],
-                "selections": [{"selection_id": "sec-evaluation", "artifact_ids": ["source"]}],
-            }
-        ),
-        encoding="utf-8",
+    bound = filing_source(
+        source, document=filing_document(issuer="TEST", document_id="TEST-FY2024")
     )
+    Manifest(
+        corpus=bound.corpus,
+        documents=(bound.document,),
+        artifacts=(bound.artifact,),
+        selections=(
+            ProcessingSelection(
+                selection_id="sec-evaluation", artifact_ids=(bound.artifact.artifact_id,)
+            ),
+        ),
+    ).write(manifest)
     case: dict[str, Any] = {
         "id": "m3c-01",
         "question": "What is the answer?",

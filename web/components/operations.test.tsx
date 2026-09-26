@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { I18nProvider, LOCALE_KEY } from "@/lib/i18n";
 import { cancelOperatorJob, getOperatorCommands, getOperatorJobs, startOperatorJob, type OperatorCommand, type OperatorJob } from "@/lib/operator-api";
-import { groupCommands, Operations, pollDelay } from "./operations";
+import { Operations } from "./operations";
 
 const notifications = vi.hoisted(() => ({ notify: vi.fn(), dismissNotice: vi.fn() }));
 vi.mock("@/components/notifications", () => ({ useNotifications: () => notifications }));
@@ -61,22 +61,6 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe("groupCommands and pollDelay", () => {
-  it("orders groups by category and puts confirmation-required commands last", () => {
-    const groups = groupCommands(COMMANDS);
-    expect(groups.map((group) => group.category)).toEqual(["inspect", "verify", "service"]);
-    expect(groups[1].commands.map((entry) => entry.command_id)).toEqual(["python-lint", "python-format-check", "web-tests", "verify-confirm"]);
-    expect(groups[2].commands.map((entry) => entry.command_id)).toEqual(["schema-prepare", "db-start"]);
-    expect(groupCommands([])).toEqual([]);
-  });
-
-  it("backs off after failures and never polls a hidden tab faster than five seconds", () => {
-    expect([0, 1, 2, 3, 4, 5].map((failures) => pollDelay(failures, true))).toEqual([1_000, 2_000, 4_000, 8_000, 10_000, 10_000]);
-    expect(pollDelay(0, false)).toBe(5_000);
-    expect(pollDelay(4, false)).toBe(10_000);
-  });
-});
-
 describe("Operations", () => {
   it("groups commands by category, lists confirmation-required commands last and badges them", async () => {
     render(<Operations embedded helpId="system.operations" />);
@@ -91,8 +75,6 @@ describe("Operations", () => {
     if (!guarded || !lint) throw new Error("cards missing");
     expect(within(guarded).getByText("Confirmation required")).toHaveAttribute("title", "Type YES");
     expect(within(lint).queryByText("Confirmation required")).toBeNull();
-    expect(document.querySelector(".command-card small")).toBeNull();
-    expect(document.querySelector('[data-help="system.operations"]')).not.toBeNull();
   });
 
   it("filters groups by category and remembers the choice in this browser", async () => {

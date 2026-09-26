@@ -10,10 +10,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.agent.provider import DeterministicToolProvider
 
-# Imported inside the functions that need them, never at module scope: the agent
-# types reach app.retrieval, whose package import pulls in the database models and
-# with them the settings. `--help` must answer without a valid configuration, the
-# same way app/cli.py does.
+# Load providers and runtime services only after argument parsing, so `--help`
+# works without a valid model or database configuration.
 
 # Parse-time bounds mirror the runtime contracts so a bad value fails as a usage
 # error before any settings load: search k mirrors SearchFilingsParams

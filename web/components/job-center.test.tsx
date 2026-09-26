@@ -72,7 +72,7 @@ describe("recorded overall and stage progress", () => {
     expect(screen.getByText(String(label))).toBeInTheDocument();
   });
 
-  it("leaves overall progress unknown for legacy records", () => {
+  it("leaves overall progress unknown when the server has not reported it", () => {
     render(<JobProgress job={job()} />);
     expect(screen.getByText("Progress not reported")).toBeInTheDocument();
     expect(screen.queryByRole("progressbar", { name: "Overall progress" })).not.toBeInTheDocument();
@@ -113,12 +113,6 @@ describe("JobCenter", () => {
     expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
   });
 
-  it("carries the help hook so the Jobs tab can be explained", () => {
-    // The topic lives on its own screen, because the Job Center is not on the pipeline tab.
-    renderCenter([job()]);
-    expect(document.querySelector('[data-help="build.jobs.center"]')).not.toBeNull();
-  });
-
   it("says why an interrupted job is not resumed, and offers no sentence when nothing failed", () => {
     renderCenter([job({ status: "interrupted", error_code: "process_restarted", message: "Interrupted by application restart; retry explicitly." })]);
     fireEvent.click(screen.getByRole("button", { name: /Ingest manifest/ }));
@@ -134,7 +128,7 @@ describe("JobCenter", () => {
 
 describe("localized job presentation", () => {
   afterEach(() => window.localStorage.removeItem("docreview.locale"));
-  it("keeps CSS status and server diagnostics intact in Korean", () => {
+  it("localizes job status while preserving server diagnostics", () => {
     window.localStorage.setItem("docreview.locale", "ko");
     render(<I18nProvider><JobCenter
       board={{ jobs: [job()], active_count: 0, queued_count: 0 }}
@@ -142,7 +136,6 @@ describe("localized job presentation", () => {
       onCancel={vi.fn()} onOpenResult={vi.fn()}
     /></I18nProvider>);
     fireEvent.click(screen.getByRole("button", { name: /매니페스트/ }));
-    expect(document.querySelectorAll(".job-status.failed")).toHaveLength(2);
     expect(screen.getAllByText("ValueError: manifest entry 4 has no file").length).toBeGreaterThan(0);
     expect(screen.getByText("valueerror")).toBeInTheDocument();
     expect(screen.getByText("작업 중 예기치 않은 valueerror 오류가 발생해 중단되었습니다.")).toBeInTheDocument();
@@ -239,7 +232,10 @@ describe("download speed", () => {
   });
 
   it("does not treat non-download item counts as bytes", () => {
-    render(<JobProgress job={job({ status: "running", detail_current: 20, detail_total: 50 })} />);
+    const initial = job({ status: "running", detail_current: 20, detail_total: 50, updated_at: "2026-09-02T10:00:01Z" });
+    const view = render(<JobProgress job={initial} />);
+    view.rerender(<JobProgress job={{ ...initial, detail_current: 40, updated_at: "2026-09-02T10:00:03Z" }} />);
+    expect(screen.getByText("40 items / 50 items · 80%")).toBeVisible();
     expect(screen.queryByText(/Download speed/)).not.toBeInTheDocument();
   });
 });

@@ -122,7 +122,7 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
     preserved_manifest = preserved.read_text()
     preserved_sources = (
         "data/golden/untracked.json",
-        "data/profiles/untracked.json",
+        "data/corpus/sec/TEST/profile.json",
         "docs/TUTORIAL/ko/test.md",
         "docs/images/test.svg",
         "keys/test.key",

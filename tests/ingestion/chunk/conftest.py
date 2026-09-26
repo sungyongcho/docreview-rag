@@ -1,16 +1,8 @@
 """Chunk fixtures that reuse the shared parsed corpus."""
 
-from types import ModuleType
-
 import pytest
 
 import app.ingestion.chunk as chunk_module
-
-
-@pytest.fixture(scope="session")
-def C() -> ModuleType:
-    """Return the chunk module under test."""
-    return chunk_module
 
 
 @pytest.fixture(scope="session")
