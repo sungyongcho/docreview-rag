@@ -7,9 +7,10 @@ import pytest
 from app.observability.persistence import report_to_records
 from app.observability.stages import record_stages, stage_metadata
 from app.observability.types import Budget
+from app.release.ai_allowance import AIAllowanceError
 from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.workflow.runner import run_workflow
-from app.workflow.types import WorkflowRequest
+from app.workflow.types import ProviderFailure, WorkflowRequest
 from tests.llm.support import DeterministicLLMProvider, TickClock, raw as _raw
 from tests.workflow.support import (
     hit as _hit,
@@ -39,6 +40,20 @@ def _provider(responses, *, projected=None):
         clock=TickClock(),
         projected_input_tokens=None if projected is None else (lambda _prompt: projected),
     )
+
+
+class _AllowanceCappedProvider(DeterministicLLMProvider):
+    """Meter like the shared allowance: deny the request sent after ``deny_after`` others."""
+
+    def __init__(self, responses, *, deny_after):
+        super().__init__(responses, clock=TickClock())
+        self._deny_after = deny_after
+
+    async def _request(self, prompt, schema, budget):
+        """Deny before the request is sent, as the allowance reservation does."""
+        if len(self.prompts) == self._deny_after:
+            raise AIAllowanceError("public_daily_limit", "Daily AI allowance reached.", 60)
+        return await super()._request(prompt, schema, budget)
 
 
 def _request(*, budget=None, provider_budget=None):
@@ -683,3 +698,77 @@ def test_check_is_refused_before_the_call_when_spent_plus_projected_exceeds_the_
     assert reason["attempts"] == 0
     assert len(provider.prompts) == 1
     assert result.total_requests == 1
+
+
+def test_mid_run_allowance_denial_commits_the_billed_grade_trace_before_propagating():
+    """Commit the check as a typed failure when the shared allowance denies its call.
+
+    The grade call was billed, so its trace and the typed denial reach the observer and
+    the stage recorder before the error propagates for the caller's retry mapping.
+    """
+    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
+    provider = _AllowanceCappedProvider(
+        [_raw(grade, input_tokens=900, output_tokens=40)], deny_after=1
+    )
+    committed = []
+    events = []
+
+    async def observer(node, state):
+        committed.append((node, state))
+
+    async def observe(event):
+        events.append((event.node, event.phase, event.status))
+
+    async def exercise():
+        """Run the denied check under the stage recorder and the node observer."""
+        with record_stages(observe):
+            with pytest.raises(AIAllowanceError) as raised:
+                await run_workflow(
+                    _request(),
+                    retriever=retriever_returning([_hit()]),
+                    provider=provider,
+                    clock=SequenceClock(),
+                    on_node=observer,
+                )
+            return raised.value
+
+    error = asyncio.run(exercise())
+
+    assert (error.code, error.retry_after) == ("public_daily_limit", 60)
+    assert len(provider.prompts) == 1
+    node, state = committed[-1]
+    assert node == "check"
+    assert state.node_path == ("retrieve", "grade", "check")
+    assert [step.node for step in state.steps] == ["grade"]
+    assert state.steps[0].input_tokens == 900
+    assert state.failure == ProviderFailure(
+        node="check",
+        status="budget_exceeded",
+        attempts=0,
+        details=("public_daily_limit", "Daily AI allowance reached.", "retry_after=60"),
+    )
+    assert state.reasons[-1] == state.failure
+    assert events[-2:] == [("check", "start", "running"), ("check", "end", "failed")]
+
+
+def test_allowance_denial_of_the_first_call_propagates_without_committing_a_node():
+    """Propagate a denial made before any billed call unchanged, committing no node for it."""
+    provider = _AllowanceCappedProvider([], deny_after=0)
+    seen = []
+
+    async def observer(node, state):
+        seen.append(node)
+
+    with pytest.raises(AIAllowanceError):
+        asyncio.run(
+            run_workflow(
+                _request(),
+                retriever=retriever_returning([_hit()]),
+                provider=provider,
+                clock=SequenceClock(),
+                on_node=observer,
+            )
+        )
+
+    assert seen == ["retrieve"]
+    assert provider.prompts == ()

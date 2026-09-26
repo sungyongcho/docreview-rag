@@ -197,6 +197,23 @@ def _committed_failure(
     return _committed(state, node, failure)
 
 
+def _allowance_failure(node: GradeOrCheckNode, error: AIAllowanceError) -> ProviderFailure:
+    """Type a shared-allowance denial that arrived after an earlier call was billed.
+
+    The denial precedes the request, so the node made no attempt; its code, message
+    and retry delay are kept as details so the committed run says why it stopped.
+    """
+    return ProviderFailure(
+        node=node,
+        status="budget_exceeded",
+        attempts=0,
+        details=(
+            *(part for part in (error.code, str(error)) if part.strip()),
+            f"retry_after={error.retry_after}",
+        ),
+    )
+
+
 def _result_hits(result: RetrievalResult) -> tuple[ChunkHit, ...]:
     """Return the hits of the retrieval result a retriever must produce."""
     if not isinstance(result, RetrievalResult):
@@ -239,13 +256,17 @@ async def run_workflow(
         If the request or provider violate the caller contract.
     ValueError
         If the clock is non-finite or moves backwards.
+    AIAllowanceError
+        If the shared allowance denies a provider call. A denial after an earlier call
+        was billed is first committed to the observer as a typed failure.
 
     Notes
     -----
     Every terminating report carries the degradation history under ``reasons``, so a
     failed run is as auditable as a successful one. A failure whose cause the workflow
-    can describe is reported rather than raised; only a broken caller contract escapes.
-    Observer exceptions propagate instead of becoming node failures.
+    can describe is reported rather than raised; only a broken caller contract and an
+    allowance denial escape. Observer exceptions propagate instead of becoming node
+    failures.
     """
     if not isinstance(request, WorkflowRequest):
         raise TypeError("request must be a WorkflowRequest")
@@ -349,7 +370,10 @@ async def run_workflow(
 
         A refusal the runner makes before the call is committed exactly like one the
         provider returns: the node joins the path, its stage ends failed, and the
-        observer sees the failure.
+        observer sees the failure. A shared-allowance denial that arrives after an
+        earlier call was billed is committed the same way and then re-raised, so the
+        billed trace reaches the observer while the caller keeps its retry mapping; a
+        denial before anything was sent propagates without committing a node.
         """
         if refusal := blocked_by_budget(current, node):
             return refusal
@@ -360,6 +384,7 @@ async def run_workflow(
                 current = _committed(current, node, allowance)
             await notify(node, current)
             return failed(current)
+        denied: AIAllowanceError | None = None
         async with stage(node) as measurement:
             try:
                 if node == "grade":
@@ -372,12 +397,17 @@ async def run_workflow(
                         build_check_prompt(current), AnswerDecision, allowance
                     )
                     current = check_node(_traced(current, decided, node), decided)
-            except AIAllowanceError:
-                raise
+            except AIAllowanceError as error:
+                if not current.steps:
+                    raise
+                denied = error
+                current = _committed(current, node, _allowance_failure(node, error))
             except Exception as error:
                 current = _committed_failure(current, node, error)
             measurement.failed = current.failure is not None
         await notify(node, current)
+        if denied is not None:
+            raise denied
         return failed(current) if current.failure is not None else current
 
     if refusal := blocked_by_budget(state, "retrieve"):
