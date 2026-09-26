@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+from typing import cast
 
 from pydantic import SecretStr
 import pytest
@@ -11,6 +12,7 @@ import app.corpus_admin.operations as operations
 from app.corpus_admin.operations import CorpusOperations
 from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand
+from app.db.session_factory import SessionFactory
 from app.retrieval.embeddings import (
     DeterministicEmbeddingProvider,
     EmbeddingBackfillResult,
@@ -60,7 +62,7 @@ def test_backfill_refuses_false_success_when_committed_count_does_not_change(
     monkeypatch.setattr(CorpusOperations, "_assert_writable_schema", fake_writable)
     service = RuntimeCorpusAdminService(
         settings=Settings(corpus_dir=tmp_path),
-        session_factory=FakeSession,
+        session_factory=cast(SessionFactory, FakeSession),
         embedding_provider=DeterministicEmbeddingProvider(),
     )
 
@@ -179,7 +181,7 @@ def test_backfill_uses_the_exact_selected_document_ids(tmp_path, monkeypatch):
 
     service = RuntimeCorpusAdminService(
         settings=Settings(corpus_dir=tmp_path),
-        session_factory=sessions,
+        session_factory=cast(SessionFactory, sessions),
         embedding_provider=DeterministicEmbeddingProvider(),
     )
     monkeypatch.setattr(service._operations, "_assert_writable_schema", writable)

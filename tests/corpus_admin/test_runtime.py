@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -11,6 +12,7 @@ import app.corpus_admin.operations as operations
 from app.corpus_admin.operations import CorpusOperations
 from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand
+from app.db.session_factory import SessionFactory
 from app.ingestion.progress import OperationProgress
 from app.operator.jobs import JobStore
 from app.operator.progress import stored_progress
@@ -69,7 +71,7 @@ def test_bm25_job_reports_completion_only_after_rebuild(tmp_path: Path, monkeypa
         store = LedgerStore()
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
-            session_factory=FakeSession,
+            session_factory=cast(SessionFactory, FakeSession),
             job_store=store,
         )
         job = await service.enqueue(AdminCommand("rebuild_bm25"))
@@ -134,8 +136,10 @@ def test_ingest_leaves_bm25_for_explicit_rebuild_and_preserves_progress(tmp_path
         try:
             await bootstrap_schema(engine)
             store = JobStore(session_factory=factory)
+            # `_env_file` is a pydantic-settings init option the synthesized signature omits.
+            without_dotenv: dict[str, Any] = {"_env_file": None}
             service = RuntimeCorpusAdminService(
-                settings=Settings(corpus_dir=tmp_path, _env_file=None),
+                settings=Settings(corpus_dir=tmp_path, **without_dotenv),
                 session_factory=factory,
                 engine=engine,
                 embedding_provider=provider,
@@ -156,6 +160,7 @@ def test_ingest_leaves_bm25_for_explicit_rebuild_and_preserves_progress(tmp_path
             first = await service.enqueue(command)
             await service._job_queue._queue.join()
             record = await store.get(first.job_id)
+            assert record is not None
             assert record.status == "succeeded", record.message
             assert list(dict.fromkeys(events)) == [
                 "prepare",
@@ -164,12 +169,16 @@ def test_ingest_leaves_bm25_for_explicit_rebuild_and_preserves_progress(tmp_path
                 "chunks",
                 "cleanup",
             ]
-            assert stored_progress(record.result_refs).overall_current == 100
-            assert stored_progress(record.result_refs).progress_stage == "cleanup"
+            progress = stored_progress(record.result_refs)
+            assert progress is not None
+            assert progress.overall_current == 100
+            assert progress.progress_stage == "cleanup"
             assert (await service.status()).bm25_ready is False
             rebuilt = await service.enqueue(AdminCommand("rebuild_bm25"))
             await service._job_queue._queue.join()
-            assert (await store.get(rebuilt.job_id)).status == "succeeded"
+            rebuilt_record = await store.get(rebuilt.job_id)
+            assert rebuilt_record is not None
+            assert rebuilt_record.status == "succeeded"
             assert (await service.status()).bm25_ready is True
             await service.enqueue(command)
             await service._job_queue._queue.join()
@@ -184,7 +193,9 @@ def test_ingest_leaves_bm25_for_explicit_rebuild_and_preserves_progress(tmp_path
                 target_tokens=1024,
                 embedding_provider="deterministic",
             ) as (session, _measurement):
-                assert await session.scalar(select(func.count()).select_from(BM25CorpusStat)) > 0
+                stat_rows = await session.scalar(select(func.count()).select_from(BM25CorpusStat))
+                assert stat_rows is not None
+                assert stat_rows > 0
             assert (await service.status()).bm25_ready is False
         finally:
             await engine.dispose()

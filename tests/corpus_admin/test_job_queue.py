@@ -93,6 +93,7 @@ def test_failed_job_is_redacted_and_retryable(tmp_path: Path) -> None:
         board = await service.jobs()
         assert retried.job_id != failed.job_id
         assert board.history[0].status == "succeeded"
+        assert board.history[0].result_refs is not None
         assert board.history[0].result_refs["retry_of"] == failed.job_id
 
     asyncio.run(scenario())
@@ -219,7 +220,10 @@ def test_acquisition_result_keeps_selection_in_completed_job(tmp_path):
         await service._job_queue._queue.join()
         job = (await service.jobs()).history[0]
         assert job.status == "succeeded"
-        assert stored_progress(job.result_refs).overall_current == 100
+        progress = stored_progress(job.result_refs)
+        assert progress is not None
+        assert progress.overall_current == 100
+        assert job.result_refs is not None
         assert {key: value for key, value in job.result_refs.items() if key != PROGRESS_KEY} == {
             "manifest": "manifest.json",
             "selection_id": "selected",
@@ -234,15 +238,17 @@ def test_embedding_usage_survives_job_transitions(tmp_path, outcome):
     """Preserve charged usage through progress, failure and cancellation writes."""
     from decimal import Decimal
 
-    from app.observability.usage import USAGE_KEY, provider_identity, usage_record
+    from app.observability.usage import USAGE_KEY, UsageSink, provider_identity, usage_record
 
     async def scenario():
         """Use the bounded in-memory ledger to exercise real worker transition code."""
         store = LedgerStore()
         service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
 
-        async def operation(command, publish, on_usage=None):
+        async def operation(command, publish, on_usage: UsageSink | None = None):
             """Record two provider responses before selecting the terminal outcome."""
+            # The job queue always passes its usage recorder to the operation it runs.
+            assert on_usage is not None
             record = usage_record(
                 identity=provider_identity(
                     provider="openai_embeddings", local=False, credential_slot="dev"
@@ -266,8 +272,10 @@ def test_embedding_usage_survives_job_transitions(tmp_path, outcome):
         await service._job_queue._queue.join()
         stored = store.rows[job.job_id]
         assert stored.status == outcome
-        assert stored.result_refs[USAGE_KEY][0]["requests"] == 2
-        assert stored.result_refs[USAGE_KEY][0]["input_tokens"] == 24
+        usage = stored.result_refs[USAGE_KEY]
+        assert isinstance(usage, list)
+        assert usage[0]["requests"] == 2
+        assert usage[0]["input_tokens"] == 24
 
     asyncio.run(scenario())
 
