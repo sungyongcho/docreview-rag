@@ -392,7 +392,9 @@ describe("composer IME handling", () => {
     cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
     const fetchMock = stubPublicApi();
     render(<ServiceShell />);
-    const input = await screen.findByPlaceholderText("Ask a question about the filing corpus") as HTMLTextAreaElement;
+    // The composer drops input until the conversations load after the capabilities request.
+    await screen.findByRole("button", { name: "New chat", pressed: true });
+    const input = screen.getByPlaceholderText("Ask a question about the filing corpus") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "삼성전자 실적" } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
     const streamCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream"));
