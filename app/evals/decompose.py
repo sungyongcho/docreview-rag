@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 import logging
 from typing import TYPE_CHECKING, Annotated, NamedTuple, Self
 
 from pydantic import Field, StrictStr
 from pydantic.functional_validators import model_validator
 
+from app.db.session_factory import SessionFactory
 from app.llm.schemas import Prompt, ProviderBudget, StrictSchema
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K, fuse_ranked_lists
@@ -17,12 +18,9 @@ from app.retrieval.service import retrieve
 from app.retrieval.types import ChunkHit
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
     from app.evals.arms import Retriever
     from app.llm.provider import LLMProvider
 
-type SessionFactory = Callable[[], AsyncSession]
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -1,22 +1,20 @@
 """Built-in filing tools: typed wrappers over the M2 retrieval surface."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import field_validator
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.registry import ToolRegistry
 from app.agent.tools import Tool, ToolError
 from app.agent.types import AgentCitation
 from app.db.models import Chunk
+from app.db.session_factory import SessionFactory
 from app.llm.schemas import NonBlank
 from app.retrieval.embeddings import EmbeddingIdentity, EmbeddingProvider, get_embedding_provider
 from app.retrieval.service import retrieve
 from app.retrieval.types import ChunkHit, FiscalYear, Form, Issuer, RetrievalFilters
-
-type SessionFactory = Callable[[], AsyncSession]
 
 DEFAULT_SEARCH_K = 5
 MAX_SEARCH_K = 20

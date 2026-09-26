@@ -13,7 +13,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 import logging
 from pathlib import Path
-from typing import Any, Final, Protocol, cast
+from typing import Any, Final, cast
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -34,6 +34,7 @@ from app.api.review_profile import ServerBM25, with_server_bm25
 from app.config import Settings, get_settings
 from app.corpus_admin import CorpusStatus
 from app.db.models import Chunk
+from app.db.session_factory import SessionFactory
 from app.evals.admin_results import (
     compare_stored_results,
     compatible_baseline,
@@ -72,14 +73,6 @@ from app.retrieval.types import RetrievalFilters
 
 MAX_EVALUATION_JOBS: Final[int] = 20
 MAX_QUEUED_EVALUATIONS: Final[int] = 8
-
-
-class SessionFactory(Protocol):
-    """Build one caller-owned asynchronous database session."""
-
-    def __call__(self) -> AsyncSession:
-        """Return one asynchronous session context manager."""
-        ...
 
 
 class EvaluationAlreadyQueuedError(ValueError):
