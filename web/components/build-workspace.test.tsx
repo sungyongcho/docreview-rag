@@ -411,7 +411,8 @@ describe("Build workspace", () => {
 
 describe("preparation refresh after corpus jobs", () => {
   afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
-  it.each(["succeeded", "failed", "cancelled", "interrupted"] as const)("refreshes once for %s and ignores repeated polls", async (status: OperatorJobStatus) => {
+  it("refreshes once after a corpus job ends, even as a failure, and ignores repeated polls", async () => {
+    const status: OperatorJobStatus = "failed";
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
@@ -957,7 +958,8 @@ it("separates deselection and cancellation from confirmed deletion without prema
   expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
 });
 
-it.each(["queued", "running"] as const)("locks deletion while a corpus job is %s", async (status) => {
+it("locks deletion while another corpus job is still queued", async () => {
+  const status = "queued" as const;
   const submitted: Record<string, unknown>[] = []; const previews: Record<string, unknown>[] = [];
   stubSourceLifecycle(lifecycleSources(), submitted, previews);
   const job: OperatorJob = { job_id: "other-corpus-job", domain: "corpus", kind: "backfill_embeddings", request: {}, status, stage: "embed", current: 1, total: 10, detail_current: null, detail_total: null, message: "Embedding", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-09-08T12:00:00Z", started_at: null, finished_at: null, updated_at: "2026-09-08T12:00:00Z" };

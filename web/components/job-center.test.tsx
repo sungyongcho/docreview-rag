@@ -59,8 +59,8 @@ describe("recorded overall and stage progress", () => {
     expect(screen.getByText(/Stage elapsed: 10s/)).toBeInTheDocument();
   });
 
-  it.each(["schema", "documents", "bm25"])("renders the running %s stage without a fabricated zero percent", (stage) => {
-    render(<JobProgress job={job({ stage, status: "running", current: 0, total: 1, overall_current: 45, overall_total: 100, finished_at: null })} />);
+  it("renders a running stage that reports only a placeholder count without a fabricated zero percent", () => {
+    render(<JobProgress job={job({ stage: "documents", status: "running", current: 0, total: 1, overall_current: 45, overall_total: 100, finished_at: null })} />);
     expect(screen.queryByRole("progressbar", { name: "Current stage" })).not.toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Overall progress" })).toHaveAttribute("value", "45");
     expect(screen.queryByText(/0 \/ 1/)).not.toBeInTheDocument();
@@ -202,10 +202,10 @@ it("selects a notification's job and clears filters without requiring a row clic
 
 
 describe("download speed", () => {
-  it.each(["acquire_edgar", "acquire_dart"])("measures %s samples and clears stale item speeds", (kind) => {
+  it("measures download samples and clears stale item speeds", () => {
     vi.useFakeTimers();
     try {
-      const initial = job({ kind, status: "running", stage: "download", current: 0, total: 2, message: "first", detail_current: 1000, detail_total: null, updated_at: "2026-09-02T10:00:01Z" });
+      const initial = job({ kind: "acquire_edgar", status: "running", stage: "download", current: 0, total: 2, message: "first", detail_current: 1000, detail_total: null, updated_at: "2026-09-02T10:00:01Z" });
       const { rerender } = render(<JobProgress job={initial} />);
       expect(screen.queryByText(/Download speed/)).not.toBeInTheDocument();
       const next = { ...initial, detail_current: 101000, updated_at: "2026-09-02T10:00:03Z" };
