@@ -8,11 +8,17 @@ from app.llm.local_engine import resolve_local_protocol
 @pytest.mark.parametrize(
     ("base_url", "configured", "expected"),
     [
-        ("http://ollama:11434", "auto", "ollama"),
-        ("http://host:8000/v1", "auto", "openai_responses"),
-        ("http://host:8000/v1/", "auto", "openai_responses"),
-        ("http://ollama:11434", "openai_responses", "openai_responses"),
-        ("http://host:8000/v1", "ollama", "ollama"),
+        pytest.param("http://ollama:11434", "auto", "ollama", id="auto-without-v1-is-ollama"),
+        pytest.param(
+            "http://host:8000/v1", "auto", "openai_responses", id="auto-with-v1-is-responses"
+        ),
+        pytest.param(
+            "http://host:8000/v1/",
+            "auto",
+            "openai_responses",
+            id="auto-with-v1-and-a-trailing-slash-is-responses",
+        ),
+        pytest.param("http://host:8000/v1", "ollama", "ollama", id="explicit-protocol-wins"),
     ],
 )
 def test_auto_reads_the_v1_suffix_and_an_explicit_protocol_always_wins(

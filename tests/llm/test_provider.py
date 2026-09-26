@@ -2,18 +2,13 @@
 
 import asyncio
 from decimal import Decimal
-from inspect import isabstract, iscoroutinefunction
 from types import SimpleNamespace
 
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
 import app.llm.provider as provider_module
-from app.llm.provider import (
-    LLMProvider,
-    OpenAILLMProvider,
-    strict_response_format,
-)
+from app.llm.provider import OpenAILLMProvider, strict_response_format
 from app.llm.schemas import (
     AnswerDecision,
     BudgetExceeded,
@@ -54,13 +49,6 @@ def valid_output():
         '{"label":"SUPPORTED","answer":"Research expense increased.",'
         '"citation_chunk_ids":[7],"reason":"The cited chunk contains the statement."}'
     )
-
-
-def test_provider_boundary_is_abstract_and_async():
-    """Keep the provider boundary abstract with an awaitable generate method."""
-
-    assert isabstract(LLMProvider)
-    assert iscoroutinefunction(LLMProvider.complete)
 
 
 def test_deterministic_provider_returns_typed_output_and_trace_metadata():

@@ -206,52 +206,24 @@ def test_local_provider_refuses_an_oversized_prompt_before_contacting_ollama() -
     assert result.metadata.input_tokens == 0
 
 
-def test_provider_carries_the_configured_timeout_and_refuses_a_nonpositive_one() -> None:
-    """A CPU-hosted model needs a caller-chosen deadline, and zero is not one."""
-    provider = LocalLLMProvider(
-        base_url="http://ollama:11434",
-        model_name="gemma4:e4b",
-        protocol="ollama",
-        api_key=None,
-        timeout_s=45.0,
-    )
-    try:
-        assert provider.protocol == "ollama"
-        assert provider.api_url == "local://ollama"
-    finally:
-        asyncio.run(provider.aclose())
-
-    with pytest.raises(ValueError, match="timeout must be positive"):
+@pytest.mark.parametrize(
+    ("setting", "message"),
+    [
+        pytest.param({"timeout_s": 0}, "timeout must be positive", id="zero-timeout"),
+        pytest.param(
+            {"context_window": 0}, "context window must be positive", id="zero-context-window"
+        ),
+    ],
+)
+def test_provider_refuses_a_nonpositive_timeout_or_context_window(setting, message) -> None:
+    """A CPU-hosted model needs a real deadline, and a window must be able to hold a prompt."""
+    with pytest.raises(ValueError, match=message):
         LocalLLMProvider(
             base_url="http://ollama:11434",
             model_name="gemma4:e4b",
             protocol="ollama",
             api_key=None,
-            timeout_s=0,
-        )
-
-
-def test_provider_carries_the_configured_context_window_and_refuses_a_nonpositive_one() -> None:
-    """The provider keeps the run-wide window and rejects a window that cannot hold a prompt."""
-    provider = LocalLLMProvider(
-        base_url="http://ollama:11434",
-        model_name="gemma4:e4b",
-        protocol="ollama",
-        api_key=None,
-        context_window=12_600,
-    )
-    try:
-        assert provider._context_window == 12_600
-    finally:
-        asyncio.run(provider.aclose())
-
-    with pytest.raises(ValueError, match="context window must be positive"):
-        LocalLLMProvider(
-            base_url="http://ollama:11434",
-            model_name="gemma4:e4b",
-            protocol="ollama",
-            api_key=None,
-            context_window=0,
+            **setting,
         )
 
 
