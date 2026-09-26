@@ -423,36 +423,6 @@ def test_repair_loop_still_guards_the_strict_path():
     assert responses.calls[1]["text"] == responses.calls[0]["text"]
 
 
-def test_first_request_is_refused_before_the_call_when_its_projection_exceeds_the_allowance():
-    """A prompt projected far above the remaining input allowance is never sent."""
-    provider = DeterministicLLMProvider(
-        [raw(valid_output(), input_tokens=100, output_tokens=20)],
-        clock=TickClock(),
-        projected_input_tokens=lambda _prompt: 2_521,
-    )
-
-    result = asyncio.run(
-        provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=2_000))
-    )
-
-    assert result.status == "budget_exceeded"
-    assert isinstance(result.refusal, BudgetExceeded)
-    assert result.refusal.which == "input_tokens"
-    assert result.refusal.used == 0
-    assert result.refusal.limit == 2_000
-    assert result.refusal.attempts == 0
-    assert result.refusal.projected_input_tokens == 2_521
-    assert provider.prompts == ()
-    assert result.metadata.requests == 0
-    assert result.metadata.raw_outputs == ()
-    assert result.metadata.llm_output == ""
-    assert result.metadata.request_ids == ()
-    assert result.metadata.retries == 0
-    assert result.metadata.input_tokens == 0
-    assert result.metadata.request_time_ms == 0
-    assert result.metadata.projected_input_tokens == 2_521
-
-
 def test_repair_is_refused_before_the_call_when_the_repair_prompt_would_not_fit():
     """The larger repair prompt passes the same gate and keeps the validation errors."""
     provider = DeterministicLLMProvider(
@@ -505,6 +475,17 @@ def test_projection_equal_to_the_allowance_is_sent_and_one_token_over_is_refused
     assert refused.refusal.projected_input_tokens == 1_001
     assert refused.refusal.attempts == 0
     assert over.prompts == ()
+    assert refused.refusal.which == "input_tokens"
+    assert refused.refusal.used == 0
+    assert refused.refusal.limit == 1_000
+    assert refused.metadata.requests == 0
+    assert refused.metadata.raw_outputs == ()
+    assert refused.metadata.llm_output == ""
+    assert refused.metadata.request_ids == ()
+    assert refused.metadata.retries == 0
+    assert refused.metadata.input_tokens == 0
+    assert refused.metadata.request_time_ms == 0
+    assert refused.metadata.projected_input_tokens == 1_001
 
 
 def test_post_hoc_accounting_is_unchanged_when_the_projection_undershoots():

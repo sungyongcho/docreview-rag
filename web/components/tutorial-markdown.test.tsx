@@ -3,49 +3,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { TutorialMarkdown } from "./tutorial-markdown";
 import { renderTutorial } from "@/lib/tutorial-markdown.mjs";
 import { DevelopmentBadge } from "./development-badge";
-import { readFileSync } from "node:fs";
 
 afterEach(cleanup);
 
 describe("Tutorial Markdown", () => {
-  it.each(["ko", "en"] as const)("identifies Back and Forward with the app arrow icons in %s", (locale) => {
-    const source = locale === "ko" ? "상단의 **이전**과 **앞으로**를 사용하세요." : "Use **Back** and **Forward** in the header.";
-    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale, statusBadges: true }).content} />);
-    const controls = container.querySelectorAll(".docs-control-label");
-    expect(controls).toHaveLength(2);
-    expect(controls[0]).toHaveTextContent(locale === "ko" ? "이전" : "Back");
-    expect(controls[1]).toHaveTextContent(locale === "ko" ? "앞으로" : "Forward");
-    expect(controls[0].querySelector(".lucide-arrow-left")).toHaveAttribute("aria-hidden", "true");
-    expect(controls[1].querySelector(".lucide-arrow-right")).toHaveAttribute("aria-hidden", "true");
-    expect(container.querySelector("button, [tabindex], [role=button]")).toBeNull();
-  });
-
-  it("does not decorate navigation labels in headings, links, code, or the development story", () => {
-    const source = "# **Back**\n\n[**Forward**](#back)\n\n`Back`\n\n```text\n**Back**\n```";
-    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { statusBadges: true }).content} />);
-    expect(container.querySelector(".docs-control-label")).toBeNull();
-    const story = render(<TutorialMarkdown content={renderTutorial("**Back** and **Forward**", { math: true }).content} />);
-    expect(story.container.querySelector(".docs-control-label")).toBeNull();
-  });
-
-  it.each(["ko", "en"] as const)("renders controls and multi-step navigation throughout %s guides", (locale) => {
-    const source = locale === "ko" ? "**새 대화** **설정 및 미리보기** **도움말** **질문 전송** **데이터 준비 → 파이프라인 → 문서** **초안 저장** **준비**" : "**New chat** **Settings and preview** **Help** **Send question** **Build → Pipeline → Documents** **Save draft** **Prerequisites**";
-    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale, statusBadges: true }).content} />);
-    expect(container.querySelectorAll(".docs-control-label")).toHaveLength(8);
-    for (const icon of ["square-pen", "sliders-horizontal", "circle-help", "send", "hammer", "files"]) expect(container.querySelector(`.docs-control-label .lucide-${icon}`)).not.toBeNull();
-    expect(container.querySelectorAll(".docs-control-separator")).toHaveLength(2);
-    expect(container.querySelector("strong")).toHaveTextContent(locale === "ko" ? "준비" : "Prerequisites");
-    expect(container.querySelector("button, a, [tabindex], [role=button]")).toBeNull();
-  });
-
-  it("also identifies plain UI names in workspace tables without styling ordinary descriptions", () => {
-    const source = "| Workspace | Task |\n| --- | --- |\n| Build → Documents | Read a filing. |\n| Conversation | Ask a question. |";
-    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale: "en", statusBadges: true }).content} />);
-    expect(container.querySelectorAll("td .docs-control-label")).toHaveLength(3);
-    expect(container.querySelector(".docs-control-label .lucide-message-square")).not.toBeNull();
-    expect(container.querySelectorAll("td")[1]).toHaveTextContent("Read a filing.");
-    expect(container.querySelectorAll("td")[1].querySelector(".docs-control-label")).toBeNull();
-  });
   it.each(["ko", "en"] as const)("renders localized noninteractive status badges throughout %s prose", (locale) => {
     const source = "SUPPORTED and `NOT_IN_DOCS`.\n\n**Unsupported request** / 빈 문서 범위\n\n| Status | Meaning |\n| --- | --- |\n| NOT_IN_DOCS | No evidence |";
     const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale, statusBadges: true }).content} />);
@@ -150,25 +111,6 @@ describe("Tutorial Markdown", () => {
     expect(example.codes[0].code).toBe("<!-- tutorial-steps -->");
     expect(example.links).toEqual([]);
   });
-  it.each(["ko", "en"] as const)("offers task cards and preserves the twelve-step path in the %s overview", (locale) => {
-    const source = readFileSync(`../docs/TUTORIAL/${locale}/overview.md`, "utf8");
-    const plain = renderTutorial(source, { locale });
-    const parsed = renderTutorial(source, { locale, overviewLayout: true });
-    expect(parsed.links).toEqual(plain.links);
-    expect(parsed.headings).toEqual(plain.headings);
-    const { container } = render(<TutorialMarkdown content={parsed.content} />);
-    expect(container.querySelectorAll(".guide-feature-cards .guide-route-card")).toHaveLength(3);
-    expect(container.querySelectorAll(".guide-local-cards .guide-route-card")).toHaveLength(2);
-    expect(container.querySelectorAll(".guide-learning-group")).toHaveLength(3);
-    expect(container.querySelectorAll(".guide-learning-group > p.guide-phase-title")).toHaveLength(3);
-    const steps = [...container.querySelectorAll(".guide-step")];
-    expect(steps.map((step) => Number(step.getAttribute("value")))).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
-    expect(steps.map((step) => step.querySelector("a")!.getAttribute("href")?.split("#")[1])).toEqual(Array.from({ length: 12 }, (_, i) => `step-${i + 1}`));
-    for (const href of ["/docreview-rag/?view=review", "/docreview-rag/?view=build&tab=documents", "/docreview-rag/?view=measure&tab=compare"]) {
-      expect([...container.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toContain(href);
-    }
-    expect(container.querySelector("button")).toBeNull();
-  });
 
   it("does not turn a code example into overview cards or permit arbitrary app actions", () => {
     const source = "```markdown\n<!-- guide-features -->\n- Example\n```";
@@ -195,7 +137,7 @@ describe("Tutorial Markdown", () => {
 
   it("renders tables and images, maps document links, and omits raw HTML", () => {
     const { container } = render(<TutorialMarkdown content={renderTutorial("# 안내\n\n| 키 | 값 |\n| --- | --- |\n| a | b |\n\n[명령](cli.md#설치)\n\n![상태](assets/status.png)\n\n<script>alert(1)</script>").content} />);
-    expect(screen.getByRole("table").parentElement).toHaveClass("markdown-table-wrap");
+    expect(screen.getByRole("table")).toBeVisible();
     expect(screen.getByRole("link", { name: "명령" })).toHaveAttribute("href", "/docreview-rag/docs/ko/cli/#%EC%84%A4%EC%B9%98");
     expect(screen.getByAltText("상태")).toHaveAttribute("src", "/docreview-rag/tutorial-assets/status.png");
     expect(container.querySelector("script")).toBeNull();

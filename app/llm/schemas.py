@@ -72,6 +72,22 @@ class StrictSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
+class TokenUsageDetails(StrictSchema):
+    """Shared token detail counters bounded by each provider response's totals."""
+
+    cached_input_tokens: NonNegativeInt = 0
+    cache_write_input_tokens: NonNegativeInt = 0
+    reasoning_tokens: NonNegativeInt = 0
+
+    def _validate_token_totals(self, input_tokens: int, output_tokens: int) -> Self:
+        """Reject detail counts that exceed their authoritative input or output total."""
+        if self.cached_input_tokens + self.cache_write_input_tokens > input_tokens:
+            raise ValueError("detailed input tokens must not exceed input_tokens")
+        if self.reasoning_tokens > output_tokens:
+            raise ValueError("reasoning_tokens must not exceed output_tokens")
+        return self
+
+
 class Prompt(StrictSchema):
     """System and user text sent through one provider boundary."""
 
@@ -292,15 +308,12 @@ class LocalModelTiming(StrictSchema):
     eval_count: NonNegativeInt | None = None
 
 
-class RawProviderResponse(StrictSchema):
+class RawProviderResponse(TokenUsageDetails):
     """Provider-neutral raw response used by adapters and deterministic tests."""
 
     output_text: StrictStr
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
-    cached_input_tokens: NonNegativeInt = 0
-    cache_write_input_tokens: NonNegativeInt = 0
-    reasoning_tokens: NonNegativeInt = 0
     request_id: NonBlank | None = None
     refusal: NonBlank | None = None
     local_timing: LocalModelTiming | None = None
@@ -308,11 +321,7 @@ class RawProviderResponse(StrictSchema):
     @model_validator(mode="after")
     def validate_usage_details(self) -> Self:
         """Keep provider detail counters within their authoritative totals."""
-        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
-            raise ValueError("detailed input tokens must not exceed input_tokens")
-        if self.reasoning_tokens > self.output_tokens:
-            raise ValueError("reasoning_tokens must not exceed output_tokens")
-        return self
+        return self._validate_token_totals(self.input_tokens, self.output_tokens)
 
 
 class SchemaRejected(StrictSchema):
@@ -378,7 +387,7 @@ class ProviderRefusal(StrictSchema):
 type CompletionFailure = SchemaRejected | BudgetExceeded | ProviderRefusal
 
 
-class ProviderMetadata(StrictSchema):
+class ProviderMetadata(TokenUsageDetails):
     """Trace-ready provider identity, usage, latency, raw output, and retry data."""
 
     provider: NonBlank
@@ -386,9 +395,6 @@ class ProviderMetadata(StrictSchema):
     api_url: NonBlank
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
-    cached_input_tokens: NonNegativeInt = 0
-    cache_write_input_tokens: NonNegativeInt = 0
-    reasoning_tokens: NonNegativeInt = 0
     estimated_cost_usd: NonNegativeDecimal
     request_time_ms: NonNegativeFloat
     retries: Annotated[StrictInt, Field(ge=0, le=1)]
@@ -419,11 +425,7 @@ class ProviderMetadata(StrictSchema):
             raise ValueError("llm_output must equal the final raw output")
         if len(self.request_ids) > len(self.raw_outputs):
             raise ValueError("request ids cannot outnumber provider attempts")
-        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
-            raise ValueError("detailed input tokens must not exceed input_tokens")
-        if self.reasoning_tokens > self.output_tokens:
-            raise ValueError("reasoning_tokens must not exceed output_tokens")
-        return self
+        return self._validate_token_totals(self.input_tokens, self.output_tokens)
 
 
 class ProviderResult[OutputT: BaseModel](StrictSchema):

@@ -4,7 +4,6 @@ from typing import cast
 
 from fastapi.testclient import TestClient
 
-from app.api.admin_deps import get_admin_services
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import PROD_SURFACE, create_api_app
 
@@ -30,8 +29,6 @@ def test_read_only_docs_include_admin_contracts_without_exposing_handlers() -> N
         assert "/admin/corpus/jobs" in schema["paths"]
         assert client.get("/admin/corpus").status_code == 404
         assert client.put("/admin/presets", json={}).status_code == 404
-
-    assert get_admin_services not in application.dependency_overrides
 
 
 def test_documented_schema_includes_later_application_routes() -> None:

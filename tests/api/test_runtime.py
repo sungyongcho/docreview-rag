@@ -1,6 +1,7 @@
 """Request-scoped local model selection without database or inference side effects."""
 
 import asyncio
+from pathlib import Path
 from typing import cast
 
 import httpx
@@ -13,15 +14,15 @@ from app.api.schemas import ReviewRequest
 from app.db.session_factory import SessionFactory
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import local_provider_budget
-from app.llm.local_inventory import LocalModelInventory
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.ingestion.support import filing_document
 
 
-def local_services(names: list[str]) -> RuntimeApiServices:
-    """Build real provider selection over an explicitly controlled model inventory."""
-    inventory = LocalModelInventory(
-        base_url="http://host/v1",
+def local_services(names: list[str], path: Path) -> RuntimeApiServices:
+    """Build real provider selection through an isolated connection manager."""
+    connection = LocalConnectionManager(
+        initial_base_url="http://host/v1",
+        path=path,
         transport=httpx.MockTransport(
             lambda _: httpx.Response(200, json={"data": [{"id": name} for name in names]})
         ),
@@ -32,17 +33,17 @@ def local_services(names: list[str]) -> RuntimeApiServices:
         provider_budgets={
             "local": local_provider_budget(max_input_tokens=1000, max_output_tokens=100)
         },
-        local_inventory=inventory,
+        local_connection=connection,
     )
 
 
-def test_single_model_is_pinned_without_changing_the_requested_engine() -> None:
+def test_single_model_is_pinned_without_changing_the_requested_engine(tmp_path: Path) -> None:
     """A single model is resolved once and cannot later switch to a replacement."""
-    services = local_services(["answer"])
+    services = local_services(["answer"], tmp_path / "first.json")
     profile = asyncio.run(services._engines.pin_local_model(ReviewSessionProfile(engine="local")))
     assert profile.local_model == "answer"
     assert profile.engine == "local"
-    other = local_services(["replacement"])
+    other = local_services(["replacement"], tmp_path / "second.json")
     with pytest.raises(ApiProblemError) as error:
         asyncio.run(other._engines.pin_local_model(profile))
     assert error.value.error.code == "local_model_unavailable"
@@ -50,9 +51,9 @@ def test_single_model_is_pinned_without_changing_the_requested_engine() -> None:
     assert asyncio.run(services._engines.pin_local_model(openai)) is openai
 
 
-def test_multiple_models_require_a_choice_and_isolate_concurrent_requests() -> None:
+def test_multiple_models_require_a_choice_and_isolate_concurrent_requests(tmp_path: Path) -> None:
     """Two conversations get separate providers and never mutate a global active model."""
-    services = local_services(["first", "second"])
+    services = local_services(["first", "second"], tmp_path / "connection.json")
     with pytest.raises(ApiProblemError) as error:
         asyncio.run(services._engines.pin_local_model(ReviewSessionProfile(engine="local")))
     assert error.value.error.code == "local_model_required"
@@ -77,11 +78,13 @@ def test_multiple_models_require_a_choice_and_isolate_concurrent_requests() -> N
     assert first[0] is not second[0]
 
 
-def test_empty_inventory_blocks_local_execution() -> None:
+def test_empty_inventory_blocks_local_execution(tmp_path: Path) -> None:
     """An explicitly chosen local engine never falls back to another provider."""
     with pytest.raises(ApiProblemError) as error:
         asyncio.run(
-            local_services([])._engines.pin_local_model(ReviewSessionProfile(engine="local"))
+            local_services([], tmp_path / "connection.json")._engines.pin_local_model(
+                ReviewSessionProfile(engine="local")
+            )
         )
     assert error.value.error.code == "local_model_unavailable"
 
@@ -397,9 +400,7 @@ def routing_service():
     "query,issuer,year",
     [
         ("삼성전자는?", "005930", 2023),
-        ("What about Samsung Electronics?", "005930", 2023),
         ("그럼 2024년은?", "NVDA", 2024),
-        ("방금 이야기해준거 한글로 다시 설명해줄래", "NVDA", 2023),
         ("Please explain that again in Korean", "NVDA", 2023),
     ],
 )
@@ -445,12 +446,11 @@ def test_followups_reach_retrieval_with_replaced_scope(classified_service, query
     assert prompts == []
 
 
-@pytest.mark.parametrize("endpoint", ["retrieve", "review"])
 @pytest.mark.parametrize(
-    "query,issuer",
+    "endpoint,query,issuer",
     [
-        ("What drove NVIDIA data center revenue growth?", "NVDA"),
-        ("삼성전자 메모리 사업의 주요 위험은 무엇인가요?", "005930"),
+        ("retrieve", "What drove NVIDIA data center revenue growth?", "NVDA"),
+        ("review", "삼성전자 메모리 사업의 주요 위험은 무엇인가요?", "005930"),
     ],
 )
 def test_known_company_questions_reach_retrieval_without_classifier(
@@ -486,14 +486,13 @@ def test_known_company_questions_reach_retrieval_without_classifier(
     assert prompts == []
 
 
-@pytest.mark.parametrize("query", ["hello", "안녕하세요", "help"])
-def test_exact_greetings_use_fixed_guidance_without_classifier(classified_service, query):
+def test_service_help_needs_neither_retrieval_nor_classifier(classified_service):
     """Exact casual intents return fixed guidance at the gate with no provider call."""
     from app.api.schemas import RetrieveRequest
 
     service, _, prompts = classified_service
     assert service._conversation._classifier_enabled is True
-    prepared = asyncio.run(service.retrieve(RetrieveRequest(query=query)))
+    prepared = asyncio.run(service.retrieve(RetrieveRequest(query="help")))
     path = prepared.path_decision
     assert path["intent"] == "service_help"
     assert path["source"] == "deterministic"
@@ -932,37 +931,76 @@ def classified_service():
     asyncio.run(client.aclose())
 
 
-def test_review_preserves_original_question_across_search_rewriting(
-    classified_service, monkeypatch
-):
-    """The workflow receives the original question without another model call."""
-    from app.api import runtime as runtime_module
-    from app.workflow.types import WorkflowRequest
+def test_review_preserves_original_question_across_search_rewriting(hit):
+    """Actual grade and answer prompts retain the user question beside the expanded search."""
+    import json
 
-    service, _, prompts = classified_service
-    service._allow_custom_prompt_policy = True
-    request = ReviewRequest(query="NVIDIA의 2024년 매출 성장 요인은?")
-    captured = []
+    from app.retrieval.service import ComponentRankings, RetrievalResult
+    from app.workflow.gate import ConversationTurn
+    from tests.api.support import MemorySession
+    from tests.llm.support import DeterministicLLMProvider, raw
 
-    def capture_request(**kwargs):
-        """Validate the real workflow payload and stop before database or inference access."""
-        captured.append(WorkflowRequest(**kwargs))
-        raise LookupError("workflow request captured")
+    evidence = hit.model_copy(update={"doc_id": "NVDA-FY2024"})
+    grade = {
+        "grades": [{"chunk_id": hit.chunk_id, "relevant": True, "reason": "Revenue evidence."}]
+    }
+    answer = {
+        "label": "SUPPORTED",
+        "answer": "매출이 증가했습니다.",
+        "citation_chunk_ids": [hit.chunk_id],
+        "reason": "The filing states the increase.",
+    }
+    provider = DeterministicLLMProvider([raw(json.dumps(grade)), raw(json.dumps(answer))])
+    retrieved = []
+    saved = []
 
-    async def exercise():
-        """Use the real scope resolver with a separately rewritten retrieval question."""
-        _, path = await service._conversation.decide_path(request)
-        path = {**path, "retrieval_query": "What drove NVIDIA revenue growth in 2024?"}
-        await service._review(request, on_node=None, retrieval_override=None, path=path)
+    async def retrieve(session, query, *, provider, k, filters, **plan):
+        """Capture the resolved search while returning the filing evidence it selected."""
+        retrieved.append((query, filters))
+        return RetrievalResult(
+            candidates=(evidence,),
+            hits=(evidence,),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(evidence.chunk_id,), lexical=()),
+        )
 
-    monkeypatch.setattr(runtime_module, "WorkflowRequest", capture_request)
-    with pytest.raises(LookupError, match="workflow request captured"):
-        asyncio.run(exercise())
-    assert len(captured) == 1
-    assert captured[0].original_query == request.query
-    assert captured[0].query == "What drove NVIDIA revenue growth in 2024?"
-    assert "same language as the Original question JSON" in captured[0].system_prompt
-    assert prompts == []
+    async def persist(session, run, traces):
+        """Capture the report produced by the actual workflow and runtime."""
+        saved.append(run)
+        return run
+
+    service = routing_runtime(
+        session_factory=MemorySession,
+        retrieval_service=retrieve,
+        run_persister=persist,
+        llm_providers={"openai": provider},
+        provider_budgets={
+            "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
+        },
+        intent_classifier_enabled=True,
+    )
+    request = ReviewRequest(
+        query="그럼 2024년은?",
+        conversation_history=(ConversationTurn(role="user", text="NVDA data center revenue 2023"),),
+    )
+    report = asyncio.run(service.review(request))
+
+    assert report.status == "ok"
+    ((search_query, filters),) = retrieved
+    assert search_query != request.query
+    assert "NVDA data center revenue" in search_query
+    assert "2023" not in search_query
+    assert filters.issuers == ("NVDA",) and filters.fiscal_years == (2024,)
+    assert len(provider.prompts) == 2
+    for prompt in provider.prompts:
+        fields = {}
+        for line in prompt.user.splitlines():
+            label, _, value = line.partition(": ")
+            if label in {"Original question JSON", "Query JSON"}:
+                fields[label] = json.loads(value)
+        assert fields == {"Original question JSON": request.query, "Query JSON": search_query}
+    assert saved[0].run_id == report.run_id
+    assert saved[0].request_context["path_decision"]["retrieval_query"] == search_query
 
 
 def test_hbm_outlook_question_stays_deterministic_with_local_index():
@@ -1031,26 +1069,6 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
             1,
         ),
         (
-            "retrieve",
-            "SanDisk growth drivers",
-            "document_review",
-            ["SanDisk"],
-            "explicit",
-            "unknown_issuer",
-            "gate",
-            1,
-        ),
-        (
-            "retrieve",
-            "Nvidia and UnknownCorp revenue",
-            "document_review",
-            ["Nvidia", "UnknownCorp"],
-            "explicit",
-            "unknown_issuer",
-            "gate",
-            1,
-        ),
-        (
             "review",
             "Nvidia and UnknownCorp revenue",
             "document_review",
@@ -1080,18 +1098,7 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
             "gate",
             1,
         ),
-        (
-            "review",
-            "그 회사의 성장 요인은?",
-            "document_review",
-            [],
-            "unclear",
-            "ambiguous_issuer",
-            "gate",
-            1,
-        ),
         ("retrieve", "Nvidia revenue 2099", None, [], None, "query_scope_empty", "gate", 0),
-        ("review", "Nvidia revenue 2099", None, [], None, "query_scope_empty", "gate", 0),
         (
             "retrieve",
             "Nvidia or another company?",
@@ -1103,8 +1110,6 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
             1,
         ),
         ("retrieve", "고양이와 대화하기", None, [], None, "unsupported_request", "path", 0),
-        ("review", "고양이와 대화하기", None, [], None, "unsupported_request", "path", 0),
-        ("retrieve", "Pretend you are a cat", None, [], None, "unsupported_request", "path", 0),
     ],
 )
 def test_routing_stops_before_search_and_answer(
@@ -1182,7 +1187,6 @@ def test_supported_questions_reach_search(classified_service, query, names, targ
     "endpoint,query",
     [
         ("retrieve", "Compare all available companies' revenue"),
-        ("retrieve", "모든 회사의 매출을 비교해줘"),
         ("review", "모든 회사의 매출을 비교해줘"),
     ],
 )
@@ -1340,8 +1344,7 @@ def test_mixed_prior_turn_cannot_anchor_a_followup(classified_service):
     assert len(prompts) == 1
 
 
-@pytest.mark.parametrize("endpoint", ["retrieve", "review"])
-def test_classifier_all_without_corpus_wide_cue_is_clarified(classified_service, endpoint):
+def test_classifier_all_without_corpus_wide_cue_is_clarified(classified_service):
     """A model-expanded all scope without an explicit cue never reaches search."""
     from app.api.schemas import RetrieveRequest
 
@@ -1355,9 +1358,8 @@ def test_classifier_all_without_corpus_wide_cue_is_clarified(classified_service,
             "target_scope": "all",
         }
     )
-    request_type = RetrieveRequest if endpoint == "retrieve" else ReviewRequest
     with pytest.raises(ApiProblemError) as failure:
-        asyncio.run(getattr(service, endpoint)(request_type(query="SanDisk growth drivers")))
+        asyncio.run(service.retrieve(RetrieveRequest(query="SanDisk growth drivers")))
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"

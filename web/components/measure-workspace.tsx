@@ -1,4 +1,5 @@
 "use client";
+import { useModalLifecycle } from "./use-modal-lifecycle";
 import { closeSidePanel } from "./side-panel-motion";
 import { SnapshotDetailDrawer } from "./snapshot-detail-drawer";
 import { PublicEvaluationWorkspace } from "./public-evaluation-workspace";
@@ -148,22 +149,11 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
   const resultRequestRef = useRef(0);
   const comparisonRequestRef = useRef(0);
   const snapshotComparisonRequestRef = useRef(0);
-  useEffect(() => {
-    if (!active || tab !== "runs" || !setupOpen) return;
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    setupRef.current?.querySelector<HTMLElement>("button, select, input")?.focus();
-    function trapFocus(event: KeyboardEvent) {
-      if (event.key !== "Tab") return;
-      const controls = Array.from(setupRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary") ?? []).filter((element) => !element.closest("details:not([open])") || element.tagName === "SUMMARY");
-      const first = controls[0]; const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }
-    document.addEventListener("keydown", trapFocus);
-    return () => { document.removeEventListener("keydown", trapFocus); document.body.style.overflow = previousOverflow; previousFocus?.focus(); };
-  }, [active, tab, setupOpen]);
+  const onSetupKeyDown = useModalLifecycle(setupRef, {
+    active: active && tab === "runs" && setupOpen,
+    lockScroll: true,
+    onDismiss: () => { if (!busy) closeSidePanel(setupRef.current, () => setSetupOpen(false)); },
+  });
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [goldenBusy, setGoldenBusy] = useState(false);
   const [sourceJsonOpen, setSourceJsonOpen] = useState(false);
@@ -730,7 +720,6 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
 
 
       {leaveAction && <UnsavedGoldenDialog
-        leaveAction={leaveAction}
         busy={goldenBusy}
         canSave={Boolean(parsedGoldenCase)}
         onContinueEditing={() => setLeaveAction(null)}
@@ -790,7 +779,7 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
           <details className="evaluation-recorded-config"><summary>{t("Recorded configuration")}</summary><pre>{JSON.stringify({ result_id: resultDetail.result_id, ...resultDetail.config }, null, 2)}</pre></details><h3>{t("Cases")}</h3>{resultDetail.cases.slice(0, 10).map((item) => <article className="case-row" key={item.case_id}><div><strong>{item.case_id}</strong><p>{item.question}</p></div><span>{item.first_relevant_rank ? t("rank {p0}", { p0: item.first_relevant_rank }) : t("miss")}</span></article>)}
           <div className="evaluation-save">{existingSnapshot && savedSnapshotResult !== selectedResultId ? <><span className="helper">{t("Search state already saved")}: <strong>{existingSnapshot.label}</strong></span><button type="button" className="button" onClick={() => openSavedSnapshot(existingSnapshot)}>{t("View saved snapshot")}<ArrowUpRight size={15} aria-hidden="true" /></button></> : <><label>{t("Snapshot label")}<input disabled={savingSnapshot} value={snapshotLabel} onChange={(event) => { setSnapshotLabel(event.target.value); setSavedSnapshotResult(null); setFailedSnapshotResult(null); }} placeholder={t("BM25 tuned baseline")} /></label><button className={`button snapshot-save-button${savedSnapshotResult === selectedResultId && selectedResultId !== null ? " saved" : ""}`} aria-busy={savingSnapshot} type="button" data-help="measure.snapshots.freeze" title={locale === "ko" ? "개발 모드 전용" : "DEV only"} disabled={savingSnapshot || selectedResultId === null || !snapshotLabel.trim()} onClick={() => void freezeSnapshot()}>{savingSnapshot ? <LoaderCircle size={16} className="snapshot-save-spinner" aria-hidden="true" /> : savedSnapshotResult === selectedResultId && selectedResultId !== null ? <Check size={16} aria-hidden="true" /> : null}<span aria-live="polite">{t(savingSnapshot ? "Saving snapshot…" : savedSnapshotResult === selectedResultId && selectedResultId !== null ? "Snapshot saved" : failedSnapshotResult === selectedResultId && selectedResultId !== null ? "Retry snapshot save" : "Save result as snapshot")}</span><span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span></button></>}</div>
         </section>}
-        {active && tab === "runs" && setupOpen && createPortal(<div className="evaluation-setup-backdrop" onClick={(event) => { if (event.target === event.currentTarget && !busy) closeSidePanel(setupRef.current, () => setSetupOpen(false)); }}><section ref={setupRef} className="surface evaluation-setup" role="dialog" aria-modal="true" aria-labelledby="new-evaluation-heading" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!busy) closeSidePanel(setupRef.current, () => setSetupOpen(false)); } }}>
+        {active && tab === "runs" && setupOpen && createPortal(<div className="evaluation-setup-backdrop" onClick={(event) => { if (event.target === event.currentTarget && !busy) closeSidePanel(setupRef.current, () => setSetupOpen(false)); }}><section ref={setupRef} onKeyDown={onSetupKeyDown} tabIndex={-1} className="surface evaluation-setup" role="dialog" aria-modal="true" aria-labelledby="new-evaluation-heading">
           <div className="surface-heading"><div><p className="eyebrow">{t("Evaluation setup")}</p><h2 id="new-evaluation-heading">{t("New evaluation")}</h2></div><button className="button icon" type="button" aria-label={t("Close evaluation setup")} disabled={busy} onClick={() => closeSidePanel(setupRef.current, () => setSetupOpen(false))}><X size={18} /></button></div>
           <div className="form-stack evaluation-setup-body"><NotificationOutlet priority={50} />
           {datasetSelect("measure.runs.suite")}

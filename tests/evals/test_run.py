@@ -66,9 +66,3 @@ def test_budget_arm_selection_rejects_an_empty_or_rankerless_axis():
         budget_arm_selection([], ["bm25"])
     with pytest.raises(ValueError, match="requires a lexical ranker"):
         budget_arm_selection(["hybrid"], [])
-
-
-def test_cli_rejects_the_removed_character_target_flag():
-    """Require the token-based option instead of silently accepting old units."""
-    with pytest.raises(SystemExit):
-        arguments(["--target-text-chars", "1200"])

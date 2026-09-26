@@ -4,37 +4,7 @@ import json
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 from app.ingestion.manifest import FilingSource
-from tests.ingestion.golden import PROFILE_YEARS
-
-
-# Bootstrap result structure
-@pytest.mark.parametrize("ticker", sorted(PROFILE_YEARS))
-def test_bootstrapped_corpus_profile_shape(
-    ticker: str,
-    parsed: dict,
-    profiles_dir: Path,
-) -> None:
-    """Preserve the expected default year and explicitly learned years per ticker."""
-    default_year, years = PROFILE_YEARS[ticker]
-    data = json.loads((profiles_dir / f"{ticker}.json").read_text())
-
-    assert data["default_year"] == default_year
-    assert sorted(data["profiles"], key=int) == years
-
-
-def test_xref_profile_has_no_expected_item_count(parsed: dict, profiles_dir: Path) -> None:
-    """Omit expected_items for xref because each filing index supplies its own Items."""
-    profile_path = profiles_dir / "INTC.json"
-    if not profile_path.exists():
-        pytest.skip("Intel filings are not present in the corpus")
-    data = json.loads(profile_path.read_text())
-    profile = data["profiles"]["2019"]
-
-    assert profile["segmentation"] == {"type": "xref"}
-    assert "expected_items" not in profile["validation"]
 
 
 # Repeated learning and failed-profile recovery

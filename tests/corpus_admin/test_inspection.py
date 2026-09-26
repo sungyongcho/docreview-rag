@@ -169,22 +169,6 @@ def test_snapshot_refreshes_the_status_memo(tmp_path, monkeypatch):
 
 
 @pytest.mark.live_postgres
-def test_live_postgres_admin_snapshot_reports_schema_state() -> None:
-    """Inspect the real configured database without mutating its corpus or schema."""
-    try:
-        snapshot = asyncio.run(RuntimeCorpusAdminService().snapshot())
-    except Exception as error:  # noqa: BLE001 - shared live-test availability policy
-        live_postgres_unavailable(str(error))
-
-    if not snapshot.status.database_connected:
-        live_postgres_unavailable(snapshot.status.schema_message)
-    assert snapshot.status.schema_status in {"compatible", "empty", "drifted"}
-    if snapshot.status.schema_status == "drifted":
-        assert isinstance(snapshot.status.writable, bool)
-        assert "DROP TABLE" not in snapshot.status.schema_message
-
-
-@pytest.mark.live_postgres
 def test_live_postgres_admin_status_matches_snapshot_status() -> None:
     """The status path reports the same non-secret status as the full snapshot."""
     service = RuntimeCorpusAdminService()

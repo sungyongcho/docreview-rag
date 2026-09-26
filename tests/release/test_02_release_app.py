@@ -1,6 +1,5 @@
 """Canned-default release application and runtime composition tests."""
 
-from dataclasses import asdict
 from decimal import Decimal
 from typing import cast
 
@@ -14,10 +13,9 @@ from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.corpus_admin.types import CorpusStatus
 from app.llm.schemas import RawProviderResponse
 from app.observability.types import RunReport, build_run_report
-from app.release.ai_allowance import SharedAIAllowance, reserve_openai
+from app.release.ai_allowance import reserve_openai
 from app.release.app import build_runtime_services, create_release_app
 from app.release.config import ReleaseSettings
-from app.release.middleware import ReleaseGuardMiddleware
 from app.retrieval.embeddings import (
     DeterministicEmbeddingProvider,
     EmbeddingClient,
@@ -47,14 +45,6 @@ def _run_report() -> RunReport:
         steps=(),
         report=report.model_dump(mode="json"),
     )
-
-
-def _guard_kwargs(app) -> dict[str, object]:
-    """Return the keyword arguments the release app handed to its request guard."""
-    guard = next(
-        middleware for middleware in app.user_middleware if middleware.cls is ReleaseGuardMiddleware
-    )
-    return guard.kwargs
 
 
 class _MeteredReview:
@@ -121,28 +111,32 @@ def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> N
     ],
 )
 def test_public_readiness_publishes_counts_and_withholds_only_write_access(
-    environment, admin_mode, headers, public, ready
+    monkeypatch, environment, admin_mode, headers, public, ready
 ) -> None:
     """Public views receive corpus totals and health evidence; only write access stays private."""
-    status = {
-        "database_connected": True,
-        "schema_status": "compatible" if ready else "drifted",
-        "schema_message": "Schema fixture",
-        "documents": 30,
-        "chunks": 900,
-        "embedded_chunks": 900 if ready else 800,
-        "pending_embeddings": 0 if ready else 100,
-        "bm25_ready": ready,
-        "writable": True,
-    }
+    status = CorpusStatus(
+        database_connected=True,
+        schema_status="compatible" if ready else "drifted",
+        schema_message="Schema fixture",
+        documents=30,
+        chunks=900,
+        embedded_chunks=900 if ready else 800,
+        pending_embeddings=0 if ready else 100,
+        bm25_ready=ready,
+        writable=True,
+        provider="deterministic",
+    )
 
-    async def probe():
+    async def status_probe(self, *, max_age_s=0.0) -> CorpusStatus:
         """Supply private corpus status without accessing a database or provider."""
-        return {"status": status, "documents": [{"issuer_name": "PRIVATE_COMPANY_FIXTURE"}]}
+        return status
 
+    monkeypatch.setattr(RuntimeCorpusAdminService, "status", status_probe)
     settings = load_settings(
         ReleaseSettings,
         env_file=None,
+        openai_api_key_dev=None,
+        openai_api_key_prod=None,
         environment=environment,
         admin_mode=admin_mode,
         service_mode="runtime",
@@ -152,7 +146,6 @@ def test_public_readiness_publishes_counts_and_withholds_only_write_access(
         create_release_app(
             settings,
             services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-            readiness_probe=probe,
         )
     ) as client:
         response = client.get("/ready", headers=headers)
@@ -160,7 +153,7 @@ def test_public_readiness_publishes_counts_and_withholds_only_write_access(
     payload = response.json()
     assert payload["status"] == ("ready" if ready else "degraded")
     corpus = payload["corpus"]
-    assert corpus["writable"] == (None if public else status["writable"])
+    assert corpus["writable"] == (None if public else status.writable)
     for field in (
         "documents",
         "chunks",
@@ -171,9 +164,11 @@ def test_public_readiness_publishes_counts_and_withholds_only_write_access(
         "schema_message",
         "bm25_ready",
     ):
-        assert corpus[field] == status[field]
+        assert corpus[field] == getattr(status, field)
     assert corpus["availability"] == ("ready" if ready else "degraded")
-    assert "PRIVATE_COMPANY_FIXTURE" not in response.text
+    assert "provider" not in corpus
+    assert payload["review_enabled"] is False
+    assert payload["review_engines"]["openai"]["key_slot"] is None
 
 
 def test_canned_mode_refuses_an_unconfigured_review_with_headers_set(monkeypatch, tmp_path) -> None:
@@ -193,23 +188,46 @@ def test_canned_mode_refuses_an_unconfigured_review_with_headers_set(monkeypatch
     ("mode", "environment"),
     [("canned", "dev"), ("runtime", "dev"), ("runtime", "prod")],
 )
-def test_every_mode_guards_with_the_shared_allowance(
+def test_release_modes_keep_provider_free_requests_free_and_persist_paid_limits(
     monkeypatch, tmp_path, mode, environment
 ) -> None:
-    """Build one allowance type in every mode so metering cannot differ between them."""
+    """Canned requests cannot spend; runtime admission survives application recreation."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("MODE", environment)
-    settings = ReleaseSettings(service_mode=mode, host="127.0.0.1")
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
+        service_mode=mode,
+        environment=environment,
+        host="127.0.0.1",
+        rate_limit_per_minute=1,
+        rate_limit_per_day=1,
+        public_allowance_path=tmp_path / "allowance.sqlite3",
+    )
     services = (
         RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
         if mode == "runtime"
         else None
     )
+    app = create_release_app(settings, services=services)
+    request = {"query": "What was revenue?"}
+    if mode == "canned":
+        with TestClient(app) as client:
+            assert client.post("/review", json=request).status_code == 503
+            assert client.get("/limits").json()["remaining_minute"] == 1
+        return
 
-    kwargs = _guard_kwargs(create_release_app(settings, services=services))
-
-    assert isinstance(kwargs["allowance"], SharedAIAllowance)
-    assert kwargs["allowance"].path == settings.public_allowance_path
+    review = _MeteredReview(1, Decimal("0.001"))
+    app.dependency_overrides[get_api_services] = lambda: review
+    with TestClient(app) as client:
+        assert client.post("/review", json=request).status_code == 200
+        assert client.get("/limits").json()["remaining_minute"] == 0
+    restarted = create_release_app(settings, services=services)
+    restarted.dependency_overrides[get_api_services] = lambda: review
+    with TestClient(restarted) as client:
+        denied = client.post("/review", json=request)
+    assert denied.status_code == 429
+    assert denied.json()["error"]["code"] == "rate_limited"
+    assert review.calls == 1
 
 
 def test_public_review_meters_every_provider_call_against_the_day_cap(
@@ -239,6 +257,7 @@ def test_public_review_meters_every_provider_call_against_the_day_cap(
     assert Decimal(limits["remaining_daily_cost_usd"]) == 0
     assert second.status_code == 429
     assert second.json()["error"]["code"] == "daily_cost_limit"
+    assert int(second.headers["retry-after"]) > 0
     assert review.calls * review.amount <= settings.public_daily_cost_usd
 
 
@@ -276,11 +295,14 @@ def test_public_ai_routes_are_rate_limited_while_exempt_requests_pass(
     assert "x-ratelimit-remaining-minute" not in free.headers
     assert untouched["remaining_minute"] == 1
     assert admitted.status_code == 200
+    assert admitted.headers["x-content-type-options"] == "nosniff"
+    assert admitted.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
     assert admitted.headers["x-ratelimit-remaining-minute"] == "0"
     assert denied.status_code == 429
     assert denied.json()["error"]["code"] == "rate_limited"
     assert int(denied.headers["retry-after"]) > 0
     assert denied.headers["x-content-type-options"] == "nosniff"
+    assert denied.headers["cache-control"] == "no-store"
     assert free_after.status_code == 200
     assert private_after.status_code == 200
 
@@ -299,9 +321,9 @@ def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypat
             [RawProviderResponse(output_text="{}", input_tokens=0, output_tokens=0)]
         )
 
+    monkeypatch.setattr("app.release.app.OpenAILLMProvider", provider_factory)
     services = build_runtime_services(
-        load_settings(ReleaseSettings, service_mode="runtime", env_file=None),
-        provider_factory=provider_factory,
+        load_settings(ReleaseSettings, service_mode="runtime", env_file=None)
     )
 
     assert captured == {"model_name": "gpt-5.6-luna", "api_key": secret}
@@ -372,7 +394,6 @@ def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
         live_settings,
         services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
     )
-    guard = _guard_kwargs(live)
     with TestClient(live) as client:
         live_paths = set(client.get("/openapi.json").json()["paths"])
         capabilities = client.get("/capabilities").json()
@@ -382,9 +403,6 @@ def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
     assert "/admin/evaluations/runs" in live_paths
     assert capabilities["can_edit_prompt_policy"] is True
     assert capabilities["can_run_evaluation"] is True
-    assert guard["enforce_rate_limit"] is False
-    assert isinstance(guard["allowance"], SharedAIAllowance)
-    assert guard["public_read_only"] is False
 
 
 def test_capabilities_and_limit_peek_reflect_release_mode_without_consuming_slots() -> None:
@@ -456,85 +474,26 @@ def test_release_uses_configured_embedding_identity_and_credential_slot(
     assert services._credential_slot == environment
 
 
-def test_runtime_readiness_default_probe_shares_admin_status_and_keeps_the_payload(
-    monkeypatch,
-) -> None:
-    """The default probe reads the memoized administrator status, matches an injected probe,
-    and reports corpus readiness separately from provider availability."""
-    for name in ("OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "OPENAI_API_KEY_DEV", "MODE"):
-        monkeypatch.delenv(name, raising=False)
-    status = CorpusStatus(
-        database_connected=True,
-        schema_status="compatible",
-        schema_message="compatible",
-        documents=2,
-        chunks=20,
-        embedded_chunks=20,
-        pending_embeddings=0,
-        bm25_ready=True,
-        writable=True,
-        provider="deterministic",
-    )
-    ages: list[float] = []
-
-    async def fake_status(self, *, max_age_s: float = 0.0) -> CorpusStatus:
-        """Serve the fixed status and record the reuse window the caller allowed."""
-        ages.append(max_age_s)
-        return status
-
-    monkeypatch.setattr(RuntimeCorpusAdminService, "status", fake_status)
-
-    async def injected_probe():
-        """Return the same status through the injection seam."""
-        return {"status": asdict(status)}
-
-    settings = load_settings(
-        ReleaseSettings, service_mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
-    )
-    with TestClient(
-        create_release_app(
-            settings,
-            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-        )
-    ) as client:
-        default = client.get("/ready")
-    with TestClient(
-        create_release_app(
-            settings,
-            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-            readiness_probe=injected_probe,
-        )
-    ) as client:
-        injected = client.get("/ready")
-
-    assert ages == [2.0]
-    assert default.status_code == injected.status_code == 200
-    assert default.text == injected.text
-    assert default.json()["status"] == "ready"
-    assert default.json()["review_enabled"] is False
-    assert default.json()["review_engines"]["openai"]["key_slot"] is None
-
-
-def test_bm25_missing_is_normal_preparation_after_embeddings_finish():
+def test_bm25_missing_is_normal_preparation_after_embeddings_finish(monkeypatch):
     """Expose BM25 preparation as degraded without misreporting schema or database failure."""
 
-    async def probe():
+    async def status_probe(self, *, max_age_s=0.0) -> CorpusStatus:
         """Report a populated vector index whose BM25 stage has not yet run."""
-        return {
-            "status": {
-                "database_connected": True,
-                "schema_status": "compatible",
-                "schema_message": "ok",
-                "documents": 1,
-                "chunks": 10,
-                "embedded_chunks": 10,
-                "pending_embeddings": 0,
-                "bm25_ready": False,
-                "bm25_rebuild_recorded": True,
-                "writable": True,
-            }
-        }
+        return CorpusStatus(
+            database_connected=True,
+            schema_status="compatible",
+            schema_message="ok",
+            documents=1,
+            chunks=10,
+            embedded_chunks=10,
+            pending_embeddings=0,
+            bm25_ready=False,
+            bm25_rebuild_recorded=True,
+            writable=True,
+            provider="deterministic",
+        )
 
+    monkeypatch.setattr(RuntimeCorpusAdminService, "status", status_probe)
     settings = load_settings(
         ReleaseSettings, service_mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
     )
@@ -542,7 +501,6 @@ def test_bm25_missing_is_normal_preparation_after_embeddings_finish():
         create_release_app(
             settings,
             services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-            readiness_probe=probe,
         )
     ) as client:
         response = client.get("/ready")
@@ -553,7 +511,7 @@ def test_bm25_missing_is_normal_preparation_after_embeddings_finish():
     assert response.json()["corpus"]["bm25_rebuild_recorded"] is True
 
 
-def test_readiness_reports_update_without_hiding_existing_counts():
+def test_readiness_reports_update_without_hiding_existing_counts(monkeypatch):
     """An active writer overrides cached ready counts and clears when the update ends."""
     import asyncio
 
@@ -563,24 +521,25 @@ def test_readiness_reports_update_without_hiding_existing_counts():
         """Use the same event loop for the application and its admission gate."""
         runtime = RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
 
-        async def probe():
+        async def status_probe(self, *, max_age_s=0.0) -> CorpusStatus:
             """Return a populated, previously ready corpus without database calls."""
-            return {
-                "status": {
-                    "database_connected": True,
-                    "schema_status": "compatible",
-                    "documents": 1,
-                    "chunks": 2,
-                    "embedded_chunks": 2,
-                    "pending_embeddings": 0,
-                    "bm25_ready": True,
-                }
-            }
+            return CorpusStatus(
+                database_connected=True,
+                schema_status="compatible",
+                schema_message="compatible",
+                documents=1,
+                chunks=2,
+                embedded_chunks=2,
+                pending_embeddings=0,
+                bm25_ready=True,
+                writable=False,
+                provider="deterministic",
+            )
 
+        monkeypatch.setattr(RuntimeCorpusAdminService, "status", status_probe)
         app = create_release_app(
             load_settings(ReleaseSettings, service_mode="runtime", host="127.0.0.1", env_file=None),
             services=runtime,
-            readiness_probe=probe,
         )
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
@@ -595,3 +554,30 @@ def test_readiness_reports_update_without_hiding_existing_counts():
             assert response.json()["corpus"]["updating"] is False
 
     asyncio.run(exercise())
+
+
+def test_runtime_readiness_exposes_probe_failure_without_private_details(monkeypatch):
+    """A failing status dependency remains an unavailable 503 without disclosing its message."""
+
+    async def status_probe(self, *, max_age_s=0.0) -> CorpusStatus:
+        """Fail at the status boundary before any database or provider work."""
+        raise RuntimeError("private dependency details")
+
+    monkeypatch.setattr(RuntimeCorpusAdminService, "status", status_probe)
+    settings = load_settings(
+        ReleaseSettings, service_mode="runtime", environment="prod", env_file=None
+    )
+    with TestClient(
+        create_release_app(
+            settings,
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+        )
+    ) as client:
+        response = client.get("/ready")
+
+    assert response.status_code == 503
+    corpus = response.json()["corpus"]
+    assert corpus["availability"] == "unavailable"
+    assert corpus["schema_message"] == "RuntimeError"
+    assert corpus["database_connected"] is None
+    assert "private dependency details" not in response.text

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenAICallLimits, Readiness } from "@/lib/types";
 import { DefaultRunLimits } from "./default-run-limits";
+import { expectNoUnexpectedRequests, jsonResponse, stubHttp } from "@/lib/http-test-support";
 
 const CAPS: OpenAICallLimits = {
   max_input_tokens: 12000, max_output_tokens: 600, max_cost_usd: "0.04",
@@ -16,11 +17,7 @@ const READINESS = {
   corpus: { availability: "ready", database_connected: true, schema_status: "compatible", schema_message: null, documents: 1, chunks: 1, embedded_chunks: 1, pending_embeddings: 0, bm25_ready: true, writable: true },
 } as unknown as Readiness;
 
-function jsonResponse(payload: unknown, status = 200) {
-  return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
-}
-
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); expectNoUnexpectedRequests(); });
 
 describe("DefaultRunLimits OpenAI per-call caps", () => {
   it("shows the ceiling read-only when the caps are not editable", () => {
@@ -35,11 +32,10 @@ describe("DefaultRunLimits OpenAI per-call caps", () => {
 
   it("bounds the inputs by the ceiling and saves lower working values on the server", async () => {
     const saved = { ...CAPS, max_output_tokens: 300, source: "saved", ceiling_env_keys: {}, file_path: "data/local-settings/openai-limits.json" };
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "POST") return jsonResponse(saved);
-      return jsonResponse({ ...CAPS, ceiling_env_keys: {}, file_path: "data/local-settings/openai-limits.json" });
+    const fetchMock = stubHttp({
+      "GET /admin/openai/limits": () => jsonResponse({ ...CAPS, ceiling_env_keys: {}, file_path: "data/local-settings/openai-limits.json" }),
+      "POST /admin/openai/limits": () => jsonResponse(saved),
     });
-    vi.stubGlobal("fetch", fetchMock);
     render(<DefaultRunLimits readiness={READINESS} capsEditable />);
     const output = await screen.findByLabelText("Per-call output tokens");
     expect(output).toHaveAttribute("max", "600");

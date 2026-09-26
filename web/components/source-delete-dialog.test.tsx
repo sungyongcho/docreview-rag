@@ -40,12 +40,20 @@ describe("source deletion confirmation", () => {
   });
 
   it("requires confirmation of the token and reports queued status until Jobs completes", async () => {
-    const confirm = vi.fn().mockResolvedValue(undefined); const jobs = vi.fn();
+    let finish!: () => void;
+    const confirm = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    const jobs = vi.fn();
     render(<SourceDeleteDialog documentIds={["filing-a", "filing-b"]} disabled={false} onConfirm={confirm} onOpenJobs={jobs} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
     const button = await screen.findByRole("button", { name: "Confirm deletion of originals" });
     expect(confirm).not.toHaveBeenCalled();
     fireEvent.click(button);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toHaveTextContent("Queuing source deletion…");
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+    expect(screen.getByRole("dialog")).toHaveFocus();
+    await act(async () => finish());
     await screen.findByText("Source deletion queued. Files are not deleted yet; check Jobs for the result.");
     expect(confirm).toHaveBeenCalledExactlyOnceWith("reviewed-token");
     fireEvent.click(screen.getByRole("button", { name: "Open Jobs" }));
@@ -71,7 +79,7 @@ describe("source deletion confirmation", () => {
     const confirm = vi.fn();
     render(<SourceDeleteDialog documentIds={["filing-a"]} disabled={false} onConfirm={confirm} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     await act(async () => resolve(preview()));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(confirm).not.toHaveBeenCalled();
@@ -83,8 +91,8 @@ describe("source deletion confirmation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
     const confirm = await screen.findByRole("button", { name: "Confirm deletion of originals" });
     const cancel = screen.getByRole("button", { name: "Cancel" });
-    confirm.focus(); fireEvent.keyDown(window, { key: "Tab" }); expect(cancel).toHaveFocus();
-    fireEvent.keyDown(window, { key: "Tab", shiftKey: true }); expect(confirm).toHaveFocus();
+    confirm.focus(); fireEvent.keyDown(document.activeElement!, { key: "Tab" }); expect(cancel).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true }); expect(confirm).toHaveFocus();
     rerender(<RetainedPanel active={false}><SourceDeleteDialog {...props} /></RetainedPanel>);
     expect(screen.queryByRole("dialog")).toBeNull();
     rerender(<RetainedPanel active><SourceDeleteDialog {...props} disabled /></RetainedPanel>);

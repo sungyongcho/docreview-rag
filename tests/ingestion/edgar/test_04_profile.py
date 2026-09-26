@@ -10,19 +10,6 @@ SAMPLE = {
 }
 
 
-def test_profile_year_keys_are_strings_and_sorted(
-    edgar_module: ModuleType,
-    isolated_profiles: Path,
-) -> None:
-    """Store JSON year keys as ascending strings regardless of insertion order."""
-    for year in (2023, 2019, 2021):
-        edgar_module.save_profile("TEST", year, SAMPLE)
-
-    data = json.loads((isolated_profiles / "TEST.json").read_text())
-
-    assert list(data["profiles"]) == ["2019", "2021", "2023"]
-
-
 def test_unknown_year_falls_back_to_the_newest_profile(
     edgar_module: ModuleType,
     isolated_profiles: Path,

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { expectNoUnexpectedRequests, jsonResponse, stubHttp } from "@/lib/http-test-support";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DEFAULT_SESSION_PROFILE, type ReviewSessionDraft } from "@/lib/types";
@@ -7,8 +8,8 @@ import { ConversationSettings, type ConversationSettingsTab } from "./conversati
 import { RetrievalPresetSelect } from "./retrieval-preset-select";
 import { RetrievalPresetManager } from "./retrieval-preset-manager";
 
-beforeEach(() => { localStorage.clear(); vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ issuers: [], languages: [], years: [], forms: [] }), { status: 200 }))); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+beforeEach(() => { localStorage.clear(); stubHttp({ "GET /admin/documents/facets": () => jsonResponse({ issuers: [], languages: [], years: [], forms: [] }) }); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); expectNoUnexpectedRequests(); });
 
 /** Model the same lifted conversation state used by ServiceShell. */
 function Editor() {
@@ -57,7 +58,7 @@ it("keeps management navigation separate from selection and hides saved presets 
 });
 
 it("offers explicit dropdowns for all addable filters and uses returned section choices", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ issuers: [{ value: "NVDA", count: 1 }], languages: [{ value: "en", count: 1 }], years: [{ value: "2024", count: 1 }], forms: [{ value: "10-K", count: 1 }], sections: [{ value: "7", count: 1 }, { value: "unsectioned", count: 1 }] }), { status: 200 })));
+  stubHttp({ "GET /admin/documents/facets": () => jsonResponse({ issuers: [{ value: "NVDA", count: 1 }], languages: [{ value: "en", count: 1 }], years: [{ value: "2024", count: 1 }], forms: [{ value: "10-K", count: 1 }], sections: [{ value: "7", count: 1 }, { value: "unsectioned", count: 1 }] }) });
   const change = vi.fn();
   render(<ConversationSettings profile={DEFAULT_SESSION_PROFILE} tab="filters" editable onChange={change} onTabChange={vi.fn()} onClose={vi.fn()} />);
   const sectionToggle = screen.getByRole("button", { name: "Show Sections choices" });
@@ -88,10 +89,15 @@ it("saves presets with 500 candidates and fractional BM25 values", () => {
   expect(screen.getByRole("button", { name: "Wide fractional search" })).toBeVisible();
 });
 
-it("shows server policy guidance in public mode without local CPU advice", () => {
+it("shows server policy guidance in public mode without local CPU advice", async () => {
+  stubHttp({ "GET /limits": () => jsonResponse({
+    prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, max_context_chars: 4321 },
+    per_call: { max_input_tokens: 1234, max_output_tokens: 432, max_cost_usd: "0.02" },
+  }) });
   render(<ConversationSettings profile={DEFAULT_SESSION_PROFILE} tab="limits" editable={false} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} />);
   expect(screen.getByText("Question execution limits")).toBeVisible();
   expect(screen.queryByText(/CPU start:/)).not.toBeInTheDocument();
   expect(screen.queryByRole("combobox", { name: "Limit preset" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
+  expect(await screen.findByText("4,321")).toBeVisible();
 });

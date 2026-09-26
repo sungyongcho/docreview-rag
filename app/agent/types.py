@@ -14,6 +14,7 @@ from app.llm.schemas import (
     NonNegativeInt,
     PositiveInt,
     StrictSchema,
+    TokenUsageDetails,
 )
 from app.retrieval.types import SourceSha256
 
@@ -63,16 +64,13 @@ class Observation(StrictSchema):
         return self
 
 
-class StepUsage(StrictSchema):
+class StepUsage(TokenUsageDetails):
     """Provider accounting for one agent iteration."""
 
     model_name: NonBlank
     api_url: NonBlank
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
-    cached_input_tokens: NonNegativeInt = 0
-    cache_write_input_tokens: NonNegativeInt = 0
-    reasoning_tokens: NonNegativeInt = 0
     estimated_cost_usd: NonNegativeDecimal = Decimal("0")
     request_time_ms: NonNegativeFloat
     retries: NonNegativeInt = 0
@@ -80,11 +78,7 @@ class StepUsage(StrictSchema):
     @model_validator(mode="after")
     def validate_usage_details(self) -> Self:
         """Keep detailed token counters within their provider totals."""
-        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
-            raise ValueError("detailed input tokens must not exceed input_tokens")
-        if self.reasoning_tokens > self.output_tokens:
-            raise ValueError("reasoning_tokens must not exceed output_tokens")
-        return self
+        return self._validate_token_totals(self.input_tokens, self.output_tokens)
 
 
 class AgentStep(StrictSchema):

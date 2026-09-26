@@ -1,53 +1,19 @@
 """History maintenance against an explicitly isolated PostgreSQL schema."""
 
 import asyncio
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import json
-import os
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import Table, select, text
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import OperatorJob
 from app.operator.job_history import ARCHIVE_KEY, HistoryConflictError, JobHistoryService
 from app.operator.jobs import JobStore
-
-
-@asynccontextmanager
-async def isolated_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """Create only a unique test schema on the dedicated isolated database port."""
-    url_text = os.environ.get("DOCREVIEW_HISTORY_TEST_DATABASE_URL")
-    if not url_text:
-        pytest.skip("Set DOCREVIEW_HISTORY_TEST_DATABASE_URL to the isolated port 55439")
-    url = make_url(url_text)
-    if url.host not in ("localhost", "127.0.0.1") or url.port != 55439:
-        pytest.fail("History tests require localhost port 55439; refusing another database")
-    schema = f"history_test_{uuid4().hex}"
-    admin = create_async_engine(url, poolclass=NullPool)
-    engine = create_async_engine(
-        url, poolclass=NullPool, connect_args={"server_settings": {"search_path": schema}}
-    )
-    try:
-        async with admin.begin() as connection:
-            await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-        # Declarative models type `__table__` as a FromClause; only a Table can be created.
-        operator_jobs = OperatorJob.__table__
-        assert isinstance(operator_jobs, Table)
-        async with engine.begin() as connection:
-            await connection.run_sync(operator_jobs.create)
-        yield async_sessionmaker(engine, expire_on_commit=False)
-    finally:
-        await engine.dispose()
-        async with admin.begin() as connection:
-            await connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
-        await admin.dispose()
+from tests.live_postgres import isolated_session_factory
 
 
 async def seed(factory: async_sessionmaker[AsyncSession]) -> None:
@@ -81,7 +47,7 @@ def test_restored_evaluation_is_visible_without_restarting_its_service(tmp_path:
 
     async def scenario() -> None:
         """Archive before service startup, then restore through the real history owner."""
-        async with isolated_factory() as factory:
+        async with isolated_session_factory() as factory:
             store = JobStore(session_factory=factory)
             request = EvaluationRunRequest(suite_id="sec-en")
             created = await store.create(
@@ -130,7 +96,7 @@ def test_archive_restore_and_backed_up_delete(tmp_path: Path) -> None:
 
     async def scenario() -> None:
         """Exercise the service and production list filter in an isolated schema."""
-        async with isolated_factory() as factory:
+        async with isolated_session_factory() as factory:
             await seed(factory)
             service = JobHistoryService(factory, tmp_path / "backups")
             store = JobStore(session_factory=factory)
@@ -178,7 +144,7 @@ def test_backup_failure_preserves_records(tmp_path: Path, monkeypatch: pytest.Mo
 
     async def scenario() -> None:
         """Raise at atomic publication after the temporary backup has been written."""
-        async with isolated_factory() as factory:
+        async with isolated_session_factory() as factory:
             await seed(factory)
             service = JobHistoryService(factory, tmp_path / "backups")
             await service.apply("archive", 4)

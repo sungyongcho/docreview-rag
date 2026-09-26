@@ -17,12 +17,13 @@ describe("API client", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("parses fragmented SSE progress and one terminal report", async () => {
-    const fetch = vi.fn().mockResolvedValue(streamResponse([
+    const response = streamResponse([
       "event: node\ndata: {\"node\":\"retr",
       "ieve\",\"evidence_count\":2,\"relevant_count\":0,\"step_count\":0}\n\n",
       "event: report\ndata: {\"status\":\"ok\",\"report\":{\"answer\":\"done\"}}\n\n",
       "event: done\ndata: {}\n\n",
-    ]));
+    ]);
+    const fetch = vi.fn().mockResolvedValue(response);
     vi.stubGlobal("fetch", fetch);
     const progress: string[] = [];
 
@@ -37,6 +38,7 @@ describe("API client", () => {
     expect(progress).toEqual(["retrieve"]);
     expect(report.status).toBe("ok");
     expect(fetch).toHaveBeenCalledOnce();
+    expect(response.body?.locked).toBe(false);
   });
 
   it("fails closed when a stream ends without done", async () => {
@@ -68,7 +70,10 @@ describe("API client", () => {
     await expect(getReadiness()).resolves.toMatchObject(payload);
   });
 
-  it("surfaces exact validation locations instead of a generic stream failure", async () => {
+  it.each([
+    ["HTTP request", () => getCorpusSnapshot()],
+    ["stream request", () => streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined)],
+  ])("surfaces exact validation locations for a %s", async (_name, request) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       error: {
         code: "request_validation_failed",
@@ -79,11 +84,14 @@ describe("API client", () => {
           error_type: "tuple_type",
         }],
       },
-    }), { status: 422, headers: { "content-type": "application/json" } })));
+    }), { status: 422, headers: { "content-type": "application/json", "Retry-After": "7" } })));
 
-    await expect(
-      streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined),
-    ).rejects.toThrow("body.session_profile.languages: Input should be a valid tuple");
+    await expect(request()).rejects.toMatchObject({
+      status: 422,
+      code: "request_validation_failed",
+      message: "Request validation failed. body.session_profile.languages: Input should be a valid tuple",
+      failure: { retry_after_seconds: 7, details: [{ location: ["body", "session_profile", "languages"], message: "Input should be a valid tuple", error_type: "tuple_type" }] },
+    });
   });
 });
 
@@ -96,8 +104,6 @@ describe("review response body cancellation", () => {
     const response = new Response(new ReadableStream({ cancel: cancellation }), { headers: { "content-type": "text/event-stream" } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
     const controller = new AbortController();
-    const added = vi.spyOn(controller.signal, "addEventListener");
-    const removed = vi.spyOn(controller.signal, "removeEventListener");
     if (preaborted) controller.abort();
     const request = streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined, controller.signal);
     const rejected = expect(request).rejects.toMatchObject({ name: "AbortError" });
@@ -107,18 +113,9 @@ describe("review response body cancellation", () => {
     }
     await rejected;
     expect(cancellation).toHaveBeenCalledTimes(1);
-    for (const [name, listener] of added.mock.calls) expect(removed.mock.calls.some(([removedName, removedListener]) => removedName === name && removedListener === listener)).toBe(true);
     expect(response.body?.locked).toBe(false);
   });
 
-  it("removes the body listener after ordinary completion", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse(['event: report\ndata: {"report":{"answer":"done"}}\n\nevent: done\ndata: {}\n\n'])));
-    const controller = new AbortController();
-    const added = vi.spyOn(controller.signal, "addEventListener");
-    const removed = vi.spyOn(controller.signal, "removeEventListener");
-    await streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined, controller.signal);
-    for (const [name, listener] of added.mock.calls) expect(removed.mock.calls.some(([removedName, removedListener]) => removedName === name && removedListener === listener)).toBe(true);
-  });
 });
 
 

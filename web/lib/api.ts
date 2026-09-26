@@ -61,6 +61,27 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${normalized}${query}`;
 }
 
+/** Decode the shared HTTP error envelope for JSON and streaming requests. */
+function responseError(response: Response, payload: Record<string, unknown>, defaultCode: string, defaultMessage: string): ApiError {
+  const error = (payload.error ?? {}) as Record<string, unknown>;
+  const retryAfter = Number(response.headers.get("Retry-After"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) error.retry_after_seconds = retryAfter;
+  const details = Array.isArray(error.details) ? error.details.map((item) => {
+    const detail = item as Record<string, unknown>;
+    const location = Array.isArray(detail.location) ? detail.location.join(".") : "request";
+    return `${location}: ${String(detail.message ?? "invalid value")}`;
+  }) : [];
+  const message = String(error.message ?? defaultMessage);
+  return new ApiError(
+    response.status,
+    String(error.code ?? defaultCode),
+    details.length ? `${message} ${details.join(" · ")}` : message,
+    error.path_decision as ReviewPathDecision | undefined,
+    error,
+  );
+}
+
+/** Send one JSON request and preserve the API's typed failure details. */
 async function request<T>(path: string, init?: TimedRequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const read = method === "GET" || method === "HEAD";
@@ -84,20 +105,7 @@ async function request<T>(path: string, init?: TimedRequestInit): Promise<T> {
   } catch {
     throw new ApiError(response.status, "invalid_response", `The API returned an unexpected response (HTTP ${response.status}).`);
   }
-  if (!response.ok) {
-    const error = (payload.error ?? {}) as Record<string, unknown>;
-    const retryAfter = Number(response.headers.get("Retry-After"));
-    if (Number.isFinite(retryAfter) && retryAfter > 0) error.retry_after_seconds = retryAfter;
-    const details = Array.isArray(error.details) ? error.details.map(String) : [];
-    const message = String(error.message ?? "The request failed.");
-    throw new ApiError(
-      response.status,
-      String(error.code ?? "request_failed"),
-      details.length ? `${message} ${details.join(" · ")}` : message,
-      error.path_decision as ReviewPathDecision | undefined,
-      error,
-    );
-  }
+  if (!response.ok) throw responseError(response, payload, "request_failed", "The request failed.");
   return payload as T;
 }
 
@@ -169,24 +177,7 @@ export async function streamReview(
   });
   if (!response.ok || !response.body) {
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-    const error = (payload.error ?? {}) as Record<string, unknown>;
-    const retryAfter = Number(response.headers.get("Retry-After"));
-    if (Number.isFinite(retryAfter) && retryAfter > 0) error.retry_after_seconds = retryAfter;
-    const details = Array.isArray(error.details)
-      ? error.details.map((item) => {
-        const detail = item as Record<string, unknown>;
-        const location = Array.isArray(detail.location) ? detail.location.join(".") : "request";
-        return `${location}: ${String(detail.message ?? "invalid value")}`;
-      })
-      : [];
-    const message = String(error.message ?? "Review stream failed.");
-    throw new ApiError(
-      response.status,
-      String(error.code ?? "stream_failed"),
-      details.length ? `${message} ${details.join(" · ")}` : message,
-      error.path_decision as ReviewPathDecision | undefined,
-      error,
-    );
+    throw responseError(response, payload, "stream_failed", "Review stream failed.");
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

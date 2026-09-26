@@ -1,5 +1,4 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EvidenceCandidates } from "./evidence-candidates";
@@ -24,29 +23,9 @@ function message(evidence: EvidenceHit[], overrides: Partial<ChatMessage> = {}):
   return { id: "m1", role: "assistant", text: "Answer", evidence, candidateToken: "token", pinnedChunkIds: [], excludedChunkIds: [], ...overrides };
 }
 
-/** Mirrors `markEvidence` in the shell so pins and exclusions live on the message and survive paging. */
-function Harness({ initial, busy = false, onUseSelected = () => undefined }: { initial: ChatMessage; busy?: boolean; onUseSelected?: () => void }) {
-  const [current, setCurrent] = useState(initial);
-  function mark(chunkId: number, mode: "pin" | "exclude") {
-    setCurrent((previous) => {
-      const pins = new Set(previous.pinnedChunkIds ?? []);
-      const excludes = new Set(previous.excludedChunkIds ?? []);
-      if (mode === "pin") {
-        excludes.delete(chunkId);
-        if (pins.has(chunkId)) pins.delete(chunkId); else pins.add(chunkId);
-      } else {
-        pins.delete(chunkId);
-        if (excludes.has(chunkId)) excludes.delete(chunkId); else excludes.add(chunkId);
-      }
-      return { ...previous, pinnedChunkIds: [...pins], excludedChunkIds: [...excludes] };
-    });
-  }
-  return (
-    <details open>
-      <summary>Retrieved evidence candidates</summary>
-      <EvidenceCandidates key={current.id} message={current} busy={busy} onMark={mark} onUseSelected={onUseSelected} />
-    </details>
-  );
+/** Render the controlled view; the shell owns pin/exclude updates. */
+function EvidenceView({ initial, busy = false, onMark = () => undefined, onUseSelected = () => undefined }: { initial: ChatMessage; busy?: boolean; onMark?: (chunkId: number, mode: "pin" | "exclude") => void; onUseSelected?: () => void }) {
+  return <details open><summary>Retrieved evidence candidates</summary><EvidenceCandidates message={initial} busy={busy} onMark={onMark} onUseSelected={onUseSelected} /></details>;
 }
 
 function card(heading: string): HTMLElement {
@@ -59,7 +38,7 @@ describe("evidence candidates", () => {
   afterEach(cleanup);
 
   it("renders collapsed section-titled cards and expands one on demand", () => {
-    render(<Harness initial={message([hit(1, { section_title: MDA }), hit(2), hit(3)])} />);
+    render(<EvidenceView initial={message([hit(1, { section_title: MDA }), hit(2), hit(3)])} />);
 
     const toggle = screen.getByRole("button", { name: `Item 1 - (${MDA})` });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -83,17 +62,16 @@ describe("evidence candidates", () => {
   });
 
   it("opens pinned cards by default and leaves others collapsed", () => {
-    render(<Harness initial={message(hits(3), { pinnedChunkIds: [2] })} />);
+    render(<EvidenceView initial={message(hits(3), { pinnedChunkIds: [2] })} />);
 
     expect(screen.getByText("Body 2")).toBeVisible();
     expect(screen.queryByText("Body 1")).not.toBeInTheDocument();
-    expect(card("Item 2 - (Title 2)")).toHaveClass("pinned");
     expect(within(card("Item 2 - (Title 2)")).getByRole("button", { name: "Pin" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("1 pinned · 0 excluded")).toBeInTheDocument();
   });
 
   it("expands and collapses every card across pages", () => {
-    render(<Harness initial={message(hits(12))} />);
+    render(<EvidenceView initial={message(hits(12))} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
     expect(screen.getAllByText(/^Body \d+$/)).toHaveLength(5);
@@ -112,17 +90,19 @@ describe("evidence candidates", () => {
 
   it("pages through candidates and keeps pin and exclude state across pages", () => {
     const onUseSelected = vi.fn();
-    render(<Harness initial={message(hits(12))} onUseSelected={onUseSelected} />);
+    const onMark = vi.fn();
+    const evidence = hits(12);
+    const view = render(<EvidenceView initial={message(evidence)} onMark={onMark} onUseSelected={onUseSelected} />);
 
     expect(screen.getByText("Showing 1–5 of 12")).toBeInTheDocument();
     expect(screen.getByText("1/3")).toBeInTheDocument();
     expect(screen.getAllByRole("article")).toHaveLength(5);
-    expect(screen.getByRole("button", { name: "Previous page" }).querySelector("svg")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Next page" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Review again with selected evidence" })).not.toBeInTheDocument();
 
     fireEvent.click(within(card("Item 1 - (Title 1)")).getByRole("button", { name: "Pin" }));
+    expect(onMark).toHaveBeenLastCalledWith(1, "pin");
+    view.rerender(<EvidenceView initial={message(evidence, { pinnedChunkIds: [1] })} onMark={onMark} onUseSelected={onUseSelected} />);
     expect(screen.getByText("1 pinned · 0 excluded")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Review again with selected evidence" }));
     expect(onUseSelected).toHaveBeenCalledTimes(1);
@@ -136,13 +116,14 @@ describe("evidence candidates", () => {
     expect(screen.queryByRole("button", { name: "Item 1 - (Title 1)" })).not.toBeInTheDocument();
 
     fireEvent.click(within(card("Item 12 - (Title 12)")).getByRole("button", { name: "Exclude" }));
-    expect(card("Item 12 - (Title 12)")).toHaveClass("excluded");
+    expect(onMark).toHaveBeenLastCalledWith(12, "exclude");
+    view.rerender(<EvidenceView initial={message(evidence, { pinnedChunkIds: [1], excludedChunkIds: [12] })} onMark={onMark} onUseSelected={onUseSelected} />);
+    expect(within(card("Item 12 - (Title 12)")).getByRole("button", { name: "Exclude" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("1 pinned · 1 excluded")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
     fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
     expect(within(card("Item 1 - (Title 1)")).getByRole("button", { name: "Pin" })).toHaveAttribute("aria-pressed", "true");
-    expect(card("Item 1 - (Title 1)")).toHaveClass("pinned");
     expect(screen.getByText("1 pinned · 1 excluded")).toBeInTheDocument();
   });
 
@@ -151,7 +132,7 @@ describe("evidence candidates", () => {
     const legacy = Object.fromEntries(
       Object.entries(hit(3, { citation: "NVDA FY2023 · Item 7" })).filter(([key]) => key !== "section_title"),
     ) as EvidenceHit;
-    render(<Harness initial={message([
+    render(<EvidenceView initial={message([
       hit(1, { citation: "NVDA FY2020 · Item 15", section_title: null, kind: "table" }),
       hit(2, { doc_id: "005930-FY2024", citation: "005930 FY2024 · II. 사업의 내용", section_title: "사업의 내용" }),
       legacy,
@@ -164,7 +145,7 @@ describe("evidence candidates", () => {
   });
 
   it("hides the pager for a single page and keeps Pin and Exclude disabled without a candidate token", () => {
-    render(<Harness initial={message(hits(2), { candidateToken: undefined, pinnedChunkIds: [1] })} />);
+    render(<EvidenceView initial={message(hits(2), { candidateToken: undefined, pinnedChunkIds: [1] })} />);
 
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
     expect(screen.getByText("This saved result cannot change evidence. Run the question again to retrieve a fresh selection.")).toBeInTheDocument();

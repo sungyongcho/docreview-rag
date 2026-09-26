@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Readiness } from "@/lib/types";
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); });
+import { expectNoUnexpectedRequests, jsonResponse, stubHttp } from "@/lib/http-test-support";
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); expectNoUnexpectedRequests(); });
 import { RuntimeSettings, DesktopJobNotifications } from "./runtime-settings";
 
 const READINESS: Readiness = {
@@ -22,7 +23,7 @@ const READINESS: Readiness = {
   },
 };
   it("shows production token ceilings and non-consuming reset estimates", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    stubHttp({ "GET /limits": () => jsonResponse({
       per_minute: 5,
       per_day: 25,
       remaining_minute: 0,
@@ -37,7 +38,7 @@ const READINESS: Readiness = {
       day_reset_seconds: 3600,
       daily_cost_reset_at_utc: "2026-09-02T00:00:00Z",
       scope: "shared_storage",
-    }), { status: 200, headers: { "content-type": "application/json" } })));
+    }) });
     render(<RuntimeSettings live={false} readiness={null} />);
 
     expect(await screen.findByText("12,000")).toBeInTheDocument();
@@ -48,7 +49,6 @@ const READINESS: Readiness = {
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
     expect(screen.getByText(/12:00:00 AM UTC$/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Limits & availability" })).toBeInTheDocument();
-    expect(document.querySelector(".development-badge")).toBeNull();
   });
 
   it("marks the local runtime panel as DEV without requesting release limits", () => {
@@ -57,8 +57,7 @@ const READINESS: Readiness = {
     render(<RuntimeSettings live readiness={READINESS} />);
 
     const panel = screen.getByRole("heading", { name: "Local runtime" }).closest("section")!;
-    // The Mode metric also reads "DEV", so look at the badge itself.
-    const badge = panel.querySelector(".development-badge");
+    const badge = within(panel).getByLabelText("DEV only");
     expect(badge).toHaveAttribute("aria-label", "DEV only");
     expect(badge).toHaveTextContent("DEV");
     expect(within(panel).getByText("Operations URL")).toBeInTheDocument();

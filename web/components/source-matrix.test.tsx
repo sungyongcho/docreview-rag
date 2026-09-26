@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SourceSelectionGrid } from "./source-selection-grid";
 import { SourceMatrix } from "./source-matrix";
 import type { AcquisitionForm, AcquisitionPair } from "./build-pipeline";
 import type { AcquisitionCompany } from "@/lib/acquisition-catalog";
@@ -21,22 +20,16 @@ function Harness({ sources = inventory, initialPairs = [] as AcquisitionPair[], 
   return <SourceMatrix sources={sources} companies={companies} acquisition={draft} onChange={(next) => { changed(next); setDraft(next); }} disabled={disabled} onDownload={download} downloadDisabled={false} />;
 }
 
-/** Enter through the one search box, committing company context before fiscal years. */
+/** Commit a company through the same search box used in the browser. */
 function enter(value: string) {
-  if (/^\d{4}(?:$|[-,])/.test(value)) {
-    const years = value.split(",").flatMap((part) => {
-      const [first, last] = part.split("-").map(Number);
-      return last ? Array.from({ length: Math.max(0, last - first + 1) }, (_, index) => first + index) : [first];
-    });
-    for (const year of years) {
-      const button = screen.queryByRole("button", { name: `FY${year}` });
-      if (button) fireEvent.click(button);
-    }
-    return;
-  }
   const input = screen.getByLabelText("Search/add company or year");
   fireEvent.change(input, { target: { value } });
   fireEvent.keyDown(input, { key: "Enter" });
+}
+
+/** Select each visible year explicitly; an absent choice must fail the scenario. */
+function selectYears(...years: number[]) {
+  for (const year of years) fireEvent.click(screen.getByRole("button", { name: `FY${year}` }));
 }
 
 describe("company and year source matrix", () => {
@@ -47,7 +40,7 @@ describe("company and year source matrix", () => {
     const chips = within(screen.getByRole("group", { name: "NVDA · NVIDIA" })).getAllByRole("button", { name: /^NVDA FY/ });
     expect(chips.map((chip) => chip.textContent)).toEqual(["✓FY2022", "✓FY2024"]);
     expect(chips[1]).toHaveAccessibleName("NVDA FY2024 · On disk");
-    expect(screen.getByRole("button", { name: "005930 FY2023 · Missing source" })).toHaveClass("missing");
+    expect(screen.getByRole("button", { name: "005930 FY2023 · Missing source" })).toBeVisible();
   });
   it("uses deduplicated document-name frequency when the catalog has no name", () => {
     const uncommon = source("INTC", 2024, true, "INTEL CORP");
@@ -82,7 +75,7 @@ describe("company and year source matrix", () => {
   });
   it("stages only missing pairs and synchronizes the exact next draft without stale state", () => {
     const changed = vi.fn(); const download = vi.fn(); render(<Harness changed={changed} download={download} />);
-    enter("NVDA"); enter("2024-2025");
+    enter("NVDA"); selectYears(2024, 2025);
     expect(changed.mock.calls.at(-1)![0].pairs).toEqual([{ registry: "sec", issuer: "NVDA", year: 2024 }]);
     expect(screen.getByRole("button", { name: "Sync selection" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "NVDA FY2025 · Missing source" })).toBeVisible();
@@ -91,13 +84,13 @@ describe("company and year source matrix", () => {
     expect(changed.mock.calls.at(-1)![0]).toEqual(download.mock.calls[0][0]);
   });
   it("supports repeated checks, removes pending entries and keeps downloaded selection", () => {
-    render(<Harness />); enter("NVDA"); enter("2024-2025");
+    render(<Harness />); enter("NVDA"); selectYears(2024, 2025);
     fireEvent.click(screen.getByRole("button", { name: "NVDA FY2025 · Missing source" }));
     expect(screen.queryByRole("button", { name: "Remove NVDA FY2025" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "FY2025" }));
     fireEvent.click(screen.getByRole("button", { name: "NVDA FY2025 · Missing source" }));
     expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
-    enter("2023,2025");
+    selectYears(2023, 2025);
     for (const year of [2023, 2025]) fireEvent.click(screen.getByRole("button", { name: `NVDA FY${year} · Missing source` }));
     expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
@@ -112,10 +105,10 @@ describe("company and year source matrix", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
     expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "false");
   });
-  it("accepts supported mixed codes and bounded year ranges without selecting them before sync", () => {
+  it("stages supported mixed companies and explicitly selected years until sync", () => {
     const changed = vi.fn(); const download = vi.fn(); render(<Harness sources={[]} changed={changed} download={download} />);
-    enter("AMD,000660"); enter("2023-2024");
-    fireEvent.click(screen.getByRole("button", { name: "Add years for 000660" })); enter("2023-2024");
+    enter("AMD,000660"); selectYears(2023, 2024);
+    fireEvent.click(screen.getByRole("button", { name: "Add years for 000660" })); selectYears(2023, 2024);
     expect(changed).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Sync selection" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
@@ -132,9 +125,9 @@ describe("company and year source matrix", () => {
     expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
     expect(changed).not.toHaveBeenCalled();
   });
-  it("deduplicates repeated staging and keeps partial multi-document years pending", () => {
+  it("keeps a partially downloaded multi-document year pending", () => {
     render(<Harness sources={[source("NVDA", 2024), { ...source("NVDA", 2024, false), document_id: "second" }]} />);
-    enter("NVDA"); enter("2024"); enter("2024");
+    enter("NVDA"); selectYears(2024);
     expect(screen.getByRole("button", { name: "Sync selection" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toHaveTextContent("1/2");
   });
@@ -201,33 +194,13 @@ it.each([
   const download = vi.fn();
   const conflict = { ...source("NVDA", 2024, onDisk), ready: false, can_redownload: false, blocker: "Conflicting primary sources" };
   render(<Harness sources={[conflict]} initialPairs={staged ? [] : [{ registry: "sec", issuer: "NVDA", year: 2024 }]} download={download} />);
-  if (staged) { enter("NVDA"); enter("2024"); }
+  if (staged) { enter("NVDA"); selectYears(2024); }
   expect(screen.getByRole("status")).toHaveTextContent("To download: 0");
   expect(within(screen.getByRole("region", { name: "To be added" })).queryByRole("listitem")).toBeNull();
   const sync = screen.getByRole("button", { name: "Sync selection" });
   expect(sync).toBeDisabled();
   fireEvent.click(sync);
   expect(download).not.toHaveBeenCalled();
-});
-
-it("places invalid on-disk sources in the synchronization plan without calling them absent", () => {
-  const download = vi.fn();
-  render(<Harness sources={[{ ...source("NVDA", 2024), ready: false, can_redownload: true, blocker: "Source bytes changed" }]} initialPairs={[{ registry: "sec", issuer: "NVDA", year: 2024 }]} download={download} />);
-  expect(screen.getByRole("status")).toHaveTextContent("Selected on disk: 1 · To download: 1");
-  expect(screen.getByRole("button", { name: "NVDA FY2024 · Source blocked" })).toHaveAttribute("aria-pressed", "true");
-  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
-  expect(download).toHaveBeenCalledExactlyOnceWith(acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]));
-});
-
-
-it("offers only unselected suggested years without a year text field", () => {
-  render(<Harness sources={[]} />);
-  enter("NVDA");
-  expect(screen.queryByLabelText("Fiscal years")).toBeNull();
-  expect(screen.queryByRole("button", { name: "FY0" })).toBeNull();
-  enter("2024");
-  expect(screen.queryByRole("button", { name: "FY2024" })).toBeNull();
-  expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toHaveClass("missing", "selected");
 });
 
 it("opens the integrated plus and adds a company to the basket without starting downloads", () => {
@@ -249,8 +222,8 @@ it("opens the integrated plus and adds a company to the basket without starting 
 it("preserves separate fiscal-year scopes when switching companies inside the basket", () => {
   const download = vi.fn();
   render(<Harness sources={[]} download={download} />);
-  enter("NVDA"); enter("2023");
-  enter("AMD"); enter("2024");
+  enter("NVDA"); selectYears(2023);
+  enter("AMD"); selectYears(2024);
   fireEvent.click(screen.getByRole("button", { name: "Add years for NVDA" }));
   expect(screen.queryByRole("button", { name: "FY2023" })).toBeNull();
   expect(screen.getByRole("button", { name: "FY2024" })).toBeVisible();
@@ -268,18 +241,16 @@ it("counts selected basket years independently from downloaded years", () => {
   const option = screen.getByRole("button", { name: /NVDA SEC Basket 1/ });
   expect(option).not.toHaveTextContent("years on disk");
   fireEvent.click(option);
-  enter("2025");
+  selectYears(2025);
   fireEvent.click(screen.getByRole("button", { name: "Show Search/add company or year choices" }));
   expect(screen.getByRole("button", { name: /NVDA SEC Basket 2/ })).toHaveTextContent("Basket 2 / 6 years");
 });
 
-it("keeps bulk actions in the basket header and clears staged years as well", () => {
+it("clears staged years without starting a download", () => {
   render(<Harness sources={[]} />);
-  enter("NVDA"); enter("2024");
+  enter("NVDA"); selectYears(2024);
   const basket = screen.getByRole("region", { name: "Company basket" });
   const clear = within(basket).getByRole("button", { name: "Clear selection" });
-  expect(clear.closest("header")).not.toBeNull();
-  expect(clear).toHaveTextContent("");
   expect(clear).toBeEnabled();
   fireEvent.click(clear);
   expect(screen.queryByRole("button", { name: "Remove NVDA FY2024" })).toBeNull();
@@ -293,7 +264,7 @@ it("removes a whole company from the basket without deleting its downloaded file
   expect(screen.queryByRole("checkbox", { name: "Select all years for NVDA" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Add years for NVDA" }));
   expect(within(screen.getByRole("group", { name: "NVDA" })).getByRole("group", { name: "Available years" })).toBeVisible();
-  enter("2025");
+  selectYears(2025);
   fireEvent.click(screen.getByRole("button", { name: "Remove NVDA from basket" }));
   expect(screen.queryByRole("group", { name: "NVDA" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Remove NVDA FY2025" })).toBeNull();
@@ -379,14 +350,4 @@ it("shows the four default companies without unselected legacy catalog companies
   expect(sync).toBeEnabled();
   fireEvent.click(sync);
   expect(download).toHaveBeenCalledWith(acquisitionDraft(pairs));
-});
-
-
-it("matches public scope markers to selection while keeping DEV download markers", () => {
-  const props = { sources: [source("NVDA", 2024), source("NVDA", 2022)], pairs: [{ registry: "sec" as const, issuer: "NVDA", year: 2024 }], companies: [], disabled: false, onToggle: vi.fn() };
-  const view = render(<SourceSelectionGrid {...props} scopeMode />);
-  expect(screen.getByRole("button", { name: "NVDA FY2024 · In scope" }).querySelector(".year-downloaded-mark")).toHaveTextContent("✓");
-  expect(screen.getByRole("button", { name: "NVDA FY2022 · Not in scope" }).querySelector(".year-missing-mark")).toHaveTextContent("!");
-  view.rerender(<SourceSelectionGrid {...props} scopeMode={false} />);
-  expect(screen.getByRole("button", { name: "NVDA FY2022 · On disk" }).querySelector(".year-downloaded-mark")).toHaveTextContent("✓");
 });

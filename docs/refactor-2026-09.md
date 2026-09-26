@@ -1536,3 +1536,73 @@ or file was deleted. Paired CLI tutorials explain explicit selection and origina
 Reviewer contributions in this session comprise the verifier/restore contract correction,
 removal of retired defaults and duplicate checks, genuine bundle regeneration, and validation.
 The evidence appendix distinguishes final checks, fixture failures and actions not performed.
+
+## 18. Behavioral test and runtime ownership refactor
+
+This user-directed session starts from `463330ebd52aa4c9029d5d82bd994775d1c61aa8`
+and is tracked by issue #225. Its requirements are to remove tests that merely pin
+strings/classes/file layouts, duplicate a requirement across layers, require a
+production testing bypass, or obscure the behavior with excessive setup. Removed
+claims are evaluated against actual callers and current product behavior. A smaller
+test count is an outcome, not proof that a requirement remains covered.
+
+The corpus catalog and parsing profiles are unchanged. `data/corpus/manifest.json`
+owns registered document identity, source artifacts and processing selections.
+`data/profiles/*.json` stores learned SEC segmentation/validation rules by issuer
+and fiscal year. Repeating an issuer identifier in those rules does not create a
+second source catalog or a legacy compatibility reader.
+
+### Preserved deployment and data boundaries
+
+| Surface | Preserved policy |
+| --- | --- |
+| Local DEV | Source-mounted development, DEV key slot, live backend/web administration and optional local engines. |
+| Local PROD preview | Separate local PROD storage, PROD key slot, read-only backend administration and canned public web bundle; local engines disabled. |
+| GCP and Firebase | GCP serves the API/database through its deployment Compose; Firebase receives the exported web bundle with its API endpoint baked at build time. |
+| Hugging Face | Canned static web/API entrypoint, independent of the local live-admin stack. |
+
+`MODE`, `DOCREVIEW_ADMIN_MODE` and `NEXT_PUBLIC_ADMIN_MODE` retain their separate
+responsibilities. Database schemas, source/chunk/citation/selection identity,
+browser storage readers and deployment entrypoints are unchanged. Both frontend
+bundle modes were built. This session did not deploy or rebuild/publish a runtime
+image and does not claim live-site verification.
+
+### Removal and consolidation reachability
+
+Three agents separately checked the baseline/current definitions, explicit and
+dynamic consumers, registrations, persisted fields and deployment entrypoints:
+backend, domain and web auditors. Each inspected all 29 modified production files
+and the two new production hooks without reading the other auditors' verdicts.
+All three found no unresolved in-repository removed-symbol consumer or persisted
+format loss. Some auditors contributed implementation earlier in this session;
+these are separately performed reachability checks, not independent human review
+or non-author approval. The PR uses the disclosed session self-review workflow.
+
+The table records their common removal verdict and the current owner. Internal
+Python constructor/import surfaces intentionally shrink. Unknown external Python
+consumers are not proven absent; no such supported consumer was identified in the
+repository's application, CLI, evaluation or deployment entrypoints.
+
+| Removed or consolidated surface | Current owner and evidence | Backend / domain / web verdict |
+| --- | --- | --- |
+| `WorkflowService`, `workflow_service`, `run_id_factory` | `RuntimeApiServices` calls `run_workflow` and generates the same UUID run IDs. Explicit alternate suppliers existed only in tests; workflow request, observation and persistence paths remain. | Remove / remove / remove |
+| Injected `local_inventory` and duplicate inventory state | `LocalConnectionManager` owns discovery; `ReviewEngines` derives and pins the current revision per request. Release readiness uses that same manager and retains public/PROD guards. | Consolidate / consolidate / consolidate |
+| `ProviderFactory` and injected `readiness_probe` | Release composition constructs the existing provider directly; readiness consumes `CorpusStatus` from the existing admin status owner. Custom factories/probe dictionaries were test-only. | Remove / remove / remove |
+| `OperationRunner` and `operation_runner` bypass | `CorpusOperations.run` dispatches actual ingestion/acquisition/deletion/index operations. Only tests supplied the alternate whole-operation branch. | Remove / remove / remove |
+| Duplicate `execution_lock` and domain recovery booleans | The shared `JobExecutionCoordinator.turn` retains cross-domain serialization; `JobStore.recover(domain)` owns interruption once, guarded against concurrent first readers. | Consolidate / consolidate / consolidate |
+| `ProgressPersister` swallowed terminal failure, ignored bool result and optional final writer | Each caller retains an immutable terminal snapshot. Transient failures get bounded retries; unresolved persistence produces typed 503 and reconciliation before history/admission. This deliberately corrects failure behavior, retaining the existing stored job format. | Replace / replace / replace |
+| Test-only `FilingParser`/`parser` parameters | Seed/evaluation paths use the current registry parser directly. The real evaluation `chunker` customization remains; source hashes, provenance and upserts are unchanged. | Remove / remove / remove |
+| Retrieval facade re-exports and `ThreadSafeLazy.value` | All 22 implementations remain in their defining modules; current runtime imports use those modules. Embedding/reranker consumers use `get(factory)`, while only tests read the removed cache property. | Remove / remove / remove |
+| Five repeated token-detail declarations/validators | `TokenUsageDetails` owns the same strict fields/defaults and total checks. Concrete schemas retain their own validators and persisted field names. | Consolidate / consolidate / consolidate |
+| Navigation state/effects in `ServiceSession` | `useWorkspaceNavigation` owns URL/history/focus/scroll transitions; shell callers use its handlers. Existing URL fields, history position and stored conversation/profile identities remain. | Consolidate / consolidate / consolidate |
+| Five modal lifecycle copies and native-dialog testing fallback | `useModalLifecycle` owns focus, inert siblings, optional scroll lock and cleanup. Each modal attaches the returned React keyboard handler; child help consumes Escape before modal dismissal. Native-dialog simulation belongs to test setup. | Consolidate / consolidate / consolidate |
+| Duplicate request/stream HTTP error decoding | `responseError` preserves typed code, details, decision and retry metadata; ordinary JSON validation now displays field/message pairs. | Consolidate / consolidate / consolidate |
+| Duplicate preparation blockers/action-stage lists and empty-schema diagnosis workaround | `preparationRuntimeIssue` and one action-stage map drive diagnosis and button state. Unknown/unusable job storage blocks operations before they can claim readiness, matching durable admission. | Consolidate / consolidate / consolidate |
+| Spotlight zero-layout bypass | Positive visible geometry is required in production; UI tests supply explicit geometry. The removed branch existed to accommodate jsdom. | Remove / remove / remove |
+| `layout.test.ts`, `help-coverage.test.tsx`, `public-default-limits.test.tsx`, `onboarding-test-support.tsx` | User explicitly authorized whole-file deletion. CSS/copy/help-inventory assertions and redundant default checks are removed; retained interaction/default-policy tests are mapped in the evidence appendix. No helper import remains. | Remove / remove / remove |
+
+Per-test dispositions, retained assertions, execution counts and coverage methodology
+are recorded in [the evidence appendix](refactor-2026-09-evidence.md#behavioral-test-refactor-issue-225).
+No tutorial flow changed. The shared database test fixture now requires an explicit
+disposable database URL; clean-checkout verification clears that variable so it
+cannot accidentally inherit a database from another environment.

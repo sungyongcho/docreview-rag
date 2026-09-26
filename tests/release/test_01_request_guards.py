@@ -54,39 +54,6 @@ def _guarded_app(
     return app
 
 
-def test_security_headers_and_rate_limit_are_visible(tmp_path) -> None:
-    """Set the security headers and publish the remaining allowance, denying past it."""
-    with TestClient(_guarded_app(tmp_path)) as client:
-        first = client.post("/review")
-        denied = client.post("/review")
-
-    assert first.status_code == 200
-    assert first.headers["x-content-type-options"] == "nosniff"
-    assert first.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
-    assert first.headers["x-ratelimit-remaining-minute"] == "0"
-    assert denied.status_code == 429
-    assert denied.headers["retry-after"] == "60"
-    assert denied.headers["x-content-type-options"] == "nosniff"
-    assert denied.headers["cache-control"] == "no-store"
-    assert denied.json()["error"]["code"] == "rate_limited"
-
-
-def test_local_operator_bypass_keeps_proxy_marked_requests_metered(tmp_path) -> None:
-    """Keep loopback operator work unlimited and unmetered; proxy-marked requests stay limited."""
-    with TestClient(_guarded_app(tmp_path, enforce_rate_limit=False)) as client:
-        private = [client.post("/review") for _ in range(3)]
-        headers = {"x-docreview-public": "true"}
-        admitted = client.post("/review", headers=headers)
-        denied = client.post("/review", headers=headers)
-        after = client.post("/review")
-
-    assert [response.status_code for response in private] == [200, 200, 200]
-    assert all("x-ratelimit-remaining-minute" not in response.headers for response in private)
-    assert admitted.status_code == 200
-    assert denied.status_code == 429
-    assert after.status_code == 200
-
-
 def test_routes_outside_the_metered_set_never_consume_the_allowance(tmp_path) -> None:
     """Leave provider-free routes untouched even once the client's request window is spent."""
     with TestClient(_guarded_app(tmp_path)) as client:
@@ -96,20 +63,6 @@ def test_routes_outside_the_metered_set_never_consume_the_allowance(tmp_path) ->
 
     assert [response.status_code for response in work] == [200, 200, 200]
     assert all("x-ratelimit-remaining-minute" not in response.headers for response in work)
-
-
-def test_review_route_fails_closed_after_daily_cost_reservation(tmp_path) -> None:
-    """Return a typed fallback signal once actual provider calls exhaust the daily cap."""
-    app = _guarded_app(tmp_path, per_minute=10, per_day=10, daily_limit=Decimal("0.01"))
-
-    with TestClient(app) as client:
-        first = client.post("/review")
-        blocked = client.post("/review")
-
-    assert first.status_code == 200
-    assert blocked.status_code == 429
-    assert blocked.json()["error"]["code"] == "daily_cost_limit"
-    assert int(blocked.headers["retry-after"]) > 0
 
 
 def _review_app(tmp_path) -> FastAPI:

@@ -23,7 +23,7 @@ import { SourceMatrix, PUBLIC_COMPANIES } from "@/components/source-matrix";
 import type { AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { acquisitionDraft, pairKey, selectedSourceState, type SourceInventory } from "@/lib/source-selection";
 import type { Pipeline, Stage, StageActionKind } from "@/lib/pipeline";
-import { diagnosePreparation } from "@/lib/preparation-diagnostics";
+import { diagnosePreparation, preparationRuntimeIssue } from "@/lib/preparation-diagnostics";
 import type { Diagnosis } from "@/lib/preparation-diagnostics";
 import { stageStatusLabel } from "@/lib/pipeline";
 import type { ReviewEngineState, CorpusDocument, ManifestSummary, Readiness } from "@/lib/types";
@@ -108,9 +108,11 @@ const STEP_DEPENDENCIES: Record<Stage["id"], string> = {
 };
 
 /** Actions that queue an operator job; they are locked in read-only mode and while a request is in flight. */
-const OPERATOR_ACTIONS: ReadonlySet<StageActionKind> = new Set(["acquire", "ingest_all", "embed", "bm25", "evaluate"]);
+const OPERATOR_ACTION_STAGES: Partial<Record<StageActionKind, Stage["id"]>> = {
+  acquire: "filings", ingest_all: "index", embed: "embeddings", bm25: "lexical", evaluate: "evaluate",
+};
 /** Stages whose work runs only in DEV mode. */
-const OPERATOR_STAGES: ReadonlySet<Stage["id"]> = new Set(["filings", "index", "embeddings", "lexical", "evaluate"]);
+const OPERATOR_STAGES: ReadonlySet<Stage["id"]> = new Set(Object.values(OPERATOR_ACTION_STAGES));
 
 function isApiDown(pipeline: Pipeline): boolean {
   return pipeline.stages.some((stage) => stage.status === "unknown" && stage.statusDetail === "API unavailable");
@@ -166,23 +168,23 @@ export function BuildPipeline(props: BuildPipelineProps) {
     }
   }
 
-  function disabled(kind: StageActionKind): boolean {
-    if (kind === "evaluate" && (props.evaluationBlockedReason || props.evaluationPreparationReady === false)) return true;
-    if (kind === "ask" && !["done", "readonly"].includes(pipeline.stages.find((stage) => stage.id === "ask")?.status ?? "unknown")) return true;
-    if (OPERATOR_ACTIONS.has(kind) && props.live) {
-      if (props.databaseConnected === false || props.schemaStatus === "empty" || props.schemaStatus === "unavailable") return true;
-      if (kind !== "acquire" && props.schemaStatus === "drifted") return true;
-    }
-    if (kind === "acquire" && !acquisitionValid) return true;
-    if (!OPERATOR_ACTIONS.has(kind)) return false;
-    return pipeline.readOnly || props.busy || (props.live && !props.canOperateCorpus);
-  }
-
-  const diagnosis = diagnosePreparation(selected.id === "filings" && props.schemaStatus === "empty" ? "index" : selected.id, pipeline, {
+  const runtime = {
     databaseConnected: props.databaseConnected ?? null,
     schemaStatus: props.schemaStatus ?? null,
     writable: props.writable ?? null,
-  });
+  };
+
+  function disabled(kind: StageActionKind): boolean {
+    if (kind === "evaluate" && (props.evaluationBlockedReason || props.evaluationPreparationReady === false)) return true;
+    if (kind === "ask" && !["done", "readonly"].includes(pipeline.stages.find((stage) => stage.id === "ask")?.status ?? "unknown")) return true;
+    if (kind === "acquire" && !acquisitionValid) return true;
+    const stageId = OPERATOR_ACTION_STAGES[kind];
+    if (!stageId) return false;
+    const stage = pipeline.stages.find((item) => item.id === stageId)!;
+    return pipeline.readOnly || props.busy || (props.live && (!props.canOperateCorpus || preparationRuntimeIssue(stage, runtime) !== null));
+  }
+
+  const diagnosis = diagnosePreparation(selected.id, pipeline, runtime);
 
   if (selected.id === "answer_model" && selected.status === "done") {
     diagnosis.detail = answerEngineSummary(answerEngines);
@@ -384,7 +386,7 @@ function ActionButton({ stage, primary, handler, disabled, locked = false }: { s
   const { t } = useI18n();
   if (!stage.action) return null;
   const { kind, label } = stage.action;
-  if (locked && OPERATOR_ACTIONS.has(kind)) return <DevLockedButton reason={kind === "evaluate" ? "evaluation" : "corpus"} className={primary ? "button primary" : "button"}>{t(label)}</DevLockedButton>;
+  if (locked && kind in OPERATOR_ACTION_STAGES) return <DevLockedButton reason={kind === "evaluate" ? "evaluation" : "corpus"} className={primary ? "button primary" : "button"}>{t(label)}</DevLockedButton>;
   return <button className={primary ? "button primary" : "button"} type="button" disabled={disabled(kind)} onClick={handler(kind)}>{t(label)}</button>;
 }
 

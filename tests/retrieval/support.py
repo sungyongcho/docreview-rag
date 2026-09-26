@@ -1,5 +1,7 @@
 """Shared retrieval test payloads and SQL helpers."""
 
+import hashlib
+from pathlib import Path
 import sys
 from types import ModuleType
 from typing import Any
@@ -8,7 +10,9 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.ingestion.chunk import compose_index_text
+from app.ingestion.parser import Block, ParsedFiling, Section
 from app.retrieval.types import ChunkHit
+from tests.ingestion.support import filing_document, filing_source
 
 SOURCE_SHA256 = "a" * 64
 
@@ -95,3 +99,51 @@ def normalized_sql(statement: Any) -> tuple[str, dict[str, object]]:
     """Compile PostgreSQL SQL with normalized whitespace."""
     compiled = statement.compile(dialect=postgresql.dialect())
     return " ".join(str(compiled).split()), compiled.params
+
+
+def retrieval_filing(tmp_path: Path, *, other: bool = False) -> ParsedFiling:
+    """Build parsed source blocks tied to exact real fixture bytes and metadata."""
+    bodies = (
+        ["Other issuer source evidence."]
+        if other
+        else [
+            "Research expense research expense increased in fiscal 2024.",
+            "Inventory and supply obligations decreased during the year.",
+            "Research expense appeared in one collaboration agreement.",
+        ]
+    )
+    document = filing_document(
+        issuer="AMD" if other else "NVDA",
+        filing_id="0001045810-24-000002" if other else "0001045810-24-000001",
+    )
+    path = tmp_path / f"{document.document_id}.html"
+    raw = "\n".join(bodies)
+    path.write_text(raw)
+    source = filing_source(path, document=document)
+    sections = []
+    offset = 0
+    for index, body in enumerate(bodies):
+        sections.append(
+            Section(
+                "II",
+                "7" if index < 2 else "8",
+                "",
+                "",
+                [
+                    Block(
+                        "paragraph",
+                        body,
+                        source_pos=offset,
+                        end_pos=offset + len(body),
+                        source_group=index,
+                    )
+                ],
+            )
+        )
+        offset += len(body) + 1
+    return ParsedFiling(
+        source=source,
+        source_length=len(raw),
+        source_sha256=hashlib.sha256(raw.encode()).hexdigest(),
+        sections=sections,
+    )

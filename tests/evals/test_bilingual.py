@@ -3,7 +3,6 @@
 import pytest
 
 from app.evals.bilingual import (
-    TWIN_INVARIANT_FIELDS,
     BilingualSuite,
     TwinCaseError,
     load_bilingual_suites,
@@ -94,6 +93,10 @@ def test_bilingual_suite_selects_one_language_slice_at_a_time():
     "en_changes, ko_changes, message",
     [
         ({}, {"id": "m3c-02"}, "same cases"),
+        ({}, {"category": "exact_number"}, "category"),
+        ({}, {"facet": "risk"}, "facet"),
+        ({}, {"tags": ("different",)}, "tags"),
+        ({}, {"reference_answer": "A different fact."}, "reference_answer"),
         (
             {},
             {
@@ -121,20 +124,6 @@ def test_validate_twin_cases_rejects_suites_that_could_move_a_metric(
 
     with pytest.raises(TwinCaseError, match=message):
         validate_twin_cases((english,), (korean,))
-
-
-def test_the_twin_invariant_set_covers_every_field_a_suite_could_drift_on():
-    """Hold every golden field identical except the join key, question, and note."""
-    # ``id`` joins the pair, ``question`` is required to differ, and the shipped Korean
-    # notes carry a twin suffix. Everything else — content and provenance alike — is
-    # pinned, so adding a field to GoldenCase forces a decision here rather than
-    # silently leaving one more axis on which two suites could diverge.
-    assert set(TWIN_INVARIANT_FIELDS) | {"id", "question", "note"} == set(GoldenCase.model_fields)
-
-    # The three provenance fields decide how far a suite is trusted rather than what it
-    # scores. GoldenCase pins each to a single-value Literal today, so no differing pair
-    # can be built; holding them here is what catches a future widening of those types.
-    assert {"curation_status", "approval_status", "human_verified"} <= set(TWIN_INVARIANT_FIELDS)
 
 
 def test_validate_twin_cases_rejects_an_untranslated_or_malformed_suite():

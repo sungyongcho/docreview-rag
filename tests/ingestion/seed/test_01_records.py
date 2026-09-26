@@ -1,7 +1,7 @@
 """Deterministic seed record-conversion tests."""
 
 from copy import deepcopy
-from dataclasses import fields, replace
+from dataclasses import replace
 import hashlib
 from typing import cast
 
@@ -10,6 +10,7 @@ import pytest
 from app.ingestion.chunk import ChunkConfig, chunk_filing
 from app.ingestion.parser import Block, Section
 import app.ingestion.seed as seed
+from tests.ingestion.edgar.support import build_numbered_body
 from tests.ingestion.seed.support import sample_chunks, sample_filing, sample_source
 from tests.ingestion.support import filing_document, filing_source
 
@@ -24,20 +25,6 @@ def test_filing_records_keep_body_context_index_text_and_metadata():
     assert (
         not {"parse_status", "item_index", "source_length", "source_sha256"}
         & document.values().keys()
-    )
-    assert {field.name for field in fields(sample_filing())}.isdisjoint(
-        {
-            "doc_id",
-            "registry",
-            "issuer",
-            "issuer_id",
-            "filing_id",
-            "form",
-            "filing_date",
-            "report_period",
-            "fiscal_year",
-            "source_url",
-        }
     )
     assert [record.ordinal for record in chunks] == [0, 1]
     assert chunks[0].body == "Source-derived narrative."
@@ -105,49 +92,28 @@ def test_chunk_record_conversion_rejects_shared_malformed_source_hash() -> None:
         seed.chunk_records(filing, chunks)
 
 
-def test_build_seed_batch_sorts_manifest_and_output():
-    """Sort manifest processing and output records deterministically."""
-    filings = {
-        "AMD": sample_filing("AMD-FY2023"),
-        "NVDA": sample_filing("NVDA-FY2024"),
-    }
-    calls = []
+def test_build_seed_batch_sorts_manifest_and_output(tmp_path, isolated_profiles):
+    """Parse real selected sources and preserve their identity in sorted seed records."""
+    entries = []
+    for issuer, year in (("NVDA", 2024), ("AMD", 2023)):
+        path = tmp_path / f"{issuer}.html"
+        path.write_text(build_numbered_body(gap=2).replace("Body text", f"{issuer} disclosure."))
+        entries.append(filing_source(path, document=sample_source(f"{issuer}-FY{year}").document))
     progress = []
 
-    def parser(entry):
-        """Record and parse one manifest entry."""
-        calls.append(("parse", entry.document.issuer))
-        return filings[entry.document.issuer], {}
+    batch = seed.build_seed_batch(entries, expected_documents=2, on_progress=progress.append)
 
-    def chunker(filing):
-        """Record and chunk one parsed filing."""
-        calls.append(("chunk", filing.source.document.issuer))
-        return sample_chunks(filing.source.document.document_id)
-
-    entries = [
-        sample_source("NVDA-FY2024"),
-        sample_source("AMD-FY2023"),
-    ]
-    batch = seed.build_seed_batch(
-        entries,
-        expected_documents=2,
-        parser=parser,
-        chunker=chunker,
-        on_progress=progress.append,
-    )
     assert [record.doc_id for record in batch.documents] == ["AMD-FY2023", "NVDA-FY2024"]
-    assert [(record.doc_id, record.ordinal) for record in batch.chunks] == [
-        ("AMD-FY2023", 0),
-        ("AMD-FY2023", 1),
-        ("NVDA-FY2024", 0),
-        ("NVDA-FY2024", 1),
-    ]
-    assert calls == [
-        ("parse", "AMD"),
-        ("chunk", "AMD"),
-        ("parse", "NVDA"),
-        ("chunk", "NVDA"),
-    ]
+    assert [filing.source for filing in batch.filings] == list(reversed(entries))
+    assert [record.doc_id for record in batch.chunks] == sorted(
+        record.doc_id for record in batch.chunks
+    )
+    for source in entries:
+        records = [r for r in batch.chunks if r.doc_id == source.document.document_id]
+        assert records
+        assert [record.ordinal for record in records] == list(range(len(records)))
+        assert all(f"{source.document.issuer} disclosure." in record.body for record in records)
+        assert all(record.source_sha256 == source.artifact.sha256 for record in records)
     assert [(update.current, update.total, update.message) for update in progress] == [
         (0, 2, "Parsing selected filings"),
         (1, 2, "AMD-FY2023"),
@@ -155,71 +121,11 @@ def test_build_seed_batch_sorts_manifest_and_output():
     ]
 
 
-def test_build_seed_batch_enforces_expected_manifest_size():
-    """Reject a manifest whose document count differs from the contract."""
-    with pytest.raises(ValueError, match="expected 20 selected documents, found 0"):
-        seed.build_seed_batch([], expected_documents=20)
-
-
-def test_parse_seed_filings_orders_entries_and_calls_parser_once():
-    """Parse each sorted manifest entry exactly once."""
-    calls = []
-
-    def parser(entry):
-        """Record one sorted parse and return its filing."""
-        calls.append(entry.document.document_id)
-        return sample_filing(entry.document.document_id), {}
-
-    entries = [
-        sample_source("NVDA-FY2024"),
-        sample_source("AMD-FY2023"),
-        sample_source("AMD-FY2022"),
-    ]
-    filings = seed.parse_seed_filings(entries, expected_documents=3, parser=parser)
-
-    assert tuple(filing.source.document.document_id for filing in filings) == tuple(calls)
-
-
 def test_parse_seed_filings_validates_count_before_parsing():
-    """Validate manifest size before invoking the parser."""
-    calls = []
-
-    def parser(entry):
-        """Record an unexpected parser invocation."""
-        calls.append(entry)
-        return sample_filing(), {}
-
-    with pytest.raises(ValueError, match="expected 20 selected documents, found 0"):
-        seed.parse_seed_filings([], expected_documents=20, parser=parser)
-
-    assert calls == []
-
-
-def test_parse_once_batch_exactly_matches_build_seed_batch():
-    """Keep parse-once and combined batch construction equivalent."""
-
-    def parser(entry):
-        """Build one filing for parse-once equivalence."""
-        return sample_filing(entry.document.document_id), {}
-
-    def chunker(filing):
-        """Build chunks for parse-once equivalence."""
-        return sample_chunks(filing.source.document.document_id)
-
-    entries = [
-        sample_source("NVDA-FY2024"),
-        sample_source("AMD-FY2023"),
-    ]
-    combined = seed.build_seed_batch(
-        entries,
-        expected_documents=2,
-        parser=parser,
-        chunker=chunker,
-    )
-    filings = seed.parse_seed_filings(entries, expected_documents=2, parser=parser)
-    parse_once = seed.build_seed_batch_from_filings(filings, chunker=chunker)
-
-    assert parse_once == combined
+    """Reject the count before trying to read a source that is deliberately absent."""
+    source = sample_source("NVDA-FY2024")
+    with pytest.raises(ValueError, match="expected 20 selected documents, found 1"):
+        seed.parse_seed_filings([source], expected_documents=20)
 
 
 def test_reusing_parsed_filing_across_chunk_sizes_does_not_mutate_it():

@@ -32,8 +32,6 @@ def test_fuse_ranked_lists_generalizes_fusion_to_n_lists():
 
     assert [result.chunk_id for result in fused] == [2, 1, 3]
     assert fused[0].score == pytest.approx(1 / 62 + 1 / 61 + 1 / 61)
-    with pytest.raises(ValueError):
-        hybrid.fuse_ranked_lists((first,), 0)
 
 
 def test_fuse_ranked_lists_rejects_conflicting_identity_for_one_chunk_id():

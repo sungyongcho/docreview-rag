@@ -3,7 +3,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app.api.errors import install_error_handlers
+from app.api.errors import install_error_handlers, translate_runtime_errors
+from app.operator.jobs import JobPersistenceError
 
 
 def test_unconfigured_service_returns_typed_503(client_factory):
@@ -18,6 +19,24 @@ def test_unconfigured_service_returns_typed_503(client_factory):
             "details": [],
         }
     }
+
+
+def test_unsaved_job_history_returns_typed_503_without_storage_details():
+    """Surface unsaved terminal state instead of returning stale queued/running history."""
+    app = FastAPI()
+    install_error_handlers(app)
+
+    @app.get("/jobs")
+    async def jobs():
+        async with translate_runtime_errors():
+            raise JobPersistenceError("job-1") from OSError("private database endpoint")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/jobs")
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "job_persistence_unavailable"
+    assert "job-1" in response.json()["error"]["message"]
+    assert "private database endpoint" not in response.text
 
 
 def test_malformed_json_returns_typed_422_without_a_traceback(client_factory, services):

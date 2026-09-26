@@ -101,14 +101,13 @@ it("clears saved feedback when the CPU starting preset changes the draft", () =>
 });
 
 it("stays closed after an explicit dismiss even when the recommendation is applied", () => {
-  function Host() {
-    const [profile, setProfile] = useState(structuredClone(DEFAULT_SESSION_PROFILE));
-    return <NotificationProvider><SlowCpuNotice profile={profile} model="gemma4:e4b" speed={11.7} onOpenLimits={() => setProfile({ ...profile, prompt_policy: { ...profile.prompt_policy, workflow_budget: { ...profile.prompt_policy.workflow_budget, max_wall_clock_s: 445 } } })} /></NotificationProvider>;
-  }
-  render(<Host />);
+  const profile = structuredClone(DEFAULT_SESSION_PROFILE);
+  const onOpenLimits = vi.fn();
+  const view = render(<NotificationProvider><SlowCpuNotice profile={profile} model="gemma4:e4b" speed={11.7} onOpenLimits={onOpenLimits} /></NotificationProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
   expect(screen.queryByRole("alert")).toBeNull();
   // A re-render with a changed recommendation must not bring the closed toast back.
-  fireEvent.click(document.body);
+  const adjusted = { ...profile, prompt_policy: { ...profile.prompt_policy, workflow_budget: { ...profile.prompt_policy.workflow_budget, max_wall_clock_s: 445 } } };
+  view.rerender(<NotificationProvider><SlowCpuNotice profile={adjusted} model="gemma4:e4b" speed={10} onOpenLimits={onOpenLimits} /></NotificationProvider>);
   expect(screen.queryByRole("alert")).toBeNull();
 });

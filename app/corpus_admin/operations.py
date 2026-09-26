@@ -8,7 +8,6 @@ and first checks that the schema is compatible or still empty.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -33,11 +32,6 @@ from app.retrieval.embeddings import (
     embed_missing_chunks,
     matching_embedding,
 )
-
-OperationRunner = Callable[
-    [AdminCommand, OperationProgressCallback],
-    Awaitable[OperationOutcome],
-]
 
 
 async def _embedding_state(
@@ -65,9 +59,6 @@ class CorpusOperations:
         Schema state and root catalogs that decide whether a write may start.
     source_deletion : SourceDeletion
         Deletion approvals that previews reserved for this service.
-    operation_runner : OperationRunner | None
-        Replacement for every operation except source deletion, or ``None`` to run
-        the real acquisition, ingestion, embedding and BM25 steps.
     """
 
     def __init__(
@@ -75,12 +66,10 @@ class CorpusOperations:
         context: CorpusAdminContext,
         inspector: CorpusInspector,
         source_deletion: SourceDeletion,
-        operation_runner: OperationRunner | None,
     ) -> None:
         self._context = context
         self._inspector = inspector
         self._source_deletion = source_deletion
-        self._operation_runner = operation_runner
 
     async def run(
         self,
@@ -91,8 +80,6 @@ class CorpusOperations:
         """Execute one safe operation through reusable in-process boundaries."""
         if command.kind == "delete_sources":
             return await self._delete_sources(command, publish)
-        if self._operation_runner is not None:
-            return await self._operation_runner(command, publish)
         if command.kind == "acquire_edgar":
             return await self._acquire_edgar(command, publish)
         if command.kind == "acquire_dart":

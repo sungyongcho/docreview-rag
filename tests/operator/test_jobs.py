@@ -2,64 +2,153 @@
 
 import asyncio
 from datetime import UTC, datetime
+from functools import partial
 
 import pytest
-from sqlalchemy import delete, select
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
-from app.config import Settings, get_settings
+from app.config import Settings
 from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand, OperationOutcome
-from app.db.models import OperatorJob
 from app.ingestion.progress import OperationProgress
-from app.operator.jobs import JobExecutionCoordinator, JobStore, ProgressPersister
-from tests.live_postgres import live_postgres_unavailable
+from app.operator.jobs import (
+    JobExecutionCoordinator,
+    JobPersistenceError,
+    JobStore,
+    ProgressPersister,
+)
+from tests.live_postgres import isolated_session_factory
 
 
-def test_progress_persister_coalesces_bursts_and_lands_the_terminal_write_last() -> None:
+@pytest.mark.parametrize("terminal", [False, True])
+def test_progress_persister_coalesces_bursts_and_lands_the_terminal_write_last(terminal) -> None:
     """Write one snapshot at a time, catch up once, and let the final write land last."""
 
     async def scenario() -> None:
         """Block the first write, burst progress behind it, then finish the job."""
-        gate = asyncio.Event()
-        states = {"catch-up": "p1", "final": "p1"}
-        writes: list[tuple[str, str]] = []
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        caught_up = asyncio.Event()
+        state = "p1"
+        writes: list[str] = []
 
         async def write(job_id: str) -> None:
             """Record the snapshot seen at write time, holding the first write of each job."""
-            snapshot = states[job_id]
+            snapshot = state
             if snapshot == "p1":
-                await gate.wait()
-            writes.append((job_id, snapshot))
+                entered.set()
+                await release.wait()
+            writes.append(snapshot)
+            if snapshot == "p3":
+                caught_up.set()
 
         persister = ProgressPersister(write)
-        for job_id in states:
-            persister.schedule(job_id)
-        await asyncio.sleep(0)
-        for job_id in states:
-            states[job_id] = "p2"
-            persister.schedule(job_id)
-            states[job_id] = "p3"
-            persister.schedule(job_id)
-        states["final"] = "done"
-        gate.set()
-        assert await persister.write_final("final") is True
-        await persister.flush("catch-up")
-        persister.schedule("final")
-        await asyncio.sleep(0)
-
-        final_writes = [snapshot for job_id, snapshot in writes if job_id == "final"]
-        catch_up_writes = [snapshot for job_id, snapshot in writes if job_id == "catch-up"]
-        assert final_writes == ["p1", "done"]
-        assert catch_up_writes == ["p1", "p3"]
+        persister.start("job")
+        persister.schedule("job")
+        await entered.wait()
+        state = "p2"
+        persister.schedule("job")
+        state = "p3"
+        persister.schedule("job")
+        release.set()
+        if terminal:
+            state = "done"
+            await persister.write_final("job", partial(write, "job"))
+            persister.schedule("job")
+        else:
+            await caught_up.wait()
+        await persister.flush("job")
+        assert writes == ["p1", "done" if terminal else "p3"]
 
     asyncio.run(scenario())
 
 
-def test_progress_persister_retries_the_terminal_write_and_never_raises() -> None:
-    """Retry a failing terminal write a bounded number of times and report the outcome."""
+@pytest.mark.parametrize("cancel_waiter", [None, "flush", "final"])
+def test_terminal_write_waits_for_progress_shared_with_another_flush(cancel_waiter):
+    """Concurrent or cancelled waiters must not hide a running write from finalization."""
+
+    async def scenario():
+        """Overlap waiters with an active progress write, then recover any cancellation."""
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        writes = []
+
+        async def progress(job_id):
+            """Hold the running snapshot until both waiters have started."""
+            entered.set()
+            await release.wait()
+            writes.append("running")
+
+        async def final():
+            """Record the immutable terminal snapshot."""
+            writes.append("cancelled")
+
+        persister = ProgressPersister(progress)
+        persister.start("shared")
+        persister.schedule("shared")
+        await entered.wait()
+        waiter = asyncio.create_task(persister.flush("shared"))
+        await asyncio.sleep(0)
+        if cancel_waiter == "flush":
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+        terminal = asyncio.create_task(persister.write_final("shared", final))
+        await asyncio.sleep(0)
+        if cancel_waiter == "final":
+            terminal.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await terminal
+            terminal = asyncio.create_task(persister.retry_pending())
+            await asyncio.sleep(0)
+        try:
+            assert writes == []
+        finally:
+            release.set()
+            await terminal
+            if cancel_waiter != "flush":
+                await waiter
+        assert writes == ["running", "cancelled"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("same_job", [False, True])
+def test_cancelled_terminal_waiter_keeps_its_snapshot_for_reconciliation(same_job) -> None:
+    """A request cancelled behind another job's write must retain its final snapshot."""
+
+    async def scenario():
+        """Hold the first final write while cancelling the second caller."""
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        writes = []
+
+        async def write(job_id):
+            """Record final snapshots in their serialized order."""
+            if job_id == "first":
+                entered.set()
+                await release.wait()
+            writes.append(job_id)
+
+        persister = ProgressPersister(write)
+        first = asyncio.create_task(persister.write_final("first", partial(write, "first")))
+        await entered.wait()
+        second = asyncio.create_task(
+            persister.write_final("first" if same_job else "second", partial(write, "second"))
+        )
+        await asyncio.sleep(0)
+        second.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await second
+        release.set()
+        await first
+        await persister.retry_pending()
+        assert writes == ["first", "second"]
+
+    asyncio.run(scenario())
+
+
+def test_progress_persister_preserves_failed_terminal_writes_for_reconciliation() -> None:
+    """Retry transient failures, expose permanent failure, and save the retained snapshot."""
 
     async def scenario() -> None:
         """Fail twice then succeed for one job; fail every time for another."""
@@ -71,36 +160,60 @@ def test_progress_persister_retries_the_terminal_write_and_never_raises() -> Non
             calls.append(job_id)
             if failures[job_id] > 0:
                 failures[job_id] -= 1
-                raise RuntimeError("ledger unavailable")
+                raise OSError("ledger unavailable")
 
         persister = ProgressPersister(write)
+        persister.start("flaky")
         persister.schedule("flaky")
         await asyncio.sleep(0)
-        assert await persister.write_final("flaky") is True
-        assert await persister.write_final("broken") is False
+        await persister.write_final("flaky", partial(write, "flaky"))
+        with pytest.raises(JobPersistenceError) as failure:
+            await persister.write_final("broken", partial(write, "broken"))
+        assert isinstance(failure.value.__cause__, OSError)
         assert calls.count("flaky") == 3
         assert calls.count("broken") == 3
+        failures["broken"] = 0
+        await persister.retry_pending()
+        assert calls.count("broken") == 4
+        await persister.retry_pending()
+        assert calls.count("broken") == 4
 
     asyncio.run(scenario())
 
 
-async def _exercise() -> tuple[bool, str]:
-    """Exercise persistence and restart recovery inside one rolled-back connection."""
-    engine = create_async_engine(make_url(get_settings().database_url), poolclass=NullPool)
-    connection = None
-    try:
-        try:
-            connection = await engine.connect()
-        except Exception as error:
-            return False, str(error)
-        transaction = await connection.begin()
-        factory = async_sessionmaker(
-            bind=connection,
-            expire_on_commit=False,
-            join_transaction_mode="create_savepoint",
-        )
-        store = JobStore(session_factory=factory)
-        try:
+def test_terminal_programming_errors_are_not_retried() -> None:
+    """An invalid write contract must remain visible without speculative retries."""
+
+    async def scenario():
+        """Reject a programming failure after exactly one write attempt."""
+        calls = 0
+
+        async def write(job_id):
+            """Raise a deterministic contract error without touching persistence."""
+            nonlocal calls
+            calls += 1
+            raise ValueError("invalid ledger payload")
+
+        persister = ProgressPersister(write)
+        with pytest.raises(JobPersistenceError) as failure:
+            await persister.write_final("invalid", partial(write, "invalid"))
+        assert isinstance(failure.value.__cause__, ValueError)
+        assert calls == 1
+        with pytest.raises(ValueError, match="invalid ledger payload"):
+            await persister.write_current("usage")
+        assert calls == 2
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.live_postgres
+def test_job_store_persists_progress_and_interrupts_stale_process_work():
+    """Persist queue progress and recover interrupted work through independent DB sessions."""
+
+    async def scenario():
+        """Commit actual transitions in a disposable schema."""
+        async with isolated_session_factory() as factory:
+            store = JobStore(session_factory=factory)
             queued_at = datetime(2026, 9, 1, tzinfo=UTC)
             corpus = await store.create(
                 job_id="admin-test-persist",
@@ -146,78 +259,38 @@ async def _exercise() -> tuple[bool, str]:
             assert evaluation.job_id in {job.job_id for job in evaluations}
             assert corpus.job_id not in {job.job_id for job in evaluations}
             assert all(job.domain == "evaluation" for job in evaluations)
-        finally:
-            await transaction.rollback()
-        return True, ""
-    finally:
-        if connection is not None:
-            await connection.close()
-        await engine.dispose()
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.live_postgres
-def test_job_store_persists_progress_and_interrupts_stale_process_work():
-    """Require PostgreSQL for transactional queue recovery evidence."""
-    reachable, detail = asyncio.run(_exercise())
-    if not reachable:
-        live_postgres_unavailable(detail)
+def test_corpus_worker_persists_progress_and_terminal_state(tmp_path):
+    """Persist real worker progress and terminal state into an isolated job ledger."""
 
+    async def scenario():
+        """Run the queue with an operation that publishes deterministic progress."""
+        async with isolated_session_factory() as factory:
+            store = JobStore(session_factory=factory)
 
-async def _exercise_corpus_worker(tmp_path) -> tuple[bool, str]:
-    """Persist one real worker lifecycle through the shared job store."""
-    engine = create_async_engine(make_url(get_settings().database_url), poolclass=NullPool)
-    created_id: str | None = None
-    try:
-        try:
-            async with engine.connect() as connection:
-                await connection.execute(select(OperatorJob.job_id).limit(1))
-        except Exception as error:
-            return False, str(error)
-        factory = async_sessionmaker(
-            bind=engine,
-            expire_on_commit=False,
-        )
-        store = JobStore(session_factory=factory)
+            async def runner(command, publish, on_usage=None) -> OperationOutcome:
+                """Publish operation progress through the real persistence lifecycle."""
+                publish(OperationProgress("work", 1, 2, f"running {command.kind}"))
+                publish(OperationProgress("work", 2, 2, f"finished {command.kind}"))
+                return OperationOutcome("verified test completion")
 
-        async def runner(command, publish) -> OperationOutcome:
-            """Publish synthetic progress through the real persistent job lifecycle."""
-            publish(OperationProgress("work", 1, 2, f"running {command.kind}"))
-            publish(OperationProgress("work", 2, 2, f"finished {command.kind}"))
-            return OperationOutcome("verified test completion")
-
-        service = RuntimeCorpusAdminService(
-            settings=Settings(corpus_dir=tmp_path),
-            operation_runner=runner,
-            job_store=store,
-        )
-        try:
+            service = RuntimeCorpusAdminService(
+                settings=Settings(corpus_dir=tmp_path), job_store=store
+            )
+            service._job_queue._run_operation = runner
             created = await service.enqueue(AdminCommand("rebuild_bm25"))
-            created_id = created.job_id
             await service._job_queue._queue.join()
-            await asyncio.sleep(0.1)
             persisted = await store.get(created.job_id)
             assert persisted is not None
             assert persisted.status == "succeeded"
             assert persisted.current == 2
             assert persisted.message == "verified test completion"
-        finally:
-            if created_id is not None:
-                async with factory() as session:
-                    await session.execute(
-                        delete(OperatorJob).where(OperatorJob.job_id == created_id)
-                    )
-                    await session.commit()
-        return True, ""
-    finally:
-        await engine.dispose()
 
-
-@pytest.mark.live_postgres
-def test_corpus_worker_persists_progress_and_terminal_state(tmp_path):
-    """Require PostgreSQL evidence for queue-to-history persistence."""
-    reachable, detail = asyncio.run(_exercise_corpus_worker(tmp_path))
-    if not reachable:
-        live_postgres_unavailable(detail)
+    asyncio.run(scenario())
 
 
 def test_coordinator_is_busy_while_a_ticket_is_pending_or_active() -> None:

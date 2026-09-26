@@ -83,7 +83,7 @@ class _ScriptedSession:
 
     def __init__(self, *answers: bool) -> None:
         self.answers = list(answers)
-        self.statements: list[str] = []
+        self.statements: list[object] = []
 
     def in_transaction(self) -> bool:
         """Report an already pinned transaction."""
@@ -91,23 +91,19 @@ class _ScriptedSession:
 
     async def scalar(self, statement: object) -> bool:
         """Record the probe and return the next scripted answer."""
-        self.statements.append(str(statement))
+        self.statements.append(statement)
         return self.answers.pop(0)
 
 
 @pytest.mark.parametrize(
-    ("strategy", "ranker", "answers", "code", "table"),
+    ("strategy", "ranker", "answers", "code"),
     [
-        pytest.param(
-            "hybrid", "bm25", (True,), "embeddings_not_ready", "snapshot_chunks", id="vectors"
-        ),
-        pytest.param(
-            "hybrid", "bm25", (False, False), "bm25_not_ready", "snapshot_bm25", id="bm25"
-        ),
-        pytest.param("lexical", "bm25", (False,), "bm25_not_ready", "snapshot_bm25", id="lexical"),
+        pytest.param("hybrid", "bm25", (True,), "embeddings_not_ready", id="vectors"),
+        pytest.param("hybrid", "bm25", (False, False), "bm25_not_ready", id="bm25"),
+        pytest.param("lexical", "bm25", (False,), "bm25_not_ready", id="lexical"),
     ],
 )
-def test_snapshot_filters_probe_the_snapshot_tables(strategy, ranker, answers, code, table):
+def test_snapshot_readiness_rejects_missing_required_indexes(strategy, ranker, answers, code):
     """A snapshot frozen without the vectors or statistics a preset needs answers a typed 503
     from its own tables instead of reaching the search and failing untyped."""
     session = _ScriptedSession(*answers)
@@ -125,8 +121,7 @@ def test_snapshot_filters_probe_the_snapshot_tables(strategy, ranker, answers, c
 
     assert raised.value.status_code == 503
     assert raised.value.error.code == code
-    assert table in session.statements[-1]
-    assert all("chunk_embeddings" not in statement for statement in session.statements)
+    assert not session.answers
 
 
 def test_ready_snapshot_passes_and_a_ts_rank_cd_snapshot_needs_no_statistics():

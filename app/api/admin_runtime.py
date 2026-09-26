@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
@@ -115,14 +114,12 @@ class RuntimeAdminApiServices:
         self._job_history = JobHistoryService(
             runtime.session_factory, get_settings().corpus_dir.parent / "job-history-backups"
         )
-        execution_lock = asyncio.Lock()
         execution_coordinator = JobExecutionCoordinator()
         self._execution_coordinator = execution_coordinator
         self._corpus = corpus or RuntimeCorpusAdminService(
             session_factory=runtime.session_factory,
             job_store=self._job_store,
             corpus_access=runtime.corpus_access,
-            execution_lock=execution_lock,
             execution_coordinator=execution_coordinator,
         )
         self._corpus.corpus_access = runtime.corpus_access
@@ -130,7 +127,6 @@ class RuntimeAdminApiServices:
             corpus_status=self._corpus.status,
             session_factory=runtime.session_factory,
             job_store=self._job_store,
-            execution_lock=execution_lock,
             execution_coordinator=execution_coordinator,
         )
         self._golden = GoldenAdminService()

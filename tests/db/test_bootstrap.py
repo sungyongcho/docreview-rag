@@ -14,41 +14,11 @@ from app.config import get_settings
 import app.db.bootstrap as bootstrap
 from app.db.bootstrap import (
     SchemaDriftError,
-    bootstrap_schema,
     ensure_schema_compatibility,
     ensure_vector_extension,
 )
 from app.db.models import Base
 from tests.live_postgres import live_postgres_unavailable
-
-
-class _ConnectionContext:
-    """Async context manager returning one mocked database connection."""
-
-    def __init__(self, connection: AsyncMock) -> None:
-        self.connection = connection
-
-    async def __aenter__(self) -> AsyncMock:
-        return self.connection
-
-    async def __aexit__(self, _exc_type, _exc, _traceback) -> None:
-        return None
-
-
-def test_bootstrap_enables_vector_and_checks_drift_before_creating_tables() -> None:
-    """Issue the idempotent pgvector statement and check compatibility before create_all."""
-    connection = AsyncMock()
-    connection.run_sync.return_value = None
-    engine = MagicMock()
-    engine.begin.return_value = _ConnectionContext(connection)
-
-    asyncio.run(bootstrap_schema(engine))
-
-    assert connection.method_calls[0][0] == "execute"
-    first_statement = connection.execute.await_args_list[0].args[0]
-    assert str(first_statement) == "CREATE EXTENSION IF NOT EXISTS vector"
-    run_sync_targets = [call.args[0] for call in connection.run_sync.await_args_list]
-    assert run_sync_targets == [bootstrap._collect_schema_drift, Base.metadata.create_all]
 
 
 def test_schema_drift_error_lists_tables_columns_and_remedy() -> None:

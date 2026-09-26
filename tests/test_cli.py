@@ -16,6 +16,12 @@ from sqlalchemy.exc import OperationalError
 
 from app import cli
 from app.config import Settings, get_settings
+from app.db import session as session_module
+from app.retrieval import embeddings, service
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from app.retrieval.service import ComponentRankings, RetrievalResult
+from tests.api.support import MemorySession
+from tests.retrieval.support import hit
 from tests.support import load_settings
 
 
@@ -44,21 +50,30 @@ def test_retrieve_defaults_to_the_configured_provider_and_prints_stable_json(
     monkeypatch,
     capsys,
 ):
-    """Leave the provider to configuration and print one stable, sorted JSON object."""
+    """Run CLI projection over retrieved evidence without overriding the configured provider."""
     observed = {}
+    evidence = hit(10, 0.75)
+    settings = load_settings(Settings, env_file=None, embedding_provider="deterministic")
 
-    async def run(args):
-        """Record the parsed arguments and return one successful payload."""
-        observed.update(vars(args))
-        return {
-            "status": "ok",
-            "command": "retrieve",
-            "query": args.query,
-            "provider": args.provider or "deterministic",
-            "hits": [],
-        }
+    def configured_provider(configured):
+        """Capture effective provider settings at the actual adapter boundary."""
+        observed["settings"] = configured
+        return DeterministicEmbeddingProvider()
 
-    monkeypatch.setattr(cli, "_run_data_command", run)
+    async def retrieve(session, query, *, provider, k, filters, **plan):
+        """Return one ranked filing hit without opening a database connection."""
+        observed.update(query=query, k=k, filters=filters)
+        return RetrievalResult(
+            candidates=(evidence,),
+            hits=(evidence,),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(10,), lexical=()),
+        )
+
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(session_module, "Session", MemorySession)
+    monkeypatch.setattr(embeddings, "get_embedding_provider", configured_provider)
+    monkeypatch.setattr(service, "retrieve", retrieve)
 
     exit_code = cli.main(["retrieve", "--query", "NVDA revenue"])
 
@@ -66,14 +81,36 @@ def test_retrieve_defaults_to_the_configured_provider_and_prints_stable_json(
     assert exit_code == cli.ExitCode.OK
     assert payload == {
         "command": "retrieve",
-        "hits": [],
+        "hits": [
+            {
+                "chunk_id": 10,
+                "doc_id": "NVDA-FY2024",
+                "item": "7",
+                "section_title": "Management's Discussion and Analysis",
+                "kind": "text",
+                "citation": "NVDA FY2024 · Item 7",
+                "start_char": 1000,
+                "end_char": 1050,
+                "source_sha256": "a" * 64,
+                "body": "Research and development expenses increased.",
+                "context_header": "NVDA FY2024 · Item 7",
+                "score": 0.75,
+            }
+        ],
         "provider": "deterministic",
         "query": "NVDA revenue",
         "status": "ok",
+        "backfill": None,
+        "embedding_usage": None,
+        "component_rankings": {
+            "vector": [10],
+            "vector_by_language": {},
+            "lexical": [],
+            "lexical_by_language": {},
+        },
     }
     assert observed["k"] == 5
-    # No flag means no override: the configured EMBEDDING_PROVIDER stays in charge.
-    assert observed["provider"] is None
+    assert observed["settings"] is settings
 
 
 def test_filters_construct_against_the_real_domain_model():

@@ -8,52 +8,8 @@ import pytest
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1
 from app.evals.ablation import ExperimentConfig, experiment_matrix, run_ablation
 from app.evals.retrieval_eval import evaluate_retriever
-from app.evals.types import EvaluationRetrieval, GoldenCase, GoldenSpan
-from app.retrieval.types import ChunkHit
-from tests.evals.support import SOURCE_SHA256
-
-
-def golden_case() -> GoldenCase:
-    """Build the deterministic positive case shared by these arms."""
-    return GoldenCase(
-        id="m3c-01",
-        question="Where is the source-grounded evidence?",
-        category="simple_lookup",
-        facet="factual",
-        tags=("demo-hero",),
-        answers=(
-            GoldenSpan(
-                doc_id="NVDA-FY2024",
-                source_sha256=SOURCE_SHA256,
-                start_char=100,
-                end_char=200,
-            ),
-        ),
-        expected_label="SUPPORTED",
-        reference_answer="In the cited span.",
-        note="Deterministic ablation fixture.",
-        curation_status="agent-curated",
-        approval_status="pending-author-approval",
-        human_verified=False,
-    )
-
-
-def hit() -> ChunkHit:
-    """Build the single hit that covers the fixture gold span."""
-    return ChunkHit(
-        chunk_id=1,
-        doc_id="NVDA-FY2024",
-        item="7",
-        kind="text",
-        citation="NVDA FY2024 · Item 7",
-        start_char=90,
-        end_char=210,
-        source_sha256=SOURCE_SHA256,
-        body="Source-grounded evidence.",
-        context_header="NVDA FY2024 · Item 7",
-        index_text="NVDA FY2024 · Item 7\n\nSource-grounded evidence.",
-        score=1.0,
-    )
+from app.evals.types import EvaluationRetrieval
+from tests.evals.support import positive_case, relevant_hit
 
 
 def retrieval_provenance(config: ExperimentConfig) -> dict[str, object]:
@@ -229,11 +185,11 @@ def test_run_ablation_writes_stable_raw_artifacts_and_comparison_table(tmp_path)
 
         async def retriever(_query, _k):
             """Return the one relevant hit for every query."""
-            return EvaluationRetrieval(hits=(hit(),))
+            return EvaluationRetrieval(hits=(relevant_hit(),))
 
         clock_values = iter((0, 1_000_000))
         return await evaluate_retriever(
-            [golden_case()],
+            [positive_case()],
             retriever,
             suite="m3-test",
             config=config.to_dict(),
@@ -304,10 +260,10 @@ def test_run_ablation_accepts_extra_provenance_but_rejects_a_changed_arm(tmp_pat
 
             async def retriever(_query, _k):
                 """Return the one relevant hit for every query."""
-                return EvaluationRetrieval(hits=(hit(),))
+                return EvaluationRetrieval(hits=(relevant_hit(),))
 
             return await evaluate_retriever(
-                [golden_case()],
+                [positive_case()],
                 retriever,
                 suite="m3-test",
                 config=arm.to_dict() | extra,

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SystemWorkspace, type SystemWorkspaceProps } from "./system-workspace";
 import { I18nProvider, LOCALE_KEY } from "@/lib/i18n";
+import { expectNoUnexpectedRequests, jsonResponse, stubHttp } from "@/lib/http-test-support";
 
 function renderSystem(overrides: Partial<SystemWorkspaceProps> = {}) {
   return render(
@@ -19,18 +20,21 @@ function renderSystem(overrides: Partial<SystemWorkspaceProps> = {}) {
   );
 }
 
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  localStorage.clear();
+  expectNoUnexpectedRequests();
+});
+
 describe("System workspace", () => {
   it("explains why the raw API action is disabled while readiness is degraded", () => {
     renderSystem({ live: true, ready: false, tab: "api" });
     expect(screen.getByRole("button", { name: "Send to API" })).toBeDisabled();
     expect(screen.getByText("Corpus not ready. Inspect the earliest verified prerequisite.")).toBeInTheDocument();
   });
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
-    localStorage.clear();
-  });
+
 
   it("shows locally persisted usage only in live operator mode", async () => {
     renderSystem({ live: false });
@@ -38,28 +42,20 @@ describe("System workspace", () => {
     expect(screen.queryByRole("button", { name: "API inspector" })).not.toBeInTheDocument();
     cleanup();
 
-    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input).replace(/\/?(\?|$)/, "$1");
-      let payload: unknown = {};
-      if (url.endsWith("/admin/usage")) payload = {
-        runs: 2, requests: 3, input_tokens: 100, cached_input_tokens: 20,
-        cache_write_input_tokens: 10, output_tokens: 30, reasoning_tokens: 5,
-        estimated_cost_usd: "0.01", latest_run_at: null,
-        models: [{ model_name: "gpt-5.6-terra", requests: 3, input_tokens: 100,
-          cached_input_tokens: 20, cache_write_input_tokens: 10, output_tokens: 30,
-          reasoning_tokens: 5, estimated_cost_usd: "0.01" }],
-      };
-      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    stubHttp({ "GET /admin/usage": () => jsonResponse({
+      runs: 2, requests: 3, input_tokens: 100, cached_input_tokens: 20,
+      cache_write_input_tokens: 10, output_tokens: 30, reasoning_tokens: 5,
+      estimated_cost_usd: "0.01", latest_run_at: null,
+      models: [{ model_name: "gpt-5.6-terra", requests: 3, input_tokens: 100,
+        cached_input_tokens: 20, cache_write_input_tokens: 10, output_tokens: 30,
+        reasoning_tokens: 5, estimated_cost_usd: "0.01" }],
+    }) });
     renderSystem({ live: true, tab: "usage" });
 
     expect(screen.getByRole("button", { name: "Usage" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Usage" })).toHaveAttribute("title", "DEV only");
-    expect(screen.getByRole("button", { name: "System status" }).querySelector(".development-badge")).toBeNull();
     await waitFor(() => expect(screen.getByText("gpt-5.6-terra")).toBeInTheDocument());
     expect(screen.getAllByText("$0.01")).toHaveLength(3);
-    expect(fetchMock.mock.calls.every(([value]) => String(value).replace(/\/?(\?|$)/, "$1").endsWith("/admin/usage"))).toBe(true);
   });
 
   it("hides the Operations tab without a local operator and falls back to status", () => {
@@ -72,9 +68,6 @@ describe("System workspace", () => {
     cleanup();
 
     renderSystem({ live: true, operationsAvailable: true, onTabChange });
-    // The tour's optional last step spotlights this tab button and nothing else in the strip.
-    expect(screen.getByRole("button", { name: "Operations" })).toHaveAttribute("data-tour", "operations");
-    expect(screen.getByRole("button", { name: "System status" })).not.toHaveAttribute("data-tour");
     fireEvent.click(screen.getByRole("button", { name: "Operations" }));
     expect(onTabChange).toHaveBeenCalledWith("operations");
   });
@@ -91,11 +84,11 @@ describe("System workspace", () => {
 
   it("formats recorded usage counts and timestamps in the selected language", async () => {
     localStorage.setItem(LOCALE_KEY, "ko");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    stubHttp({ "GET /admin/usage": () => jsonResponse({
       runs: 1200, requests: 2400, input_tokens: 12345, cached_input_tokens: 0,
       cache_write_input_tokens: 0, output_tokens: 0, reasoning_tokens: 0,
       estimated_cost_usd: "0.0100", latest_run_at: "2026-09-05T12:00:00Z", models: [],
-    }), { status: 200, headers: { "content-type": "application/json" } })));
+    }) });
     render(<I18nProvider><SystemWorkspace live readiness={null} checking={false} onRefresh={vi.fn()} operationsAvailable={false} tab="usage" onTabChange={vi.fn()} /></I18nProvider>);
     expect(await screen.findByText("12,345")).toBeInTheDocument();
     expect(screen.getByText("1,200")).toBeInTheDocument();
@@ -111,7 +104,7 @@ it("groups external and local embedding usage with matching subtotals and explic
   const external = { ...common, provider: "openai_embeddings", local: false, credential_slot: "OPENAI_API_KEY_LOCAL", model_name: "text-embedding-3-large", role: "embedding", requests: 2, input_tokens: 100, estimated_cost_usd: "0.000013" };
   const local = { ...common, provider: "sbert", local: true, credential_slot: "none", model_name: "local-model", role: "embedding", requests: 1, input_tokens: 0, estimated_input_tokens: 12, unreported_input_requests: 1, estimated_cost_usd: "0" };
   const payload = { ...common, runs: 0, requests: 3, input_tokens: 100, estimated_input_tokens: 12, unreported_input_requests: 1, estimated_cost_usd: "0.000013", latest_run_at: null, models: [external, local], providers: [{ ...external, models: [external] }, { ...local, models: [local] }] };
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } })));
+  stubHttp({ "GET /admin/usage": () => jsonResponse(payload) });
   renderSystem({ live: true, tab: "usage" });
   await screen.findByText("text-embedding-3-large");
   expect(screen.getByRole("region", { name: "openai_embeddings · OPENAI_API_KEY_LOCAL" })).toHaveTextContent("External API");

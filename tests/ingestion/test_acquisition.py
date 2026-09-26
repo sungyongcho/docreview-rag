@@ -1,8 +1,6 @@
 """Common artifact publication and named selection behavior."""
 
-from collections.abc import Callable
 from dataclasses import replace
-from typing import cast
 
 import pytest
 
@@ -127,8 +125,5 @@ def test_reacquiring_prior_bytes_selects_the_actual_latest_acquisition(tmp_path)
 def test_acquisition_requires_explicit_payloads(tmp_path):
     """No producer may implicitly reread an old path instead of supplying acquired bytes."""
     filing = acquired_filing(tmp_path)
-    with pytest.raises(TypeError):
-        # Call the constructor unchecked on purpose: omitting payloads must fail at runtime.
-        cast(Callable[..., AcquiredFiling], AcquiredFiling)(filing.document, filing.artifacts)
     with pytest.raises(ValueError, match="payload"):
         AcquiredFiling(filing.document, filing.artifacts, ())

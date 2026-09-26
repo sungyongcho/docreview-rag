@@ -2,11 +2,12 @@
 
 from dataclasses import replace
 from datetime import UTC, datetime
-import json
 from pathlib import Path
 
+from app.ingestion.manifest import Manifest, ProcessingSelection
 from app.operator.job_history import ARCHIVE_KEY
 from app.operator.jobs import JobDomain, JobStatus, JobStore, StoredJob
+from tests.ingestion.support import filing_document, filing_source
 
 
 class LedgerStore(JobStore):
@@ -72,7 +73,7 @@ class LedgerStore(JobStore):
         """Replace one row, raising while failures remain."""
         if self.failures > 0:
             self.failures -= 1
-            raise RuntimeError("ledger unavailable")
+            raise OSError("ledger unavailable")
         row = self.rows[job_id]
         updated = replace(
             row,
@@ -134,49 +135,21 @@ class LedgerStore(JobStore):
 
 
 def write_manifest(root: Path) -> None:
-    """Write a small common catalog with one exact acquired selection."""
-    import hashlib
-
-    raw = b"report"
-    (root / "report.html").write_bytes(raw)
-    payload = {
-        "corpus": {"corpus_id": "test", "name": "Test"},
-        "documents": [
-            {
-                "document_id": "nvda-2024",
-                "registry": "sec",
-                "language": "en",
-                "issuer": "NVDA",
-                "issuer_id": "0001045810",
-                "filing_id": "0001045810-24-000001",
-                "fiscal_year": 2024,
-                "form": "10-K",
-                "filing_date": "2024-02-01",
-                "report_period": "2024-01-01",
-                "source_url": "https://example.org/report",
-                "sec": {
-                    "cik": "0001045810",
-                    "accession": "0001045810-24-000001",
-                    "primary_document": "report.html",
-                },
-            }
-        ],
-        "artifacts": [
-            {
-                "artifact_id": "nvda-source",
-                "document_id": "nvda-2024",
-                "role": "primary",
-                "path": "report.html",
-                "sha256": hashlib.sha256(raw).hexdigest(),
-                "byte_length": len(raw),
-                "encoding": "utf-8",
-                "acquisition": {
-                    "acquired_at": "2024-02-01T00:00:00Z",
-                    "url": "https://example.org/report",
-                    "media_type": "text/html",
-                },
-            }
-        ],
-        "selections": [{"selection_id": "selected", "artifact_ids": ["nvda-source"]}],
-    }
-    (root / "manifest.json").write_text(json.dumps(payload))
+    """Write one exact acquired selection with the shared typed source builders."""
+    path = root / "report.html"
+    path.write_bytes(b"report")
+    source = filing_source(
+        path,
+        document=filing_document(
+            issuer="NVDA", filing_id="0001045810-24-000001", document_id="nvda-2024"
+        ),
+    )
+    artifact = source.artifact.model_copy(update={"artifact_id": "nvda-source"})
+    Manifest(
+        corpus=source.corpus,
+        documents=(source.document,),
+        artifacts=(artifact,),
+        selections=(
+            ProcessingSelection(selection_id="selected", artifact_ids=(artifact.artifact_id,)),
+        ),
+    ).write(root / "manifest.json")

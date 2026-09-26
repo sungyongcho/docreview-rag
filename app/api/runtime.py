@@ -60,7 +60,6 @@ from app.db.session_factory import SessionFactory
 from app.evals.snapshots import SnapshotService
 from app.ingestion.company_names import CompanyNames, read_company_names
 from app.llm.local_connection import LocalConnectionManager
-from app.llm.local_inventory import LocalModelInventory
 from app.llm.openai_limits import OpenAILimitsManager
 from app.llm.provider import LLMProvider
 from app.llm.schemas import ProviderBudget
@@ -127,24 +126,6 @@ type SessionRetrievalService = Callable[
     [AsyncSession, str, int, RetrievalFilters],
     Awaitable[RetrievalResult],
 ]
-
-
-class WorkflowService(Protocol):
-    """M4 workflow call shape used by the review resource."""
-
-    def __call__(
-        self,
-        request: WorkflowRequest,
-        *,
-        retriever: Callable[
-            [str, int, RetrievalFilters],
-            Awaitable[RetrievalResult],
-        ],
-        provider: LLMProvider,
-        on_node: NodeObserver | None = None,
-    ) -> Awaitable[RunReport]:
-        """Return one asynchronous guarded workflow report."""
-        ...
 
 
 class RunPersister(Protocol):
@@ -356,15 +337,12 @@ class RuntimeApiServices(ApiServices):
         embedding_provider: EmbeddingProvider,
         llm_providers: dict[str, LLMProvider] | None = None,
         provider_budgets: dict[str, ProviderBudget] | None = None,
-        local_inventory: LocalModelInventory | None = None,
         local_connection: LocalConnectionManager | None = None,
         openai_limits: OpenAILimitsManager | None = None,
         allow_local_engine: bool = True,
         local_timeout_s: float = DEFAULT_LOCAL_TIMEOUT_S,
         retrieval_service: RetrievalService = consistent_retrieve,
-        workflow_service: WorkflowService = run_workflow,
         run_persister: RunPersister = persist_run_records,
-        run_id_factory: Callable[[], str] | None = None,
         secret_values: Iterable[str] = (),
         credential_slot: str | None = None,
         bm25_k1: float = DEFAULT_BM25_K1,
@@ -388,14 +366,11 @@ class RuntimeApiServices(ApiServices):
         self.local_connection = local_connection
         self.openai_limits = openai_limits
         self._allow_local_engine = allow_local_engine
-        if (
-            local_inventory is not None or local_connection is not None and local_connection.enabled
-        ) and "local" not in budgets:
+        if local_connection is not None and local_connection.enabled and "local" not in budgets:
             raise ValueError("local discovery requires an explicit local provider budget")
         self._engines = ReviewEngines(
             llm_providers=providers,
             provider_budgets=budgets,
-            local_inventory=local_inventory,
             local_connection=local_connection,
             openai_limits=openai_limits,
             allow_local_engine=allow_local_engine,
@@ -403,9 +378,7 @@ class RuntimeApiServices(ApiServices):
             validate_profile=self._validate_session_profile,
         )
         self._retrieval_service = retrieval_service
-        self._workflow_service = workflow_service
         self._run_persister = run_persister
-        self._run_id_factory = run_id_factory or (lambda: f"run-{uuid4().hex}")
         self._secret_values = tuple(secret_values)
         self._credential_slot = credential_slot
         self._bm25_k1 = bm25_k1
@@ -463,11 +436,6 @@ class RuntimeApiServices(ApiServices):
         property lets them do that without reaching into private state.
         """
         return self._corpus_root
-
-    @property
-    def local_inventory(self) -> LocalModelInventory | None:
-        """Expose current discovery for readiness while request work captures its own copy."""
-        return self._engines.local_inventory
 
     @asynccontextmanager
     async def _request_connection(self, profile: ReviewSessionProfile) -> AsyncIterator[None]:
@@ -868,7 +836,7 @@ class RuntimeApiServices(ApiServices):
         path: JsonObject,
     ) -> RunReport:
         """Persist bounded service guidance without a free-form provider reply."""
-        run_id = self._run_id_factory()
+        run_id = f"run-{uuid4().hex}"
         traces: tuple[StepTrace, ...] = ()
         answer = decision.canned_answer
         if answer is None:
@@ -967,7 +935,7 @@ class RuntimeApiServices(ApiServices):
             )
         path["routing_queries"] = dict(routed_queries)
         workflow_request = WorkflowRequest(
-            run_id=self._run_id_factory(),
+            run_id=f"run-{uuid4().hex}",
             query=retrieval_query,
             original_query=request.query,
             k=profile.k,
@@ -1071,7 +1039,7 @@ class RuntimeApiServices(ApiServices):
                     return safe_report
 
                 try:
-                    report = await self._workflow_service(
+                    report = await run_workflow(
                         workflow_request,
                         retriever=retrieve_for_workflow,
                         provider=llm_provider,

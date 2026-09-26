@@ -4,58 +4,23 @@ import asyncio
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import MetaData, select, text
-from sqlalchemy.engine import URL, make_url
+from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.runtime import RuntimeApiServices
-from app.config import get_settings
-from app.db.models import Base
+from app.db.models import Run, Trace
 from app.observability.persistence import REDACTED
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
-from tests.live_postgres import live_postgres_unavailable
+from tests.live_postgres import isolated_session_factory
 from tests.observability.support import persist_run_report, run_report, step_trace
 
 SECRET = "sk-live-test-secret-123456"
 
-REJECTED_ROWS = (
-    # A blank prompt would leave the run without the provenance the trace contract promises.
-    ("ck_runs_system_prompt_nonempty", "'   '", "'[\"retrieve\"]'::jsonb"),
-    # node_path is read back as an ordered list, so a JSON scalar is not a usable path.
-    ("ck_runs_node_path_array", "'Ground every claim.'", "'\"retrieve\"'::jsonb"),
-)
 
-
-async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
-    """Create the run tables, persist one report, and read the stored rows back.
-
-    Returns ``(False, detail)`` when the database is unavailable.
-    """
-    engine = create_async_engine(database_url, poolclass=NullPool)
-    connection = None
-    try:
-        try:
-            async with asyncio.timeout(3):
-                connection = await engine.connect()
-                await connection.execute(text("SELECT 1"))
-        except Exception as exc:
-            return False, str(exc)
-
-        temporary_metadata = MetaData()
-        for table_name in ("runs", "traces", "operator_jobs"):
-            Base.metadata.tables[table_name].to_metadata(temporary_metadata, schema="pg_temp")
-        await connection.run_sync(
-            lambda sync_connection: temporary_metadata.create_all(
-                sync_connection,
-                checkfirst=False,
-            )
-        )
-        runs = temporary_metadata.tables["pg_temp.runs"]
-        traces = temporary_metadata.tables["pg_temp.traces"]
-
+async def _exercise_live_postgres() -> None:
+    """Commit one report, read it through new sessions, and reject invalid stored rows."""
+    async with isolated_session_factory() as factory:
         report = run_report(
             system_prompt=f"Ground every claim. API_KEY={SECRET}",
             node_path=["retrieve", "grade"],
@@ -99,15 +64,16 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
             ],
         )
 
-        async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+        async with factory() as session:
             await persist_run_report(session, report, secret_values=[SECRET])
-            # Without this the queries below return identity-mapped objects carrying the
-            # attributes just assigned, and never read a stored column.
-            session.expire_all()
+            await session.commit()
 
-            stored_run = (await session.execute(select(runs))).mappings().one()
+        async with factory() as session:
+            stored_run = (await session.execute(select(Run.__table__))).mappings().one()
             stored_traces = (
-                (await session.execute(select(traces).order_by(traces.c.step))).mappings().all()
+                (await session.execute(select(Trace.__table__).order_by(Trace.step)))
+                .mappings()
+                .all()
             )
 
             assert stored_run["run_id"] == report.run_id
@@ -124,36 +90,36 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
             assert stored_traces[0]["estimated_cost_usd"] == Decimal("0.000072")
             assert stored_traces[1]["estimated_cost_usd"] == Decimal("0.0000288")
 
-            for constraint, prompt, node_path in REJECTED_ROWS:
-                with pytest.raises(IntegrityError, match=constraint):
+            # Reuse accepted rows and invalidate one field, so unrelated constraints
+            # cannot make a missing check appear to work.
+            for invalid_values in (
+                {"status": "unknown"},
+                {"system_prompt": "   "},
+                {"node_path": "retrieve"},
+            ):
+                with pytest.raises(IntegrityError) as failure:
                     async with session.begin_nested():
                         await session.execute(
-                            text(
-                                "INSERT INTO runs (run_id, status, iterations, total_requests,"
-                                " total_input_tokens, total_output_tokens,"
-                                " total_cached_input_tokens, total_cache_write_input_tokens,"
-                                " total_reasoning_tokens, total_estimated_cost_usd,"
-                                " total_time_seconds,"
-                                " system_prompt, node_path, report) VALUES"
-                                f" ('run-rejected', 'ok', 1, 1, 0, 0, 0, 0, 0, 0.0, 0.0, {prompt},"
-                                f" {node_path}, NULL)"
-                            )
+                            insert(Run).values(
+                                {**stored_run, "run_id": "run-rejected", **invalid_values}
+                            ),
                         )
+                assert getattr(failure.value.orig, "sqlstate", None) == "23514"
 
-            with pytest.raises(IntegrityError, match="ck_traces_step_positive"):
-                async with session.begin_nested():
-                    await session.execute(
-                        text(
-                            "INSERT INTO traces (run_id, step, node, model_name, api_url,"
-                            " input_tokens, output_tokens, cached_input_tokens,"
-                            " cache_write_input_tokens, reasoning_tokens, estimated_cost_usd,"
-                            " request_time_ms,"
-                            " llm_output, retries) VALUES"
-                            f" ('{report.run_id}', 0, 'grade', 'gpt-5.6-terra',"
-                            " 'https://api.test', 1, 1, 0, 0, 0, 0.0, 1.0, '{}', 0)"
+            trace_values = {key: value for key, value in stored_traces[0].items() if key != "id"}
+            for invalid_values, sqlstate in (
+                ({"node": "unknown"}, "23514"),
+                ({"estimated_cost_usd": Decimal("-0.000001")}, "23514"),
+                ({"step": 0}, "23514"),
+                ({"step": 1}, "23505"),
+            ):
+                with pytest.raises(IntegrityError) as failure:
+                    async with session.begin_nested():
+                        await session.execute(
+                            insert(Trace).values({**trace_values, "step": 3, **invalid_values}),
                         )
-                    )
-        factory = async_sessionmaker(bind=connection, expire_on_commit=False)
+                assert getattr(failure.value.orig, "sqlstate", None) == sqlstate
+
         usage = await RuntimeAdminApiServices(
             runtime=RuntimeApiServices(
                 session_factory=factory, embedding_provider=DeterministicEmbeddingProvider()
@@ -166,17 +132,9 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
         assert {model.model_name for model in usage.models} == {"gpt-4.1-mini"}
         assert {model.role for model in usage.models} == {"grade", "check"}
         assert sum(group.requests for group in usage.providers) == usage.requests
-        return True, ""
-    finally:
-        if connection is not None:
-            await connection.close()
-        await engine.dispose()
 
 
 @pytest.mark.live_postgres
 def test_live_postgres_stores_one_run_with_its_traces_and_rejects_invalid_rows():
     """Persist a run and its traces in one flush and enforce the table constraints."""
-    database_url = make_url(get_settings().database_url)
-    reachable, detail = asyncio.run(_exercise_live_postgres(database_url))
-    if not reachable:
-        live_postgres_unavailable(detail)
+    asyncio.run(_exercise_live_postgres())

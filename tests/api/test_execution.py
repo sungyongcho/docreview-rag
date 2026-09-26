@@ -127,21 +127,32 @@ def test_execution_rejects_missing_call_records_instead_of_rebuilding_traces(
     [("v1", "v1", 10), ("v2", "v1", None)],
 )
 def test_local_execution_publishes_measured_cpu_speed_to_readiness(
-    monkeypatch, tag_digest, loaded_digest, expected_speed
+    tmp_path, tag_digest, loaded_digest, expected_speed
 ):
     """Terminal context updates the same inventory consumed by the next readiness check."""
     import httpx
 
     from app.llm.local import LocalLLMProvider
+    from app.llm.local_connection import LocalConnectionManager
     from app.llm.local_engine import local_provider_budget
-    from app.llm.local_inventory import LocalModelInventory
-    from app.observability.stages import record_stages
+    from app.llm.schemas import Prompt
+    from app.observability.stages import record_stages, stage
+    from tests.llm.support import ChatReply
 
-    monkeypatch.setattr("app.llm.local_inventory.CACHE_TTL_S", 0)
     state = {"tag_digest": "v1", "loaded_digest": "v1"}
 
     def respond(request):
-        """Allow metadata inspection without invoking a model or database."""
+        """Return Ollama inventory and measured completion data without external I/O."""
+        if request.url.path == "/api/chat":
+            return httpx.Response(
+                200,
+                json={
+                    "message": {"content": '{"answer":"Revenue increased."}'},
+                    "prompt_eval_count": 10,
+                    "eval_count": 100,
+                    "eval_duration": 10_000_000_000,
+                },
+            )
         if request.url.path == "/api/show":
             return httpx.Response(200, json={"capabilities": ["completion"]})
         return httpx.Response(
@@ -160,12 +171,16 @@ def test_local_execution_publishes_measured_cpu_speed_to_readiness(
             },
         )
 
-    inventory = LocalModelInventory(
-        base_url="http://local.test", transport=httpx.MockTransport(respond)
+    connection = LocalConnectionManager(
+        initial_base_url="http://local.test",
+        path=tmp_path / "connection.json",
+        transport=httpx.MockTransport(respond),
     )
+    inventory = connection.current.inventory
+    assert inventory is not None
     service = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
-        local_inventory=inventory,
+        local_connection=connection,
         llm_providers={},
         provider_budgets={
             "local": local_provider_budget(max_input_tokens=12000, max_output_tokens=600)
@@ -185,20 +200,22 @@ def test_local_execution_publishes_measured_cpu_speed_to_readiness(
             async with service._request_connection(request.session_profile):
                 await service._engines.pin_local_model(request.session_profile)
                 state.update(tag_digest=tag_digest, loaded_digest=loaded_digest)
+                inventory.invalidate()
                 await inventory.snapshot()
                 with record_stages() as recorder:
-                    recorder.model_calls.append(
-                        {
-                            "model": "cpu",
-                            "provider": "ollama",
-                            "local": True,
-                            "local_timings": [{"eval_count": 100, "eval_duration_ms": 10000}],
-                        }
-                    )
+                    async with stage("check"):
+                        completion = await provider.complete(
+                            Prompt(system="Return the requested JSON.", user="Revenue?"),
+                            ChatReply,
+                            local_provider_budget(max_input_tokens=12000, max_output_tokens=600),
+                        )
+                    assert completion.status == "ok"
                     result = await service._execution_context(provider, None, request)
                 placement = result["local_placement"]
                 assert isinstance(placement, dict) and placement["placement"] == "cpu"
                 assert result["model_calls"] == recorder.model_calls
+                assert len(recorder.model_calls) == 1
+                assert recorder.model_calls[0]["output_tokens"] == 100
                 sample = (await inventory.snapshot()).models[0].cpu_performance
                 if expected_speed is None:
                     assert sample is None

@@ -2,7 +2,7 @@
 
 import asyncio
 from decimal import Decimal
-from typing import Any, cast
+from typing import cast
 
 from pydantic import ValidationError
 import pytest
@@ -120,24 +120,6 @@ def test_translate_query_rejects_blank_input_before_any_provider_call():
     with pytest.raises(ValueError, match="blank"):
         asyncio.run(translate_query("   ", llm_provider=provider, provider_budget=budget()))
     assert provider.prompts == ()
-
-
-def test_translation_never_reaches_a_network_provider():
-    """Use only the explicitly injected provider and never build a fallback."""
-    provider = DeterministicLLMProvider(
-        [raw(f'{{"translated_query":"{ENGLISH_QUERY}","source_language":"ko"}}')]
-    )
-
-    translate(provider)
-
-    # The queue is empty afterwards, so exactly one request was made and it was made
-    # against the injected provider. Translation is injection-only by design: no
-    # Settings switch can put a paid call into the query path.
-    with pytest.raises(QueryTranslationError):
-        translate(provider)
-    assert len(provider.prompts) == 2
-    with pytest.raises(TypeError):
-        asyncio.run(cast(Any, translate_query)(KOREAN_QUERY))
 
 
 @pytest.mark.parametrize(

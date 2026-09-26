@@ -275,6 +275,15 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                 ).one()
                 assert frozen.body == retained.body
                 assert frozen.embedding_model == retained.embedding_model
+                with pytest.raises(ValueError, match="no longer matches"):
+                    await service.create(
+                        label="Stale evaluation",
+                        eval_result_id=stale.id,
+                        public=False,
+                    )
+                # Snapshot evidence must survive removal of the mutable corpus too.
+                await session.execute(text("TRUNCATE documents CASCADE"))
+                await session.commit()
                 hits = await vector_search(
                     session,
                     [1.0, *([0.0] * 383)],
@@ -299,12 +308,6 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                 )
                 assert lexical_hits[0].chunk_id == retained.chunk_id
                 assert bm25_hits[0].chunk_id == retained.chunk_id
-            with pytest.raises(ValueError, match="no longer matches"):
-                await service.create(
-                    label="Stale evaluation",
-                    eval_result_id=stale.id,
-                    public=False,
-                )
             comparison = await service.compare(
                 baseline.snapshot_id,
                 candidate.snapshot_id,

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -20,11 +18,11 @@ from app.api.review_profile import PromptPolicy
 from app.api.runtime import RuntimeApiServices
 from app.config import Settings
 from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import CorpusStatus
 from app.llm.local_connection import LocalConnectionManager
-from app.llm.local_inventory import LocalModelInventory
 from app.llm.local_runtime import build_local_runtime
 from app.llm.openai_limits import OpenAICallLimits, OpenAILimitsManager
-from app.llm.provider import LLMProvider, OpenAILLMProvider
+from app.llm.provider import OpenAILLMProvider
 from app.openai_models import POLICY_REVISION, openai_policy_snapshot
 from app.release.ai_allowance import SharedAIAllowance
 from app.release.browser_reset import browser_reset_id
@@ -34,25 +32,24 @@ from app.release.secrets import install_secret_redaction
 from app.retrieval.embeddings import get_embedding_provider
 from app.settings_sources import Environment
 
-ProviderFactory = Callable[..., LLMProvider]
-ReadinessProbe = Callable[[], Awaitable[dict[str, Any]]]
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parents[2] / "web" / "out"
 PUBLIC_BASE_PATH = "/docreview-rag"
 
 
 async def _local_engine_readiness(
     settings: ReleaseSettings,
-    inventory: LocalModelInventory | None = None,
     connection: LocalConnectionManager | None = None,
+    *,
+    public_request: bool = False,
 ) -> dict[str, object]:
-    """Share bounded discovery with runtime execution without exposing the endpoint."""
+    """Share connection discovery only with requests allowed to inspect local engines."""
     if settings.environment == "prod":
         return {"enabled": False, "reason": "disabled_in_prod"}
-    if connection is not None:
-        return await connection.public_state()
-    if inventory is None or not settings.local_llm_enabled:
+    if public_request:
+        return {"enabled": False, "reason": "public_surface"}
+    if connection is None:
         return {"enabled": False, "reason": "not_configured"}
-    return (await inventory.snapshot()).public_state()
+    return await connection.public_state()
 
 
 class ReleaseHealth(BaseModel):
@@ -162,11 +159,7 @@ class ReleaseReadiness(BaseModel):
     openai_call_limits: OpenAICallLimits | None = None
 
 
-def build_runtime_services(
-    settings: ReleaseSettings,
-    *,
-    provider_factory: ProviderFactory = OpenAILLMProvider,
-) -> RuntimeApiServices:
+def build_runtime_services(settings: ReleaseSettings) -> RuntimeApiServices:
     """Compose runtime services without activating a provider from key presence alone."""
     if settings.service_mode != "runtime":
         raise ValueError("runtime services require DOCREVIEW_MODE=runtime")
@@ -175,7 +168,7 @@ def build_runtime_services(
     secrets: list[str] = []
     if settings.openai_api_key is not None:
         api_key = settings.openai_api_key.get_secret_value()
-        provider = provider_factory(model_name=settings.openai_model, api_key=api_key)
+        provider = OpenAILLMProvider(model_name=settings.openai_model, api_key=api_key)
         providers["openai"] = provider
         budgets["openai"] = settings.provider_budget()
         secrets.append(api_key)
@@ -247,7 +240,6 @@ def create_release_app(
     *,
     services: RuntimeApiServices | None = None,
     static_dir: Path | None = None,
-    readiness_probe: ReadinessProbe | None = None,
 ) -> FastAPI:
     """Create one guarded API with an optional static Next.js service shell."""
     active_settings = settings or ReleaseSettings()
@@ -356,7 +348,7 @@ def create_release_app(
 
     fallback_corpus: RuntimeCorpusAdminService | None = None
 
-    async def default_readiness_probe() -> dict[str, Any]:
+    async def default_readiness_probe() -> CorpusStatus:
         """Report corpus status without document rows, file scans or schema changes.
 
         The live administrator service memoizes its status reading and knows whether
@@ -365,12 +357,10 @@ def create_release_app(
         """
         nonlocal fallback_corpus
         if admin_services is not None:
-            status = await admin_services.readiness_status()
-        else:
-            if fallback_corpus is None:
-                fallback_corpus = RuntimeCorpusAdminService()
-            status = await fallback_corpus.status(max_age_s=READINESS_STATUS_MAX_AGE_S)
-        return {"status": asdict(status)}
+            return await admin_services.readiness_status()
+        if fallback_corpus is None:
+            fallback_corpus = RuntimeCorpusAdminService()
+        return await fallback_corpus.status(max_age_s=READINESS_STATUS_MAX_AGE_S)
 
     @application.get(
         "/ready",
@@ -402,46 +392,38 @@ def create_release_app(
                 corpus=CorpusReadiness(availability="not_applicable"),
             )
 
-        probe = readiness_probe or default_readiness_probe
         try:
-            snapshot = await probe()
-            raw_status = snapshot.get("status", {})
-            if not isinstance(raw_status, dict):
-                raise ValueError("corpus readiness status must be an object")
-            database_connected = raw_status.get("database_connected") is True
-            schema_status = str(raw_status.get("schema_status", "unavailable"))
-            documents = int(raw_status.get("documents", 0))
-            chunks = int(raw_status.get("chunks", 0))
-            pending_embeddings = int(raw_status.get("pending_embeddings", 0))
-            updating = active_services is not None and active_services.corpus_access.updating
-            corpus_ready = (
-                not updating
-                and database_connected
-                and schema_status == "compatible"
-                and documents > 0
-                and chunks > 0
-                and pending_embeddings == 0
-                and raw_status.get("bm25_ready") is True
-            )
-            corpus = CorpusReadiness(
-                availability="ready" if corpus_ready else "degraded",
-                database_connected=database_connected,
-                schema_status=schema_status,
-                schema_message=str(raw_status.get("schema_message", "")),
-                documents=documents,
-                chunks=chunks,
-                embedded_chunks=int(raw_status.get("embedded_chunks", 0)),
-                pending_embeddings=pending_embeddings,
-                bm25_ready=raw_status.get("bm25_ready") is True,
-                bm25_rebuild_recorded=raw_status.get("bm25_rebuild_recorded") is True,
-                writable=raw_status.get("writable") is True,
-                updating=updating,
-            )
+            status = await default_readiness_probe()
         except Exception as error:
             corpus_ready = False
             corpus = CorpusReadiness(
                 availability="unavailable",
                 schema_message=type(error).__name__,
+            )
+        else:
+            updating = active_services is not None and active_services.corpus_access.updating
+            corpus_ready = (
+                not updating
+                and status.database_connected
+                and status.schema_status == "compatible"
+                and status.documents > 0
+                and status.chunks > 0
+                and status.pending_embeddings == 0
+                and status.bm25_ready
+            )
+            corpus = CorpusReadiness(
+                availability="ready" if corpus_ready else "degraded",
+                database_connected=status.database_connected,
+                schema_status=status.schema_status,
+                schema_message=status.schema_message,
+                documents=status.documents,
+                chunks=status.chunks,
+                embedded_chunks=status.embedded_chunks,
+                pending_embeddings=status.pending_embeddings,
+                bm25_ready=status.bm25_ready,
+                bm25_rebuild_recorded=status.bm25_rebuild_recorded,
+                writable=status.writable,
+                updating=updating,
             )
 
         public_surface = (
@@ -451,22 +433,11 @@ def create_release_app(
             # Counts are public reading material; only write access stays private.
             corpus = corpus.model_copy(update={"writable": None})
 
-        if active_settings.environment == "prod":
-            local_readiness = {"enabled": False, "reason": "disabled_in_prod"}
-        elif request.headers.get("x-docreview-public") == "true":
-            local_readiness = {"enabled": False, "reason": "public_surface"}
-        elif (
-            active_services is not None
-            and active_services.local_connection is None
-            and active_services.local_inventory is None
-        ):
-            local_readiness = {"enabled": False, "reason": "not_configured"}
-        else:
-            local_readiness = await _local_engine_readiness(
-                active_settings,
-                active_services.local_inventory if active_services else None,
-                active_services.local_connection if active_services else None,
-            )
+        local_readiness = await _local_engine_readiness(
+            active_settings,
+            active_services.local_connection if active_services else None,
+            public_request=request.headers.get("x-docreview-public") == "true",
+        )
         openai_limits = active_services.openai_limits if active_services is not None else None
         call_limits = openai_limits.state() if openai_limits is not None else None
         if call_limits is not None and public_surface:

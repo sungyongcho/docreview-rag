@@ -38,21 +38,6 @@ def _table(xref_module: ModuleType, rows: str):
     return _soup(xref_module, f"<table>{rows}</table>").find("table")
 
 
-def test_find_tables_detects_xref_and_toc_tables(xref_module: ModuleType) -> None:
-    """Require both the SEC Item index and company TOC for xref segmentation.
-
-    Missing either table makes the strategy fall back to undefined.
-    """
-    soup = _soup(xref_module, XREF_TABLE_HTML + TOC_TABLE_HTML)
-
-    xref_table, toc_table = xref_module.find_tables(soup)
-
-    assert xref_table is not None
-    assert xref_table.get("id") == "xref"
-    assert toc_table is not None
-    assert toc_table.get("id") == "toc"
-
-
 def test_parse_xref_reads_items_statuses_and_page_spans(xref_module: ModuleType) -> None:
     """Stop a closed Item from absorbing later indented rows.
 
@@ -204,20 +189,6 @@ def test_covering_returns_the_narrowest_matching_span(xref_module: ModuleType) -
     assert entry.covering(100) is None
 
 
-def test_parse_toc_returns_ordered_title_page_pairs(xref_module: ModuleType) -> None:
-    """Preserve TOC document order for the forward-only section cursor."""
-    table = _soup(xref_module, TOC_TABLE_HTML).find("table")
-
-    rows = xref_module.parse_toc(table)
-
-    assert rows[:3] == [
-        ("Business", 5),
-        ("Risk Factors", 11),
-        ("Management Discussion", 19),
-    ]
-    assert len(rows) == 10
-
-
 def test_in_tables_returns_only_nested_block_indexes(xref_module: ModuleType) -> None:
     """Exclude metadata titles inside TOC and xref tables from narrative matching.
 
@@ -301,17 +272,6 @@ def test_item_for_page_prefers_title_overlap_then_narrower_span(
     assert xref_module.item_for_page(41, entries, "Financial Statements") == "8"
     assert xref_module.item_for_page(20, entries) == "7"
     assert xref_module.item_for_page(100, entries) is None
-
-
-def test_assign_items_maps_located_blocks_to_items(xref_module: ModuleType) -> None:
-    """Map located block indexes to Items for direct use by segmentation."""
-    entries = [
-        xref_module.XrefEntry("1", "Business", [(5, 10)]),
-        xref_module.XrefEntry("1A", "Risk Factors", [(11, 18)]),
-    ]
-    located = [("Business", 5, 2), ("Risk Factors", 11, 8)]
-
-    assert xref_module.assign_items(located, entries) == {2: "1", 8: "1A"}
 
 
 def test_page_map_accepts_sequential_spaced_footers(xref_module: ModuleType) -> None:

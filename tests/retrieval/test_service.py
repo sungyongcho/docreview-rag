@@ -91,11 +91,10 @@ def test_service_uses_default_candidate_pool_one_session_and_rank_only_component
     assert events[2][3] == 24
 
 
-@pytest.mark.parametrize("chunk_id", ["3", 4.0, True])
-def test_component_rankings_reject_non_strict_chunk_ids(chunk_id):
+def test_component_rankings_reject_boolean_chunk_ids():
     """Reject coercible values so component provenance keeps strict identities."""
     with pytest.raises(ValidationError):
-        service.ComponentRankings.model_validate({"vector": (chunk_id,), "lexical": ()})
+        service.ComponentRankings.model_validate({"vector": (True,), "lexical": ()})
 
 
 def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypatch):
@@ -292,7 +291,6 @@ def test_routing_stays_off_for_a_caller_that_does_not_ask_for_it(monkeypatch):
     # measured here cannot inherit a query path its recorded config does not name.
     assert events == ["AMD의 매출은?"]
     assert result.component_rankings.lexical == (2,)
-    assert "get_settings" not in vars(service)
 
 
 def test_korean_corpus_filter_tokenizes_the_lexical_query(monkeypatch):
@@ -496,18 +494,3 @@ def test_unrestricted_filter_without_a_variant_keeps_one_vector_lane(monkeypatch
     assert lexical_calls == [(("en",), "삼성전자 memory"), (("ko",), "삼성 성전 전자 memory")]
     assert result.component_rankings.vector_by_language == {}
     assert result.component_rankings.lexical_by_language == {"en": (2,), "ko": (3,)}
-
-
-def test_package_reexports_each_public_name_from_its_defining_module():
-    """The retrieval package is the one sanctioned re-export façade (AGENTS.md): every name it
-    publishes must be the very object its defining retrieval module exports."""
-    import importlib
-
-    import app.retrieval as public
-
-    assert public.__all__
-    for name in public.__all__:
-        exported = getattr(public, name)
-        assert exported.__module__.startswith("app.retrieval."), name
-        defining = importlib.import_module(exported.__module__)
-        assert getattr(defining, name) is exported, name

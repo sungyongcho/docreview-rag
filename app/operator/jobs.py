@@ -9,6 +9,7 @@ import logging
 from typing import Literal, cast
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import OperatorJob
@@ -54,6 +55,14 @@ class JobTurnCancelledError(RuntimeError):
     """Signal that a queued ticket was removed before execution."""
 
 
+class JobPersistenceError(RuntimeError):
+    """Keep an uncommitted terminal snapshot distinct from an operation failure."""
+
+    def __init__(self, job_id: str) -> None:
+        self.job_id = job_id
+        super().__init__(f"Terminal state for job {job_id} could not be saved.")
+
+
 class ProgressPersister:
     """Write one job's newest state with at most one database write in flight.
 
@@ -68,11 +77,17 @@ class ProgressPersister:
         self._write = write
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._dirty: set[str] = set()
-        self._closed: set[str] = set()
+        self._active: set[str] = set()
+        self._pending: dict[str, Callable[[], Awaitable[None]]] = {}
+        self._write_lock = asyncio.Lock()
+
+    def start(self, job_id: str) -> None:
+        """Accept progress only while a registered job is active in this process."""
+        self._active.add(job_id)
 
     def schedule(self, job_id: str) -> None:
         """Record that the job's newest state should be written soon."""
-        if job_id in self._closed:
+        if job_id not in self._active:
             return
         task = self._tasks.get(job_id)
         if task is not None and not task.done():
@@ -83,48 +98,66 @@ class ProgressPersister:
     async def flush(self, job_id: str) -> None:
         """Wait for the job's in-flight write and drop any pending re-write."""
         self._dirty.discard(job_id)
-        task = self._tasks.pop(job_id, None)
-        if task is not None and not task.done():
-            await task
+        task = self._tasks.get(job_id)
+        if task is not None:
+            await asyncio.shield(task)
+            if self._tasks.get(job_id) is task:
+                self._tasks.pop(job_id)
 
     async def write_final(
         self,
         job_id: str,
-        write: Callable[[], Awaitable[None]] | None = None,
-        *,
-        attempts: int = 3,
-    ) -> bool:
-        """Flush progress, then write the terminal state, retrying transient failures.
+        write: Callable[[], Awaitable[None]],
+    ) -> None:
+        """Commit a terminal snapshot or retain it and raise an explicit persistence failure.
 
-        Returns whether the terminal write landed. ``False`` means the last stored
-        state remains authoritative; unfinished records become interrupted on restart.
-        Later progress writes for the job are ignored.
+        Only transport/database availability errors are retried. Pending snapshots are
+        retried before callers read history or admit new work, so a failed terminal write
+        cannot silently turn completed work back into a queued/running response.
         """
-        self._closed.add(job_id)
+        self._active.discard(job_id)
+        self._pending[job_id] = write
+        await self._commit_final(job_id)
+
+    async def write_current(self, job_id: str) -> None:
+        """Save required usage before work continues, propagating any storage failure."""
         await self.flush(job_id)
-        run = write or (lambda: self._write(job_id))
-        for attempt in range(1, attempts + 1):
-            try:
-                await run()
-                return True
-            except Exception as error:  # noqa: BLE001 - the ledger must not kill the worker
-                logger.warning(
-                    "job %s terminal write %d/%d failed: %s",
-                    job_id,
-                    attempt,
-                    attempts,
-                    type(error).__name__,
-                )
-                if attempt < attempts:
-                    await asyncio.sleep(0.2 * attempt)
-        return False
+        async with self._write_lock:
+            await self._write(job_id)
+
+    async def retry_pending(self) -> None:
+        """Reconcile uncommitted terminal snapshots before exposing durable job history."""
+        for job_id in tuple(self._pending):
+            await self._commit_final(job_id)
+
+    async def _commit_final(self, job_id: str) -> None:
+        """Save a retained immutable snapshot, preserving the original failure cause."""
+        await self.flush(job_id)
+        async with self._write_lock:
+            write = self._pending.get(job_id)
+            if write is None:
+                return
+            for attempt in range(1, 4):
+                try:
+                    await write()
+                except (OSError, InterfaceError, OperationalError) as error:
+                    if attempt < 3:
+                        await asyncio.sleep(0.2 * attempt)
+                        continue
+                    raise JobPersistenceError(job_id) from error
+                except Exception as error:
+                    raise JobPersistenceError(job_id) from error
+                if self._pending.get(job_id) is write:
+                    self._pending.pop(job_id)
+                return
 
     async def _drain(self, job_id: str) -> None:
         """Write the latest snapshot, then once more if a newer one arrived meanwhile."""
         while True:
             self._dirty.discard(job_id)
             try:
-                await self._write(job_id)
+                async with self._write_lock:
+                    await self._write(job_id)
             except Exception as error:  # noqa: BLE001 - progress writes are best effort
                 logger.warning("job %s progress write failed: %s", job_id, type(error).__name__)
             if job_id not in self._dirty:
@@ -232,6 +265,15 @@ class JobStore:
         self, *, session_factory: Callable[[], AsyncSession] = _default_session_factory
     ) -> None:
         self._session_factory = session_factory
+        self._recovered_domains: set[JobDomain] = set()
+        self._recovery_lock = asyncio.Lock()
+
+    async def recover(self, domain: JobDomain) -> None:
+        """Interrupt previous-process work once, before any current job is registered."""
+        async with self._recovery_lock:
+            if domain not in self._recovered_domains:
+                await self.interrupt_incomplete(domain)
+                self._recovered_domains.add(domain)
 
     @staticmethod
     def _stored(row: OperatorJob) -> StoredJob:

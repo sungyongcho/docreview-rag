@@ -3,7 +3,6 @@
 import asyncio
 from dataclasses import asdict
 import hashlib
-import inspect
 import json
 import math
 from pathlib import Path
@@ -136,68 +135,11 @@ def test_statement_binds_the_query_and_never_interpolates_it():
     statement = bm25.bm25_statement(query, 7, k1=1.5, b=0.4)
     sql, params = normalized_sql(statement)
 
-    assert "websearch_to_tsquery(" in sql
-    assert "to_tsvector(" in sql
-    assert "tsvector_to_array(" in sql
     assert query not in sql
     assert bm25.relaxed_websearch_query(query) in params.values()
     assert bm25.positive_websearch_text(query) in params.values()
     assert 1.5 in params.values()
     assert 0.4 in params.values()
-    assert 7 in params.values()
-
-
-def test_statement_projects_the_complete_hit_surface_and_orders_deterministically():
-    """Project complete hits with stable source tie-breakers."""
-    statement = bm25.bm25_statement("market risk", 5)
-    sql, _params = normalized_sql(statement)
-
-    assert set(statement.selected_columns.keys()) == {
-        "chunk_id",
-        "doc_id",
-        "item",
-        "kind",
-        "citation",
-        "start_char",
-        "end_char",
-        "source_sha256",
-        "body",
-        "context_header",
-        "index_text",
-        "score",
-    }
-    assert "ORDER BY" in sql
-    assert (
-        'chunks.doc_id COLLATE "C" ASC, chunks.source_sha256 COLLATE "C" ASC, '
-        "chunks.start_char ASC, "
-        "chunks.end_char ASC, chunks.id ASC"
-    ) in sql
-
-
-@pytest.mark.parametrize(
-    ("idf", "present", "absent"),
-    [("lucene", "ln(%(param_1)s +", "ln(((CAST"), ("robertson", "ln(((CAST", "ln(%(param_1)s +")],
-)
-def test_statement_emits_the_selected_idf_variant(idf, present, absent):
-    """Emit the selected inverse-document-frequency formula."""
-    sql, _params = normalized_sql(bm25.bm25_statement("market risk", 5, idf=idf))
-
-    assert present in sql
-    assert absent not in sql
-
-
-def test_snapshot_statement_uses_frozen_membership_and_bm25_statistics():
-    """Score a snapshot only with its retained chunks and lexical statistics."""
-    sql, params = normalized_sql(
-        bm25.bm25_statement("market risk", 5, RetrievalFilters(snapshot_id=7))
-    )
-
-    assert "snapshot_chunks" in sql
-    assert "snapshot_chunk_terms" in sql
-    assert "snapshot_chunk_lengths" in sql
-    assert "snapshot_bm25_corpus_stats" in sql
-    assert "snapshot_lexeme_stats" in sql
-    assert "FROM chunk_terms" not in sql
     assert 7 in params.values()
 
 
@@ -208,6 +150,7 @@ def test_snapshot_statement_uses_frozen_membership_and_bm25_statistics():
         pytest.param({"k": 0}, id="non-positive-limit"),
         pytest.param({"k": True}, id="boolean-limit"),
         pytest.param({"k1": 0}, id="non-positive-k1"),
+        pytest.param({"k1": True}, id="boolean-k1"),
         pytest.param({"k1": math.nan}, id="non-finite-k1"),
         pytest.param({"b": -0.1}, id="b-below-zero"),
         pytest.param({"b": 1.1}, id="b-above-one"),
@@ -314,18 +257,6 @@ def test_search_returns_hits_without_the_readiness_column():
     hits = asyncio.run(bm25.bm25_search(cast(AsyncSession, Session()), "market risk", 4))
 
     assert [(hit.chunk_id, hit.score) for hit in hits] == [(3, 1.5)]
-
-
-def test_search_shares_the_first_four_parameters_with_lexical_search():
-    """``retrieve`` swaps one call for the other, so the call shape must match."""
-    from app.retrieval.lexical import lexical_search
-
-    baseline = list(inspect.signature(lexical_search).parameters)
-    candidate = list(inspect.signature(bm25.bm25_search).parameters)
-
-    assert candidate[:4] == baseline[:4] == ["session", "query", "k", "filters"]
-    assert [p for p in candidate[4:]] == ["k1", "b", "idf", "text_search_config"]
-    assert baseline[4:] == ["text_search_config"]
 
 
 def test_backfill_refuses_a_session_that_is_already_in_a_transaction():

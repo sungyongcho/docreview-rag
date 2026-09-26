@@ -1,9 +1,7 @@
 """Complete-input structural budgets and exact source-membership acceptance checks."""
 
 from dataclasses import asdict, replace
-import os
 from pathlib import Path
-import shutil
 
 from bs4 import BeautifulSoup, Tag
 import pytest
@@ -206,30 +204,17 @@ def test_indivisible_narrative_and_repeated_context_obey_hard_limits():
         chunk_filing(filing, ChunkConfig(max_chars=15))
 
 
-def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(tmp_path, monkeypatch):
-    """Measure the two identified source filings without modifying source or profiles."""
-    root_text = os.environ.get("DOCREVIEW_ACCEPTANCE_SOURCE_ROOT")
-    if not root_text:
-        pytest.skip(
-            "Set DOCREVIEW_ACCEPTANCE_SOURCE_ROOT to the source checkout for real acceptance"
-        )
+def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(isolated_profiles):
+    """Verify the committed source selection while keeping learned profiles temporary."""
     from app.ingestion import edgar
     from app.ingestion.dart import parse_dart_filing
-
-    root = Path(root_text)
-    profiles = tmp_path / "profiles"
-    profiles.mkdir()
-    profile = root / "data/profiles/NVDA.json"
-    if profile.is_file():
-        shutil.copy2(profile, profiles / profile.name)
-    monkeypatch.setattr(edgar, "PROFILES", profiles)
     from app.ingestion.manifest import Manifest
 
     catalog_path = Path(__file__).resolve().parents[2] / "data/corpus/manifest.json"
     catalog = Manifest.read(catalog_path)
     entries = [
         (source, edgar.parse_filing if source.document.registry == "sec" else parse_dart_filing)
-        for source in catalog.selected_sources("tutorial", root / "data/corpus")
+        for source in catalog.selected_sources("tutorial", catalog_path.parent)
     ]
     expected = {
         (3667520, 4485072),

@@ -1,4 +1,5 @@
 "use client";
+import { useModalLifecycle } from "./use-modal-lifecycle";
 import { NotificationOutlet, useNotifications } from "./notifications";
 import { closeSidePanel } from "./side-panel-motion";
 
@@ -65,23 +66,11 @@ export function PublicEvaluationWorkspace({ tab, snapshots, loading, error, onRe
   const [experiment, setExperiment] = useState(loadExperiment);
   const { notify } = useNotifications();
   const setupRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!active || tab !== "runs" || !setupOpen) return;
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    setupRef.current?.querySelector<HTMLElement>("button")?.focus();
-    /** Keep keyboard navigation inside the active settings drawer. */
-    function trapFocus(event: KeyboardEvent) {
-      if (event.key !== "Tab") return;
-      const controls = Array.from(setupRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, a[href]") ?? []).filter(element => !element.closest("details:not([open])") || element.tagName === "SUMMARY");
-      const first = controls[0]; const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }
-    document.addEventListener("keydown", trapFocus);
-    return () => { document.removeEventListener("keydown", trapFocus); document.body.style.overflow = previousOverflow; previousFocus?.focus(); };
-  }, [active, tab, setupOpen]);
+  const onSetupKeyDown = useModalLifecycle(setupRef, {
+    active: active && tab === "runs" && setupOpen,
+    lockScroll: true,
+    onDismiss: () => { closeSidePanel(setupRef.current, () => setSetupOpen(false)); },
+  });
   useEffect(() => subscribeStorageRestored(() => { setExperiment(loadExperiment()); }), []);
   useEffect(() => {
     if (tab === "compare" || snapshotId === null || !selected) return;
@@ -116,7 +105,7 @@ export function PublicEvaluationWorkspace({ tab, snapshots, loading, error, onRe
         <label>{t("Sort by")}<select value={sort} onChange={(event) => { setSort(event.target.value); setOffset(0); }}><option value="id">{t("ID")}</option><option value="question">{t("Question")}</option></select></label>
       </div>}
 
-    {active && setupOpen && tab === "runs" && createPortal(<div className="evaluation-setup-backdrop" onClick={event => { if (event.target === event.currentTarget) closeSidePanel(setupRef.current, () => setSetupOpen(false)); }}><section ref={setupRef} className="surface evaluation-setup evaluation-setup-experiment" role="dialog" aria-modal="true" aria-label={t("Explore evaluation settings")} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeSidePanel(setupRef.current, () => setSetupOpen(false)); } }}>
+    {active && setupOpen && tab === "runs" && createPortal(<div className="evaluation-setup-backdrop" onClick={event => { if (event.target === event.currentTarget) closeSidePanel(setupRef.current, () => setSetupOpen(false)); }}><section ref={setupRef} onKeyDown={onSetupKeyDown} tabIndex={-1} className="surface evaluation-setup evaluation-setup-experiment" role="dialog" aria-modal="true" aria-label={t("Explore evaluation settings")}>
       <div className="surface-heading"><div><p className="eyebrow">{t("Evaluation setup")}</p><h2>{t("Explore evaluation settings")}</h2></div><button type="button" className="button icon" aria-label={t("Close evaluation settings")} onClick={() => closeSidePanel(setupRef.current, () => setSetupOpen(false))}><X size={18} aria-hidden="true" /></button></div>
       <div className="form-stack evaluation-setup-body"><NotificationOutlet priority={50} placement="overlay" />
       <p className="evaluation-experiment-note" role="note"><Info size={16} aria-hidden="true" /><span>{t("Settings exploration only. These changes do not execute on the server or change recorded results.")}</span></p>

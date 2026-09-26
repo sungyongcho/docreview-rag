@@ -47,12 +47,32 @@ def test_the_default_stack_needs_no_compose_file_environment_switch() -> None:
     """Plain Compose includes source-mounted development and an optional external model endpoint."""
     base = compose("docker-compose.yml")
     assert set(base["services"]) == {"app", "db", "web"}
+    database = base["services"]["db"]
+    assert database["image"] == "pgvector/pgvector:pg16"
+    assert any(
+        mount["type"] == "volume"
+        and mount["source"] == "pg_data"
+        and mount["target"] == "/var/lib/postgresql/data"
+        for mount in database["volumes"]
+    )
+    assert database["ports"][0]["published"] == "5432"
+    assert database["ports"][0]["target"] == 5432
     assert "ollama_models" not in base["volumes"]
     app = base["services"]["app"]
+    assert app["environment"]["DATABASE_URL"] == "postgresql+asyncpg://filing:filing@db:5432/filing"
+    assert app["security_opt"] == ["no-new-privileges:true"]
+    assert app["cap_drop"] == ["ALL"]
+    assert any(
+        mount["type"] == "bind"
+        and mount["source"] == str(ROOT / "data")
+        and mount["target"] == "/app/data"
+        for mount in app["volumes"]
+    )
+    assert app["build"]["args"]["NEXT_PUBLIC_API_BASE_URL"] == ""
+    assert app["build"]["args"]["NEXT_PUBLIC_ADMIN_MODE"] == "live"
     assert app["environment"]["LOCAL_LLM_BASE_URL"] == "http://host.docker.internal:11434"
     assert "LOCAL_LLM_MODEL" not in app["environment"]
     assert app["extra_hosts"] == ["host.docker.internal=host-gateway"]
-    assert "COMPOSE_FILE=" not in (ROOT / ".env.example").read_text()
 
 
 def test_explicit_development_inherits_the_default_mounts_and_services() -> None:
@@ -68,7 +88,9 @@ def test_explicit_development_inherits_the_default_mounts_and_services() -> None
 
 def test_the_production_overlay_reproduces_the_visitor_build() -> None:
     """A production preview bakes the public bundle and selects the production key slot."""
-    app = compose("docker-compose.prod.yml")["services"]["app"]
+    config = compose("docker-compose.prod.yml")
+    assert set(config["services"]) == {"app", "db", "web"}
+    app = config["services"]["app"]
 
     assert app["build"]["args"]["NEXT_PUBLIC_ADMIN_MODE"] == "canned"
     assert app["environment"]["MODE"] == "prod"
@@ -89,19 +111,6 @@ def test_the_production_overlay_environment_refuses_the_local_engine(monkeypatch
     )
 
     assert settings.local_llm_enabled is False
-
-
-def test_the_deployment_artifact_moved_out_of_the_root() -> None:
-    """The VM file lives beside the script that copies it, and forwards no local model key."""
-    deploy = ROOT / "deploy" / "gcp" / "docker-compose.deploy.yml"
-    script = (ROOT / "deploy" / "gcp" / "deploy_backend.sh").read_text(encoding="utf-8")
-
-    assert deploy.exists()
-    assert (
-        not (ROOT / "docker" / "docker-compose.prod.yml").read_text(encoding="utf-8").count("caddy")
-    )
-    assert '"${SCRIPT_DIR}/docker-compose.deploy.yml"' in script
-    assert "LOCAL_LLM" not in deploy.read_text(encoding="utf-8")
 
 
 def test_development_mounts_source_and_keeps_browser_dependencies_separate() -> None:
@@ -128,6 +137,7 @@ def test_development_mounts_source_and_keeps_browser_dependencies_separate() -> 
     assert web["environment"]["DOCREVIEW_API_UPSTREAM"] == "http://app:8000"
     assert not dev["services"]["app"].get("ports")
     assert web["ports"][0]["published"] == "8000"
+    assert web["ports"][0]["target"] == 3000
     assert any(
         v["target"] == "/app/app" and v["read_only"] for v in dev["services"]["app"]["volumes"]
     )

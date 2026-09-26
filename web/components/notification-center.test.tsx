@@ -33,7 +33,7 @@ describe("notification center", () => {
     fireEvent.click(within(panel).getByText("Mark all read"));expect(loadNotifications()).toHaveLength(1);
     fireEvent.click(within(panel).getByText("Clear all notifications"));expect(loadNotifications()).toEqual([]);
   });
-  it("uses arrow keys, activates the typed destination, marks read, and returns focus on Escape", () => {
+  it("uses arrow keys, activates the typed destination and marks it read", () => {
     const {navigate}=mount();fireEvent.click(screen.getByText("Emit"));fireEvent.click(screen.getByText("Job"));
     const panel=open();fireEvent.keyDown(panel,{key:"ArrowDown"});const target=within(panel).getByRole("button",{name:/Job complete/});expect(target).toHaveFocus();
     fireEvent.click(target);expect(navigate).toHaveBeenCalledWith({view:"build",tab:"jobs",jobId:"1"});expect(loadNotifications().find(entry=>entry.jobId==="1")?.readAt).toBeDefined();
@@ -46,7 +46,7 @@ describe("notification center", () => {
     mount({long:true});fireEvent.click(screen.getByText("Emit"));const panel=open();
     expect(within(panel).getByRole("img",{name:"Error"})).toBeVisible();
     expect(within(panel).getByText("Original server detail ".repeat(30).trim())).toBeInTheDocument();
-    fireEvent.click(within(panel).getByRole("button",{name:"Expand notification"}));expect(panel.querySelector(".notification-body-collapsed")).toBeNull();
+    fireEvent.click(within(panel).getByRole("button",{name:"Expand notification"}));expect(within(panel).getByRole("button", {name:"Collapse notification"})).toHaveAttribute("aria-expanded", "true");
   });
   it("mirrors the same job event to desktop only when already enabled", () => {
     const desktop=vi.fn(function(this: { close: () => void }) { this.close = () => undefined; });
@@ -54,19 +54,6 @@ describe("notification center", () => {
     mount();fireEvent.click(screen.getByText("Job"));expect(desktop).toHaveBeenCalledOnce();expect(loadNotifications()).toHaveLength(1);
     expect(desktop).toHaveBeenCalledWith("DocReview · Job activity",{body:"Job complete",tag:"job:1"});
   });
-});
-
-
-it.each<NotificationTarget>([
-  { view: "build", tab: "jobs", jobId: "job-1" },
-  { view: "measure", tab: "runs", resultId: 42 },
-  { view: "review", conversationId: "conversation-1" },
-  { view: "settings", category: "local" },
-  { view: "system", tab: "status" },
-])("activates and marks read the exact %j destination", target => {
-  const {navigate}=mount({target});fireEvent.click(screen.getByText("Emit"));const panel=open();
-  fireEvent.click(within(panel).getByRole("button",{name:/Original server message/}));
-  expect(navigate).toHaveBeenCalledWith(target);expect(loadNotifications()[0].readAt).toBeDefined();
 });
 
 

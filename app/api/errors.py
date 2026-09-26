@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.schemas import ApiError, ErrorResponse, ValidationIssue
 from app.observability.types import JsonObject
+from app.operator.jobs import JobPersistenceError
 from app.release.ai_allowance import AIAllowanceError
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,8 @@ async def translate_runtime_errors() -> AsyncIterator[None]:
         raise
     except ApiProblemError:
         raise
+    except JobPersistenceError as error:
+        raise unavailable("job_persistence_unavailable", str(error)) from error
     except ValueError as error:
         raise bad_request("invalid_request", str(error)) from error
     except OpenAIError as error:

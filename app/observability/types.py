@@ -19,6 +19,7 @@ from app.llm.schemas import (
     NonNegativeInt,
     PositiveInt,
     StrictSchema,
+    TokenUsageDetails,
 )
 
 WorkflowNode = Literal["gate", "route", "retrieve", "grade", "check", "report"]
@@ -58,7 +59,7 @@ NODE_BUDGET_RESOURCES: Final[Mapping[WorkflowNode, tuple[BudgetResource, ...]]] 
 )
 
 
-class StepTrace(StrictSchema):
+class StepTrace(TokenUsageDetails):
     """One raw, traceable workflow step before persistence redaction."""
 
     step: PositiveInt
@@ -67,9 +68,6 @@ class StepTrace(StrictSchema):
     api_url: NonBlank
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
-    cached_input_tokens: NonNegativeInt = 0
-    cache_write_input_tokens: NonNegativeInt = 0
-    reasoning_tokens: NonNegativeInt = 0
     estimated_cost_usd: NonNegativeDecimal
     request_time_ms: NonNegativeFloat
     llm_output: StrictStr
@@ -86,11 +84,7 @@ class StepTrace(StrictSchema):
             raise ValueError("requests must be retries plus one, or zero when nothing was sent")
         if self.requests == 0 and (self.input_tokens or self.output_tokens):
             raise ValueError("a step refused before any request carries no usage")
-        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
-            raise ValueError("detailed input tokens must not exceed input_tokens")
-        if self.reasoning_tokens > self.output_tokens:
-            raise ValueError("reasoning_tokens must not exceed output_tokens")
-        return self
+        return self._validate_token_totals(self.input_tokens, self.output_tokens)
 
 
 class RunReport(StrictSchema):

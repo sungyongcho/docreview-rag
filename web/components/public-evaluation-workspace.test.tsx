@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { expectNoUnexpectedRequests, jsonResponse, requestRoute, unexpectedRequest } from "@/lib/http-test-support";
 import type { PublishedSnapshot } from "@/lib/types";
 import { NotificationProvider } from "./notifications";
+import { RetainedPanel } from "./retained-panel";
 import { PublicEvaluationWorkspace } from "./public-evaluation-workspace";
 
 const snapshots: PublishedSnapshot[] = [1, 2].map(id => ({
@@ -32,12 +34,17 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input).replace(/\/?(\?|$)/, "$1"), "http://localhost");
     requests.push({ url, method: init?.method ?? "GET" });
-    if (failure) return new Response(JSON.stringify({ error: { message: "Unavailable" } }), { status: 409 });
-    const body = url.pathname.endsWith("/dataset") ? dataset : url.pathname.endsWith("/evaluation") ? evaluation : comparison;
-    return new Response(JSON.stringify(body), { status: 200 });
+    const responses: Record<string, unknown> = {
+      "GET /public/snapshots/1/dataset": dataset,
+      "GET /public/snapshots/1/evaluation": evaluation,
+      "GET /snapshots/compare": comparison,
+    };
+    const route = requestRoute(input, init);
+    if (!(route in responses)) return unexpectedRequest(input, init);
+    return failure ? jsonResponse({ error: { message: "Unavailable" } }, 409) : jsonResponse(responses[route]);
   }));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); expectNoUnexpectedRequests(); });
 
 /** Wait for debounced server requests without coupling tests to the timer implementation. */
 async function requested(path: string, params: Record<string, string> = {}) {
@@ -145,13 +152,30 @@ it("restores the versioned browser experiment before runtime permissions arrive"
   expect(requests).toHaveLength(0);
 });
 
-it("closes the settings experiment with the header icon without executing evaluation", () => {
-  render(<PublicEvaluationWorkspace tab="runs" snapshots={snapshots} loading={false} error={false} onRefresh={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Explore evaluation settings" }));
+it("releases the retained settings drawer and restores focus when explicitly closed", () => {
+  const panel = (active: boolean) => <RetainedPanel active={active}><PublicEvaluationWorkspace active={active} tab="runs" snapshots={snapshots} loading={false} error={false} onRefresh={vi.fn()} /></RetainedPanel>;
+  const view = render(panel(true));
+  const trigger = screen.getByRole("button", { name: "Explore evaluation settings" });
+  trigger.focus(); fireEvent.click(trigger);
   const close = screen.getByRole("button", { name: "Close evaluation settings" });
-  expect(close).toHaveClass("button", "icon");
-  expect(screen.getByRole("note")).toHaveClass("evaluation-experiment-note");
-  fireEvent.click(close);
-  expect(screen.queryByRole("button", { name: "Close evaluation settings" })).toBeNull();
+  expect(close).toHaveFocus();
+  expect(document.body.style.overflow).toBe("hidden");
+  fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+  expect(screen.getByRole("button", { name: /Queue evaluation/ })).toHaveFocus();
+  fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+  expect(close).toHaveFocus();
+  view.rerender(panel(false));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.body.style.overflow).toBe("");
+  expect(trigger).not.toHaveFocus();
+  view.rerender(panel(true));
+  const reopenedClose = screen.getByRole("button", { name: "Close evaluation settings" });
+  expect(reopenedClose).toHaveFocus();
+  fireEvent.click(reopenedClose);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.body.style.overflow).toBe("");
   expect(requests.every(request => request.method === "GET")).toBe(true);
+  trigger.focus(); fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("button", { name: "Close evaluation settings" }));
+  expect(trigger).toHaveFocus();
 });

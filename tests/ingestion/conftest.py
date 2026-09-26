@@ -86,7 +86,7 @@ def parsed(
 
 
 @pytest.fixture(scope="session")
-def corpus(manifest, parsed, parser_module) -> dict[str, tuple]:
+def corpus(manifest, parsed) -> dict[str, tuple]:
     """Pair parsed filings with the exact canonical source text they cite."""
     entries = {entry.document.document_id: entry for entry in manifest}
     return {

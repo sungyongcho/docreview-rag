@@ -17,7 +17,7 @@ from app.config import Settings
 from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand, CorpusStatus, OperationOutcome
 from app.evals.admin import EvaluationAdminService, EvaluationAlreadyQueuedError
-from app.operator.jobs import JobExecutionCoordinator
+from app.operator.jobs import JobExecutionCoordinator, JobPersistenceError
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.corpus_admin.support import LedgerStore
 
@@ -42,20 +42,27 @@ async def enqueued_job(service: EvaluationAdminService, job_id: str) -> Evaluati
 
 
 @pytest.mark.usefixtures("ready_evaluation_inputs")
-def test_evaluation_queue_runs_one_job_to_completion(tmp_path: Path, monkeypatch) -> None:
-    """Keep evaluation execution serial and retain its terminal artifact identity."""
+@pytest.mark.parametrize("storage_failures", [0, 99])
+def test_evaluation_queue_runs_one_job_to_completion(
+    tmp_path: Path, monkeypatch, storage_failures: int
+) -> None:
+    """Retain the completed result through a storage outage without repeating evaluation."""
 
     async def scenario() -> None:
         """Queue one evaluation and inspect its completed state."""
+        store = LedgerStore(failures=storage_failures)
+        executions = 0
         service = EvaluationAdminService(
             settings=Settings(corpus_dir=tmp_path),
             provider=DeterministicEmbeddingProvider(),
             artifact_dir=tmp_path / "runs",
-            job_store=LedgerStore(),
+            job_store=store,
         )
 
         async def quick(job_id, request):
             """Stand in for one completed quick evaluation."""
+            nonlocal executions
+            executions += 1
             del job_id, request
             artifact = tmp_path / "runs" / "result.json"
             return 7, 6, artifact
@@ -63,12 +70,19 @@ def test_evaluation_queue_runs_one_job_to_completion(tmp_path: Path, monkeypatch
         monkeypatch.setattr(service, "_quick", quick)
         job = await service.enqueue(EvaluationRunRequest(suite_id="sec-en"))
         await service._queue.join()
+        if storage_failures:
+            with pytest.raises(JobPersistenceError):
+                await service.jobs()
+            store.failures = 0
         completed = await enqueued_job(service, job.job_id)
 
         assert completed is not None
         assert completed.status == "succeeded"
         assert completed.result_id == 7
         assert completed.baseline_id == 6
+        assert completed.result_ids == (7,)
+        assert completed.artifact_paths == (str(tmp_path / "runs" / "result.json"),)
+        assert executions == 1
         assert service._jobs == {}
 
     asyncio.run(scenario())
@@ -114,20 +128,19 @@ def test_queued_evaluation_can_be_cancelled_before_execution(tmp_path: Path, mon
 
 
 @pytest.mark.usefixtures("ready_evaluation_inputs")
-def test_corpus_and_evaluation_workers_share_one_execution_lock(
+def test_corpus_and_evaluation_workers_share_one_execution_turn(
     tmp_path: Path, monkeypatch
 ) -> None:
     """Keep heavy corpus and evaluation work serialized across domain queues."""
 
     async def scenario() -> None:
         """Hold corpus work and prove evaluation remains queued until release."""
-        lock = asyncio.Lock()
         coordinator = JobExecutionCoordinator()
         gate = asyncio.Event()
         events: list[str] = []
 
-        async def corpus_runner(command, publish) -> OperationOutcome:
-            """Hold the shared lock while one corpus job is active."""
+        async def corpus_runner(command, publish, on_usage=None) -> OperationOutcome:
+            """Hold the shared turn while one corpus job is active."""
             del command, publish
             events.append("corpus-start")
             await gate.wait()
@@ -136,22 +149,20 @@ def test_corpus_and_evaluation_workers_share_one_execution_lock(
 
         corpus = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
-            operation_runner=corpus_runner,
             job_store=LedgerStore(),
-            execution_lock=lock,
             execution_coordinator=coordinator,
         )
+        corpus._job_queue._run_operation = corpus_runner
         evaluation = EvaluationAdminService(
             settings=Settings(corpus_dir=tmp_path),
             provider=DeterministicEmbeddingProvider(),
             artifact_dir=tmp_path / "runs",
-            execution_lock=lock,
             execution_coordinator=coordinator,
             job_store=LedgerStore(),
         )
 
         async def quick(job_id, request):
-            """Record evaluation start only after corpus releases the lock."""
+            """Record evaluation start only after corpus releases the execution turn."""
             del job_id, request
             events.append("evaluation-start")
             return 1, None, tmp_path / "runs" / "result.json"

@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from scripts.schema.status import schema_status
+from tests.live_postgres import live_postgres_unavailable
 
 
 @pytest.mark.live_postgres
@@ -16,7 +17,9 @@ def test_schema_preparation_preserves_incompatible_database():
     """Create an empty schema but reject drift without modifying existing data."""
     admin_url = os.environ.get("SCHEMA_TEST_ADMIN_URL")
     if not admin_url:
-        pytest.skip("SCHEMA_TEST_ADMIN_URL must identify an isolated disposable test server")
+        live_postgres_unavailable(
+            "SCHEMA_TEST_ADMIN_URL must identify an isolated disposable test server"
+        )
     database = "schema_recovery_" + uuid4().hex
     url = admin_url.rsplit("/", 1)[0] + "/" + database
 

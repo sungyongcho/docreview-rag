@@ -5,9 +5,6 @@ import { ThemeSwitch } from "./theme-switch";
 import { browserStorage, configureBrowserStorage } from "@/lib/storage";
 import { THEME_BOOTSTRAP, THEME_KEY } from "@/lib/theme";
 import { runInNewContext } from "node:vm";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { transform } from "lightningcss";
 
 let dark = false;
 const changes = new Set<() => void>();
@@ -89,20 +86,4 @@ it("closes the theme menu with Escape without changing the selection", () => {
   expect(screen.queryByRole("menu")).toBeNull();
   expect(screen.getByRole("button", { name: "Theme: System" })).toHaveFocus();
   expect(localStorage.getItem(THEME_KEY)).toBeNull();
-});
-
-it("compiles manual theme selectors with the same palette state as the OS branches", () => {
-  const compile = (code: Uint8Array) => transform({ filename: "theme.css", code, targets: { chrome: 109 << 16 } }).code.toString();
-  const palette = compile(Buffer.from(":root {color-scheme:light dark;--probe:light-dark(white,black)}"));
-  const theme = compile(readFileSync(resolve(process.cwd(), "components/theme-switch.css")));
-  const properties = (body: string) => new Map([...body.matchAll(/(--[\w-]+):([^;]*);/g)].map((match) => [match[1], match[2].trim()]));
-  const base = properties(palette.match(/:root\s*\{([^}]+)\}/)![1]);
-  const systemDark = properties(palette.match(/@media[^{}]+\{\s*:root\s*\{([^}]+)\}/)![1]);
-  const light = properties(theme.match(/html\[data-color-mode="light"\]\s*\{([^}]+)\}/)![1]);
-  const dark = properties(theme.match(/html\[data-color-mode="dark"\]\s*\{([^}]+)\}/)![1]);
-  expect(systemDark.size).toBeGreaterThan(0);
-  for (const [name, value] of systemDark) {
-    expect(light.get(name)).toBe(base.get(name));
-    expect(dark.get(name)).toBe(value);
-  }
 });

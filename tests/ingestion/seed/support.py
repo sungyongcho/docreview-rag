@@ -19,7 +19,7 @@ SOURCE_SHA256 = "a" * 64
 
 
 def sample_source(doc_id: str) -> FilingSource:
-    """Construct a typed source reference for injected-parser tests."""
+    """Construct a typed source reference with consistent filing identity."""
     issuer, year = doc_id.split("-FY", maxsplit=1)
     cik = str(sum(map(ord, issuer))).zfill(10)
     accession = f"{cik}-{year[-2:]}-000001"

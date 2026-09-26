@@ -1,3 +1,4 @@
+import { expectNoUnexpectedRequests, requestRoute, unexpectedRequest, jsonResponse } from "@/lib/http-test-support";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,13 +9,31 @@ import type { OperatorJob } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { MeasureWorkspace, type MeasureTab } from "./measure-workspace";
 
+afterEach(() => { cleanup(); expectNoUnexpectedRequests(); });
+
+const EMPTY_MEASURE_READS: Record<string, unknown> = {
+  "GET /admin/evaluations/suites": CANNED_SUITES,
+  "GET /admin/evaluations/runs": { jobs: [] },
+  "GET /admin/snapshots": [],
+  "GET /admin/golden/sec-en/revisions": [],
+  "GET /admin/golden/sec-ko/revisions": [],
+  "GET /admin/golden/dart-en/revisions": [],
+  "GET /admin/golden/dart-ko/revisions": [],
+  "GET /admin/golden/sec-en/canonical": { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [] },
+};
+const MISSING_PREPARATION = { suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "source_missing", source_checks: [], blockers: [], next_step: "filings" };
+const READY_PREPARATION = { suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] };
+
 type StubHandler = (url: string, init?: RequestInit) => unknown;
 
-function stubFetch(handler: StubHandler) {
-  const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const custom = handler(String(input).replace(/\/?(\?|$)/, "$1"), init);
-    const payload = String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/preparation") ? (custom && typeof custom === "object" && "state" in custom ? custom : { suite_id: JSON.parse(String(init?.body)).suite_id, kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] }) : custom ?? {};
-    return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+/** Serve only the routes each scenario declares; missing preparation is never made ready. */
+function stubFetch(handler: StubHandler = () => undefined, live = true) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const route = requestRoute(input, init);
+    const custom = await handler(route, init);
+    const payload = custom === undefined && live ? EMPTY_MEASURE_READS[route] : custom;
+    if (payload === undefined) return unexpectedRequest(input, init);
+    return jsonResponse(payload);
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -51,10 +70,8 @@ describe("Measure workspace", () => {
 
   it("shows canonical golden questions before a mutable draft exists", async () => {
     stubFetch((url) => {
-      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-      if (url.endsWith("/revisions")) return [];
-      if (url.endsWith("/admin/golden/sec-en/canonical")) return {
+      if (url === "POST /admin/evaluations/preparation") return MISSING_PREPARATION;
+      if (url === "GET /admin/golden/sec-en/canonical") return {
         suite_id: "sec-en",
         filename: "retrieval.json",
         sha256: "a".repeat(64),
@@ -66,8 +83,7 @@ describe("Measure workspace", () => {
           human_verified: false,
         }],
       };
-      if (url.endsWith("/admin/snapshots")) return [];
-      return {};
+      return undefined;
     });
     render(<Host live />);
 
@@ -91,13 +107,11 @@ describe("Measure workspace", () => {
   it("queues a quick evaluation from Runs and stays on the Results list", async () => {
     const onRefreshJobs = vi.fn();
     const queued = { ...CANNED_JOB, job_id: "queued-1", status: "queued", stage: "queued", message: "Waiting", result_id: null, result_ids: [], baseline_id: null };
-    const fetchMock = stubFetch((url, init) => {
-      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs") && init?.method === "POST") return queued;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [CANNED_JOB] };
-      if (url.endsWith("/admin/snapshots")) return [];
-      if (url.includes("/admin/golden/")) return [];
-      return {};
+    const fetchMock = stubFetch((url) => {
+      if (url === "POST /admin/evaluations/preparation") return READY_PREPARATION;
+      if (url === "POST /admin/evaluations/runs") return queued;
+      if (url === "GET /admin/evaluations/runs") return { jobs: [CANNED_JOB] };
+      return undefined;
     });
     render(<Host live initialTab="runs" onRefreshJobs={onRefreshJobs} />);
 
@@ -133,12 +147,9 @@ describe("Measure workspace", () => {
     if (profileSource === "default") delete request.profile;
     else request.profile = { ...DEFAULT_PROFILE, k: 9 };
     stubFetch((url) => {
-      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [{ ...CANNED_JOB, request }] };
-      if (url.endsWith("/admin/snapshots")) return [];
-      if (url.endsWith("/admin/evaluations/results/16")) return { result_id: 16, suite: "sec-ko", config: {}, metrics: { mrr: 0.8 }, cases: [], raw_artifact_path: "stored.json", created_at: CANNED_JOB.created_at };
-      if (url.includes("/admin/golden/")) return [];
-      return {};
+      if (url === "GET /admin/evaluations/runs") return { jobs: [{ ...CANNED_JOB, request }] };
+      if (url === "GET /admin/evaluations/results/16") return { result_id: 16, suite: "sec-ko", config: {}, metrics: { mrr: 0.8 }, cases: [], raw_artifact_path: "stored.json", created_at: CANNED_JOB.created_at };
+      return undefined;
     });
     render(<Host live initialTab="runs" onApplyProfile={onApplyProfile} />);
 
@@ -149,9 +160,9 @@ describe("Measure workspace", () => {
 
   it("retains a focused stored result without an empty-list panel and returns to the list", async () => {
     stubFetch((url) => {
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-      if (url.endsWith("/admin/evaluations/results/113")) return { result_id: 113, suite: "sec-ko", config: { k: 5 }, metrics: { mrr: 0.8 }, cases: [], created_at: "2026-09-06T12:00:00Z" };
-      return [];
+      if (url === "POST /admin/evaluations/preparation") return MISSING_PREPARATION;
+      if (url === "GET /admin/evaluations/results/113") return { result_id: 113, suite: "sec-ko", config: { k: 5 }, metrics: { mrr: 0.8 }, cases: [], created_at: "2026-09-06T12:00:00Z" };
+      return undefined;
     });
     render(<Host live initialTab="runs" initialResultId={113} />);
     await waitFor(() => expect(screen.getByText("Recorded configuration")).toBeInTheDocument());
@@ -169,10 +180,10 @@ describe("Measure workspace", () => {
 
   it("shows list loading and failure without claiming no evaluations exist", async () => {
     let rejectJobs!: (reason: Error) => void;
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs")) return new Promise((_resolve, reject) => { rejectJobs = reject; });
-      return Promise.resolve(new Response("[]", { status: 200 }));
-    }));
+    stubFetch(route => {
+      if (route === "GET /admin/evaluations/runs") return new Promise((_resolve, reject) => { rejectJobs = reject; });
+      return undefined;
+    });
     render(<Host live initialTab="runs" />);
     expect(screen.getByText("Loading evaluations…")).toBeVisible();
     expect(screen.queryByText(/No evaluations yet/)).not.toBeInTheDocument();
@@ -184,10 +195,10 @@ describe("Measure workspace", () => {
 
   it("keeps the requested result identity visible when detail loading fails", async () => {
     let rejectResult!: (reason: Error) => void;
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/results/113")) return new Promise((_resolve, reject) => { rejectResult = reject; });
-      return Promise.resolve(new Response(String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs") ? '{"jobs":[]}' : "[]", { status: 200 }));
-    }));
+    stubFetch(route => {
+      if (route === "GET /admin/evaluations/results/113") return new Promise((_resolve, reject) => { rejectResult = reject; });
+      return undefined;
+    });
     render(<Host live initialTab="runs" initialResultId={113} />);
     expect(screen.getByText("Loading evaluation result…")).toBeVisible();
     await act(async () => rejectResult(new Error("Result unavailable")));
@@ -199,7 +210,7 @@ describe("Measure workspace", () => {
   });
 
   it("locks Playground and Runs in the public build without calling the administrator API", async () => {
-    const fetchMock = stubFetch((url) => (url.endsWith("/snapshots") ? { snapshots: [] } : {}));
+    const fetchMock = stubFetch((url) => (url === "GET /snapshots" ? { snapshots: [] } : undefined), false);
     render(<Host live={false} />);
 
     expect(screen.getByText("Read-only portfolio")).toBeInTheDocument();
@@ -236,9 +247,9 @@ describe("localized Measure metadata", () => {
   it("translates run state and profile enums while preserving suite IDs and job messages", async () => {
     window.localStorage.setItem("docreview.locale", "ko");
     stubFetch((url) => {
-      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [{ ...CANNED_JOB, status: "queued", message: "Original worker message" }] };
-      return [];
+      if (url === "POST /admin/evaluations/preparation") return READY_PREPARATION;
+      if (url === "GET /admin/evaluations/runs") return { jobs: [{ ...CANNED_JOB, status: "queued", message: "Original worker message" }] };
+      return undefined;
     });
     render(<I18nProvider><Host live initialTab="runs" /></I18nProvider>);
     expect(await screen.findByText("Original worker message")).toBeInTheDocument();
@@ -251,12 +262,11 @@ describe("localized Measure metadata", () => {
   it("translates golden classifications without changing question text or tags", async () => {
     window.localStorage.setItem("docreview.locale", "ko");
     stubFetch((url) => {
-      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-      if (url.endsWith("/canonical")) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [
+      if (url === "POST /admin/evaluations/preparation") return MISSING_PREPARATION;
+      if (/^GET \/admin\/golden\/(sec|dart)-(en|ko)\/canonical$/.test(url)) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [
         { id: "enum-test", question: "Keep this source question", category: "simple_lookup", facet: "policy", tags: ["raw-user-tag"], answers: [] },
       ] };
-      return [];
+      return undefined;
     });
     render(<I18nProvider><Host live initialTab="golden" /></I18nProvider>);
     expect(await screen.findByText("Keep this source question")).toBeInTheDocument();
@@ -274,22 +284,27 @@ describe("evaluation preparation boundaries", () => {
     const question = { id: "draft-01", question: "Original question", category: "simple_lookup", facet: "factual", answers: [], reference_answer: "Original answer" };
     const revision = { filename: "custom.json", revision_id: 7, suite_id: "sec-en", status: "draft", payload: [question], sha256: "b".repeat(64), created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
     const fetchMock = stubFetch((url) => {
-      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-      if (url.endsWith("/admin/golden/sec-en/revisions")) return [revision];
-      if (url.endsWith("/canonical")) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [question] };
-      return [];
+      if (url === "POST /admin/evaluations/preparation") return MISSING_PREPARATION;
+      if (url === "GET /admin/golden/sec-en/revisions") return [revision];
+      if (/^GET \/admin\/golden\/(sec|dart)-(en|ko)\/canonical$/.test(url)) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [question] };
+      return undefined;
     });
-    vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<Host live initialTab="golden" />);
     await screen.findByRole("option", { name: "custom.json" });
     fireEvent.change(screen.getByLabelText("Golden suite"), { target: { value: "file:7" } });
     fireEvent.click(screen.getByRole("button", { name: "draft-01" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Question" }), { target: { value: "Unsaved question" } });
-    fireEvent.click(screen.getByRole("button", { name: "Question list" }));
+    const back = screen.getByRole("button", { name: "Question list" });
+    back.focus(); fireEvent.click(back);
     expect(screen.getByRole("dialog", { name: "Unsaved question changes" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Continue editing" }));
+    expect(screen.getByRole("button", { name: "Continue editing" })).toHaveFocus();
+    expect(back.closest("[inert]")).not.toBeNull();
+    fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "Save draft and leave" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     expect(screen.getByRole("textbox", { name: "Question" })).toHaveValue("Unsaved question");
+    expect(back).toHaveFocus();
+    expect(back.closest("[inert]")).toBeNull();
     fireEvent.click(screen.getByText("Technical details and question JSON"));
     fireEvent.change(screen.getByLabelText("Single-case JSON"), { target: { value: "{" } });
     expect(screen.getByLabelText("Single-case JSON")).toHaveValue("{");
@@ -303,17 +318,15 @@ describe("evaluation preparation boundaries", () => {
     const question = { id: "draft-01", question: "Original question", category: null, expected_label: null, answers: [] };
     let revision = { filename: "custom.json", revision_id: 7, suite_id: "sec-en", status: "draft", payload: [question], sha256: "b".repeat(64), completion: {} };
     const fetchMock = stubFetch((url, init) => {
-      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-      if (url.endsWith("/admin/golden/sec-en/revisions")) return [revision];
-      if (url.endsWith("/canonical")) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [] };
-      if (init?.method === "PUT") {
-        const request = JSON.parse(String(init.body));
-        expect(request.expected_sha256).toBe("b".repeat(64));
+      if (url === "POST /admin/evaluations/preparation") return MISSING_PREPARATION;
+      if (url === "GET /admin/golden/sec-en/revisions") return [revision];
+      if (/^GET \/admin\/golden\/(sec|dart)-(en|ko)\/canonical$/.test(url)) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [] };
+      if (url === "PUT /admin/golden/revisions/7/cases/draft-01") {
+        const request = JSON.parse(String(init?.body));
         revision = { ...revision, payload: [request.case], sha256: "c".repeat(64) };
         return revision;
       }
-      return [];
+      return undefined;
     });
     render(<Host live initialTab="golden" />);
     await screen.findByRole("option", { name: "custom.json" });
@@ -324,19 +337,26 @@ describe("evaluation preparation boundaries", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save draft and leave" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByText("Saved incomplete question")).toBeVisible();
-    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(1);
+    const writes = fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
+    expect(writes).toHaveLength(1);
+    expect(JSON.parse(String(writes[0][1]?.body))).toMatchObject({ expected_sha256: "b".repeat(64), case: { question: "Saved incomplete question" } });
   });
 
   it("opens evaluation preparation from the dataset without queuing a job", async () => {
     const fetchMock = stubFetch((url) => {
-      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-      return [];
+      if (url === "POST /admin/evaluations/preparation") return READY_PREPARATION;
+      return undefined;
     });
     render(<Host live initialTab="golden" />);
     fireEvent.click(screen.getByRole("button", { name: "Evaluate this dataset" }));
-    expect(screen.getByRole("dialog", { name: "New evaluation" })).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    const setup = screen.getByRole("dialog", { name: "New evaluation" });
+    const help = within(setup).getAllByRole("button", { name: /^About / })[0];
+    fireEvent.click(help);
+    expect(screen.getByRole("tooltip")).toBeVisible();
+    fireEvent.keyDown(help, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(setup).toBeVisible();
+    fireEvent.keyDown(setup, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.every(([url, init]) => !init?.method || init.method === "GET" || String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/preparation"))).toBe(true);
   });
@@ -344,11 +364,11 @@ describe("evaluation preparation boundaries", () => {
   it.each([false, true])("opens snapshot cards and preserves comparison behavior (live=%s)", async (live) => {
     const snapshots = [1, 2, 3].map((id) => ({ snapshot_id: id, label: `Snapshot ${id}`, status: "ready", public: true, corpus_fingerprint: String(id).repeat(64), profile: DEFAULT_PROFILE, eval_result: { result_id: id, suite: "sec-en", config: { k: 5, golden_provenance: { filename: "retrieval.json", dataset_id: "builtin:sec-en" } }, metrics: { mrr: 0.5 }, created_at: "2026-09-01T00:00:00Z" }, document_count: 29, created_at: "2026-09-01T00:00:00Z" }));
     stubFetch((url) => {
-      if (url.includes("/snapshots/compare")) return { baseline_id: 1, candidate_id: 2, directly_comparable: false, warning: "Golden source hashes differ.", metrics: [{ name: "mrr", baseline: 0.5, candidate: 0.7, delta: null }], common_case_count: 0, cases: [] };
-      if (url.endsWith("/admin/snapshots")) return snapshots;
-      if (url.endsWith("/snapshots")) return { snapshots };
-      return [];
-    });
+      if (["GET /snapshots/compare", "GET /admin/snapshots/compare"].includes(url)) return { baseline_id: 1, candidate_id: 2, directly_comparable: false, warning: "Golden source hashes differ.", metrics: [{ name: "mrr", baseline: 0.5, candidate: 0.7, delta: null }], common_case_count: 0, cases: [] };
+      if (url === "GET /admin/snapshots") return snapshots;
+      if (url === "GET /snapshots") return { snapshots };
+      return undefined;
+    }, live);
     render(<Host live={live} initialTab="snapshots" />);
     await screen.findAllByRole("option", { name: "Snapshot 1 · retrieval.json" });
     const card = screen.getByRole("button", { name: "Snapshot details: Snapshot 1" });
@@ -378,10 +398,8 @@ describe("evaluation preparation boundaries", () => {
 it("opens diagnosis from an unready evaluation without submitting work", async () => {
   const onOpenPreparation = vi.fn();
   const fetchMock = stubFetch(url => {
-    if (url.endsWith("/admin/evaluations/preparation")) return { suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "unavailable", source_checks: [], blockers: [], next_step: "setup" };
-    if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-    if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-    return [];
+    if (url === "POST /admin/evaluations/preparation") return { suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "unavailable", source_checks: [], blockers: [], next_step: "setup" };
+    return undefined;
   });
   render(<I18nProvider><Host live ready={false} initialTab="runs" onOpenPreparation={onOpenPreparation} /></I18nProvider>);
   await screen.findByRole("button", { name: /New evaluation|새 평가/ });
@@ -397,12 +415,7 @@ describe("evaluation run refetch keyed on evaluation jobs", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
   it("does not refetch evaluation runs when only a corpus job reports progress", async () => {
-    const fetchMock = stubFetch((url) => {
-      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-      if (url.endsWith("/revisions")) return [];
-      return {};
-    });
+    const fetchMock = stubFetch();
     const corpusJob: OperatorJob = { job_id: "corpus-progress", domain: "corpus", kind: "ingest_manifest", request: {}, status: "running", stage: "parse", current: 1, total: 9, detail_current: null, detail_total: null, message: "Parsing", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-09-01T12:00:00Z", started_at: "2026-09-01T12:00:01Z", finished_at: null, updated_at: "2026-09-01T12:00:02Z" };
     const board = (rows: OperatorJob[]) => ({ jobs: rows, active_count: rows.length, queued_count: 0 });
     const view = (rows: OperatorJob[]) => (
@@ -422,41 +435,25 @@ describe("evaluation run refetch keyed on evaluation jobs", () => {
   });
 });
 
-/** Keep management out of the ordered workflow while retaining accessible active states. */
-it("keeps presets in management without a separate defaults tab", async () => {
-  stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : url.endsWith("/runs") ? { jobs: [] } : []);
-  render(<Host live initialTab="presets" />);
-  const workflow = screen.getByRole("group", { name: "Evaluation workflow" });
-  const management = screen.getByRole("group", { name: "Manage" });
-  expect(within(workflow).getAllByRole("button")).toHaveLength(4);
-  expect(workflow.querySelectorAll(".measure-step-chip")).toHaveLength(4);
-  expect(management.querySelector(".measure-step-chip")).toBeNull();
-  expect(document.querySelector('[data-help="measure.presets.manage"]')).not.toBeNull();
-  expect(within(management).getByRole("button", { name: "Presets" })).toHaveAttribute("aria-pressed", "true");
-  expect(within(management).queryByRole("button", { name: "Defaults" })).toBeNull();
-});
-
 /** Preserve browser presets in the management group without exposing DEV defaults. */
 it("keeps the presets tab available in production without DEV defaults", () => {
   cleanup();
-  stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : []);
+  stubFetch(url => url === "GET /snapshots" ? { snapshots: [] } : undefined, false);
   try {
     render(<Host live={false} initialTab="presets" />);
     const management = screen.getByRole("group", { name: "Manage" });
     expect(within(management).getByRole("button", { name: "Presets" })).toHaveAttribute("aria-pressed", "true");
     expect(within(management).queryByRole("button", { name: "Defaults" })).toBeNull();
-    expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getAllByRole("button")).toHaveLength(4);
   } finally { cleanup(); vi.unstubAllGlobals(); }
 });
 
 it("creates a named empty JSON dataset beside the selector without a publication step", async () => {
   const created = { filename: "my-eval.json", revision_id: 77, suite_id: "sec-en", status: "draft", payload: [], sha256: "b".repeat(64), created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
   const fetchMock = stubFetch((url) => {
-    if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-    if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-    if (url.endsWith("/canonical")) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [] };
-    if (url.endsWith("/drafts")) return created;
-    return [];
+      if (url === "POST /admin/evaluations/preparation") return MISSING_PREPARATION;
+    if (/^GET \/admin\/golden\/(sec|dart)-(en|ko)\/canonical$/.test(url)) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [] };
+    if (url === "POST /admin/golden/sec-en/drafts") return created;
+    return undefined;
   });
   render(<Host live initialTab="golden" />);
   await screen.findByRole("option", { name: /· retrieval\.json \(Built-in\)$/ });
@@ -477,7 +474,7 @@ it("creates a named empty JSON dataset beside the selector without a publication
 it.each([true, false])("shows snapshot progress and a truthful terminal button state (success=%s)", async (success) => {
   cleanup(); window.localStorage.clear();
   let finish!: (response: Response) => void;
-  const fetchMock = stubFetch(url => url.endsWith("/admin/evaluations/results/113") ? { result_id: 113, suite: "sec-en", config: {}, metrics: {}, cases: [], created_at: "2026-09-08T00:00:00Z" } : []);
+  const fetchMock = stubFetch(url => url === "GET /admin/evaluations/results/113" ? { result_id: 113, suite: "sec-en", config: {}, metrics: {}, cases: [], created_at: "2026-09-08T00:00:00Z" } : undefined);
   const ordinary = fetchMock.getMockImplementation()!;
   fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/snapshots") && init?.method === "POST" ? new Promise<Response>(resolve => { finish = resolve; }) : ordinary(input, init));
   render(<Host live initialTab="runs" initialResultId={113} />);
@@ -494,7 +491,7 @@ it.each([true, false])("shows snapshot progress and a truthful terminal button s
   expect(JSON.parse(String(snapshotRequests[0][1]?.body))).toEqual({ label: "testing", eval_result_id: 113, public: false });
   await act(async () => finish(new Response(JSON.stringify(success ? { snapshot_id: 1, label: "testing", status: "ready", public: false, document_count: 7, profile: {}, eval_result: { result_id: 113, suite: "sec-en", config: {}, metrics: {} } } : { error: { code: "snapshot_failed", message: "Snapshot failed." } }), { status: success ? 200 : 500, headers: { "content-type": "application/json" } })));
   if (success) {
-    expect(screen.getByRole("button", { name: "Snapshot saved" })).toHaveClass("saved");
+    expect(screen.getByRole("button", { name: "Snapshot saved" })).toBeDisabled();
     expect(input).toHaveValue("");
   } else {
     expect(screen.getByRole("button", { name: "Retry snapshot save" })).toBeEnabled();
@@ -507,15 +504,14 @@ it("opens the existing snapshot from an evaluated result without another save re
   cleanup(); window.localStorage.clear();
   const stored = { snapshot_id: 12, label: "Known search state", status: "ready", public: false, corpus_fingerprint: "a".repeat(64), profile: { retrieval_profile: { ...DEFAULT_PROFILE, k: 7 } }, eval_result: { result_id: 113, suite: "sec-en", config: { retrieval_profile: { ...DEFAULT_PROFILE, k: 7 } }, metrics: {}, created_at: "2026-09-08T00:00:00Z" }, document_count: 7, created_at: "2026-09-08T00:00:00Z" };
   const fetchMock = stubFetch(url => {
-    if (url.endsWith("/admin/snapshots")) return [stored];
-    if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-    if (url.endsWith("/admin/evaluations/results/113")) return { ...stored.eval_result, cases: [] };
-    return [];
+    if (url === "GET /admin/snapshots") return [stored];
+    if (url === "GET /admin/evaluations/results/113") return { ...stored.eval_result, cases: [] };
+    return undefined;
   });
   render(<Host live initialTab="runs" initialResultId={113} />);
   fireEvent.click(await screen.findByRole("button", { name: "View saved snapshot" }));
   expect(screen.getByRole("heading", { name: "Snapshot management" })).toBeVisible();
-  const row = document.getElementById("managed-snapshot-12")!;
+  const row = screen.getByRole("button", { name: "Snapshot details: Known search state" });
   expect(row).toHaveFocus();
   fireEvent.click(row);
   expect(within(screen.getByRole("dialog", { name: "Snapshot details" })).getByText("retrieval.json")).toBeVisible();
@@ -528,13 +524,13 @@ it("opens the existing snapshot from an evaluated result without another save re
 it("filters comparisons by dataset and clears both selections when the file changes", async () => {
   cleanup(); window.localStorage.clear();
   const jobs = [11, 12, 13].map((id) => ({ ...CANNED_JOB, job_id: `job-${id}`, status: "succeeded", result_id: id, result_ids: [id], request: { ...CANNED_JOB.request, suite_id: id === 13 ? "dart-ko" : "dart-en" }, created_at: `2026-09-08T12:00:${id}Z`, result_summaries: [{ result_id: id, created_at: `2026-09-08T12:00:${id}Z`, config: { golden_provenance: { filename: id === 13 ? "dart_retrieval_ko.json" : "dart_retrieval.json", dataset_id: id === 13 ? "builtin:dart-ko" : "builtin:dart-en", golden_sha256: id === 12 ? "b".repeat(64) : "a".repeat(64) }, retrieval_profile: DEFAULT_PROFILE } }] }));
-  stubFetch(url => url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/admin/evaluations/runs") ? { jobs } : []);
+  stubFetch(url => url === "GET /admin/evaluations/runs" ? { jobs } : undefined);
   render(<Host live initialTab="compare" />);
   const dataset = await screen.findByLabelText("Evaluation dataset");
   await screen.findByRole("option", { name: /· dart_retrieval\.json \(Built-in\)$/ });
   expect(screen.getByLabelText("Baseline")).toBeDisabled();
   fireEvent.change(dataset, { target: { value: "builtin:dart-en" } });
-  await waitFor(() => expect(screen.getByLabelText("Baseline").querySelectorAll("option")).toHaveLength(3));
+  await waitFor(() => expect(within(screen.getByLabelText("Baseline")).getAllByRole("option")).toHaveLength(3));
   expect(screen.getByLabelText("Baseline")).not.toHaveTextContent("#11");
   fireEvent.change(screen.getByLabelText("Baseline"), { target: { value: "11" } });
   fireEvent.change(screen.getByLabelText("Candidate"), { target: { value: "12" } });
@@ -553,31 +549,31 @@ it("filters run history by file and status, searches settings, and sorts without
     { ...CANNED_JOB, job_id: "newer", request: { ...CANNED_JOB.request, suite_id: "dart-en" }, status: "queued", created_at: "2026-09-08T12:00:00Z" },
     { ...CANNED_JOB, job_id: "korean", request: { ...CANNED_JOB.request, suite_id: "dart-ko" }, status: "succeeded", created_at: "2026-09-08T11:00:00Z" },
   ];
-  stubFetch(url => url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/admin/evaluations/runs") ? { jobs } : []);
+  stubFetch(url => url === "GET /admin/evaluations/runs" ? { jobs } : undefined);
   render(<Host live initialTab="runs" />);
   await screen.findByText("dart_retrieval_ko.json · quick");
   fireEvent.change(screen.getByLabelText("Dataset file"), { target: { value: "builtin:dart-en" } });
-  expect(document.querySelectorAll(".evaluation-run-list .job-row")).toHaveLength(2);
+  expect(screen.getAllByRole("radio", { name: /^Select / })).toHaveLength(2);
   fireEvent.change(screen.getByLabelText("Status"), { target: { value: "queued" } });
-  expect(document.querySelectorAll(".evaluation-run-list .job-row")).toHaveLength(1);
+  expect(screen.getAllByRole("radio", { name: /^Select / })).toHaveLength(1);
   fireEvent.change(screen.getByLabelText("Status"), { target: { value: "all" } });
   fireEvent.change(screen.getByLabelText("Sort by"), { target: { value: "oldest" } });
-  expect(document.querySelector(".evaluation-run-list time")).toHaveAttribute("dateTime", "2026-09-08T10:00:00Z");
+  expect(screen.getAllByRole("radio", { name: /^Select / })[0]).toHaveAccessibleName("Select older");
   fireEvent.change(screen.getByLabelText("Dataset file"), { target: { value: "all" } });
   fireEvent.change(screen.getByPlaceholderText("Search filename or settings"), { target: { value: "_ko.json" } });
-  expect(document.querySelectorAll(".evaluation-run-list .job-row")).toHaveLength(1);
-  expect(document.querySelector(".evaluation-run-list")).toHaveTextContent("dart_retrieval_ko.json");
+  expect(screen.getAllByRole("radio", { name: /^Select / })).toHaveLength(1);
+  expect(screen.getByRole("radio", { name: "Select korean" })).toBeInTheDocument();
 });
 
 it("filters saved snapshots using recorded dataset filenames", async () => {
   cleanup(); window.localStorage.clear();
   const snapshots = ["dart-en", "dart-ko"].map((suite, index) => ({ snapshot_id: index + 1, label: `Saved ${suite}`, status: "ready", public: false, corpus_fingerprint: "a".repeat(64), profile: DEFAULT_PROFILE, eval_result: { result_id: index + 1, suite, config: {}, metrics: {}, created_at: "2026-09-08T10:00:00Z" }, document_count: 7, created_at: "2026-09-08T10:00:00Z" }));
-  stubFetch(url => url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/admin/snapshots") ? snapshots : []);
+  stubFetch(url => url === "GET /admin/snapshots" ? snapshots : undefined);
   render(<Host live initialTab="snapshots" />);
   await screen.findByText("Saved dart-ko");
   fireEvent.change(screen.getByLabelText("Dataset file"), { target: { value: "builtin:dart-en" } });
-  expect(document.querySelectorAll(".snapshot-card")).toHaveLength(1);
-  expect(document.querySelector(".snapshot-card")).toHaveTextContent("Saved dart-en");
+  expect(screen.getAllByRole("button", { name: /^Snapshot details:/ })).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Snapshot details: Saved dart-ko" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Snapshot details: Saved dart-en" }));
   expect(within(screen.getByRole("dialog", { name: "Snapshot details" })).getByText("dart_retrieval.json")).toBeVisible();
   fireEvent.keyDown(screen.getByRole("dialog", { name: "Snapshot details" }), { key: "Escape" });
@@ -590,7 +586,7 @@ it("saves evaluation defaults explicitly without changing current inputs or chat
   cleanup(); window.localStorage.clear();
   const { loadExperimentDefaults, loadDefaultProfile, saveDefaultProfile } = await import("@/lib/storage");
   saveDefaultProfile({ ...DEFAULT_SESSION_PROFILE, retrieval_preset: "accuracy" });
-  stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : url.endsWith("/runs") ? { jobs: [] } : []);
+  stubFetch(url => url === "GET /admin/golden/dart-ko/canonical" ? { suite_id: "dart-ko", filename: "dart_retrieval_ko.json", sha256: "b".repeat(64), payload: [] } : url === "POST /admin/evaluations/preparation" ? READY_PREPARATION : undefined);
   render(<Host live initialTab="runs" />);
   fireEvent.click(screen.getByRole("button", { name: "New evaluation" }));
   await within(screen.getByRole("dialog", { name: "New evaluation" })).findByRole("option", { name: /· dart_retrieval_ko\.json \(Built-in\)$/ });
@@ -611,7 +607,7 @@ it("keeps verdicts consistent and explains missing source evidence before sendin
   cleanup(); window.localStorage.clear();
   const question = { id: "draft-01", question: "Question?", category: "absent", facet: "factual", answers: [], reference_answer: "NOT_IN_DOCS", expected_label: "NOT_IN_DOCS", note: "Review this", tags: [], curation_status: "user-authored", approval_status: "pending-author-approval", human_verified: false };
   const revision = { filename: "test.json", revision_id: 7, suite_id: "sec-en", status: "draft", payload: [question], sha256: "b".repeat(64), created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
-  stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : url.endsWith("/sec-en/revisions") ? [revision] : url.endsWith("/canonical") ? { filename: "retrieval.json", suite_id: "sec-en", payload: [], sha256: "a".repeat(64) } : []);
+  stubFetch(url => url === "POST /admin/evaluations/preparation" ? MISSING_PREPARATION : url === "GET /admin/golden/sec-en/revisions" ? [revision] : /^GET \/admin\/golden\/(sec|dart)-(en|ko)\/canonical$/.test(url) ? { filename: "retrieval.json", suite_id: "sec-en", payload: [], sha256: "a".repeat(64) } : undefined);
   render(<Host live initialTab="golden" />);
   await screen.findByRole("option", { name: "test.json" });
   fireEvent.change(screen.getByLabelText("Golden suite"), { target: { value: "file:7" } });
@@ -627,11 +623,8 @@ it("keeps verdicts consistent and explains missing source evidence before sendin
 it("marks a dataset file that no longer exists as deleted in the run filter and detail", async () => {
   const gone = { golden_provenance: { dataset_id: "file:4242", filename: "gone.json", golden_revision_id: 4242, golden_sha256: "b".repeat(64) } };
   stubFetch((url) => {
-    if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-    if (url.endsWith("/admin/evaluations/runs")) return { jobs: [{ ...CANNED_JOB, request: { ...CANNED_JOB.request, golden_revision_id: 4242 }, result_summaries: [{ result_id: 16, suite: "sec-en", config: gone, metrics: {}, created_at: CANNED_JOB.created_at }] }] };
-    if (url.endsWith("/admin/snapshots")) return [];
-    if (url.includes("/admin/golden/")) return [];
-    return {};
+    if (url === "GET /admin/evaluations/runs") return { jobs: [{ ...CANNED_JOB, request: { ...CANNED_JOB.request, golden_revision_id: 4242 }, result_summaries: [{ result_id: 16, suite: "sec-en", config: gone, metrics: {}, created_at: CANNED_JOB.created_at }] }] };
+    return undefined;
   });
   render(<Host live initialTab="runs" />);
   await screen.findByRole("option", { name: "gone.json (deleted)" });

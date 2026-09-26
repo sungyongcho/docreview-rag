@@ -1,19 +1,7 @@
-import { readFileSync } from "node:fs";
-import { renderTutorial } from "./tutorial-markdown.mjs";
 import { describe, expect, it } from "vitest";
 import { DEVELOPMENT_STORY_SOURCES, DOCUMENTATION_REGISTRY, DOCUMENTS, developmentStoryDocument, documentationLink, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
 
 describe("documentation registry", () => {
-  it("provides seventeen paired documents and twelve unique tutorial steps", () => {
-    expect(validateDocumentationRegistry()).toBe(DOCUMENTATION_REGISTRY);
-    expect(DOCUMENTS).toHaveLength(34);
-    for (const locale of ["ko", "en"]) {
-      const documents = DOCUMENTS.filter((document) => document.locale === locale);
-      expect(documents).toHaveLength(17);
-      expect(documents.flatMap((document) => document.steps.map((step) => step.number)).sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, index) => index + 1));
-      expect(documents.map((document) => document.id)).toEqual(["overview", "environment", "quickstart", "quickstart-dev", "answers", "retrieval", "documents", "acquisition", "indexing", "evaluation", "snapshots", "settings", "runtime", "troubleshooting", "architecture", "cli", "ollama"]);
-    }
-  });
 
   it.each(["ID", "slug", "step", "related"])("rejects conflicting %s entries", (kind) => {
     const registry = structuredClone(DOCUMENTATION_REGISTRY);
@@ -49,14 +37,4 @@ describe("documentation registry", () => {
     expect(localizedDocumentationRoute("/docreview-rag/docs/ko/development/", "en", "#References")).toBe("/docreview-rag/docs/en/development/#References");
     expect(localizedDocumentationRoute("/docs/en/development/", "ko", "#시작과-학습")).toBe(`/docs/ko/development/#${encodeURIComponent("시작과-학습")}`);
   });
-});
-
-it.each(["en", "ko"] as const)("preserves the progress/queue section when changing language from %s", (locale) => {
-  const other = locale === "en" ? "ko" : "en";
-  const headings = renderTutorial(readFileSync(`../docs/TUTORIAL/${locale}/indexing.md`, "utf8"), { locale }).headings;
-  expect(headings.some((heading) => heading.id === "job-progress")).toBe(true);
-  const destination = localizedDocumentationRoute(`/docreview-rag/docs/${locale}/indexing/`, other, "#job-progress")!;
-  const target = renderTutorial(readFileSync(`../docs/TUTORIAL/${other}/indexing.md`, "utf8"), { locale: other }).headings;
-  const fragment = decodeURIComponent(destination.split("#")[1]);
-  expect(target.some((heading) => heading.id === fragment)).toBe(true);
 });

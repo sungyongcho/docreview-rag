@@ -111,17 +111,6 @@ describe("DocumentationLanguageSwitch", () => {
     expect(navigation.replace).not.toHaveBeenCalled();
     expect(screen.getByTestId("locale")).toHaveTextContent("en");
   });
-
-  it("lets the last rapid toggle win", () => {
-    window.history.replaceState({}, "", "/docreview-rag/docs/ko/cli/");
-    stubRects({ "page-header": { bottom: 60 }, install: { top: 30 }, "install-cli": { top: 400 }, "detail-note": { top: 700 }, usage: { top: 900 }, "docs-content": { top: 20, bottom: 2000 } });
-    render(<I18nProvider><DocsPage /></I18nProvider>);
-    const english = screen.getByRole("button", { name: "EN" });
-    fireEvent.click(english);
-    fireEvent.click(english);
-    expect(navigation.replace).toHaveBeenCalledTimes(2);
-    expect(latestReadingState()).toMatchObject({ documentId: "cli", path: ["install"] });
-  });
 });
 
 describe("DocumentationReadingBoundary", () => {

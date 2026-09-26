@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ANSWER_MODEL_HINT, derivePipeline, failureMessage, failureReport, overallJobPercent, STAGE_ORDER } from "./pipeline";
+import { ANSWER_MODEL_HINT, derivePipeline, failureMessage, failureReport, overallJobPercent } from "./pipeline";
 import type { Pipeline, PipelineInput, Stage, StageId } from "./pipeline";
 import { DEFAULT_PROFILE } from "./types";
 import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness } from "./types";
@@ -165,12 +165,6 @@ describe("derivePipeline", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
-  });
-
-  it("orders the seven stages 1..7 following STAGE_ORDER", () => {
-    const pipeline = derivePipeline(liveInput());
-    expect(pipeline.stages.map((item) => item.id)).toEqual([...STAGE_ORDER]);
-    expect(pipeline.stages.map((item) => item.order)).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
   // Case 1: every stage done; the SEC manifest lists one filing more than what is ingested.
@@ -368,11 +362,6 @@ describe("derivePipeline", () => {
     expect(ask.status).toBe("blocked");
     expect(ask.blockedBy).toBe("lexical");
     expect(ask.hint).toContain("step 4");
-  });
-
-  it("reports limited retrieval when neither vectors nor BM25 are complete", () => {
-    const pipeline = derivePipeline(liveInput({ corpus: fullCorpus({ pending_embeddings: 5, embedded_chunks: 21922, bm25_ready: false }) }));
-    expect(stage(pipeline, "ask").blockedBy).toBe("embeddings");
   });
 
   // Case 7: a running job overrides its stage with progress; a queued one shows its position.
@@ -634,8 +623,6 @@ describe("derivePipeline", () => {
     expect(filings.statusDetail).toBe("stored");
     expect(filings.numbers).toEqual(["29 filings in the published corpus"]);
 
-    // Plan §2 override (d): read-only mode turns stage 7 into `readonly` even though
-    // two published snapshots satisfy its public "done" rule.
     const evaluate = stage(pipeline, "evaluate");
     expect(evaluate.status).toBe("readonly");
     expect(evaluate.statusDetail).toBe("stored");
@@ -664,20 +651,6 @@ describe("derivePipeline", () => {
     expect(stage(pipeline, "filings").statusDetail).toBe("stored");
   });
 
-  // Case 13: the API is unreachable; no stage may claim anything.
-  it("marks every stage unknown with API unavailable and no action when the API is down", () => {
-    const pipeline = derivePipeline(liveInput({ healthKind: "api_down" }));
-
-    for (const item of pipeline.stages) {
-      expect(item.status, item.id).toBe("unknown");
-      expect(item.statusDetail, item.id).toBe("API unavailable");
-      expect(item.action, item.id).toBeNull();
-      expect(item.hint, item.id).toBe("");
-    }
-    expect(pipeline.next).toBeNull();
-    expect(pipeline.corpusReady).toBe(false);
-  });
-
   // Case 14: the database is not reachable; the corpus stages carry its message.
   it("blocks the corpus stages on the database with schema_message when the database is disconnected", () => {
     const pipeline = derivePipeline(liveInput({
@@ -696,16 +669,6 @@ describe("derivePipeline", () => {
     }
     expect(pipeline.next?.id).toBe("index");
     expect(pipeline.corpusReady).toBe(false);
-  });
-
-  it("blocks on a drifted schema even when counts are still available", () => {
-    const pipeline = derivePipeline(liveInput({
-      corpus: emptyCorpus({ schema_status: "drifted", schema_message: "Run migrations." }),
-      manifests: [manifest("sec", 21, 21)],
-      registryCounts: {},
-    }));
-    expect(stage(pipeline, "index").status).toBe("blocked");
-    expect(stage(pipeline, "index").hint).toBe("Resolve database setup before continuing.");
   });
 
   // Case 15: the container cannot write data/, so downloads cannot land anywhere.

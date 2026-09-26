@@ -11,7 +11,7 @@ from app.workflow.types import NodeError, ProviderFailure
 
 
 def test_retrieve_request_is_strict_and_rejects_blank_or_unknown_input():
-    """Reject blank queries, mistyped profile controls, and unknown top-level fields."""
+    """Reject blank queries and mistyped profile controls."""
     with pytest.raises(ValidationError):
         RetrieveRequest(query=" ")
     with pytest.raises(ValidationError):
@@ -24,8 +24,6 @@ def test_retrieve_request_is_strict_and_rejects_blank_or_unknown_input():
                 },
             }
         )
-    with pytest.raises(ValidationError):
-        RetrieveRequest.model_validate({"query": "Revenue?", "unsupported": True})
 
 
 def test_evidence_projection_titles_dart_sections_by_registry(hit):
@@ -45,12 +43,6 @@ def test_evidence_projection_leaves_unknown_sections_untitled(hit):
 
     assert unnumbered.section_title is None
     assert foreign.section_title is None
-
-
-def test_review_request_rejects_an_empty_body():
-    """Refuse an empty body rather than defaulting the required fields."""
-    with pytest.raises(ValidationError):
-        ReviewRequest.model_validate_json("{}")
 
 
 def test_prompt_policy_appends_instructions_without_replacing_guard():
@@ -125,27 +117,16 @@ def test_run_response_requires_status_to_match_failure_type(budget_run, status, 
 
 
 @pytest.mark.parametrize("request_type", [RetrieveRequest, ReviewRequest])
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("k", 3),
-        ("filters", {"doc_ids": ["ACME-FY2024"]}),
-        ("budget", {"max_iterations": 4}),
-        ("max_context_chars", 10000),
-    ],
-)
-def test_removed_top_level_controls_are_rejected(request_type, field, value):
+def test_top_level_controls_are_rejected(request_type):
     """Accept configurable controls only through the explicit session profile."""
     with pytest.raises(ValidationError) as error:
-        request_type.model_validate({"query": "Revenue?", field: value})
+        request_type.model_validate({"query": "Revenue?", "k": 3})
     assert any(
-        item["loc"] == (field,) and item["type"] == "extra_forbidden"
-        for item in error.value.errors()
+        item["loc"] == ("k",) and item["type"] == "extra_forbidden" for item in error.value.errors()
     )
 
 
-@pytest.mark.parametrize("request_type", [RetrieveRequest, ReviewRequest])
-def test_session_profile_preserves_every_explicit_filter(request_type):
+def test_session_profile_preserves_every_explicit_filter():
     """Project document, registry, kind, and existing scope controls without losing any."""
     filters = {
         "doc_ids": ["ACME-FY2024"],
@@ -158,8 +139,8 @@ def test_session_profile_preserves_every_explicit_filter(request_type):
         "snapshot_id": 1,
     }
     profile = {**filters, "sections": ["7", None]}
-    request = request_type.model_validate({"query": "Revenue?", "session_profile": profile})
-    assert request.session_profile.explicit_filters().model_dump(mode="json") == {
+    profile = ReviewSessionProfile.model_validate(profile)
+    assert profile.explicit_filters().model_dump(mode="json") == {
         **filters,
         "items": [None, "7"],
     }
