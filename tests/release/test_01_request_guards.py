@@ -1,6 +1,6 @@
 """Public middleware, headers, and secret-redaction tests."""
 
-import asyncio
+from decimal import Decimal
 import logging
 import sys
 
@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 import pytest
 
-from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
+from app.release.ai_allowance import SharedAIAllowance, reserve_openai
 from app.release.middleware import (
     ReleaseGuardMiddleware,
     SecurityHeadersMiddleware,
@@ -17,31 +17,44 @@ from app.release.middleware import (
 from app.release.secrets import REDACTION, SecretRedactionFilter
 
 
-def _guarded_app(*, enforce_rate_limit: bool = True) -> FastAPI:
-    """Build one application behind the release guards."""
+def _guarded_app(
+    tmp_path,
+    *,
+    enforce_rate_limit: bool = True,
+    per_minute: int = 1,
+    per_day: int = 2,
+    daily_limit: Decimal = Decimal("1"),
+    call_cost: Decimal = Decimal("0.01"),
+) -> FastAPI:
+    """Build one application behind the release guards with a private allowance ledger."""
     app = FastAPI()
     app.add_middleware(
         ReleaseGuardMiddleware,
-        limiter=InProcessRateLimiter(per_minute=1, per_day=2, max_clients=8),
+        allowance=SharedAIAllowance(tmp_path / "limits.sqlite3", daily_limit, per_minute, per_day),
         trust_proxy_headers=False,
         enforce_rate_limit=enforce_rate_limit,
-        salt=b"x" * 32,
     )
     app.add_middleware(SecurityHeadersMiddleware)
 
+    @app.post("/review")
+    async def review() -> dict[str, str]:
+        """Reserve one provider call so the guards have something to meter."""
+        await reserve_openai(call_cost)
+        return {"status": "ok"}
+
     @app.post("/work")
     async def work() -> dict[str, str]:
-        """Return a trivial payload so the guards have something to wrap."""
+        """Return a trivial payload from a route outside the metered set."""
         return {"status": "ok"}
 
     return app
 
 
-def test_security_headers_and_rate_limit_are_visible() -> None:
+def test_security_headers_and_rate_limit_are_visible(tmp_path) -> None:
     """Set the security headers and publish the remaining allowance, denying past it."""
-    with TestClient(_guarded_app()) as client:
-        first = client.post("/work")
-        denied = client.post("/work")
+    with TestClient(_guarded_app(tmp_path)) as client:
+        first = client.post("/review")
+        denied = client.post("/review")
 
     assert first.status_code == 200
     assert first.headers["x-content-type-options"] == "nosniff"
@@ -54,14 +67,14 @@ def test_security_headers_and_rate_limit_are_visible() -> None:
     assert denied.json()["error"]["code"] == "rate_limited"
 
 
-def test_local_operator_bypass_keeps_proxy_marked_requests_metered() -> None:
+def test_local_operator_bypass_keeps_proxy_marked_requests_metered(tmp_path) -> None:
     """Keep loopback operator work unlimited and unmetered; proxy-marked requests stay limited."""
-    with TestClient(_guarded_app(enforce_rate_limit=False)) as client:
-        private = [client.post("/work") for _ in range(3)]
+    with TestClient(_guarded_app(tmp_path, enforce_rate_limit=False)) as client:
+        private = [client.post("/review") for _ in range(3)]
         headers = {"x-docreview-public": "true"}
-        admitted = client.post("/work", headers=headers)
-        denied = client.post("/work", headers=headers)
-        after = client.post("/work")
+        admitted = client.post("/review", headers=headers)
+        denied = client.post("/review", headers=headers)
+        after = client.post("/review")
 
     assert [response.status_code for response in private] == [200, 200, 200]
     assert all("x-ratelimit-remaining-minute" not in response.headers for response in private)
@@ -70,47 +83,20 @@ def test_local_operator_bypass_keeps_proxy_marked_requests_metered() -> None:
     assert after.status_code == 200
 
 
-def test_daily_cost_limiter_reserves_worst_case_and_resets_by_day() -> None:
-    """Refuse provider work once worst-case reservations exhaust the UTC-day budget."""
-    from datetime import date
-    from decimal import Decimal
+def test_routes_outside_the_metered_set_never_consume_the_allowance(tmp_path) -> None:
+    """Leave provider-free routes untouched even once the client's request window is spent."""
+    with TestClient(_guarded_app(tmp_path)) as client:
+        assert client.post("/review").status_code == 200
+        assert client.post("/review").status_code == 429
+        work = [client.post("/work") for _ in range(3)]
 
-    day = [date(2026, 9, 1)]
-    limiter = DailyCostLimiter(
-        daily_limit_usd=Decimal("0.02"),
-        reservation_usd=Decimal("0.01"),
-        today=lambda: day[0],
-    )
-
-    assert asyncio.run(limiter.reserve()) == (True, Decimal("0.01"))
-    assert asyncio.run(limiter.reserve()) == (True, Decimal("0.00"))
-    assert asyncio.run(limiter.reserve()) == (False, Decimal("0.00"))
-    remaining, reset = asyncio.run(limiter.status())
-    assert remaining == Decimal("0.00")
-    assert reset.isoformat() == "2026-09-02T00:00:00+00:00"
-    day[0] = date(2026, 9, 2)
-    assert asyncio.run(limiter.reserve()) == (True, Decimal("0.01"))
+    assert [response.status_code for response in work] == [200, 200, 200]
+    assert all("x-ratelimit-remaining-minute" not in response.headers for response in work)
 
 
-def test_review_route_fails_closed_after_daily_cost_reservation() -> None:
-    """Return a typed fallback signal before a provider route exceeds the daily cap."""
-    from decimal import Decimal
-
-    app = FastAPI()
-    app.add_middleware(
-        ReleaseGuardMiddleware,
-        limiter=InProcessRateLimiter(per_minute=10, per_day=10, max_clients=4),
-        trust_proxy_headers=False,
-        cost_limiter=DailyCostLimiter(
-            daily_limit_usd=Decimal("0.01"),
-            reservation_usd=Decimal("0.01"),
-        ),
-    )
-
-    @app.post("/review")
-    async def review() -> dict[str, str]:
-        """Stand in for one cost-bearing provider route."""
-        return {"status": "ok"}
+def test_review_route_fails_closed_after_daily_cost_reservation(tmp_path) -> None:
+    """Return a typed fallback signal once actual provider calls exhaust the daily cap."""
+    app = _guarded_app(tmp_path, per_minute=10, per_day=10, daily_limit=Decimal("0.01"))
 
     with TestClient(app) as client:
         first = client.post("/review")
@@ -119,14 +105,15 @@ def test_review_route_fails_closed_after_daily_cost_reservation() -> None:
     assert first.status_code == 200
     assert blocked.status_code == 429
     assert blocked.json()["error"]["code"] == "daily_cost_limit"
+    assert int(blocked.headers["retry-after"]) > 0
 
 
-def _review_app() -> FastAPI:
+def _review_app(tmp_path) -> FastAPI:
     """Build one guarded review route that reports whether the guard admitted the request."""
     app = FastAPI()
     app.add_middleware(
         ReleaseGuardMiddleware,
-        limiter=InProcessRateLimiter(per_minute=50, per_day=50, max_clients=4),
+        allowance=SharedAIAllowance(tmp_path / "limits.sqlite3", Decimal("1"), 50, 50),
         trust_proxy_headers=False,
     )
 
@@ -152,10 +139,10 @@ def _custom_profile(**retrieval: object) -> dict[str, object]:
     }
 
 
-def test_public_custom_retrieval_within_bounds_reaches_the_route() -> None:
+def test_public_custom_retrieval_within_bounds_reaches_the_route(tmp_path) -> None:
     """Admit the Custom preset publicly while its depth stays at the built-in ceiling."""
     profile = _custom_profile(k=10, candidate_k=50, lexical_ranker="bm25", reranker="cross_encoder")
-    with TestClient(_review_app()) as client:
+    with TestClient(_review_app(tmp_path)) as client:
         response = client.post(
             "/review",
             headers={"X-DocReview-Public": "true"},
@@ -173,9 +160,11 @@ def test_public_custom_retrieval_within_bounds_reaches_the_route() -> None:
         ({"k": 5, "candidate_k": 51}, "custom_retrieval.candidate_k must be at most 50"),
     ],
 )
-def test_public_custom_retrieval_above_bounds_names_the_field(retrieval, violation) -> None:
+def test_public_custom_retrieval_above_bounds_names_the_field(
+    tmp_path, retrieval, violation
+) -> None:
     """Reject oversized Custom depth with the shared lock message naming the exceeded bound."""
-    with TestClient(_review_app()) as client:
+    with TestClient(_review_app(tmp_path)) as client:
         response = client.post(
             "/review",
             headers={"X-DocReview-Public": "true"},
@@ -197,9 +186,9 @@ def test_public_custom_retrieval_above_bounds_names_the_field(retrieval, violati
         {"snapshot_id": 3},
     ],
 )
-def test_public_prompt_local_and_snapshot_controls_stay_locked(profile) -> None:
+def test_public_prompt_local_and_snapshot_controls_stay_locked(tmp_path, profile) -> None:
     """Keep every non-retrieval developer control behind the one DEV-mode lock envelope."""
-    with TestClient(_review_app()) as client:
+    with TestClient(_review_app(tmp_path)) as client:
         response = client.post(
             "/review",
             headers={"X-DocReview-Public": "true"},
@@ -272,26 +261,18 @@ def test_server_secret_is_redacted_before_log_formatting() -> None:
     assert exception_record.exc_info is None
 
 
-def test_public_proxy_marker_retains_cost_limits_without_charging_private_requests() -> None:
-    """Only proxy-marked public reviews reserve cost when a private runtime serves both paths."""
-    from decimal import Decimal
-
-    app = FastAPI()
-    app.add_middleware(
-        ReleaseGuardMiddleware,
-        limiter=InProcessRateLimiter(per_minute=10, per_day=20, max_clients=8),
-        trust_proxy_headers=False,
+def test_public_proxy_marker_retains_cost_limits_without_charging_private_requests(
+    tmp_path,
+) -> None:
+    """Only proxy-marked public reviews spend the cap when a private runtime serves both paths."""
+    app = _guarded_app(
+        tmp_path,
         enforce_rate_limit=False,
-        cost_limiter=DailyCostLimiter(
-            daily_limit_usd=Decimal("0.04"),
-            reservation_usd=Decimal("0.04"),
-        ),
+        per_minute=10,
+        per_day=20,
+        daily_limit=Decimal("0.04"),
+        call_cost=Decimal("0.04"),
     )
-
-    @app.post("/review")
-    async def review() -> dict[str, str]:
-        """Return without provider calls so only the cost guard determines admission."""
-        return {"status": "ok"}
 
     with TestClient(app) as client:
         for _ in range(2):

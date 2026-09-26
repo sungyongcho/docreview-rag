@@ -54,7 +54,6 @@ class ReleaseSettings(DotenvFirstSettings):
     host: str = "0.0.0.0"
     rate_limit_per_minute: int = Field(default=10, ge=1, le=1_000)
     rate_limit_per_day: int = Field(default=50, ge=1, le=100_000)
-    rate_limit_max_clients: int = Field(default=1_024, ge=1, le=100_000)
     trust_proxy_headers: bool = False
     admin_mode: AdminMode = "readonly"
     admin_cors_origin: str | None = None

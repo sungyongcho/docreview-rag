@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_CEILING, Decimal
 import math
@@ -12,9 +13,19 @@ import secrets
 import sqlite3
 import time
 
-from app.release.limiter import RateLimitDecision
-
 MICRO = Decimal(1_000_000)
+
+
+@dataclass(frozen=True, slots=True)
+class RateLimitDecision:
+    """One allow or deny decision with bounded retry metadata."""
+
+    allowed: bool
+    retry_after_seconds: int
+    remaining_minute: int
+    remaining_day: int
+    minute_reset_seconds: int
+    day_reset_seconds: int
 
 
 class AIAllowanceError(ValueError):
@@ -29,7 +40,11 @@ class AIAllowanceError(ValueError):
 
 
 class SharedAIAllowance:
-    """Atomically retain IP windows and conservative API reservations across restarts."""
+    """Atomically retain per-client request windows and the UTC-day cost cap across restarts.
+
+    Every actual provider call reserves its own conservative cost, so a request that makes
+    several calls is charged once per call; the request slot is consumed by the first one.
+    """
 
     def __init__(self, path: Path, daily_limit: Decimal, per_minute: int, per_day: int):
         """Open the configured persistent volume, failing closed on storage errors."""

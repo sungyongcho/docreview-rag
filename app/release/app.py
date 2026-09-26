@@ -5,9 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from datetime import datetime
-from hashlib import blake2s
 from pathlib import Path
-import secrets
 from typing import Any, Literal
 
 from fastapi import FastAPI, Request
@@ -31,8 +29,7 @@ from app.openai_models import POLICY_REVISION, openai_policy_snapshot
 from app.release.ai_allowance import SharedAIAllowance
 from app.release.browser_reset import browser_reset_id
 from app.release.config import AdminMode, ReleaseSettings
-from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
-from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware, client_host
+from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware, client_key
 from app.release.secrets import install_secret_redaction
 from app.retrieval.embeddings import get_embedding_provider
 from app.settings_sources import Environment
@@ -79,7 +76,7 @@ class ReleaseInfo(BaseModel):
     openai_enabled: bool
     key_handling: Literal["server_environment_only"] = "server_environment_only"
     key_persisted: Literal[False] = False
-    rate_limit_scope: Literal["single_process", "shared_storage"] = "single_process"
+    rate_limit_scope: Literal["shared_storage"] = "shared_storage"
     rate_limit_per_minute: int
     rate_limit_per_day: int
     max_input_tokens: int
@@ -107,7 +104,7 @@ class ReleaseCapabilities(BaseModel):
 
 
 class ReleaseLimits(BaseModel):
-    """Configured and currently remaining public single-process limits."""
+    """Configured and currently remaining public limits from the shared allowance ledger."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     per_minute: int
@@ -125,7 +122,7 @@ class ReleaseLimits(BaseModel):
     daily_cost_reset_at_utc: datetime
     prompt_policy: PromptPolicy
     per_call: OpenAICallLimits
-    scope: Literal["single_process", "shared_storage"] = "single_process"
+    scope: Literal["shared_storage"] = "shared_storage"
 
 
 class CorpusReadiness(BaseModel):
@@ -236,11 +233,6 @@ def _release_info(settings: ReleaseSettings) -> ReleaseInfo:
         environment=settings.environment,
         admin_mode=settings.admin_mode if settings.environment == "dev" else "readonly",
         openai_enabled=settings.openai_enabled,
-        rate_limit_scope=(
-            "shared_storage"
-            if settings.mode == "runtime" and settings.environment == "prod"
-            else "single_process"
-        ),
         rate_limit_per_minute=settings.rate_limit_per_minute,
         rate_limit_per_day=settings.rate_limit_per_day,
         max_input_tokens=settings.openai_max_input_tokens,
@@ -275,41 +267,25 @@ def create_release_app(
         enable_docs_execution=active_settings.environment != "prod",
         include_admin_schema=active_settings.environment == "prod",
     )
-    limiter = InProcessRateLimiter(
-        per_minute=active_settings.rate_limit_per_minute,
-        per_day=active_settings.rate_limit_per_day,
-        max_clients=active_settings.rate_limit_max_clients,
+    # One ledger meters every mode: per-client request windows plus the UTC-day cost cap,
+    # charged by each actual provider call rather than by a flat per-request reservation.
+    allowance = SharedAIAllowance(
+        active_settings.public_allowance_path,
+        active_settings.public_daily_cost_usd,
+        active_settings.rate_limit_per_minute,
+        active_settings.rate_limit_per_day,
     )
-    cost_limiter = DailyCostLimiter(
-        daily_limit_usd=active_settings.public_daily_cost_usd,
-        reservation_usd=active_settings.openai_max_cost_usd,
-    )
-    shared_allowance = None
-    if active_settings.mode == "runtime" and active_settings.environment == "prod":
-        shared_allowance = SharedAIAllowance(
-            active_settings.public_allowance_path,
-            active_settings.public_daily_cost_usd,
-            active_settings.rate_limit_per_minute,
-            active_settings.rate_limit_per_day,
-        )
-        limiter = shared_allowance
     enforce_public_limits = (
         active_settings.environment == "prod" or not active_settings.admin_enabled
     )
-    limiter_salt = shared_allowance.salt if shared_allowance else secrets.token_bytes(32)
     application.add_middleware(
         ReleaseGuardMiddleware,
-        limiter=limiter,
+        allowance=allowance,
         trust_proxy_headers=active_settings.trust_proxy_headers,
         enforce_rate_limit=enforce_public_limits,
         public_read_only=not active_settings.admin_enabled,
         allow_local_engine=active_settings.environment != "prod",
         local_connection_origin=active_settings.admin_cors_origin,
-        cost_limiter=cost_limiter
-        if active_settings.mode == "runtime" and shared_allowance is None
-        else None,
-        shared_allowance=shared_allowance,
-        salt=limiter_salt,
     )
     application.add_middleware(SecurityHeadersMiddleware)
     if active_settings.admin_enabled and active_settings.admin_cors_origin is not None:
@@ -351,10 +327,11 @@ def create_release_app(
     @application.get("/limits", response_model=ReleaseLimits, tags=["release"])
     async def limits(request: Request) -> ReleaseLimits:
         """Inspect public allowance without consuming request or cost capacity."""
-        host = client_host(request, trust_proxy_headers=active_settings.trust_proxy_headers)
-        key = blake2s(host.encode("utf-8"), key=limiter_salt, digest_size=16).hexdigest()
-        rate = await limiter.peek(key)
-        remaining_cost, cost_reset = await (shared_allowance or cost_limiter).status()
+        key = client_key(
+            request, trust_proxy_headers=active_settings.trust_proxy_headers, salt=allowance.salt
+        )
+        rate = await allowance.peek(key)
+        remaining_cost, cost_reset = await allowance.status()
         manager = active_services.openai_limits if active_services is not None else None
         call_limits = (
             manager or OpenAILimitsManager(active_settings.provider_budget(), enabled=False)
@@ -375,7 +352,6 @@ def create_release_app(
             minute_reset_seconds=rate.minute_reset_seconds,
             day_reset_seconds=rate.day_reset_seconds,
             daily_cost_reset_at_utc=cost_reset,
-            scope="shared_storage" if shared_allowance else "single_process",
         )
 
     fallback_corpus: RuntimeCorpusAdminService | None = None

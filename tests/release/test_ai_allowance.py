@@ -111,10 +111,8 @@ def test_middleware_exempts_lexical_and_reports_server_reset(tmp_path):
     app = FastAPI()
     app.add_middleware(
         ReleaseGuardMiddleware,
-        limiter=ledger,
-        shared_allowance=ledger,
+        allowance=ledger,
         trust_proxy_headers=False,
-        salt=ledger.salt,
     )
 
     @app.post("/retrieve")
@@ -230,11 +228,9 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
     install_error_handlers(app)
     app.add_middleware(
         ReleaseGuardMiddleware,
-        limiter=ledger,
-        shared_allowance=ledger,
+        allowance=ledger,
         trust_proxy_headers=False,
         public_read_only=True,
-        salt=ledger.salt,
     )
 
     @app.post("/retrieve")
@@ -370,10 +366,8 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
     app.dependency_overrides[get_api_services] = lambda: Services()
     app.add_middleware(
         ReleaseGuardMiddleware,
-        limiter=ledger,
-        shared_allowance=ledger,
+        allowance=ledger,
         trust_proxy_headers=False,
-        salt=ledger.salt,
     )
     with TestClient(app) as client:
         response = client.post(
