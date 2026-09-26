@@ -343,8 +343,9 @@ def test_openai_preflight_includes_schema_and_allows_default_small_call(tmp_path
     asyncio.run(scenario())
 
 
-def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path):
-    """Deny an exhausted streamed call through structured error/done events."""
+@pytest.mark.parametrize("first_call", [True, False])
+def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
+    """Deny the first or a later streamed call through structured error/done events."""
     from fastapi.testclient import TestClient
 
     from app.api.app import create_api_app
@@ -353,13 +354,15 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path):
     from app.release.middleware import ReleaseGuardMiddleware
 
     ledger = SharedAIAllowance(tmp_path / "stream.sqlite3", Decimal("0.1"), 5, 25)
-    asyncio.run(ledger.reserve_amount(Decimal("0.1")))
+    if first_call:
+        asyncio.run(ledger.reserve_amount(Decimal("0.1")))
 
     class Services:
         """Stand in for provider-bearing stream work without reads or writes to user state."""
 
         async def review(self, request, on_node):
-            """The reservation fails because the shared allowance is already spent."""
+            """The second reservation fails after a first call used the remaining allowance."""
+            await reserve_openai(Decimal("0.1"))
             await reserve_openai(Decimal("0.1"))
             raise AssertionError("an exhausted call must not dispatch")
 

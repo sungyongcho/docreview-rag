@@ -1,13 +1,14 @@
 """Request-scoped local model selection without database or inference side effects."""
 
 import asyncio
+from typing import cast
 
 import httpx
 import pytest
 
 from app.api.errors import ApiProblemError
 from app.api.review_profile import ReviewSessionProfile
-from app.api.runtime import RuntimeApiServices
+from app.api.runtime import RuntimeApiServices, SessionFactory
 from app.api.schemas import ReviewRequest
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import local_provider_budget
@@ -1019,27 +1020,47 @@ def test_routing_stops_before_search_and_answer(
 
 
 @pytest.mark.parametrize(
-    "query,names",
+    "query,names,target,prior,calls",
     [
-        ("NVIDIA 10-K sexual harassment risk disclosure", ["Nvidia"]),
-        ("삼성전자 사업보고서의 성희롱 관련 위험", ["삼성전자"]),
+        ("Nvidia growth drivers", None, None, None, 0),
+        ("Compare all available companies", None, None, None, 0),
+        ("Compare all available companies' revenue", None, None, None, 0),
+        ("그럼 2024년은?", None, None, "NVDA revenue 2023", 0),
+        (
+            "NVIDIA 10-K sexual harassment risk disclosure",
+            ["Nvidia"],
+            "explicit",
+            None,
+            1,
+        ),
+        (
+            "삼성전자 사업보고서의 성희롱 관련 위험",
+            ["삼성전자"],
+            "explicit",
+            None,
+            1,
+        ),
     ],
 )
-def test_supported_questions_reach_search(classified_service, query, names):
-    """A classified target the rules could not resolve still reaches actual retrieval."""
+def test_supported_questions_reach_search(classified_service, query, names, target, prior, calls):
+    """Deterministic filing questions and classified targets both reach actual retrieval."""
     from app.api.schemas import RetrieveRequest
+    from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    responses.append(
-        {
-            "intent": "document_review",
-            "reason": "A filing question.",
-            "requested_issuers": names,
-            "target_scope": "explicit",
-        }
-    )
+    if calls:
+        responses.append(
+            {
+                "intent": "document_review",
+                "reason": "A filing question.",
+                "requested_issuers": names,
+                "target_scope": target,
+            }
+        )
+    history = (ConversationTurn(role="user", text=prior),) if prior else ()
     with pytest.raises(LookupError, match="retrieval boundary reached"):
-        asyncio.run(service.retrieve(RetrieveRequest(query=query)))
+        asyncio.run(service.retrieve(RetrieveRequest(query=query, conversation_history=history)))
+    assert len(prompts) <= calls
     assert len(prompts) <= 1
 
 
@@ -1387,7 +1408,7 @@ def test_served_retrieval_applies_bm25_precedence(server, retrieval, expected):
 
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=no_database,  # type: ignore[arg-type]
+        session_factory=cast(SessionFactory, no_database),
         retrieval_service=record,
         scope_index=ManifestScopeIndex.from_entries(
             (

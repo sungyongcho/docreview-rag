@@ -86,7 +86,8 @@ class WipeService:
             raise WipeError("Reset audit path must not be a symbolic link")
         if self._audit.exists():
             recorded = json.loads(self._audit.read_text())
-            self._result = recorded["result"]
+            # An audit file without the wrapper predates the current format; keep the idle default.
+            self._result = recorded.get("result") or self._result
             if recorded.get("lease"):
                 self._lease = tuple(recorded["lease"])
                 self._lease_instance = recorded["lease_instance"]

@@ -12,7 +12,7 @@
 	@trailing_slash path_regexp trailing_slash ^(/.+)/$
 	rewrite @trailing_slash {re.trailing_slash.1}
 
-	@blocked path /admin* /ingest*
+	@blocked path /admin*
 	handle @blocked {
 		respond 404
 	}

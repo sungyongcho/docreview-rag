@@ -21,8 +21,7 @@ ENV HOME=/home/user \
 	UV_COMPILE_BYTECODE=1 \
 	UV_LINK_MODE=copy \
 	DOCREVIEW_MODE=canned \
-	DOCREVIEW_ADMIN_MODE=readonly \
-	DOCREVIEW_PORT=7860
+	DOCREVIEW_ADMIN_MODE=readonly
 
 RUN useradd --create-home --uid 1000 user \
 	&& mkdir --parents /home/user/app \

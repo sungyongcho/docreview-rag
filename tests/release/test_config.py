@@ -31,6 +31,20 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
     assert Decimal("0.00312") <= budget.max_cost_usd
 
 
+def test_canned_mode_keeps_the_provider_off_even_with_a_key(monkeypatch) -> None:
+    """A configured key enables the provider only in the runtime mode and never renders."""
+    secret = "sk-test-only"
+    monkeypatch.setenv("OPENAI_API_KEY_LOCAL", secret)
+
+    canned = ReleaseSettings(_env_file=None)
+    runtime = ReleaseSettings(mode="runtime", _env_file=None)
+
+    assert canned.openai_enabled is False
+    assert runtime.openai_enabled is True
+    assert secret not in repr(canned)
+    assert secret not in repr(runtime)
+
+
 def test_environment_slot_enables_runtime_without_an_explicit_key(monkeypatch) -> None:
     """Enable the provider from the MODE-selected slot and report the slot, not the key."""
     secret = "sk-dev-slot-only"

@@ -3,11 +3,13 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 import pytest
 
+from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import create_api_app
 from app.api.preset_store import BUILTIN_IDS, DEFAULT_PRESET_DIRECTORY, PresetStore, StoredPreset
 from app.api.review_profile import (
@@ -105,7 +107,11 @@ def test_admin_api_validation_and_production_boundary(store: PresetStore):
         patch("app.api.routes.admin.preset_store", store),
         patch("app.api.routes.admin.get_settings", return_value=SimpleNamespace(environment="dev")),
         TestClient(
-            create_api_app(admin_services=SimpleNamespace(bm25_parameters=ServerBM25()))  # type: ignore[arg-type]
+            create_api_app(
+                admin_services=cast(
+                    RuntimeAdminApiServices, SimpleNamespace(bm25_parameters=ServerBM25())
+                )
+            )
         ) as client,
     ):
         initial = client.get("/admin/presets").json()
@@ -149,7 +155,11 @@ def test_catalog_and_resolution_present_the_effective_bm25_values(store: PresetS
         patch("app.api.preset_store.preset_store", store),
         patch("app.api.routes.admin.get_settings", return_value=SimpleNamespace(environment="dev")),
         TestClient(
-            create_api_app(admin_services=SimpleNamespace(bm25_parameters=server))  # type: ignore[arg-type]
+            create_api_app(
+                admin_services=cast(
+                    RuntimeAdminApiServices, SimpleNamespace(bm25_parameters=server)
+                )
+            )
         ) as client,
     ):
         served = {p["id"]: p["retrieval"] for p in client.get("/admin/presets").json()["presets"]}

@@ -196,7 +196,7 @@ docker compose --project-directory . -f docker/docker-compose.yml down -v
 - PostgreSQL은 Docker network 내부에만 노출
 - FastAPI는 VM loopback `127.0.0.1:8000`에만 publish
 - Caddy만 80/443 공개
-- Caddy가 `/admin/*`와 `/ingest` 차단
+- Caddy가 `/admin/*` 차단
 - corpus, eval artifact, PostgreSQL, Caddy state를 `/var/lib/docreview`에 보존
 - app container는 capability 제거와 `no-new-privileges` 적용
 

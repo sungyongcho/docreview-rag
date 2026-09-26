@@ -3,12 +3,13 @@
 import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.api.admin_runtime import RuntimeAdminApiServices
-from app.api.runtime import RuntimeApiServices
+from app.api.runtime import RuntimeApiServices, SessionFactory
 from app.corpus_admin import CorpusStatus
 from app.operator.jobs import StoredJob
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
@@ -43,6 +44,8 @@ def test_job_board_reads_history_without_revalidating_ingestion_arguments():
     board = asyncio.run(service.operator_jobs())
     assert board.jobs[0].request == {"manifest": "manifest.json"}
     assert board.jobs[0].message == job.message
+    # The board advertises the retry; the retry itself is refused with a typed 400.
+    assert board.jobs[0].can_retry is True
 
 
 def test_document_detail_checks_schema_before_serializing():
@@ -340,7 +343,7 @@ def test_previews_run_and_present_the_effective_bm25_values(monkeypatch):
     services = RuntimeAdminApiServices(
         runtime=RuntimeApiServices(
             embedding_provider=DeterministicEmbeddingProvider(),
-            session_factory=no_database,  # type: ignore[arg-type]
+            session_factory=cast(SessionFactory, no_database),
             bm25_k1=1.6,
             bm25_b=0.5,
             bm25_idf="robertson",
