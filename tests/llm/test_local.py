@@ -207,24 +207,32 @@ def test_local_provider_refuses_an_oversized_prompt_before_contacting_ollama() -
 
 
 @pytest.mark.parametrize(
-    ("setting", "message"),
+    ("setting", "positive", "message"),
     [
-        pytest.param({"timeout_s": 0}, "timeout must be positive", id="zero-timeout"),
+        pytest.param("timeout_s", 45.0, "timeout must be positive", id="timeout"),
         pytest.param(
-            {"context_window": 0}, "context window must be positive", id="zero-context-window"
+            "context_window", 12_600, "context window must be positive", id="context-window"
         ),
     ],
 )
-def test_provider_refuses_a_nonpositive_timeout_or_context_window(setting, message) -> None:
+def test_provider_accepts_a_positive_timeout_or_window_and_refuses_zero(
+    setting, positive, message
+) -> None:
     """A CPU-hosted model needs a real deadline, and a window must be able to hold a prompt."""
-    with pytest.raises(ValueError, match=message):
-        LocalLLMProvider(
+
+    def build(value):
+        """Build an Ollama provider that owns its HTTP client, with one setting replaced."""
+        return LocalLLMProvider(
             base_url="http://ollama:11434",
             model_name="gemma4:e4b",
             protocol="ollama",
             api_key=None,
-            **setting,
+            **{setting: value},
         )
+
+    asyncio.run(build(positive).aclose())
+    with pytest.raises(ValueError, match=message):
+        build(0)
 
 
 def test_responses_wire_payload_is_read_from_its_output_items() -> None:
