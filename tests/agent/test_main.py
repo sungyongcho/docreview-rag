@@ -192,6 +192,44 @@ def test_openai_provider_receives_the_mode_selected_key_and_the_engine_is_releas
     assert disposed == [True]
 
 
+@pytest.mark.parametrize("server_fails", [False, True], ids=["closed", "failed"])
+def test_mcp_dispatch_releases_the_engine_when_the_server_exits(monkeypatch, server_fails):
+    """Serve MCP without a question and release its pool on normal and exceptional exits."""
+    from app.agent import __main__ as entrypoint, mcp_server
+    import app.db.session as session_module
+    from app.retrieval.embeddings import DeterministicEmbeddingProvider
+
+    events = []
+
+    class FakeEngine:
+        """Record when the CLI releases its database pool."""
+
+        async def dispose(self):
+            """Record pool release after the server has exited."""
+            events.append("disposed")
+
+    async def serve(registry):
+        """Accept the real filing registry and simulate the MCP transport ending."""
+        assert "search_filings" in {spec["name"] for spec in registry.specs()}
+        events.append("served")
+        if server_fails:
+            raise RuntimeError("MCP transport failed")
+
+    monkeypatch.setattr(session_module, "engine", FakeEngine())
+    monkeypatch.setattr(
+        "app.retrieval.embeddings.get_embedding_provider", DeterministicEmbeddingProvider
+    )
+    monkeypatch.setattr(mcp_server, "serve_stdio", serve)
+
+    if server_fails:
+        with pytest.raises(RuntimeError, match="MCP transport failed"):
+            entrypoint.main(["--mcp"])
+    else:
+        entrypoint.main(["--mcp"])
+
+    assert events == ["served", "disposed"]
+
+
 def test_openai_provider_requires_the_mode_selected_key_slot(monkeypatch):
     """A missing slot key is a usage error naming the slot, not an SDK message."""
     from app.agent import __main__ as entrypoint

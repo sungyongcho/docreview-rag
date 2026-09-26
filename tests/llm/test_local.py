@@ -303,18 +303,33 @@ def test_responses_top_level_output_text_is_still_accepted() -> None:
     assert result.parsed == ChatReply(answer="hello")
 
 
-def test_responses_payload_without_text_or_refusal_fails_closed() -> None:
+@pytest.mark.parametrize(
+    "output",
+    [
+        [{"type": "reasoning", "id": "rs_1", "summary": []}],
+        [{"type": "message", "content": [None]}],
+    ],
+    ids=["reasoning-only", "invalid-content-part"],
+)
+def test_responses_payload_without_text_or_refusal_fails_closed(output) -> None:
     """An answer carrying neither text nor a refusal is a provider error, not a repair."""
-    result = complete_locally(
-        lambda request: httpx.Response(
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Count attempts while returning a response with no usable answer content."""
+        requests.append(request)
+        return httpx.Response(
             200,
             json={
                 "id": "resp_3",
                 "status": "incomplete",
-                "output": [{"type": "reasoning", "id": "rs_1", "summary": []}],
+                "output": output,
                 "usage": {"input_tokens": 8, "output_tokens": 3},
             },
-        ),
+        )
+
+    result = complete_locally(
+        respond,
         protocol="openai_responses",
         base_url="http://127.0.0.1:8000/v1",
     )
@@ -322,6 +337,25 @@ def test_responses_payload_without_text_or_refusal_fails_closed() -> None:
     assert result.status == "provider_error"
     assert isinstance(result.refusal, ProviderRefusal)
     assert "output text" in result.refusal.message
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("protocol", ["ollama", "openai_responses"])
+def test_non_object_local_response_fails_without_answer_repair(protocol: LocalLlmProtocol) -> None:
+    """A malformed protocol envelope cannot become an answer or trigger a paid repair."""
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Count actual transport calls and return a JSON value outside either protocol."""
+        requests.append(request)
+        return httpx.Response(200, json=["unexpected response"])
+
+    result = complete_locally(respond, protocol=protocol, base_url="http://127.0.0.1:11434")
+
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert "JSON object" in result.refusal.message
+    assert len(requests) == 1
 
 
 @pytest.mark.parametrize("protocol", ["ollama", "openai_responses"])

@@ -73,8 +73,11 @@ def test_prod_configuration_uses_prod_key_without_acquisition_credentials(tmp_pa
         setup.validate_configuration(tmp_path, mode="prod")
 
 
-def test_prod_server_readiness_accepts_empty_corpus_without_claiming_search(monkeypatch):
-    """An empty but compatible PROD DB is a valid server start, even with HTTP 503 readiness."""
+@pytest.mark.parametrize(
+    "object_body", [True, False], ids=["compatible-empty-corpus", "non-object"]
+)
+def test_prod_server_readiness_requires_compatible_database_evidence(monkeypatch, object_body):
+    """Accept an empty compatible DB at HTTP 503, but reject a malformed readiness envelope."""
     from email.message import Message
     import io
     import json
@@ -87,12 +90,21 @@ def test_prod_server_readiness_accepts_empty_corpus_without_claiming_search(monk
         "corpus": {"database_connected": True, "schema_status": "compatible", "documents": 0},
     }
     error = HTTPError(
-        "http://local/ready", 503, "Not ready", Message(), io.BytesIO(json.dumps(response).encode())
+        "http://local/ready",
+        503,
+        "Not ready",
+        Message(),
+        io.BytesIO(json.dumps(response if object_body else [response]).encode()),
     )
     opener = Mock()
     opener.open.side_effect = error
     monkeypatch.setattr(local_http, "build_opener", lambda *args: opener)
-    setup.wait_ready("http://127.0.0.1:8000", mode="prod", timeout=1)
+    if object_body:
+        setup.wait_ready("http://127.0.0.1:8000", mode="prod", timeout=1)
+    else:
+        with pytest.raises(ValueError, match="did not return a JSON object"):
+            setup.wait_ready("http://127.0.0.1:8000", mode="prod", timeout=1)
+    opener.open.assert_called_once()
     assert opener.open.call_args.args[0].endswith("/api/ready/")
 
 

@@ -129,12 +129,30 @@ def test_openai_adapter_rejects_missing_usage():
         asyncio.run(provider.turn("instructions", [], [], max_output_tokens=10))
 
 
-def test_provider_turn_rejects_duplicate_call_ids():
-    """Reject a turn carrying the same call id twice."""
-    duplicate = ToolCall(call_id="same", name="search", arguments_json="{}")
-
-    with pytest.raises(ValidationError, match="unique"):
-        turn(tool_calls=(duplicate, duplicate))
+@pytest.mark.parametrize(
+    ("changes", "error"),
+    [
+        pytest.param(
+            {
+                "tool_calls": (
+                    ToolCall(call_id="same", name="search", arguments_json="{}"),
+                    ToolCall(call_id="same", name="fetch", arguments_json="{}"),
+                )
+            },
+            "unique",
+            id="duplicate-call-identity",
+        ),
+        pytest.param(
+            {"incomplete_reason": "content_filter"},
+            "requires an incomplete turn",
+            id="completed-turn-with-cutoff-reason",
+        ),
+    ],
+)
+def test_provider_turn_rejects_inconsistent_fields(changes, error):
+    """Reject ambiguous call identities and a cutoff reason on a completed turn."""
+    with pytest.raises(ValidationError, match=error):
+        turn(**changes)
 
 
 def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):

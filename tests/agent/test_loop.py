@@ -1,16 +1,19 @@
 """Agent loop: evidence gating, explicit observations, and fail-closed stops."""
 
 import asyncio
+from decimal import Decimal
 import json
 from typing import cast
 
 from pydantic import BaseModel, ConfigDict, Field
+import pytest
 
 from app.agent.loop import COMPACTED_OUTPUT, run_agent
 from app.agent.provider import DeterministicToolProvider, ToolCallingProvider
 from app.agent.registry import ToolRegistry
 from app.agent.tools import EvidenceExtractor, Tool
 from app.agent.types import AgentBudget, AgentCitation, ToolCall
+from app.llm.schemas import TokenPricing
 from tests.agent.support import turn
 
 SOURCE_SHA256 = "a" * 64
@@ -288,8 +291,36 @@ def test_final_turn_cannot_succeed_after_token_budget_overshoot():
     assert len(provider.requests) == 1
 
 
-def test_output_floor_stops_before_a_futile_request():
-    """Stop when the remaining output allowance is below the provider's minimum."""
+@pytest.mark.parametrize(
+    ("budget", "input_price", "resource", "admitted_turns"),
+    [
+        pytest.param(
+            AgentBudget(max_total_output_tokens=20),
+            Decimal("0"),
+            "output-token",
+            1,
+            id="output-below-turn-floor",
+        ),
+        pytest.param(
+            AgentBudget(max_total_input_tokens=10),
+            Decimal("0"),
+            "input-token",
+            1,
+            id="input-exactly-exhausted",
+        ),
+        pytest.param(
+            AgentBudget(max_total_cost_usd=Decimal("0")),
+            Decimal("1"),
+            "cost",
+            0,
+            id="paid-provider-with-no-cost-allowance",
+        ),
+    ],
+)
+def test_exhausted_budget_stops_before_a_futile_request(
+    budget, input_price, resource, admitted_turns
+):
+    """Keep an exhausted budget from admitting another turn and retain earlier usage."""
     turns = [
         turn(
             tool_calls=(call("search_notes", {"query": "revenue"}),),
@@ -298,14 +329,26 @@ def test_output_floor_stops_before_a_futile_request():
         turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-2"),)),
     ]
 
-    result, provider = run_loop(
-        turns,
-        budget=AgentBudget(max_iterations=8, max_total_output_tokens=20),
+    provider = DeterministicToolProvider(turns)
+    provider.pricing = TokenPricing(
+        input_per_million_usd=input_price, output_per_million_usd=Decimal("0")
+    )
+    result = asyncio.run(
+        run_agent(
+            "How much did revenue increase?",
+            registry=registry_with_search(),
+            provider=provider,
+            budget=budget,
+        )
     )
 
     assert result.status == "budget_exceeded"
-    assert "token budget" in (result.failure or "")
-    assert len(provider.requests) == 1
+    assert len(provider.requests) == admitted_turns
+    assert result.answer is None
+    assert result.iterations == admitted_turns
+    assert result.total_input_tokens == 10 * admitted_turns
+    assert result.total_output_tokens == 10 * admitted_turns
+    assert f"{resource} budget" in (result.failure or "")
 
 
 def test_incomplete_turn_fails_closed_as_budget_exceeded():
@@ -323,10 +366,6 @@ def test_incomplete_turn_fails_closed_as_budget_exceeded():
 def test_provider_failure_does_not_expose_exception_secrets():
     """Report a provider failure as a typed result naming the exception type, and keep a
     credential inside the exception message out of it."""
-
-    from decimal import Decimal
-
-    from app.llm.schemas import TokenPricing
 
     class SecretProvider(ToolCallingProvider):
         """Provider whose failure carries a secret that must not escape."""
@@ -485,8 +524,6 @@ def test_malformed_evidence_extractor_becomes_an_observation():
 
 def test_zero_cost_ceiling_with_a_zero_priced_provider_is_not_exhausted():
     """Mirror ProviderBudget.exhausted_by: a free provider never exhausts a zero cost ceiling."""
-    from decimal import Decimal
-
     turns = [turn(tool_calls=(call("final_answer", answer_arguments(label="NOT_IN_DOCS")),))]
 
     result, provider = run_loop(turns, budget=AgentBudget(max_total_cost_usd=Decimal("0")))

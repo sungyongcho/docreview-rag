@@ -258,13 +258,26 @@ def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path)
         tmp_path.chmod(0o700)
 
 
-def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(tmp_path) -> None:
-    """A legacy file naming the runtime address resolves to Default without an eager migration."""
+@pytest.mark.parametrize(
+    "saved_choice",
+    [
+        {
+            "version": 1,
+            "state": "connected",
+            "base_url": "http://host.docker.internal:11434",
+            "protocol": "auto",
+        },
+        {"version": 2, "state": "initial", "selected_server_id": "default", "servers": []},
+    ],
+    ids=["legacy-matching-address", "stored-initial-state"],
+)
+def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(
+    tmp_path, saved_choice
+) -> None:
+    """Saved startup choices resolve to Default without rewriting persisted settings."""
     initial = "http://host.docker.internal:11434"
     path = tmp_path / "connection.json"
-    path.write_text(
-        json.dumps({"version": 1, "state": "connected", "base_url": initial, "protocol": "auto"})
-    )
+    path.write_text(json.dumps(saved_choice))
     original = path.read_bytes()
     manager = LocalConnectionManager(
         initial_base_url=initial,
@@ -284,6 +297,7 @@ def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(tmp_
         }
     ]
     assert manager.current.base_url == initial
+    assert manager.current.source == "environment"
     assert path.read_bytes() == original
 
 

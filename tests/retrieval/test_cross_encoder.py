@@ -50,13 +50,17 @@ def retrieve(monkeypatch, events: list[tuple[str, int]], **kwargs):
 
 
 @pytest.mark.parametrize(
-    ("model", "batch_size"),
-    [("", 32), ("model", 0)],
+    "settings",
+    [
+        pytest.param({"model": ""}, id="blank-model"),
+        pytest.param({"batch_size": 0}, id="empty-batch"),
+        pytest.param({"max_length": 0}, id="empty-input-window"),
+    ],
 )
-def test_reranker_rejects_invalid_construction(model, batch_size):
-    """Reject invalid reranker model and batch settings."""
+def test_reranker_rejects_invalid_construction(settings):
+    """Reject an empty model, batch or input window before loading the encoder."""
     with pytest.raises(ValueError):
-        cross_encoder.CrossEncoderReranker(model=model, batch_size=batch_size)
+        cross_encoder.CrossEncoderReranker(**settings)
 
 
 def test_missing_extra_raises_an_actionable_runtime_error(monkeypatch):

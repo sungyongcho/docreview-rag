@@ -253,8 +253,8 @@ def test_server_secret_is_redacted_before_log_formatting() -> None:
         level=logging.ERROR,
         pathname=__file__,
         lineno=1,
-        msg="provider failed for %s",
-        args=(secret,),
+        msg="provider failed for %(token)s",
+        args=({"token": secret},),
         exc_info=None,
     )
 
@@ -274,12 +274,14 @@ def test_server_secret_is_redacted_before_log_formatting() -> None:
         msg="provider failed",
         args=(),
         exc_info=exception,
+        sinfo=f"Stack of request carrying {trace_secret}",
     )
 
     SecretRedactor((trace_secret,)).redact(exception_record)
     formatted = logging.Formatter().format(exception_record)
     assert exception_record.getMessage() == "provider failed"
     assert f"RuntimeError: provider rejected {REDACTION}" in formatted
+    assert f"Stack of request carrying {REDACTION}" in formatted
     assert trace_secret not in formatted
     assert exception_record.exc_info is None
 
