@@ -8,11 +8,10 @@ imported only when a caller actually reaches the database.
 
 from __future__ import annotations
 
-from typing import Protocol
-
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.config import Settings
+from app.db.session_factory import SessionFactory
 from app.observability.persistence import redact_sensitive_text
 from app.retrieval.embeddings import EmbeddingProvider
 
@@ -22,14 +21,6 @@ def _default_engine() -> AsyncEngine:
     from app.db.session import engine
 
     return engine
-
-
-class SessionFactory(Protocol):
-    """Build one caller-owned asynchronous database session."""
-
-    def __call__(self) -> AsyncSession:
-        """Return one asynchronous session context manager."""
-        ...
 
 
 class CorpusAdminContext:

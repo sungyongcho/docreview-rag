@@ -15,7 +15,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.config import Settings, get_settings
-from app.corpus_admin.context import CorpusAdminContext, SessionFactory
+from app.corpus_admin.context import CorpusAdminContext
 from app.corpus_admin.inspection import CorpusInspector
 from app.corpus_admin.job_queue import CorpusJobQueue
 from app.corpus_admin.operations import CorpusOperations, OperationRunner
@@ -27,6 +27,7 @@ from app.corpus_admin.types import (
     DocumentDetail,
     JobBoard,
 )
+from app.db.session_factory import SessionFactory
 from app.ingestion.source_deletion import SourceDeletion
 from app.operator.corpus_access import CorpusAccess
 from app.operator.jobs import JobExecutionCoordinator, JobStore, _default_session_factory
