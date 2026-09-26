@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
@@ -53,7 +52,7 @@ from app.evals.retrieval_eval import (
     persist_evaluation,
     write_evaluation_artifact,
 )
-from app.evals.run import _run_cli, arguments
+from app.evals.run import run_matrix
 from app.evals.source_binding import BoundGolden, bind_golden, matrix_scope
 from app.evals.types import GoldenCase
 from app.operator.jobs import (
@@ -973,49 +972,41 @@ class EvaluationAdminService:
             )
             golden_file.flush()
             golden_path = Path(golden_file.name)
-            argv = [
-                "--suite",
-                request.suite_id,
-                "--golden",
-                str(golden_path),
-                "--manifest-name",
-                scope_file.name,
-                "--selection-id",
-                "evaluation-scope",
-                "--artifact-dir",
-                str(self._artifact_dir),
-                "--provider",
-                self._settings.embedding_provider,
-                "--target-tokens",
-                *(str(value) for value in request.target_tokens),
-                "--strategies",
-                *request.strategies,
-                "--lexical-rankers",
-                *request.lexical_rankers,
-                "-k",
-                str(request.profile.k),
-                "--candidate-k",
-                str(request.profile.candidate_k),
-                "--rrf-k",
-                str(request.profile.rrf_k),
-                "--bm25-k1",
-                str(request.profile.bm25_k1),
-                "--bm25-b",
-                str(request.profile.bm25_b),
-                "--bm25-idf",
-                request.profile.bm25_idf,
-                "--persist-results",
-            ]
-            parsed: argparse.Namespace = arguments(argv)
-            parsed.admin_metadata = {
-                "golden_provenance": self._dataset_provenance(request, _golden_sha),
-                "search_scope": {
-                    "registry": definition.registry,
-                    "document_ids": sorted(document.document_id for document in scope.documents),
-                    "manifest_sha256": hashlib.sha256(scope.model_dump_json().encode()).hexdigest(),
+            provider = self._settings.embedding_provider
+            if provider == "sbert":
+                raise ValueError(
+                    "matrix evaluation supports the deterministic and openai providers"
+                )
+            return await run_matrix(
+                suite=request.suite_id,
+                golden=golden_path,
+                manifest_name=scope_file.name,
+                selection_id="evaluation-scope",
+                artifact_dir=self._artifact_dir,
+                provider=provider,
+                target_tokens=request.target_tokens,
+                strategies=request.strategies,
+                lexical_rankers=request.lexical_rankers,
+                k=request.profile.k,
+                candidate_k=request.profile.candidate_k,
+                rrf_k=request.profile.rrf_k,
+                bm25_k1=request.profile.bm25_k1,
+                bm25_b=request.profile.bm25_b,
+                bm25_idf=request.profile.bm25_idf,
+                persist_results=True,
+                admin_metadata={
+                    "golden_provenance": self._dataset_provenance(request, _golden_sha),
+                    "search_scope": {
+                        "registry": definition.registry,
+                        "document_ids": sorted(
+                            document.document_id for document in scope.documents
+                        ),
+                        "manifest_sha256": hashlib.sha256(
+                            scope.model_dump_json().encode()
+                        ).hexdigest(),
+                    },
                 },
-            }
-            return await _run_cli(parsed)
+            )
 
     async def _execute_job(self, job_id: str) -> None:
         """Execute one evaluation while the shared operator lock is held."""

@@ -126,10 +126,10 @@ def test_matrix_forwards_dart_manifest_and_profile_parameters(tmp_path: Path, mo
             artifact_dir=tmp_path / "runs",
         )
 
-        async def run_cli(args):
-            """Capture the parsed matrix namespace without corpus or database work."""
+        async def run_matrix(**kwargs):
+            """Capture the matrix parameters without corpus or database work."""
             nonlocal captured
-            captured = args
+            captured = kwargs
             return {"persisted": [], "artifacts": []}
 
         from app.ingestion.source_publication import publish_acquired
@@ -150,7 +150,7 @@ def test_matrix_forwards_dart_manifest_and_profile_parameters(tmp_path: Path, mo
             return GOLDEN_CASES.validate_python([_absent_case("Absent?")]), "a" * 64
 
         monkeypatch.setattr(service, "_evaluation_cases", cases)
-        monkeypatch.setattr(admin_module, "_run_cli", run_cli)
+        monkeypatch.setattr(admin_module, "run_matrix", run_matrix)
         request = EvaluationRunRequest(
             suite_id="dart-ko",
             mode="matrix",
@@ -159,11 +159,54 @@ def test_matrix_forwards_dart_manifest_and_profile_parameters(tmp_path: Path, mo
         await service._matrix(request)
 
         assert captured is not None
-        assert Path(captured.manifest_name).name.startswith(".evaluation-scope-")
-        assert not Path(captured.manifest_name).exists()
-        assert captured.selection_id == "evaluation-scope"
-        assert captured.bm25_k1 == 1.5
-        assert captured.bm25_b == 0.6
+        assert Path(captured["manifest_name"]).name.startswith(".evaluation-scope-")
+        assert not Path(captured["manifest_name"]).exists()
+        assert captured["selection_id"] == "evaluation-scope"
+        assert captured["bm25_k1"] == 1.5
+        assert captured["bm25_b"] == 0.6
+
+    asyncio.run(scenario())
+
+
+def test_matrix_refuses_an_embedding_provider_the_isolated_runner_cannot_use(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Fail an sbert-configured matrix before the runner starts and leave no scope file."""
+
+    async def scenario() -> None:
+        """Bind a real scope, then stop at the provider check."""
+        service = EvaluationAdminService(
+            settings=Settings(corpus_dir=tmp_path, embedding_provider="sbert"),
+            provider=DeterministicEmbeddingProvider(),
+            artifact_dir=tmp_path / "runs",
+        )
+
+        from app.ingestion.source_publication import publish_acquired
+        from tests.ingestion.support import acquired_filing, filing_document
+
+        filing = acquired_filing(tmp_path, document=filing_document(registry="dart"))
+        publish_acquired(
+            tmp_path / "manifest.json",
+            [filing],
+            selection_id="download",
+            selected_document_ids=[filing.document.document_id],
+        )
+
+        async def cases(request):
+            """Use a source-free question to isolate the provider check."""
+            from app.evals.loader import GOLDEN_CASES
+
+            return GOLDEN_CASES.validate_python([_absent_case("Absent?")]), "a" * 64
+
+        async def run_matrix(**kwargs):
+            """Fail the test if the refused matrix reaches the runner."""
+            raise AssertionError("the matrix runner must not start")
+
+        monkeypatch.setattr(service, "_evaluation_cases", cases)
+        monkeypatch.setattr(admin_module, "run_matrix", run_matrix)
+        with pytest.raises(ValueError, match="deterministic and openai"):
+            await service._matrix(EvaluationRunRequest(suite_id="dart-ko", mode="matrix"))
+        assert not list(tmp_path.glob(".evaluation-scope-*"))
 
     asyncio.run(scenario())
 
@@ -246,13 +289,13 @@ def test_selected_golden_revision_drives_quick_and_matrix_inputs(
 
         captured = None
 
-        async def run_cli(args):
+        async def run_matrix(**kwargs):
             """Read the temporary matrix input while it is still present."""
             nonlocal captured
-            captured = (args, json.loads(args.golden.read_text(encoding="utf-8")))
+            captured = (kwargs, json.loads(kwargs["golden"].read_text(encoding="utf-8")))
             return {"persisted": [], "artifacts": []}
 
-        monkeypatch.setattr(admin_module, "_run_cli", run_cli)
+        monkeypatch.setattr(admin_module, "run_matrix", run_matrix)
         request = EvaluationRunRequest(suite_id="sec-en", golden_revision_id=draft.revision_id)
 
         cases, sha256 = await service._evaluation_cases(request)
@@ -261,11 +304,11 @@ def test_selected_golden_revision_drives_quick_and_matrix_inputs(
         assert cases[0].question == "Revision question?"
         assert sha256 == draft.sha256
         assert captured is not None
-        args, written = captured
+        kwargs, written = captured
         assert written == payload
-        assert args.admin_metadata["golden_provenance"]["filename"] == "custom.json"
-        assert args.admin_metadata["golden_provenance"]["golden_sha256"] == draft.sha256
-        assert not args.golden.exists()
+        assert kwargs["admin_metadata"]["golden_provenance"]["filename"] == "custom.json"
+        assert kwargs["admin_metadata"]["golden_provenance"]["golden_sha256"] == draft.sha256
+        assert not kwargs["golden"].exists()
 
     asyncio.run(scenario())
 
