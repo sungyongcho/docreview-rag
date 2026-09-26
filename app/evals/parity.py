@@ -66,18 +66,6 @@ class ParityAssessment:
         """Return whether the gated ratio cleared its floor."""
         return not self.failures
 
-    def metric(self, name: MetricName) -> ParityMetric:
-        """Return one measured metric pair by name."""
-        for result in self.metrics:
-            if result.metric == name:
-                return result
-        raise KeyError(name)
-
-    @property
-    def recall_ratio(self) -> float | None:
-        """Return the gated foreign-over-native recall ratio, or None when undefined."""
-        return self.metric(GATED_METRIC).ratio
-
 
 def _config_identity(config: Mapping[str, Any], expected_language: str) -> dict[str, Any]:
     """Strip the arm name and the query language, leaving what both arms must share."""

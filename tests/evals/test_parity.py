@@ -6,6 +6,7 @@ import pytest
 
 from app.evals.parity import (
     DEFAULT_MIN_RECALL_RATIO,
+    GATED_METRIC,
     LANGUAGE_REGRESSION_TOLERANCES,
     PARITY_REGRESSION_TOLERANCE,
     assess_parity,
@@ -142,13 +143,14 @@ def test_assess_parity_reports_delta_and_ratio_for_every_gated_metric():
         "hit_rate_at_k",
         "mrr",
     }
-    recall = assessment.metric("recall_at_k")
+    measured = {result.metric: result for result in assessment.metrics}
+    recall = measured["recall_at_k"]
     assert recall.en == pytest.approx(0.8)
     assert recall.ko == pytest.approx(0.4)
     assert recall.delta == pytest.approx(0.4)
     assert recall.ratio == pytest.approx(0.5)
-    assert assessment.recall_ratio == pytest.approx(0.5)
-    assert assessment.metric("mrr").ratio == pytest.approx(0.5)
+    assert measured[GATED_METRIC].ratio == pytest.approx(0.5)
+    assert measured["mrr"].ratio == pytest.approx(0.5)
     assert not assessment.passed
     assert "below the floor" in assessment.failures[0]
     assert assessment.suite == "m8-crosslingual-v1"
@@ -168,7 +170,8 @@ def test_the_parity_floor_is_inclusive_at_its_boundary():
     assert exact.passed
     assert not below.passed
     assert above.passed
-    assert above.recall_ratio == pytest.approx(1.0)
+    above_ratios = {result.metric: result.ratio for result in above.metrics}
+    assert above_ratios[GATED_METRIC] == pytest.approx(1.0)
 
 
 @pytest.mark.parametrize(
@@ -275,7 +278,7 @@ def test_native_korean_corpus_orients_the_ratio_toward_the_foreign_slice():
 
     assessment = assess_parity(en_eval, ko_eval, native_language="ko")
 
-    gated = assessment.metric("recall_at_k")
+    gated = {result.metric: result for result in assessment.metrics}["recall_at_k"]
     assert gated.ratio == pytest.approx(0.5)
     assert assessment.native_language == "ko"
     assert not assessment.passed
@@ -289,5 +292,6 @@ def test_native_zero_slice_fails_closed_for_either_direction():
         native_language="ko",
     )
 
-    assert assessment.recall_ratio is None
+    ratios = {result.metric: result.ratio for result in assessment.metrics}
+    assert ratios[GATED_METRIC] is None
     assert any("native ko slice scored 0" in failure for failure in assessment.failures)
