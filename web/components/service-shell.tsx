@@ -3,8 +3,6 @@ import { applyProdPolicy, newProdProfile } from "@/lib/prod-profile";
 import { usePublishedCorpus } from "@/lib/use-published-corpus";
 import { effectivePublishedProfile, publicTargetIds, pinPublicTargets, createPublicTargets } from "@/lib/published-scope";
 import { useConfirmation } from "./use-confirmation";
-import { SearchUpdateStatus, SEARCH_UPDATE_KINDS, searchUpdateProgress } from "./search-update-status";
-import { NotificationCenter } from "@/components/notification-center";
 import { NotificationSignals } from "@/components/notification-signals";
 import type { NotificationTarget, NotificationDetail } from "@/lib/notification-registry";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
@@ -18,33 +16,13 @@ import { conversationSettingsError } from "@/lib/saved-presets";
 import { configurePresetStorage } from "@/lib/preset-storage";
 import { ProfileCompatibilityNotice } from "./profile-compatibility-notice";
 import { SlowCpuNotice } from "./slow-cpu-notice";
-import { BuildInfo, ProductBrand } from "@/components/product-brand";
-import { CreatorSignature } from "@/components/creator-signature";
-import { GuidesNavigation } from "@/components/guides-navigation";
 import type { DisclosureStage } from "@/components/review-stage-details";
 import { RunDetailsPanel } from "@/components/run-details-panel";
-import { LanguageSwitch } from "@/lib/i18n";
 import { localCpuWarning, localModelIssue, selectedLocalModel } from "@/lib/local-models";
 
-import {
-  Activity,
-  CircleHelp,
-  FlaskConical,
-  Hammer,
-  MessageSquare,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Send,
-  SquarePen,
-  Trash2,
-  Settings,
-  TriangleAlert,
-  X,
-} from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RetainedPanel } from "@/components/retained-panel";
 import "./workspace-navigation.css";
-import { WorkspaceHistory } from "@/components/workspace-history";
 import { navigationLabel, navigationUrl, parseNavigationUrl, type NavigationTarget } from "@/lib/navigation";
 
 import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
@@ -52,19 +30,22 @@ import { ConversationSettings, type ConversationSettingsTab } from "@/components
 import { LocalEngineSettings } from "@/components/local-engine-settings";
 import { ComposerBanner, ComposerToolbar, composerBanner } from "@/components/composer-toolbar";
 import { HelpOverlay } from "@/components/help-overlay";
+import { QuestionComposer } from "@/components/question-composer";
 import { restoreInterruptedConversations } from "@/components/interrupted-reviews";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding, type TourView } from "@/components/onboarding";
 import { ReviewMessage } from "@/components/review-message";
+import { ReviewWelcome } from "@/components/review-welcome";
 import { reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer } from "@/components/review-progress";
 import { extractTrace, runDiagnostics, terminalAnswer, terminalCitationCount, terminalEvidenceLabel, terminalFailureFix } from "@/components/review-response";
 import { ServiceHealthModal } from "@/components/service-health-modal";
+import { ServiceSidebar } from "@/components/service-sidebar";
+import { ServiceTopbar } from "@/components/service-topbar";
 import { SettingsModal, type SettingsCategory } from "@/components/settings-modal";
-import { DevModeBubble, DevPromotionProvider } from "@/components/dev-mode-bubble";
-import { DEV_ONLY_REASONS, SOURCE_REPOSITORY_URL } from "@/lib/dev-mode";
+import { DevPromotionProvider } from "@/components/dev-mode-bubble";
+import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
 import { NotificationProvider, useNotifications } from "@/components/notifications";
-import { ThemeSwitch } from "@/components/theme-switch";
 import {
   ApiError,
   getCapabilities,
@@ -101,7 +82,7 @@ export function ServiceShell() {
 
 function ServiceSession() {
   const { confirm, confirmationDialog } = useConfirmation();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const currentConversations = useRef(conversations);
   currentConversations.current = conversations;
@@ -128,7 +109,6 @@ function ServiceSession() {
   const [tourOpen, setTourOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const composerInput = useRef<HTMLTextAreaElement>(null);
-  const composerComposing = useRef(false);
   const [runDetailsMessageId, setRunDetailsMessageId] = useState<string | null>(null);
   const [runDetailsStage, setRunDetailsStage] = useState<{ stage: DisclosureStage | null } | undefined>();
   const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
@@ -182,9 +162,6 @@ function ServiceSession() {
   const notificationView = useRef(view);notificationView.current = view;
   const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check);
   const workPending = operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0;
-  const searchJobs = operatorJobs.board.jobs.filter(job => job.domain === "corpus" && SEARCH_UPDATE_KINDS.has(job.kind));
-  const activeSearchJob = searchJobs.find(job => job.status === "running") ?? searchJobs.find(job => job.status === "queued");
-  const jobProgressLabel = activeSearchJob && !operatorJobs.stale ? searchUpdateProgress(activeSearchJob, t) : null;
 
 
 
@@ -322,13 +299,6 @@ function ServiceSession() {
       saveDraft();
     };
   }, [saveDraft]);
-  useEffect(() => {
-    // Grow with the draft up to the CSS max-height; browsers without field-sizing need the measurement.
-    const element = composerInput.current;
-    if (!element || "fieldSizing" in element.style) return;
-    element.style.height = "auto";
-    element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
-  }, [query]);
   useLayoutEffect(() => {
     const target = lastReview.current;
     if (view !== "review" || !target || target.conversationId !== active?.id) return;
@@ -1040,55 +1010,51 @@ function ServiceSession() {
   return (
     <DevPromotionProvider promote={!adminLive}>
     <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}${runDetailsMessage ? " run-details-open" : ""}`}>{confirmationDialog}
-      {sidebarOpen && <button className="sidebar-backdrop" type="button" aria-label={t("Close navigation overlay")} onClick={closeSidebar} />}
-      <aside id="service-navigation" className="sidebar" inert={!sidebarOpen} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeSidebar(); } }}>
-        <div className="brand"><ProductBrand onActivate={() => createReview()} actionLabel={`DocReview RAG · ${t("New chat")}`} /><button className="icon-button sidebar-close" type="button" aria-label={t("Close sidebar")} onClick={closeSidebar}><X size={18} /></button></div>
-        <button className="new-review" data-tour="new-review" type="button" aria-pressed={view === "review" && !!active && active.messages.length === 0} onClick={() => createReview()}><SquarePen size={17} /><span>{t("New chat")}</span></button>
-        <p className="sidebar-label">{t("Recent reviews")}</p>
-        <div className="conversation-list" data-tour="recent-reviews">
-          {conversations.filter(conversation => conversation.messages.length > 0).map((conversation) => (
-            <div className="conversation-row" key={conversation.id}>
-              <button type="button" aria-pressed={conversation.id === activeId && view === "review"} onClick={() => navigate({ view: "review", conversationId: conversation.id })}>
-                <MessageSquare size={15} /><span>{conversationTitles[conversation.id]}</span>
-              </button>
-              {conversation.messages.length > 0 && <button className="delete-review" type="button" aria-label={t("Delete {p0}", { p0: conversation.title })} onClick={() => removeReview(conversation.id)}><Trash2 size={14} /></button>}
-            </div>
-          ))}
-        </div>
-        <BuildInfo onOpen={() => openSettings("about")} mode={environment && (environment === "prod"
-            ? <DevModeBubble>
-              <a className="runtime-mode-badge prod" href={SOURCE_REPOSITORY_URL} target="_blank" rel="noreferrer" aria-label={modeLabel ?? undefined}>
-                <strong>PROD</strong><span>{t("MODE")}</span>
-              </a>
-            </DevModeBubble>
-            : <div className={`runtime-mode-badge ${environment}`} role="note" aria-label={modeLabel ?? undefined} title={t("Server environment: {p0}", { p0: modeLabel ?? "" })}>
-              <strong>{environment.toUpperCase()}</strong><span>{t("MODE")}</span>
-            </div>)} />
-        <div className="sidebar-nav">
-          <GuidesNavigation />
-          <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>{t("Build")}</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">{t(", needs attention")}</span></>}</button>
-          <button data-tour="measure" type="button" aria-pressed={view === "measure"} onClick={() => navigate({ view: "measure" })}><FlaskConical size={17} /><span>{t("Measure")}</span></button>
-          <button data-tour="system" className={`nav-secondary system-status-button ${healthBadge(runtimeHealth.kind)}`} type="button" aria-label={t("System · {p0}", { p0: t(healthLabel(runtimeHealth.kind)) })} aria-pressed={view === "system"} onClick={() => navigate({ view: "system", tab: "status" })}><Activity size={17} /><span>{t("System")}</span><span className="system-health"><i aria-hidden="true" />{t(healthLabel(runtimeHealth.kind))}</span></button>
-          <button data-tour="settings" type="button" onClick={() => openSettings()}><Settings size={17} /><span>{t("Settings")}</span></button>
-        </div>
-        {localAllowed && activeSessionProfile.engine === "local" && (
-          <div className="local-mode-badge" role="note">
-            <TriangleAlert size={14} aria-hidden="true" />
-            <span className="local-mode-label">{t("LOCAL MODEL")}{localModel ? t(" · {p0}", { p0: localModel }) : ""}{localIssue ? t(" · Unavailable") : ""}</span>
-            <span className="local-mode-note">{t("Answers use the selected model server. Choose an engine and model above the conversation input. API health and model availability are checked separately.")}{" "}</span>
-          </div>
-        )}
-        <CreatorSignature />
-      </aside>
+      <ServiceSidebar
+        open={sidebarOpen}
+        onClose={closeSidebar}
+        view={view}
+        newChatActive={view === "review" && !!active && active.messages.length === 0}
+        onNewChat={() => createReview()}
+        conversations={conversations}
+        activeConversationId={activeId}
+        conversationTitles={conversationTitles}
+        onDeleteConversation={removeReview}
+        environment={environment}
+        modeLabel={modeLabel}
+        buildNeedsAttention={buildNeedsAttention}
+        healthKind={runtimeHealth.kind}
+        showLocalModel={localAllowed && activeSessionProfile.engine === "local"}
+        localModel={localModel}
+        localModelUnavailable={Boolean(localIssue)}
+        onNavigate={(target) => navigate(target)}
+        onOpenSettings={() => openSettings()}
+        onOpenAbout={() => openSettings("about")}
+      />
 
       <section className="workspace">
-        <header className="topbar">
-          <div className="topbar-navigation">
-            <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel ?? undefined} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
-            <WorkspaceHistory entries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))} currentIndex={navigationHistory.length} onBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }} onForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }} onJump={(index) => jumpNavigation(historyEntries[index].position)} />
-          </div>
-          <div className="topbar-status">{<>{!adminLive && <SearchUpdateStatus updating={runtimeHealth.readiness?.corpus.updating === true} preparation={banner?.kind === "preparation" || banner?.kind === "empty" ? banner.text : null} jobs={operatorJobs.board.jobs} stale={operatorJobs.stale || runtimeHealth.waiting || !runtimeHealth.readiness || runtimeHealth.kind === "api_down"} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} onOpenJobs={adminLive ? jobId => navigate({ view: "build", tab: "jobs", jobId }) : undefined} />}<NotificationCenter jobs={operatorJobs.board.jobs} jobsStale={operatorJobs.stale} developer={adminLive} onNavigate={openNotification} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} /></>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" data-running={operatorJobs.board.active_count > 0} title={t("View all jobs")} type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}><span>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</span>{jobProgressLabel && <span className="job-health-detail">· {jobProgressLabel}</span>}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
-        </header>
+        <ServiceTopbar
+          sidebarToggleRef={sidebarToggle}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen((value) => !value)}
+          modeLabel={modeLabel}
+          historyEntries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))}
+          historyIndex={navigationHistory.length}
+          onHistoryBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }}
+          onHistoryForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }}
+          onHistoryJump={(index) => jumpNavigation(historyEntries[index].position)}
+          developer={adminLive}
+          searchUpdating={runtimeHealth.readiness?.corpus.updating === true}
+          searchPreparation={banner?.kind === "preparation" || banner?.kind === "empty" ? banner.text : null}
+          jobBoard={operatorJobs.board}
+          jobsStale={operatorJobs.stale}
+          searchStatusStale={operatorJobs.stale || runtimeHealth.waiting || !runtimeHealth.readiness || runtimeHealth.kind === "api_down"}
+          statusBlocked={settingsOpen || runtimeHealth.modalVisible || tourOpen}
+          helpOpen={helpOpen}
+          onToggleHelp={() => setHelp(!helpOpen)}
+          onNavigate={(target) => navigate(target)}
+          onOpenNotification={openNotification}
+        />
         {runDetailsMessage && <div className="run-details-backdrop" aria-hidden="true" onClick={() => setRunDetailsMessageId(null)} />}
         {(runtimeHealth.waiting || runtimeHealth.kind === "checking") && <div className="connection-status" role="status"><span>{t(runtimeHealth.waiting ? workPending ? "A job is in progress. Waiting for the API; retrying status checks." : "Connection check delayed. Retrying before declaring an outage." : "Checking API connection…")}</span><button className="button" type="button" disabled={runtimeHealth.checking} onClick={() => void runtimeHealth.check(true)}>{t("Retry connection")}</button></div>}
 
@@ -1096,36 +1062,13 @@ function ServiceSession() {
           <div className="messages" ref={messagesViewport} onScroll={(event) => { const element = event.currentTarget; followReview.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}>
             <div className="messages-inner">
               {!active?.messages.length && (
-                <div className="welcome">
-                  <ProductBrand hero onActivate={() => createReview()} actionLabel={`DocReview RAG · ${t("New chat")}`} />
-                  <p className="eyebrow">{t("Grounded by design")}</p>
-                  <h1>{t("Review filings with verifiable evidence.")}</h1>
-                  <p className="welcome-description">{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.").split("NOT_IN_DOCS")[0]}<span className="verdict not-in-docs welcome-verdict">{t("Not in documents")}</span>{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.").split("NOT_IN_DOCS")[1]}</p>
-                  <ol className="first-review-path"><li><strong>01</strong><span>{t("Ask about a filing")}</span></li><li><strong>02</strong><span>{t("Open its original evidence")}</span></li><li><strong>03</strong><span>{t("Inspect execution and compare retrieval")}</span></li></ol>
-                  <div className="welcome-links"><button className="button ghost" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Explore the implementation")}</button><a href={`/docreview-rag/docs/${locale}/`}>{t("Read the guide")}</a></div>
-                  {readiness?.mode === "canned" && <p className="notice">{t("Demonstration data — no live provider calls.")}</p>}
-                  {adminLive && readiness?.corpus?.documents === 0 ? (
-                    <div className="next-step" data-tour="evidence-fallback">
-                      <h2>{t("Corpus is empty")}</h2>
-                      <p>{t("Download and ingest filings first.")}</p>
-                      <div className="action-row"><button className="button primary" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Open Build")}</button></div>
-                    </div>
-                  ) : (
-                    <section className="welcome-examples" data-tour="evidence-fallback" aria-label={t("Example questions")}>
-                      <p className="welcome-examples-hint">{t("Choose an example to edit before sending.")}</p>
-                      <div className="suggestions">
-                        {[
-                          { source: "SEC", language: "en", title: "NVIDIA growth drivers", question: "What drove NVIDIA data center revenue growth?" },
-                          { source: "DART", language: "ko", title: "Samsung memory risks", question: "삼성전자 메모리 사업의 주요 위험은 무엇인가요?" },
-                          { source: "SEC", language: "en", title: "AMD supply-chain risks", question: "What manufacturing and supply-chain risks did AMD identify in its FY2024 10-K?" },
-                          { source: "DART", language: "en", title: "SK hynix HBM outlook", question: "What did SK hynix report about HBM demand and its business outlook in 2024? Cite the filing evidence." },
-                          { source: "SEC", language: "ko", title: "NVIDIA revenue comparison", question: "NVIDIA의 FY2024 총매출은 얼마이며, FY2023과 비교해 어떻게 달라졌나요?" },
-                          { source: "DART", language: "ko", title: "Samsung semiconductor investment", question: "삼성전자의 2024년 반도체 시설투자 목적과 주요 투자 내용을 설명해 주세요." },
-                        ].map((example) => <button key={example.title} type="button" aria-label={t(example.title)} onClick={() => { setQuery(example.question); composerInput.current?.focus(); }}><span className="suggestion-meta"><span className="suggestion-source">{example.source}</span><span>{example.source === "SEC" ? "10-K" : t("Annual report")} · {example.language === "en" ? "English" : "한국어"}</span></span><strong>{t(example.title)}</strong><span className="suggestion-question" lang={example.language}>{example.question}</span></button>)}
-                      </div>
-                    </section>
-                  )}
-                </div>
+                <ReviewWelcome
+                  developer={adminLive}
+                  readiness={readiness}
+                  onNewChat={() => createReview()}
+                  onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })}
+                  onChooseExample={(question) => { setQuery(question); composerInput.current?.focus(); }}
+                />
               )}
               {active?.messages.map((message) => (
                 <ReviewMessage
@@ -1169,10 +1112,13 @@ function ServiceSession() {
             {!adminLive && <p className="helper" role="status">{t(publicCorpus.status === "loading" ? "Loading published filings…" : publicCorpus.status === "error" ? "Published filings could not be loaded." : !publicCorpus.documents.length ? "No portfolio filings have been published yet." : publicScopeBlocked ? "Select at least one published filing to ask a question." : "Questions use the selected published filings.")}{unavailableScope && <> {t("Some saved filings are no longer published. Review your selection.")}</>}{publicCorpus.status === "error" && <button type="button" className="button ghost" onClick={publicCorpus.refresh}>{t("Retry")}</button>}</p>}
             {permissions && compatibilityIssue && <ProfileCompatibilityNotice key={`${activeId}:${compatibilityIssue}`} message={compatibilityIssue} conversationId={activeId} />}
             {!adminLive && !publicPolicy && <p className="helper" role="status">{t(publicPolicyFailed ? "Server execution limits could not be loaded. Browser defaults are not the applied policy." : "Loading server execution limits…")}{publicPolicyFailed && <button type="button" className="button ghost" onClick={() => setPublicPolicyRevision(value => value + 1)}>{t("Retry")}</button>}</p>}
-            <label className="composer">
-              <textarea ref={composerInput} data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onCompositionStart={() => { composerComposing.current = true; }} onCompositionEnd={() => { composerComposing.current = false; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { if (composerComposing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return; event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
-              <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
-            </label>
+            <QuestionComposer
+              inputRef={composerInput}
+              query={query}
+              onQueryChange={setQuery}
+              onSubmit={() => void submit()}
+              sendDisabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked}
+            />
 
             {settingsValidationError && <p role="alert" className="notice error">{t(settingsValidationError)} <button type="button" className="inline-link" onClick={() => openConversationSettings("retrieval")}>{t("Open settings")}</button></p>}
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
@@ -1290,14 +1236,4 @@ function isInfrastructureFailure(reason: unknown): boolean {
     reason instanceof ApiError
     && ["database_unavailable", "service_unavailable"].includes(reason.code)
   );
-}
-
-function healthBadge(kind: ReturnType<typeof useRuntimeHealth>["kind"]): string {
-  if (kind === "healthy") return "ready";
-  if (kind === "checking") return "unknown";
-  return "degraded";
-}
-
-function healthLabel(kind: ReturnType<typeof useRuntimeHealth>["kind"]): string {
-  return kind === "api_down" ? "API down" : kind.replace("_", " ");
 }
