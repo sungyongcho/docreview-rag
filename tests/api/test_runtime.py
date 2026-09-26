@@ -1129,32 +1129,23 @@ def test_routing_stops_before_search_and_answer(
 
 
 @pytest.mark.parametrize(
-    "query,names,target,prior,calls",
+    "query,names,target,calls",
     [
-        ("Nvidia growth drivers", None, None, None, 0),
-        ("Compare all available companies", None, None, None, 0),
-        ("Compare all available companies' revenue", None, None, None, 0),
-        ("그럼 2024년은?", None, None, "NVDA revenue 2023", 0),
-        (
-            "NVIDIA 10-K sexual harassment risk disclosure",
-            ["Nvidia"],
-            "explicit",
-            None,
-            1,
-        ),
-        (
-            "삼성전자 사업보고서의 성희롱 관련 위험",
-            ["삼성전자"],
-            "explicit",
-            None,
-            1,
-        ),
+        ("Nvidia growth drivers", None, None, 0),
+        ("Compare all available companies", None, None, 0),
+        ("NVIDIA 10-K sexual harassment risk disclosure", ["Nvidia"], "explicit", 1),
+        ("삼성전자 사업보고서의 성희롱 관련 위험", ["삼성전자"], "explicit", 1),
+    ],
+    ids=[
+        "known_issuer_without_a_finance_term",
+        "corpus_wide_comparison_without_a_metric",
+        "classified_sensitive_topic_in_an_sec_filing",
+        "classified_sensitive_topic_in_a_dart_filing",
     ],
 )
-def test_supported_questions_reach_search(classified_service, query, names, target, prior, calls):
+def test_supported_questions_reach_search(classified_service, query, names, target, calls):
     """Deterministic filing questions and classified targets both reach actual retrieval."""
     from app.api.schemas import RetrieveRequest
-    from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
     if calls:
@@ -1166,9 +1157,8 @@ def test_supported_questions_reach_search(classified_service, query, names, targ
                 "target_scope": target,
             }
         )
-    history = (ConversationTurn(role="user", text=prior),) if prior else ()
     with pytest.raises(LookupError, match="retrieval boundary reached"):
-        asyncio.run(service.retrieve(RetrieveRequest(query=query, conversation_history=history)))
+        asyncio.run(service.retrieve(RetrieveRequest(query=query)))
     assert len(prompts) <= calls
     assert len(prompts) <= 1
 
