@@ -292,6 +292,8 @@ class LLMProvider(ABC):
             except AIAllowanceError:
                 raise
             except _OpenAIPreflightError as error:
+                # The adapter's stricter projection refused the call; the metadata carries
+                # the same projection so model_calls and the failure details agree.
                 return failed(
                     error.failure.model_copy(
                         update={
@@ -309,7 +311,8 @@ class LLMProvider(ABC):
                             if error.failure.which == "input_tokens"
                             else budget.max_cost_usd,
                         }
-                    )
+                    ),
+                    projected=error.failure.projected_input_tokens,
                 )
             except Exception as error:
                 elapsed_ms = (self._clock() - started) / 1_000_000

@@ -239,6 +239,18 @@ class FakeClient:
         self.responses = FakeResponses(response)
 
 
+class UnreachableResponses:
+    """Fail the test if the adapter sends anything after refusing the call."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def create(self, **kwargs):
+        """Record the arguments and fail: a refused request must never be sent."""
+        self.calls.append(kwargs)
+        raise AssertionError("a refused request must not be sent")
+
+
 def test_openai_adapter_sends_one_schema_bound_request_with_injected_offline_client():
     """Send exactly one schema-bound request through an injected client."""
     response = SimpleNamespace(
@@ -522,3 +534,27 @@ def test_post_hoc_accounting_is_unchanged_when_the_projection_undershoots():
     assert result.refusal.which == "input_tokens"
     assert result.refusal.used == 1_100
     assert result.refusal.projected_input_tokens is None
+
+
+def test_openai_preflight_refusal_records_its_projection_in_metadata():
+    """The adapter's schema-inclusive preflight reports one projection in the refusal and
+    the metadata alike, so model_calls and the failure details tell the same story."""
+    responses = UnreachableResponses()
+    provider = OpenAILLMProvider(
+        model_name="gpt-5.6-terra",
+        client=SimpleNamespace(responses=responses),
+        clock=TickClock(),
+    )
+
+    # The prompt alone fits 100 tokens; the prompt plus the serialized strict schema does not.
+    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=100)))
+
+    assert responses.calls == []
+    assert result.status == "budget_exceeded"
+    assert isinstance(result.refusal, BudgetExceeded)
+    assert result.refusal.which == "input_tokens"
+    assert result.refusal.attempts == 0
+    assert result.refusal.projected_input_tokens is not None
+    assert result.refusal.projected_input_tokens > 100
+    assert result.metadata.requests == 0
+    assert result.metadata.projected_input_tokens == result.refusal.projected_input_tokens
