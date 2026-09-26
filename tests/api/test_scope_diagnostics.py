@@ -56,7 +56,7 @@ def test_actual_manifest_failure_causes_and_recovery(tmp_path, monkeypatch, caus
         embedding_provider=DeterministicEmbeddingProvider(), corpus_root=tmp_path
     )
     with pytest.raises(ApiProblemError) as captured:
-        service._manifest_scope_index()
+        service._scope.manifest_index()
     error = captured.value.error
     assert error.code == "query_scope_unavailable" and error.cause == cause
     assert error.path == "manifest.json" and error.detail
@@ -70,11 +70,11 @@ def test_actual_manifest_failure_causes_and_recovery(tmp_path, monkeypatch, caus
         )
         == 1
     )
-    assert service._scope_index is None
+    assert service._scope._scope_index is None
     if cause == "permission":
         monkeypatch.undo()
     manifest.write(path)
-    assert service._manifest_scope_index().match("NVDA revenue")
+    assert service._scope.manifest_index().match("NVDA revenue")
 
 
 def test_production_omits_path_cause_detail_and_secrets(tmp_path):
@@ -146,7 +146,7 @@ def test_unavailable_job_history_preserves_the_original_manifest_error(tmp_path,
         embedding_provider=DeterministicEmbeddingProvider(), corpus_root=tmp_path
     )
     with pytest.raises(ApiProblemError) as captured:
-        asyncio.run(service._scope_index_for_decision())
+        asyncio.run(service._scope.manifest_index_for_decision())
     assert captured.value.error.cause == "missing_file" and captured.value.error.corpus_job is None
 
 

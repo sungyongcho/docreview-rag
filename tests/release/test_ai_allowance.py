@@ -219,7 +219,9 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
         embedding_provider=DeterministicEmbeddingProvider(),
         intent_classifier_enabled=True,
     )
-    runtime._scope_index_for_decision = AsyncMock(return_value=SimpleNamespace(match=lambda _: ()))
+    runtime._scope.manifest_index_for_decision = AsyncMock(
+        return_value=SimpleNamespace(match=lambda _: ())
+    )
     runtime._followup_query = lambda request: (None, request.query)
     runtime._engine = AsyncMock(
         return_value=(provider, ReleaseSettings(_env_file=None).provider_budget())
