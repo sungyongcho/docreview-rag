@@ -120,8 +120,13 @@ def _provider_allowance(
 
     Notes
     -----
-    ``ProviderBudget.exhausted_by`` is the single definition of exhaustion, so the
-    refusal this returns and the one the provider raises mid-call cannot disagree.
+    ``ProviderBudget.exhausted_by`` is the single definition of exhaustion, so this gate
+    and the provider's own boundary read the same limits; they differ only in what they
+    judge. This gate asks inclusively whether another request may start on the usage
+    already traced, while the provider judges each completed attempt exclusively and
+    projects a prompt's size before sending it. The refusal returned here has the shape
+    of the provider's own pre-request refusal: zero attempts and the ``BudgetExceeded``
+    evidence from which ``failed`` derives the budget source.
     """
     used_input, used_output, used_cached, used_cache_write = _used_tokens(state)
     effective = _effective_provider_budget(request)

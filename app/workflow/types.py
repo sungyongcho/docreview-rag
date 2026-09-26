@@ -255,10 +255,11 @@ class WorkflowRequest(StrictSchema):
 class WorkflowState(StrictSchema):
     """Immutable state passed between the four pure workflow nodes.
 
-    ``retrieved_hits`` holds the candidates that survived deduplication and the
-    document quota; ``evidence`` holds the ``k`` of them that fit the context budget
-    and were actually sent to the model. Keeping both is what lets a report say
-    whether nothing was retrieved or nothing fit.
+    ``retrieved_hits`` holds the candidates that survived identity and text
+    deduplication; ``evidence`` holds the ``k`` of them that ``select_evidence`` kept
+    under the per-document preference and the context budget, which is exactly what
+    was sent to the model. Keeping both is what lets a report say whether nothing was
+    retrieved or nothing fit.
     """
 
     run_id: RunId

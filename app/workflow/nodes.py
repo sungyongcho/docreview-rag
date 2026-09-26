@@ -495,8 +495,10 @@ def report_node(state: WorkflowState) -> WorkflowState:
     Notes
     -----
     Missing or downgraded support produces ``NOT_IN_DOCS`` and never exposes an
-    unvalidated citation. ``check_node`` already removes citations outside the graded
-    evidence, so the check here names a broken caller rather than a bad completion.
+    unvalidated citation. ``check_node`` does not trim citations: a supported decision
+    citing anything outside the graded evidence is downgraded whole, so a ``SUPPORTED``
+    decision arriving here cites only relevant, hence evidence, ids and the check below
+    names a broken caller rather than a bad completion.
     """
     evidence_by_id = {hit.chunk_id: hit for hit in state.evidence}
     if state.decision is not None and state.decision.label == "SUPPORTED":
