@@ -3,11 +3,11 @@
 from importlib import import_module
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import patch
 
 import pytest
 
 from app.ingestion.manifest import FilingSource, Manifest
+from tests.ingestion.support import copy_filing_source
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -58,31 +58,19 @@ def blocks_by_doc(
 
 
 @pytest.fixture(scope="session")
-def profiles_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Provide an isolated profile directory shared by corpus parsing tests."""
-    return tmp_path_factory.mktemp("profiles")
-
-
-@pytest.fixture
-def isolated_profiles(edgar_module: ModuleType, tmp_path: Path):
-    """Redirect profile I/O to a temporary directory for one test."""
-    with patch.object(edgar_module, "PROFILES", tmp_path):
-        yield tmp_path
-
-
-@pytest.fixture(scope="session")
 def parsed(
     edgar_module: ModuleType,
     manifest: tuple[FilingSource, ...],
-    profiles_dir: Path,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> dict:
-    """Parse every corpus document while learning profiles from a clean directory."""
-    with patch.object(edgar_module, "PROFILES", profiles_dir):
-        out = {}
-        for entry in sorted(manifest, key=lambda item: item.document.document_id):
-            result, _profile = edgar_module.parse_filing(entry)
-            out[entry.document.document_id] = result
-        return out
+    """Parse copied sources while learning profiles in an independent corpus."""
+    corpus_root = tmp_path_factory.mktemp("parsed-corpus")
+    out = {}
+    for entry in sorted(manifest, key=lambda item: item.document.document_id):
+        source = copy_filing_source(entry, corpus_root)
+        result, _profile = edgar_module.parse_filing(source)
+        out[entry.document.document_id] = result
+    return out
 
 
 @pytest.fixture(scope="session")

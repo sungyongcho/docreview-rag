@@ -1546,11 +1546,26 @@ production testing bypass, or obscure the behavior with excessive setup. Removed
 claims are evaluated against actual callers and current product behavior. A smaller
 test count is an outcome, not proof that a requirement remains covered.
 
-The corpus catalog and parsing profiles are unchanged. `data/corpus/manifest.json`
+The corpus catalog and profile contents are unchanged. `data/corpus/manifest.json`
 owns registered document identity, source artifacts and processing selections.
-`data/profiles/*.json` stores learned SEC segmentation/validation rules by issuer
-and fiscal year. Repeating an issuer identifier in those rules does not create a
-second source catalog or a legacy compatibility reader.
+The user clarified that company-specific parsing rules must remain distinct by
+fiscal year, and requested placing each profile beside its company's sources.
+The four existing files move byte-for-byte from `data/profiles/<issuer>.json` to
+`data/corpus/sec/<issuer>/profile.json`. Repeating an issuer identifier in a parsing
+rule does not create a second source catalog or a legacy compatibility reader.
+
+The parser now resolves the profile from `FilingSource.corpus_root`, so two corpora
+cannot accidentally share a working-directory-global profile. Existing year selection,
+validation and relearning semantics remain. Tests copy verified source bytes into
+temporary corpora instead of patching a production global. DART has no profile reader,
+so this change creates no DART placeholder files. The old path is not a fallback.
+
+Published PROD serves previously prepared database/snapshot records and does not run
+source parsing; its read-only corpus mount and existing originals-only bundle remain
+valid without adding profiles. No archive allowlist, deployed storage or existing
+bundle is changed. The earlier read-only investigation found a separate NVIDIA FY2019
+`font` style detection failure in both saved-profile and fresh-rule parsing; relocation
+does not fix that pre-existing parser behavior or claim all current originals parse.
 
 ### Preserved deployment and data boundaries
 
@@ -1606,3 +1621,10 @@ are recorded in [the evidence appendix](refactor-2026-09-evidence.md#behavioral-
 No tutorial flow changed. The shared database test fixture now requires an explicit
 disposable database URL; clean-checkout verification clears that variable so it
 cannot accidentally inherit a database from another environment.
+
+
+The profile relocation is an additional user-directed requirement within #225.
+The company profile bytes and year-indexed schema are preserved; only storage ownership
+and direct callers change. The root and web auditor checked the changed read/write paths
+and deployment consumers separately from the domain implementer. No production consumer
+of the removed working-directory-global `PROFILES` remains.

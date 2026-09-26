@@ -2233,15 +2233,18 @@ and final 17 selected cases passed; both containers were removed. The comparable
 totals below include those runs. No coverage files or production sources were
 excluded to improve the percentage.
 
-Final inspection also restored two custom negative budget-evidence boundaries
+Inspection also restored two custom negative budget-evidence boundaries
 and an embedding-provider HTTP failure boundary; 29 affected tests passed.
 The existing CLI success test now runs real command dispatch/evidence projection
 over controlled session/retrieval I/O instead of substituting the entire command;
-all 12 CLI cases passed and their coverage was appended.
+all 12 CLI cases passed and their coverage was appended. After the company-local
+profile requirement, a fresh complete current-source measurement included all of
+these repairs and the profile relocation. The baseline measurement remains valid;
+only the final source was rerun, followed by the same six-file live selection.
 
 | Coverage | Baseline `463330eb` | Final source |
 | --- | ---: | ---: |
-| `app/` line | 14,746/16,299 (90.4718%) | 14,757/16,268 (90.7118%) |
+| `app/` line | 14,746/16,299 (90.4718%) | 14,755/16,266 (90.7107%) |
 | `app/` branch | 3,558/4,448 (79.9910%) | 3,559/4,426 (80.4112%) |
 | `scripts/` line | 1,891/2,495 (75.7916%) | 1,891/2,495 (75.7916%) |
 | `scripts/` branch | 551/830 (66.3855%) | 551/830 (66.3855%) |
@@ -2255,7 +2258,7 @@ current parsing behavior without claiming those unavailable originals were rerun
 | Check | Result |
 | --- | --- |
 | Baseline complete non-live Python selection | 2,224 passed across initial run and targeted harness repair; 40 skipped, 39 live cases deselected. |
-| Final complete non-live Python selection | 2,110 passed, 1 paid-provider opt-in case skipped, 44 live cases deselected; no failure. Three restored boundary executions subsequently passed within their 29-case focused run. |
+| Final complete non-live Python selection | 2,113 passed, 1 paid-provider opt-in case skipped, 44 live cases deselected; no failure. This fresh run includes the three restored boundaries and company-local profile paths. |
 | Affected isolated PostgreSQL behavior | 27 distinct cases passed: shared ingestion/retrieval/job/schema checks 21, run/trace persistence 1, snapshots 1, schema/evaluation corpus 4. All used disposable task-owned PostgreSQL, required-live mode and separate schemas; containers were removed. |
 | Web complete final suite | 1,165 passed in 118 files; no skipped or failed case. |
 | Static checks | Scoped Python Ruff and format checks, app basedpyright, web TypeScript and final Git whitespace checks passed. The restored BM25 matrix additionally passed its 10 cases and scoped Ruff/format checks. |
@@ -2269,3 +2272,30 @@ targeted two-case rerun; both passed without source changes, and coverage totals
 unchanged after append. Initial failure records remain distinguishable from repair.
 The opt-in skips do not certify paid provider or source-checkout acceptance behavior.
 No full image gate, production deployment or paid provider request was executed.
+
+### Company-local parsing profiles
+
+The later user requirement moves each existing SEC profile to
+`data/corpus/sec/<issuer>/profile.json`. AMD, INTC, MU and NVDA profile bytes match
+their pre-move Git blobs exactly. All year-specific rules, default-year selection
+and successful-relearning semantics remain. The manifest and its 30 source artifacts
+retain their pre-change hashes. No profile-only company is added to the manifest or
+public document list.
+
+The parser resolves this path from the selected `FilingSource.corpus_root`; it has
+no old-directory fallback. Existing parser tests use copied, verified source bytes
+in temporary corpora instead of replacing a production global. Existing profile
+lifecycle checks now also verify that relearning leaves another issuer and another
+corpus untouched. No additional test cases were needed.
+
+The focused profile/ingestion/evaluation selection passed 48 cases. The reset
+preservation selection passed 24 cases with its one live case deselected. Scoped
+Ruff/format, parser basedpyright and Git whitespace checks passed. The complete
+Python and comparable live coverage measurements above include the final paths;
+unchanged web and frontend build evidence remains valid.
+
+Public PROD reads prepared database/snapshot records without parsing originals.
+Its read-only corpus mount and existing originals-only bundles need no profile
+migration or archive allowlist change. DART has no profile reader, so this change
+creates no placeholder DART files. The separately observed NVIDIA FY2019 heading
+style detection failure is pre-existing and is not repaired by this relocation.

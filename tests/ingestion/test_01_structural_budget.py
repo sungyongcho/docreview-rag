@@ -11,6 +11,7 @@ from app.ingestion.parser import Block
 from app.ingestion.tables import structured_table
 from app.ingestion.tokens import MAX_INPUT_CHARACTERS, count_tokens
 from tests.ingestion.chunk.support import build_filing
+from tests.ingestion.support import copy_filing_source
 
 
 def _chunks(html: str, **budget):
@@ -204,7 +205,7 @@ def test_indivisible_narrative_and_repeated_context_obey_hard_limits():
         chunk_filing(filing, ChunkConfig(max_chars=15))
 
 
-def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(isolated_profiles):
+def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(tmp_path):
     """Verify the committed source selection while keeping learned profiles temporary."""
     from app.ingestion import edgar
     from app.ingestion.dart import parse_dart_filing
@@ -213,7 +214,10 @@ def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(isolated_
     catalog_path = Path(__file__).resolve().parents[2] / "data/corpus/manifest.json"
     catalog = Manifest.read(catalog_path)
     entries = [
-        (source, edgar.parse_filing if source.document.registry == "sec" else parse_dart_filing)
+        (
+            copy_filing_source(source, tmp_path),
+            edgar.parse_filing if source.document.registry == "sec" else parse_dart_filing,
+        )
         for source in catalog.selected_sources("tutorial", catalog_path.parent)
     ]
     expected = {

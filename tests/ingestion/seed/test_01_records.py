@@ -92,7 +92,7 @@ def test_chunk_record_conversion_rejects_shared_malformed_source_hash() -> None:
         seed.chunk_records(filing, chunks)
 
 
-def test_build_seed_batch_sorts_manifest_and_output(tmp_path, isolated_profiles):
+def test_build_seed_batch_sorts_manifest_and_output(tmp_path):
     """Parse real selected sources and preserve their identity in sorted seed records."""
     entries = []
     for issuer, year in (("NVDA", 2024), ("AMD", 2023)):

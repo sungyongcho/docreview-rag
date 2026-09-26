@@ -14,6 +14,7 @@ def test_runtime_file_allowlist_preserves_sources_and_rejects_links(tmp_path):
     for name in (
         "data/corpus/raw.html",
         "data/corpus/manifest.json",
+        "data/corpus/sec/TEST/profile.json",
         "data/corpus/protected.html",
         "data/local-settings/local-llm.json",
         "data/golden/new_v2_astra.json",

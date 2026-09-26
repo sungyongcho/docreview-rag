@@ -10,7 +10,6 @@ from sqlalchemy import Table
 from app.config import Settings
 from app.db.models import Base
 from app.evals.corpus import _temporary_metadata, build_chunking_batch, load_chunking_filings
-import app.ingestion.edgar as edgar
 from app.ingestion.manifest import Manifest, ProcessingSelection
 from app.ingestion.parser import Block, ParsedFiling, Section, normalize
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
@@ -19,7 +18,7 @@ from tests.ingestion.support import filing_document, filing_source
 from tests.support import load_settings
 
 
-def test_load_chunking_filings_reads_only_verified_selected_sources(tmp_path, monkeypatch):
+def test_load_chunking_filings_reads_only_verified_selected_sources(tmp_path):
     """Bind parsed evidence to the selected artifact and refuse bytes changed after acquisition."""
     source_path = tmp_path / "filing.html"
     raw = build_numbered_body(gap=2)
@@ -42,7 +41,6 @@ def test_load_chunking_filings_reads_only_verified_selected_sources(tmp_path, mo
         ),
     )
     manifest.write(tmp_path / "manifest.json")
-    monkeypatch.setattr(edgar, "PROFILES", tmp_path / "profiles")
     settings = load_settings(Settings, env_file=None, corpus_dir=tmp_path)
 
     filings = load_chunking_filings(settings=settings, selection_id="selected")
