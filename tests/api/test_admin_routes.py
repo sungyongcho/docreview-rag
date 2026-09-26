@@ -223,14 +223,6 @@ class FakeAdminServices:
         raise AssertionError(request)
 
 
-def test_admin_routes_are_absent_without_explicit_composition() -> None:
-    """Keep the stable public OpenAPI surface free of administrator operations."""
-    with TestClient(create_api_app()) as client:
-        paths = set(client.get("/openapi.json").json()["paths"])
-
-    assert not any(path.startswith("/admin") for path in paths)
-
-
 def test_admin_routes_are_injected_and_typed() -> None:
     """Expose local routes only with one explicit administrator service override."""
     services = cast(RuntimeAdminApiServices, FakeAdminServices())

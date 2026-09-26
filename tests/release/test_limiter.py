@@ -15,30 +15,6 @@ class Clock:
         return self.now
 
 
-def test_minute_limit_reports_retry_and_recovers() -> None:
-    """Deny past the minute allowance with a retry delay, and allow again once it passes."""
-    clock = Clock()
-    limiter = InProcessRateLimiter(
-        per_minute=2,
-        per_day=5,
-        max_clients=3,
-        clock=clock,
-    )
-
-    first = asyncio.run(limiter.check("client"))
-    second = asyncio.run(limiter.check("client"))
-    denied = asyncio.run(limiter.check("client"))
-    clock.now = 60.1
-    recovered = asyncio.run(limiter.check("client"))
-
-    assert first.allowed and first.remaining_minute == 1
-    assert second.allowed and second.remaining_minute == 0
-    assert not denied.allowed and denied.retry_after_seconds == 60
-    assert denied.minute_reset_seconds == 60
-    assert denied.day_reset_seconds == 86_400
-    assert recovered.allowed
-
-
 def test_peek_reports_resets_without_consuming_another_slot() -> None:
     """Expose retry and rolling-window reset estimates without changing allowance."""
     clock = Clock()

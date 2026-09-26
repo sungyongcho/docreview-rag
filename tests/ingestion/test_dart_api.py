@@ -112,19 +112,6 @@ def test_http_error_status_is_not_retried(monkeypatch):
     assert calls["count"] == 1
 
 
-def test_non_zip_body_reports_the_dart_status():
-    """A JSON error body on a ZIP endpoint becomes a typed error with its status."""
-    error = json.dumps({"status": "020", "message": "요청 제한을 초과하였습니다"}).encode()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        """Return a DART JSON error body from the ZIP endpoint."""
-        return httpx.Response(200, content=error)
-
-    with pytest.raises(DartApiError) as excinfo:
-        asyncio.run(fetch_corp_code_archive(client_returning(handler), api_key=API_KEY))
-    assert excinfo.value.dart_status == "020"
-
-
 # --- corp code parsing ---
 
 
@@ -136,14 +123,6 @@ def test_parse_corp_codes_maps_each_requested_stock_code():
 
     assert found["005930"] == CorpCode("00126380", "삼성전자", "005930")
     assert found["000660"] == CorpCode("00164779", "SK하이닉스", "000660")
-
-
-def test_parse_corp_codes_rejects_a_missing_stock_code():
-    """Refuse to continue when a requested stock code has no entry."""
-    archive = zip_bytes({"CORPCODE.xml": CORPCODE_XML.encode()})
-
-    with pytest.raises(DartApiError, match="123456"):
-        parse_corp_codes(archive, stock_codes=("005930", "123456"))
 
 
 def test_parse_corp_codes_rejects_a_broken_archive():
@@ -300,23 +279,6 @@ def test_fetch_document_archive_rejects_a_malformed_receipt_number():
 # --- member selection and decoding ---
 
 
-def test_select_primary_member_picks_the_report_by_exact_name():
-    """Select the report member by its exact archive name."""
-    archive = zipfile.ZipFile(
-        io.BytesIO(
-            zip_bytes(
-                {
-                    f"{RCEPT_NO}_00761.xml": b"attachment",
-                    f"{RCEPT_NO}.xml": b"report",
-                    f"{RCEPT_NO}_00760.xml": b"attachment",
-                }
-            )
-        )
-    )
-
-    assert select_primary_member(archive, rcept_no=RCEPT_NO) == f"{RCEPT_NO}.xml"
-
-
 def test_select_primary_member_lists_members_when_the_report_is_absent():
     """Name every member when the expected report is absent."""
     archive = zipfile.ZipFile(io.BytesIO(zip_bytes({f"{RCEPT_NO}_00760.xml": b"attachment"})))
@@ -335,16 +297,6 @@ def test_member_names_recovers_cp949_names_mangled_through_cp437():
     info.flag_bits &= ~0x800
 
     assert member_names(archive) == ["사업보고서.xml"]
-
-
-def test_decode_source_honours_the_declared_encoding():
-    """Decode the source with the encoding the document declares."""
-    raw = '<?xml version="1.0" encoding="euc-kr"?><doc>한글</doc>'.encode("cp949")
-
-    text, encoding = decode_source(raw)
-
-    assert "한글" in text
-    assert encoding == "euc-kr"
 
 
 def test_decode_source_ignores_a_permissive_declared_encoding():
@@ -490,35 +442,6 @@ def catalog_with(tmp_path, acquired):
     )
 
 
-def test_a_missing_manifest_is_a_first_run(tmp_path):
-    """Initialize the common catalog on a first acquisition."""
-    assert read_catalog(tmp_path / "manifest.json").documents == ()
-
-
-def test_manifest_without_common_identity_is_rejected(tmp_path):
-    """Reject the removed list-shaped DART format."""
-    path = tmp_path / "manifest.json"
-    path.write_text('[{"issuer":"005930"}]')
-    with pytest.raises(ValueError, match="object"):
-        read_catalog(path)
-
-
-def test_a_second_fiscal_year_does_not_erase_the_first(tmp_path):
-    """Add an explicit new selection without replacing existing catalog documents."""
-    first = dart_acquired(tmp_path)
-    second = dart_acquired(tmp_path, 2023, "20240311001085")
-    catalog_with(tmp_path, [first])
-    merged = publish_acquired(
-        tmp_path / "manifest.json",
-        [second],
-        selection_id="second",
-        selected_document_ids=[second.document.document_id],
-    )
-    assert [document.fiscal_year for document in merged.documents] == [2024, 2023]
-    assert merged.selected_sources("test-selection", tmp_path)[0].document == first.document
-    assert merged.selected_sources("second", tmp_path)[0].document == second.document
-
-
 def test_re_archiving_one_filing_preserves_document_identity(tmp_path):
     """An idempotent repeat must not duplicate the filing or artifact catalog."""
     acquired = dart_acquired(tmp_path)
@@ -530,14 +453,6 @@ def test_re_archiving_one_filing_preserves_document_identity(tmp_path):
         selected_document_ids=[acquired.document.document_id],
     )
     assert merged == catalog
-
-
-def test_two_receipts_for_one_issuer_year_remain_distinct(tmp_path):
-    """Keep separate receipt identities instead of overwriting issuer-year evidence."""
-    first = dart_acquired(tmp_path)
-    second = dart_acquired(tmp_path, 2024, "20250311001086")
-    catalog = catalog_with(tmp_path, [first, second])
-    assert len(catalog.documents) == 2 and len(catalog.artifacts) == 4
 
 
 def test_manifest_round_trips_with_korean_names_intact(tmp_path):

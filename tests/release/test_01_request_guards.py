@@ -54,13 +54,20 @@ def test_security_headers_and_rate_limit_are_visible() -> None:
     assert denied.json()["error"]["code"] == "rate_limited"
 
 
-def test_local_operator_bypasses_public_rate_limit() -> None:
-    """Keep loopback operator work unlimited and unmetered."""
+def test_local_operator_bypass_keeps_proxy_marked_requests_metered() -> None:
+    """Keep loopback operator work unlimited and unmetered; proxy-marked requests stay limited."""
     with TestClient(_guarded_app(enforce_rate_limit=False)) as client:
-        responses = [client.post("/work") for _ in range(3)]
+        private = [client.post("/work") for _ in range(3)]
+        headers = {"x-docreview-public": "true"}
+        admitted = client.post("/work", headers=headers)
+        denied = client.post("/work", headers=headers)
+        after = client.post("/work")
 
-    assert [response.status_code for response in responses] == [200, 200, 200]
-    assert all("x-ratelimit-remaining-minute" not in response.headers for response in responses)
+    assert [response.status_code for response in private] == [200, 200, 200]
+    assert all("x-ratelimit-remaining-minute" not in response.headers for response in private)
+    assert admitted.status_code == 200
+    assert denied.status_code == 429
+    assert after.status_code == 200
 
 
 def test_daily_cost_limiter_reserves_worst_case_and_resets_by_day() -> None:
@@ -114,38 +121,6 @@ def test_review_route_fails_closed_after_daily_cost_reservation() -> None:
     assert blocked.json()["error"]["code"] == "daily_cost_limit"
 
 
-def test_public_proxy_marker_blocks_dev_only_review_policy() -> None:
-    """Reject custom prompt, retrieval, and snapshot controls before route execution."""
-    app = FastAPI()
-    app.add_middleware(
-        ReleaseGuardMiddleware,
-        limiter=InProcessRateLimiter(per_minute=10, per_day=10, max_clients=4),
-        trust_proxy_headers=False,
-    )
-
-    @app.post("/review")
-    async def review() -> dict[str, str]:
-        """Stand in for a provider route that must remain unreachable."""
-        return {"status": "unexpected"}
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/review",
-            headers={"X-DocReview-Public": "true"},
-            json={
-                "query": "Revenue?",
-                "session_profile": {
-                    "retrieval_preset": "balanced",
-                    "snapshot_id": 3,
-                },
-            },
-        )
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "capability_disabled"
-    assert response.json()["error"]["message"] == "This control runs in DEV mode only."
-
-
 def _review_app() -> FastAPI:
     """Build one guarded review route that reports whether the guard admitted the request."""
     app = FastAPI()
@@ -177,21 +152,14 @@ def _custom_profile(**retrieval: object) -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize(
-    "retrieval",
-    [
-        {},
-        {"k": 10, "candidate_k": 50, "lexical_ranker": "bm25", "reranker": "cross_encoder"},
-        {"strategy": "vector", "lexical_ranker": None},
-    ],
-)
-def test_public_custom_retrieval_within_bounds_reaches_the_route(retrieval) -> None:
-    """Admit the Custom preset publicly while its depth stays inside the built-in envelope."""
+def test_public_custom_retrieval_within_bounds_reaches_the_route() -> None:
+    """Admit the Custom preset publicly while its depth stays at the built-in ceiling."""
+    profile = _custom_profile(k=10, candidate_k=50, lexical_ranker="bm25", reranker="cross_encoder")
     with TestClient(_review_app()) as client:
         response = client.post(
             "/review",
             headers={"X-DocReview-Public": "true"},
-            json={"query": "Revenue?", "session_profile": _custom_profile(**retrieval)},
+            json={"query": "Revenue?", "session_profile": profile},
         )
 
     assert response.status_code == 200
@@ -199,14 +167,14 @@ def test_public_custom_retrieval_within_bounds_reaches_the_route(retrieval) -> N
 
 
 @pytest.mark.parametrize(
-    ("retrieval", "field"),
+    ("retrieval", "violation"),
     [
-        ({"k": 11, "candidate_k": 50}, "custom_retrieval.k"),
-        ({"k": 5, "candidate_k": 51}, "custom_retrieval.candidate_k"),
+        ({"k": 11, "candidate_k": 50}, "custom_retrieval.k must be at most 10"),
+        ({"k": 5, "candidate_k": 51}, "custom_retrieval.candidate_k must be at most 50"),
     ],
 )
-def test_public_custom_retrieval_above_bounds_names_the_field(retrieval, field) -> None:
-    """Reject oversized Custom depth with the shared lock message naming the exceeded field."""
+def test_public_custom_retrieval_above_bounds_names_the_field(retrieval, violation) -> None:
+    """Reject oversized Custom depth with the shared lock message naming the exceeded bound."""
     with TestClient(_review_app()) as client:
         response = client.post(
             "/review",
@@ -218,7 +186,7 @@ def test_public_custom_retrieval_above_bounds_names_the_field(retrieval, field) 
     error = response.json()["error"]
     assert error["code"] == "capability_disabled"
     assert error["message"].startswith("This control runs in DEV mode only.")
-    assert field in error["message"]
+    assert violation in error["message"]
 
 
 @pytest.mark.parametrize(
@@ -230,7 +198,7 @@ def test_public_custom_retrieval_above_bounds_names_the_field(retrieval, field) 
     ],
 )
 def test_public_prompt_local_and_snapshot_controls_stay_locked(profile) -> None:
-    """Keep every non-retrieval developer control behind the one DEV-mode lock."""
+    """Keep every non-retrieval developer control behind the one DEV-mode lock envelope."""
     with TestClient(_review_app()) as client:
         response = client.post(
             "/review",
@@ -239,9 +207,13 @@ def test_public_prompt_local_and_snapshot_controls_stay_locked(profile) -> None:
         )
 
     assert response.status_code == 403
-    error = response.json()["error"]
-    assert error["code"] == "capability_disabled"
-    assert error["message"] == "This control runs in DEV mode only."
+    assert response.json() == {
+        "error": {
+            "code": "capability_disabled",
+            "message": "This control runs in DEV mode only.",
+            "details": [],
+        }
+    }
 
 
 def test_forwarded_client_input_requires_explicit_trust() -> None:
@@ -298,15 +270,6 @@ def test_server_secret_is_redacted_before_log_formatting() -> None:
     assert REDACTION in exception_record.getMessage()
     assert trace_secret not in exception_record.getMessage()
     assert exception_record.exc_info is None
-
-
-def test_public_proxy_marker_retains_rate_limits_on_a_private_admin_runtime() -> None:
-    """A public request remains metered even when the same process serves private SSH admin."""
-    with TestClient(_guarded_app(enforce_rate_limit=False)) as client:
-        headers = {"x-docreview-public": "true"}
-        assert client.post("/work", headers=headers).status_code == 200
-        assert client.post("/work", headers=headers).status_code == 429
-        assert client.post("/work").status_code == 200
 
 
 def test_public_proxy_marker_retains_cost_limits_without_charging_private_requests() -> None:

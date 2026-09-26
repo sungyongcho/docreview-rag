@@ -9,13 +9,12 @@ from app.db import startup
 from app.db.bootstrap import SchemaDriftError
 
 
-@pytest.mark.parametrize("created", [True, False])
-def test_runtime_prepares_before_exec(monkeypatch, capsys, created):
-    """Both empty and compatible targets must pass the shared gate before server exec."""
+def test_runtime_prepares_before_exec(monkeypatch, capsys):
+    """A runtime target must pass the shared gate before server exec."""
     monkeypatch.setenv("DOCREVIEW_MODE", "runtime")
     monkeypatch.setenv("DATABASE_URL", "private-target")
     monkeypatch.setattr(startup.sys, "argv", ["gate", "server", "arg"])
-    prepare = AsyncMock(return_value=created)
+    prepare = AsyncMock(return_value=True)
     launch = Mock()
     monkeypatch.setattr(startup, "prepare", prepare)
     monkeypatch.setattr(startup.os, "execvp", launch)

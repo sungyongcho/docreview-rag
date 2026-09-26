@@ -92,13 +92,20 @@ def test_chunk_schema_preserves_evidence_context_and_source_coordinates():
 
 
 def test_search_vector_is_computed_per_corpus_language():
-    """Generate the search vector with each corpus language's own configuration."""
+    """Persist a search vector per corpus language whose SQL agrees with the lexical plans."""
     computed = Chunk.__table__.columns.content_tsv.computed
     assert isinstance(computed, Computed)
     expression = str(computed.sqltext)
     assert "to_tsvector('simple', coalesce(lexical_text, index_text))" in expression
     assert "to_tsvector('english', index_text)" in expression
     assert computed.persisted is True
+
+    korean = lexical_plan("ko")
+    english = lexical_plan("en")
+    assert f"to_tsvector('{korean.text_search_config}'" in CONTENT_TSV_SQL
+    assert f"to_tsvector('{english.text_search_config}'" in CONTENT_TSV_SQL
+    assert "language = 'ko'" in CONTENT_TSV_SQL
+    assert LEXICAL_TEXT_CHECK_SQL == "(language = 'ko') = (lexical_text IS NOT NULL)"
 
 
 def test_chunk_identity_and_validation_constraints_are_declared():
@@ -308,17 +315,6 @@ def test_database_models_match_run_and_trace_mapping_contracts():
     } <= checks
     # The unique constraint on (run_id, step) already carries a btree index.
     assert {index.name for index in trace_table.indexes} == set()
-
-
-def test_index_sql_constants_agree_with_the_lexical_plans():
-    """Pin the shared SQL to the plan table so the two dispatches cannot drift."""
-    korean = lexical_plan("ko")
-    english = lexical_plan("en")
-
-    assert f"to_tsvector('{korean.text_search_config}'" in CONTENT_TSV_SQL
-    assert f"to_tsvector('{english.text_search_config}'" in CONTENT_TSV_SQL
-    assert "language = 'ko'" in CONTENT_TSV_SQL
-    assert LEXICAL_TEXT_CHECK_SQL == "(language = 'ko') = (lexical_text IS NOT NULL)"
 
 
 def test_bm25_statistics_are_partitioned_by_corpus_language():

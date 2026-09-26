@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from app.observability.persistence import report_to_records
+from app.observability.stages import record_stages, stage_metadata
 from app.observability.types import Budget
 from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.workflow.runner import run_workflow
@@ -50,8 +51,16 @@ def _request(*, budget=None, provider_budget=None):
     )
 
 
-def test_successful_runner_follows_all_nodes_and_preserves_raw_traces():
-    """Visit every node once and keep each raw provider trace."""
+@pytest.mark.parametrize(
+    "budget",
+    [Budget(), Budget(max_input_tokens=20, max_output_tokens=10)],
+    ids=["unbounded", "exactly_spent"],
+)
+def test_successful_runner_follows_all_nodes_and_preserves_raw_traces(budget):
+    """Visit every node once and keep each raw provider trace.
+
+    A token budget the two calls spend exactly does not discard the finished answer.
+    """
     grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
     check = (
         '{"label":"SUPPORTED","answer":"Revenue increased by ten percent.",'
@@ -62,7 +71,7 @@ def test_successful_runner_follows_all_nodes_and_preserves_raw_traces():
 
     result = asyncio.run(
         run_workflow(
-            _request(),
+            _request(budget=budget),
             retriever=retriever,
             provider=provider,
             clock=SequenceClock(),
@@ -77,7 +86,7 @@ def test_successful_runner_follows_all_nodes_and_preserves_raw_traces():
     assert result.total_requests == 2
     assert result.total_input_tokens == 20
     assert report_of(result)["label"] == "SUPPORTED"
-    assert report_of(result)["citations"][0]["chunk_id"] == 1
+    assert [citation["chunk_id"] for citation in report_of(result)["citations"]] == [1]
     run, traces = report_to_records(result)
     assert run.report == result.report
     assert tuple(trace.llm_output for trace in traces) == (grade, check)
@@ -103,32 +112,6 @@ def test_no_evidence_short_circuits_both_provider_calls():
     assert report_of(result)["label"] == "NOT_IN_DOCS"
     assert report_of(result)["reasons"][0]["code"] == "retrieval_empty"
     assert provider.prompts == ()
-
-
-def test_schema_rejection_stops_closed_with_raw_trace():
-    """Stop closed on a schema rejection while keeping the raw trace."""
-    provider = _provider([_raw("not-json"), _raw("{}", request_id="req-2")])
-    retriever = retriever_returning([_hit()])
-
-    result = asyncio.run(
-        run_workflow(
-            _request(),
-            retriever=retriever,
-            provider=provider,
-            clock=SequenceClock(),
-        )
-    )
-
-    assert result.status == "schema_rejected"
-    assert result.node_path == ("retrieve", "grade")
-    assert result.total_requests == 2
-    assert len(result.steps) == 1
-    assert result.steps[0].retries == 1
-    assert result.steps[0].llm_output == "{}"
-    trace_error = result.steps[0].error
-    assert trace_error is not None
-    assert '"status":"schema_rejected"' in trace_error
-    assert report_of(result)["reason"]["status"] == "schema_rejected"
 
 
 def test_zero_budget_refuses_before_retrieval():
@@ -189,34 +172,53 @@ def test_cumulative_tokens_block_check_before_a_second_provider_call():
     assert len(provider.prompts) == 1
 
 
-def test_provider_allowance_subtracts_prior_tokens_before_check():
-    """Subtract already-spent tokens from the allowance the check receives."""
+@pytest.mark.parametrize(
+    "grade_usage,budget,provider_budget,expected_allowance",
+    [
+        (
+            (900, 400),
+            Budget(
+                max_iterations=6,
+                max_input_tokens=2_000,
+                max_output_tokens=1_000,
+                max_wall_clock_s=120.0,
+            ),
+            _provider_budget(
+                max_output_tokens=500,
+                max_cost_usd="0",
+                token_pricing=_pricing(input_per_million="0", output_per_million="0"),
+            ),
+            (100, 100),
+        ),
+        (
+            (10, 30),
+            Budget(max_output_tokens=50),
+            _provider_budget(max_output_tokens=100),
+            (990, 20),
+        ),
+    ],
+    ids=["provider_remainder", "workflow_clamp"],
+)
+def test_check_allowance_is_the_smaller_remainder_of_the_provider_and_workflow_budgets(
+    grade_usage, budget, provider_budget, expected_allowance
+):
+    """Hand the check what the grade left under the tighter of the two token ceilings."""
     grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
     check = (
         '{"label":"SUPPORTED","answer":"Revenue increased by ten percent.",'
         '"citation_chunk_ids":[1],"reason":"The cited chunk states the increase."}'
     )
+    input_tokens, output_tokens = grade_usage
     provider = _provider(
         [
-            _raw(grade, input_tokens=900, output_tokens=400),
+            _raw(grade, input_tokens=input_tokens, output_tokens=output_tokens),
             _raw(check, input_tokens=1, output_tokens=1, request_id="req-2"),
         ]
-    )
-    provider_budget = _provider_budget(
-        max_output_tokens=500,
-        max_cost_usd="0",
-        token_pricing=_pricing(input_per_million="0", output_per_million="0"),
-    )
-    workflow_budget = Budget(
-        max_iterations=6,
-        max_input_tokens=2_000,
-        max_output_tokens=1_000,
-        max_wall_clock_s=120.0,
     )
 
     result = asyncio.run(
         run_workflow(
-            _request(budget=workflow_budget, provider_budget=provider_budget),
+            _request(budget=budget, provider_budget=provider_budget),
             retriever=retriever_returning([_hit()]),
             provider=provider,
             clock=SequenceClock(),
@@ -224,32 +226,8 @@ def test_provider_allowance_subtracts_prior_tokens_before_check():
     )
 
     assert result.status == "ok"
-    assert provider.budgets[1].max_input_tokens == 100
-    assert provider.budgets[1].max_output_tokens == 100
-
-
-def test_exact_provider_cost_limit_blocks_check_without_a_second_call():
-    """Block the check at the exact cost limit without calling the provider."""
-    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
-    provider = _provider([_raw(grade, input_tokens=100, output_tokens=0)])
-    provider_budget = _provider_budget(
-        max_cost_usd="0.0001",
-        token_pricing=_pricing(input_per_million="1", output_per_million="0"),
-    )
-
-    result = asyncio.run(
-        run_workflow(
-            _request(provider_budget=provider_budget),
-            retriever=retriever_returning([_hit()]),
-            provider=provider,
-            clock=SequenceClock(),
-        )
-    )
-
-    assert result.status == "budget_exceeded"
-    assert result.node_path == ("retrieve", "grade")
-    assert report_of(result)["reason"]["status"] == "budget_exceeded"
-    assert len(provider.prompts) == 1
+    allowance = provider.budgets[1]
+    assert (allowance.max_input_tokens, allowance.max_output_tokens) == expected_allowance
 
 
 def test_fabricated_citation_is_removed_and_supported_answer_is_downgraded():
@@ -326,6 +304,7 @@ def test_irrelevant_grade_reports_not_in_docs_without_check_call():
     assert result.node_path == ("retrieve", "grade", "report")
     assert report_of(result)["label"] == "NOT_IN_DOCS"
     assert report_of(result)["reasons"][-1]["code"] == "relevance_below_threshold"
+    assert report_of(result)["reasons"][-1]["candidate_count"] == 1
     assert len(provider.prompts) == 1
 
 
@@ -357,39 +336,32 @@ def test_runner_reports_each_committed_node_to_the_observer():
     assert all(evidence == 1 for _, evidence, _ in events)
 
 
-def test_spent_token_budget_does_not_discard_a_finished_answer():
-    """Report a finished answer even when the token budget is exactly spent."""
+@pytest.mark.parametrize(
+    "grade_usage,provider_budget,expected_detail",
+    [
+        ((10, 1), _provider_budget(max_input_tokens=10), "input_tokens: used=10 limit=10"),
+        (
+            (100, 0),
+            _provider_budget(
+                max_cost_usd="0.0001",
+                token_pricing=_pricing(input_per_million="1", output_per_million="0"),
+            ),
+            "estimated_cost_usd: used=0.0001 limit=0.0001",
+        ),
+    ],
+    ids=["input_tokens", "estimated_cost"],
+)
+def test_exhausted_provider_limit_refuses_the_check_before_calling(
+    grade_usage, provider_budget, expected_detail
+):
+    """Refuse the check at an exactly exhausted provider limit without a second call."""
     grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
-    check = (
-        '{"label":"SUPPORTED","answer":"Revenue increased by ten percent.",'
-        '"citation_chunk_ids":[1],"reason":"The cited chunk states the increase."}'
-    )
-    budget = Budget(max_input_tokens=20, max_output_tokens=10)
+    input_tokens, output_tokens = grade_usage
+    provider = _provider([_raw(grade, input_tokens=input_tokens, output_tokens=output_tokens)])
 
     result = asyncio.run(
         run_workflow(
-            _request(budget=budget),
-            retriever=retriever_returning([_hit()]),
-            provider=_provider([_raw(grade), _raw(check, request_id="req-2")]),
-            clock=SequenceClock(),
-        )
-    )
-
-    assert result.total_input_tokens == budget.max_input_tokens
-    assert result.status == "ok"
-    assert result.node_path == ("retrieve", "grade", "check", "report")
-    assert report_of(result)["label"] == "SUPPORTED"
-    assert [citation["chunk_id"] for citation in report_of(result)["citations"]] == [1]
-
-
-def test_exhausted_provider_token_limit_refuses_the_check_before_calling():
-    """Refuse the check on the provider token limit without a second call."""
-    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
-    provider = _provider([_raw(grade, input_tokens=10, output_tokens=1)])
-
-    result = asyncio.run(
-        run_workflow(
-            _request(provider_budget=_provider_budget(max_input_tokens=10)),
+            _request(provider_budget=provider_budget),
             retriever=retriever_returning([_hit()]),
             provider=provider,
             clock=SequenceClock(),
@@ -397,46 +369,24 @@ def test_exhausted_provider_token_limit_refuses_the_check_before_calling():
     )
 
     assert result.status == "budget_exceeded"
+    assert result.node_path == ("retrieve", "grade")
+    assert report_of(result)["reason"]["status"] == "budget_exceeded"
     assert report_of(result)["reason"]["node"] == "check"
-    assert report_of(result)["reason"]["details"] == ["input_tokens: used=10 limit=10"]
+    assert report_of(result)["reason"]["details"] == [expected_detail]
     assert len(provider.prompts) == 1
 
 
-def test_check_allowance_is_clamped_by_the_workflow_budget_not_only_the_provider_one():
-    """Hand the check the smaller of the workflow and provider remainders."""
-    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
-    check = (
-        '{"label":"SUPPORTED","answer":"Revenue increased by ten percent.",'
-        '"citation_chunk_ids":[1],"reason":"The cited chunk states the increase."}'
-    )
-    provider = _provider(
-        [
-            _raw(grade, input_tokens=10, output_tokens=30),
-            _raw(check, input_tokens=1, output_tokens=1, request_id="req-2"),
-        ]
-    )
+def test_schema_rejection_stops_closed_with_raw_trace_history_and_observer():
+    """Stop closed on a schema rejection while keeping the raw trace and degradation history.
 
-    result = asyncio.run(
-        run_workflow(
-            _request(
-                budget=Budget(max_output_tokens=50),
-                provider_budget=_provider_budget(max_output_tokens=100),
-            ),
-            retriever=retriever_returning([_hit()]),
-            provider=provider,
-            clock=SequenceClock(),
-        )
-    )
-
-    assert result.status == "ok"
-    assert provider.budgets[1].max_output_tokens == 20
-    assert provider.budgets[1].max_input_tokens == 990
-
-
-def test_every_failure_report_keeps_the_degradation_history():
-    """Keep the reasons that shaped the evidence in a failed run's report."""
+    The observer sees the committed grade node together with its recorded failure.
+    """
     provider = _provider([_raw("not-json"), _raw("{}", request_id="req-2")])
     duplicate = _hit(1)
+    seen = []
+
+    async def observer(node, state):
+        seen.append((node, state.failure is not None))
 
     result = asyncio.run(
         run_workflow(
@@ -444,13 +394,24 @@ def test_every_failure_report_keeps_the_degradation_history():
             retriever=retriever_returning([duplicate, duplicate, _hit(2)]),
             provider=provider,
             clock=SequenceClock(),
+            on_node=observer,
         )
     )
 
     assert result.status == "schema_rejected"
+    assert result.node_path == ("retrieve", "grade")
+    assert result.total_requests == 2
+    assert len(result.steps) == 1
+    assert result.steps[0].retries == 1
+    assert result.steps[0].llm_output == "{}"
+    trace_error = result.steps[0].error
+    assert trace_error is not None
+    assert '"status":"schema_rejected"' in trace_error
     assert report_of(result)["reason"]["code"] == "provider_failure"
+    assert report_of(result)["reason"]["status"] == "schema_rejected"
     codes = [reason["code"] for reason in report_of(result)["reasons"]]
     assert codes == ["duplicate_retrieved_chunks", "provider_failure"]
+    assert seen == [("retrieve", False), ("grade", True)]
 
 
 def test_budget_refusal_before_a_node_keeps_the_degradation_history():
@@ -472,27 +433,6 @@ def test_budget_refusal_before_a_node_keeps_the_degradation_history():
     assert [reason["code"] for reason in report_of(result)["reasons"]] == [
         "duplicate_retrieved_chunks"
     ]
-
-
-def test_observer_sees_a_node_that_committed_a_provider_failure():
-    """Report a committed node to the observer even when it records a failure."""
-    seen = []
-
-    async def observer(node, state):
-        seen.append((node, state.failure is not None))
-
-    result = asyncio.run(
-        run_workflow(
-            _request(),
-            retriever=retriever_returning([_hit()]),
-            provider=_provider([_raw("not-json"), _raw("{}", request_id="req-2")]),
-            clock=SequenceClock(),
-            on_node=observer,
-        )
-    )
-
-    assert result.node_path == ("retrieve", "grade")
-    assert seen == [("retrieve", False), ("grade", True)]
 
 
 def test_a_retriever_breaking_the_hit_contract_raises_instead_of_reporting_an_outage():
@@ -523,8 +463,6 @@ def test_a_retriever_breaking_the_hit_contract_raises_instead_of_reporting_an_ou
 
 def test_workflow_emits_started_and_completed_stages_around_real_node_work() -> None:
     """Observe actual node boundaries and all model calls on a deterministic full run."""
-    from app.observability.stages import record_stages, stage_metadata
-
     events = []
 
     async def observe(event):
@@ -582,20 +520,32 @@ def test_grade_output_repair_limit_preserves_its_actual_source():
 
 
 def test_grade_is_refused_before_the_call_when_its_prompt_exceeds_the_provider_allowance():
-    """A grade prompt projected above the provider allowance is refused without a request."""
+    """A grade prompt projected above the provider allowance is refused without a request.
+
+    The refusal keeps its projection in the run's model calls while counting zero requests.
+    """
     grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
     provider = _provider([_raw(grade, input_tokens=10, output_tokens=1)], projected=2_521)
 
-    result = asyncio.run(
-        run_workflow(
-            _request(provider_budget=_provider_budget(max_input_tokens=2_000)),
-            retriever=retriever_returning([_hit()]),
-            provider=provider,
-            clock=SequenceClock(),
-        )
-    )
+    async def observe(event):
+        """Discard stage events; only the recorded model calls matter here."""
+        del event
+
+    async def exercise():
+        """Run the refused grade call under the stage recorder."""
+        with record_stages(observe):
+            result = await run_workflow(
+                _request(provider_budget=_provider_budget(max_input_tokens=2_000)),
+                retriever=retriever_returning([_hit()]),
+                provider=provider,
+                clock=SequenceClock(),
+            )
+            return result, stage_metadata()
+
+    result, metadata = asyncio.run(exercise())
 
     assert result.status == "budget_exceeded"
+    assert result.node_path == ("retrieve", "grade")
     reason = report_of(result)["reason"]
     assert reason["node"] == "grade"
     assert reason["budget"]["projected_input_tokens"] == 2_521
@@ -604,7 +554,21 @@ def test_grade_is_refused_before_the_call_when_its_prompt_exceeds_the_provider_a
     assert reason["details"][0] == "input_tokens: used=0 limit=2000"
     assert "refused before the call" in reason["details"][1]
     assert len(provider.prompts) == 0
-    assert result.node_path == ("retrieve", "grade")
+    assert result.total_requests == 0
+    assert result.total_input_tokens == 0
+    assert result.steps[-1].node == "grade"
+    assert result.steps[-1].requests == 0
+    assert result.steps[-1].retries == 0
+    assert result.steps[-1].input_tokens == 0
+    assert result.steps[-1].llm_output == ""
+    assert result.steps[-1].error is not None
+    calls = metadata["model_calls"]
+    assert isinstance(calls, list) and len(calls) == 1
+    call = calls[0]
+    assert isinstance(call, dict)
+    assert call["attempts"] == 0
+    assert call["projected_input_tokens"] == 2_521
+    assert call["input_tokens"] == 0
 
 
 def test_check_is_refused_before_the_call_when_spent_plus_projected_exceeds_the_run_limit():
@@ -632,44 +596,3 @@ def test_check_is_refused_before_the_call_when_spent_plus_projected_exceeds_the_
     assert reason["attempts"] == 0
     assert len(provider.prompts) == 1
     assert result.total_requests == 1
-
-
-def test_a_projected_refusal_is_recorded_without_a_sent_request():
-    """The refusal keeps its projection in the run's model calls while counting zero requests."""
-    from app.observability.stages import record_stages, stage_metadata
-
-    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
-    provider = _provider([_raw(grade, input_tokens=10, output_tokens=1)], projected=2_521)
-
-    async def observe(event):
-        """Discard stage events; only the recorded model calls matter here."""
-        del event
-
-    async def exercise():
-        """Run the refused grade call under the stage recorder."""
-        with record_stages(observe):
-            result = await run_workflow(
-                _request(provider_budget=_provider_budget(max_input_tokens=2_000)),
-                retriever=retriever_returning([_hit()]),
-                provider=provider,
-                clock=SequenceClock(),
-            )
-            return result, stage_metadata()
-
-    result, metadata = asyncio.run(exercise())
-
-    assert result.total_requests == 0
-    assert result.total_input_tokens == 0
-    assert result.steps[-1].node == "grade"
-    assert result.steps[-1].requests == 0
-    assert result.steps[-1].retries == 0
-    assert result.steps[-1].input_tokens == 0
-    assert result.steps[-1].llm_output == ""
-    assert result.steps[-1].error is not None
-    calls = metadata["model_calls"]
-    assert isinstance(calls, list) and len(calls) == 1
-    call = calls[0]
-    assert isinstance(call, dict)
-    assert call["attempts"] == 0
-    assert call["projected_input_tokens"] == 2_521
-    assert call["input_tokens"] == 0

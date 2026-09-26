@@ -146,19 +146,16 @@ def test_nonlive_public_retrieval_cannot_bypass_custom_policy_guard(tmp_path) ->
 
 
 @pytest.mark.parametrize(
-    "field,value", [("max_context_chars", 15000), ("budget", {"max_iterations": 10})]
+    "action,origin",
+    [
+        ("disconnect", "https://unrelated.example"),
+        ("disconnect", "null"),
+        ("disconnect", "http://localhost:9001"),
+        ("servers", "null"),
+        ("select", "null"),
+        ("diagnostics", "null"),
+    ],
 )
-def test_retired_top_level_review_limits_are_rejected_as_unknown_fields(tmp_path, field, value):
-    """Run and evidence limits live in the session profile; top-level copies fail validation."""
-    app, _ = connection_app(tmp_path, "prod", "readonly")
-    with TestClient(app) as client:
-        response = client.post("/review", json={"query": "hello", field: value})
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "request_validation_failed"
-
-
-@pytest.mark.parametrize("action", ["disconnect", "servers", "select", "diagnostics"])
-@pytest.mark.parametrize("origin", ["https://unrelated.example", "null", "http://localhost:9001"])
 def test_browser_origin_blocks_every_local_connection_mutation(tmp_path, action, origin) -> None:
     """Simple cross-origin requests are rejected before changing active or saved settings."""
     app, manager = connection_app(tmp_path, admin_cors_origin="http://127.0.0.1:9000")
@@ -187,28 +184,22 @@ def test_browser_origin_blocks_every_local_connection_mutation(tmp_path, action,
     assert manager.path.read_bytes() == persisted
 
 
-@pytest.mark.parametrize("origin", ["http://localhost:9000", "http://127.0.0.1:9000"])
-def test_configured_loopback_aliases_work_through_next_rewrite(tmp_path, origin) -> None:
+def test_configured_loopback_aliases_work_through_next_rewrite(tmp_path) -> None:
     """The configured browser port works when Next sends the backend service Host."""
     app, _ = connection_app(tmp_path, admin_cors_origin="http://127.0.0.1:9000")
     with TestClient(app, base_url="http://app:8000") as client:
         response = client.post(
             "/admin/local-llm/disconnect",
-            headers={
-                "origin": origin,
-                "x-forwarded-host": origin.removeprefix("http://"),
-            },
+            headers={"origin": "http://localhost:9000", "x-forwarded-host": "localhost:9000"},
         )
     assert response.status_code == 200
     assert response.json()["source"] == "disabled"
 
 
-@pytest.mark.parametrize("base_url", ["http://localhost:8000", "https://127.0.0.1:8443"])
-def test_actual_loopback_same_origin_does_not_need_configured_proxy_origin(
-    tmp_path, base_url
-) -> None:
-    """Direct local browser and SSH-tunneled web requests may match the actual request origin."""
+def test_actual_loopback_same_origin_does_not_need_configured_proxy_origin(tmp_path) -> None:
+    """An SSH-tunneled web request may match the actual loopback request origin."""
     app, _ = connection_app(tmp_path)
+    base_url = "https://127.0.0.1:8443"
     with TestClient(app, base_url=base_url) as client:
         response = client.post("/admin/local-llm/disconnect", headers={"origin": base_url})
     assert response.status_code == 200

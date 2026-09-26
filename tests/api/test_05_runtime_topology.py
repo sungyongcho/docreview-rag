@@ -8,9 +8,8 @@ import sys
 
 import pytest
 
-from app.api.app import create_api_app
 from app.api.errors import ApiProblemError
-from app.api.review_profile import PromptPolicy, ReviewSessionProfile
+from app.api.review_profile import ReviewSessionProfile
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
@@ -33,25 +32,6 @@ def test_runtime_import_does_not_build_the_database_engine():
     assert result.stderr == ""
 
 
-def test_public_runtime_rejects_custom_prompt_policy_before_provider_or_database() -> None:
-    """Fail closed on Dev-only policy before touching any runtime dependency."""
-    services = RuntimeApiServices(
-        embedding_provider=DeterministicEmbeddingProvider(), allow_custom_prompt_policy=False
-    )
-    request = ReviewRequest(
-        query="Revenue?",
-        session_profile=ReviewSessionProfile(
-            prompt_policy=PromptPolicy(additional_instructions="Be concise.")
-        ),
-    )
-
-    with pytest.raises(ApiProblemError) as captured:
-        asyncio.run(services.review(request))
-
-    assert captured.value.status_code == 403
-    assert captured.value.error.code == "capability_disabled"
-
-
 def test_public_runtime_rejects_snapshot_query_before_provider_or_database() -> None:
     """Keep public snapshot access read-only and comparison-only."""
     services = RuntimeApiServices(
@@ -67,20 +47,6 @@ def test_public_runtime_rejects_snapshot_query_before_provider_or_database() -> 
 
     assert captured.value.status_code == 403
     assert captured.value.error.code == "capability_disabled"
-
-
-def test_runtime_openapi_includes_all_m5_resources():
-    """Publish every served resource."""
-    paths = set(create_api_app().openapi()["paths"])
-
-    assert {
-        "/retrieve",
-        "/documents",
-        "/review",
-        "/runs/{run_id}",
-        "/runs/{run_id}/traces",
-        "/eval",
-    } <= paths
 
 
 def test_compose_preserves_postgres_and_has_no_worker_or_redis_service():

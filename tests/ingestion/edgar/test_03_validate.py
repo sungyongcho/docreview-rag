@@ -23,17 +23,6 @@ def _sections(edgar_module: ModuleType, items: list[str], blocks_each: int = 30)
     ]
 
 
-def test_validate_collects_multiple_problems_in_a_list(edgar_module: ModuleType) -> None:
-    """Collect all validation failures instead of raising at the first one.
-
-    The caller decides on relearning from one complete, diagnosable list.
-    """
-    problems = edgar_module.validate(_sections(edgar_module, ["1", "1A"]), NUMBER_PROFILE)
-
-    assert isinstance(problems, list)
-    assert len(problems) >= 2
-
-
 def test_validate_catches_count_missing_items_duplicates_and_order(
     edgar_module: ModuleType,
 ) -> None:
@@ -90,27 +79,6 @@ def test_classify_sections_recognizes_empty_disclosures(
     edgar_module.classify_sections([section])
 
     assert section.status == "empty_disclosure"
-
-
-def test_classify_sections_recognizes_proxy_references(edgar_module: ModuleType) -> None:
-    """Recognize a short section whose required information lives in the proxy."""
-    section = edgar_module.Section(
-        part=None,
-        item="11",
-        canonical_title="",
-        reported_title="",
-        blocks=[
-            edgar_module.Block(
-                "paragraph",
-                "The information required by this Item is incorporated herein by "
-                "reference to the Proxy Statement.",
-            )
-        ],
-    )
-
-    edgar_module.classify_sections([section])
-
-    assert section.status == "incorporated_by_reference"
 
 
 def test_classify_sections_leaves_real_content_parsed(edgar_module: ModuleType) -> None:

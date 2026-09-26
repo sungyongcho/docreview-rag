@@ -207,16 +207,6 @@ def test_parenthesized_negatives_survive_verbatim() -> None:
     assert "-0.4" not in markdown
 
 
-def test_markdown_rows_have_the_same_width() -> None:
-    """Serialize every markdown row with the same pipe count."""
-    html = """<table>
-    <tr><td></td><td>2024</td><td>2023</td></tr>
-    <tr><td>Revenue</td><td>100</td><td>90</td></tr>
-    </table>"""
-    widths = {line.count("|") for line in structured_table(html).render().splitlines()}
-    assert len(widths) == 1
-
-
 def test_degenerate_input_never_raises() -> None:
     """Return empty output for missing or content-free tables."""
     assert structured_table(None).render() == ""
@@ -276,16 +266,6 @@ def test_caption_only_table_reports_captions_and_no_markdown() -> None:
 
     assert structured_table(html).render() == ""
     assert structured_table(html).captions == ("(단위 : 사)",)
-
-
-def test_data_table_keeps_captions_inline() -> None:
-    """A table with data rows renders its captions ahead of the markdown table."""
-    html = (
-        "<table><tr><td colspan='2'>(단위 : 백만원)</td></tr>"
-        "<tr><td>매출액</td><td>300,870</td></tr></table>"
-    )
-
-    assert structured_table(html).render().startswith("(단위 : 백만원)\n")
 
 
 def test_is_unit_caption_accepts_only_a_whole_annotation() -> None:

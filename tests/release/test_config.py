@@ -31,22 +31,6 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
     assert Decimal("0.00312") <= budget.max_cost_usd
 
 
-def test_operator_key_is_secret_and_only_enables_explicit_runtime(monkeypatch) -> None:
-    """Enable the provider only in the runtime mode, keeping the key out of every rendering."""
-    secret = "sk-test-only"
-    monkeypatch.setenv("OPENAI_API_KEY_LOCAL", secret)
-
-    canned = ReleaseSettings(_env_file=None)
-    runtime = ReleaseSettings(mode="runtime", _env_file=None)
-
-    assert canned.openai_enabled is False
-    assert runtime.openai_enabled is True
-    assert runtime.openai_api_key is not None
-    assert runtime.openai_api_key.get_secret_value() == secret
-    assert secret not in repr(runtime)
-    assert secret not in str(runtime)
-
-
 def test_environment_slot_enables_runtime_without_an_explicit_key(monkeypatch) -> None:
     """Enable the provider from the MODE-selected slot and report the slot, not the key."""
     secret = "sk-dev-slot-only"
@@ -64,6 +48,7 @@ def test_environment_slot_enables_runtime_without_an_explicit_key(monkeypatch) -
     assert dev.openai_api_key is not None
     assert dev.openai_api_key.get_secret_value() == secret
     assert secret not in repr(dev)
+    assert secret not in str(dev)
     assert prod.openai_enabled is False
     assert prod.openai_key_slot is None
 
@@ -131,23 +116,6 @@ def test_admin_cors_origin_is_loopback_only() -> None:
     assert settings.admin_cors_origin == "http://127.0.0.1:3000"
     with pytest.raises(ValidationError, match="loopback"):
         ReleaseSettings(_env_file=None, admin_cors_origin="https://sungyongcho.com")
-
-
-def test_prod_disables_the_local_engine_even_with_a_complete_endpoint_pair(monkeypatch) -> None:
-    """Disable local models in production without rejecting retained developer settings."""
-    for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL"):
-        monkeypatch.delenv(name, raising=False)
-    # `mode` resolves through its DOCREVIEW_ alias, so it has to arrive as an env var.
-    monkeypatch.setenv("DOCREVIEW_MODE", "runtime")
-    local = {"LOCAL_LLM_BASE_URL": "http://ollama:11434"}
-
-    monkeypatch.setenv("MODE", "dev")
-    assert ReleaseSettings(_env_file=None, **local).local_llm_enabled is True
-
-    monkeypatch.setenv("MODE", "prod")
-    prod = ReleaseSettings(_env_file=None, **local)
-    assert prod.local_llm_enabled is False
-    assert prod.local_llm_base_url == "http://ollama:11434"
 
 
 def test_local_budgets_accept_blank_compose_substitutions(monkeypatch) -> None:

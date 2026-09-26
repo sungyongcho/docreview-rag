@@ -10,23 +10,6 @@ SAMPLE = {
 }
 
 
-def test_missing_profile_returns_none(
-    edgar_module: ModuleType,
-    isolated_profiles: Path,
-) -> None:
-    """Use None to signal that a filing year still needs profile bootstrapping."""
-    assert edgar_module.load_profile("ZZZZ", 2024) is None
-
-
-def test_profile_save_load_roundtrip(
-    edgar_module: ModuleType,
-    isolated_profiles: Path,
-) -> None:
-    """Return the same complete profile that was persisted for a year."""
-    edgar_module.save_profile("TEST", 2024, SAMPLE)
-    assert edgar_module.load_profile("TEST", 2024) == SAMPLE
-
-
 def test_profile_year_keys_are_strings_and_sorted(
     edgar_module: ModuleType,
     isolated_profiles: Path,

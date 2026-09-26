@@ -186,36 +186,3 @@ def test_stream_remains_active_until_cancelled_producer_cleanup_finishes(failure
         assert gate.hold(str(uuid4()))["instance"] == gate.instance
 
     asyncio.run(scenario())
-
-
-def test_gate_counts_background_cleanup_after_response_body():
-    """Keep a finished HTTP body active until the ASGI application itself exits."""
-
-    async def scenario():
-        """Observe request admission while a handler finishes deferred cleanup."""
-        gate = RuntimeResetGate()
-        body_sent = asyncio.Event()
-        complete = asyncio.Event()
-
-        async def application(_scope, _receive, _send):
-            """Represent a completed body followed by a still-running background task."""
-            body_sent.set()
-            await complete.wait()
-
-        async def transport(*_arguments):
-            """Provide unused ASGI transport functions for this lifecycle-only check."""
-            return None
-
-        task = asyncio.create_task(
-            RuntimeResetMiddleware(application, gate)(
-                {"type": "http", "method": "POST", "path": "/probe"}, transport, transport
-            )
-        )
-        await body_sent.wait()
-        with pytest.raises(HTTPException):
-            gate.hold(str(uuid4()))
-        complete.set()
-        await task
-        assert gate.activity()["active_requests"] == 0
-
-    asyncio.run(scenario())

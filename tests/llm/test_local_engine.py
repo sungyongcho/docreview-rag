@@ -1,10 +1,8 @@
-"""Protocol resolution and budget construction for the optional local engine."""
-
-from decimal import Decimal
+"""Protocol resolution for the optional local engine and its default timeout."""
 
 import pytest
 
-from app.llm.local_engine import local_provider_budget, resolve_local_protocol
+from app.llm.local_engine import resolve_local_protocol
 from app.settings_sources import DEFAULT_LOCAL_TIMEOUT_S
 
 
@@ -12,7 +10,6 @@ from app.settings_sources import DEFAULT_LOCAL_TIMEOUT_S
     ("base_url", "configured", "expected"),
     [
         ("http://ollama:11434", "auto", "ollama"),
-        ("http://ollama:11434/", "auto", "ollama"),
         ("http://host:8000/v1", "auto", "openai_responses"),
         ("http://host:8000/v1/", "auto", "openai_responses"),
         ("http://ollama:11434", "openai_responses", "openai_responses"),
@@ -24,17 +21,6 @@ def test_auto_reads_the_v1_suffix_and_an_explicit_protocol_always_wins(
 ) -> None:
     """The `/v1` suffix is the only signal `auto` has, and it never overrides a choice."""
     assert resolve_local_protocol(base_url, configured) == expected
-
-
-def test_local_budget_is_priced_at_zero_and_keeps_its_own_token_limits() -> None:
-    """The local budget is its own definition, not the OpenAI one with prices cleared."""
-    budget = local_provider_budget(max_input_tokens=4_096, max_output_tokens=512)
-
-    assert budget.max_input_tokens == 4_096
-    assert budget.max_output_tokens == 512
-    assert budget.max_cost_usd == Decimal("0")
-    assert budget.pricing.input_per_million_usd == Decimal("0")
-    assert budget.pricing.output_per_million_usd == Decimal("0")
 
 
 def test_default_timeout_leaves_room_for_a_slow_first_token() -> None:

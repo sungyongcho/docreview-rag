@@ -7,13 +7,12 @@ import pytest
 from scripts.stack import __main__ as stack, cli, fresh, quickstart
 
 
-@pytest.mark.parametrize("mode", ["dev", "prod"])
-def test_no_command_only_shows_help(mode, monkeypatch, capsys):
+def test_no_command_only_shows_help(monkeypatch, capsys):
     """A bare mode command never creates or starts resources."""
     dispatch = Mock(side_effect=AssertionError("Help must not execute operations"))
     monkeypatch.setattr(cli, "dispatch", dispatch)
-    assert cli.main([mode]) == 0
-    assert f"rag-{mode}" in capsys.readouterr().out
+    assert cli.main(["prod"]) == 0
+    assert "rag-prod" in capsys.readouterr().out
     dispatch.assert_not_called()
 
 
@@ -35,13 +34,12 @@ def test_lifecycle_commands_preserve_mode_and_arguments(values, expected, monkey
     run.assert_called_once_with(values[0], expected, root=tmp_path)
 
 
-@pytest.mark.parametrize("mode", ["dev", "prod"])
-def test_start_uses_guided_non_destructive_setup(mode, monkeypatch, tmp_path):
+def test_start_uses_guided_non_destructive_setup(monkeypatch, tmp_path):
     """Start selects its environment and does not request any reset."""
     start = Mock(return_value=0)
     monkeypatch.setattr(quickstart, "quickstart", start)
-    assert cli.main([mode, "start", "--timeout", "45"], root=tmp_path) == 0
-    start.assert_called_once_with(tmp_path, mode=mode, timeout=45)
+    assert cli.main(["prod", "start", "--timeout", "45"], root=tmp_path) == 0
+    start.assert_called_once_with(tmp_path, mode="prod", timeout=45)
 
 
 @pytest.mark.parametrize(

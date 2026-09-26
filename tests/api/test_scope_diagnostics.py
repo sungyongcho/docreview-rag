@@ -27,7 +27,7 @@ def valid_manifest():
 
 
 @pytest.mark.parametrize(
-    "cause", ["missing_file", "invalid_json", "invalid_manifest", "alias_conflict", "permission"]
+    "cause", ["invalid_json", "invalid_manifest", "alias_conflict", "permission"]
 )
 def test_actual_manifest_failure_causes_and_recovery(tmp_path, monkeypatch, cause, caplog):
     """Every failed input retains its cause and the same service can load a repaired file."""

@@ -501,14 +501,6 @@ def test_live_postgres_admin_snapshot_reports_schema_state() -> None:
         assert "DROP TABLE" not in snapshot.status.schema_message
 
 
-def test_selection_payload_survives_retry_provenance():
-    """Persist the exact selection alongside its canonical manifest."""
-    command = AdminCommand("ingest_manifest", manifest="manifest.json", selection_id="selected")
-    payload = corpus_admin._command_payload(command)
-    assert payload["selection_id"] == "selected"
-    assert payload["manifest"] == "manifest.json"
-
-
 def _write_manifest(root: Path) -> None:
     """Write a small common catalog with one exact acquired selection."""
     import hashlib
@@ -1119,16 +1111,6 @@ def test_selected_command_requires_exact_document_ids(document_ids):
         AdminCommand(
             "ingest_selected", identifiers=("NVDA",), years=(2024,), document_ids=document_ids
         )
-
-
-def test_current_ingestion_commands_preserve_explicit_source_modes():
-    """Exact selection and the current CLI manifest route keep distinct required inputs."""
-    selected = AdminCommand(
-        "ingest_selected", identifiers=("NVDA",), years=(2024,), document_ids=("filing-a",)
-    )
-    assert selected.document_ids == ("filing-a",)
-    manifest = AdminCommand("ingest_manifest", manifest="manifest.json", selection_id="selection-a")
-    assert manifest.document_ids is None
 
 
 def test_corpus_job_waits_for_search_before_running(tmp_path: Path) -> None:

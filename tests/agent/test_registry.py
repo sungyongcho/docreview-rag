@@ -50,24 +50,19 @@ def test_registry_rejects_duplicates_and_names_the_known_tools():
     assert registry.names == ("echo_text",)
 
 
-def test_specs_publish_strict_closed_schemas():
-    """Publish each tool as a strict function schema that admits no extra field."""
+def test_specs_and_manual_publish_the_registered_tool():
+    """Publish each tool as a strict function schema that admits no extra field, and name
+    it with its arguments and description in the manual."""
     registry = ToolRegistry()
     registry.register(echo_tool())
 
     (spec,) = registry.specs()
+    manual = registry.manual()
+
     assert spec["type"] == "function"
     assert spec["name"] == "echo_text"
     assert spec["strict"] is True
     assert spec["parameters"]["additionalProperties"] is False
     assert spec["parameters"]["required"] == ["text"]
-
-
-def test_manual_names_every_tool_and_argument():
-    """Name every tool with its arguments and description in the manual."""
-    registry = ToolRegistry()
-    registry.register(echo_tool())
-
-    manual = registry.manual()
     assert "echo_text(text)" in manual
     assert "Echo one nonblank text argument." in manual

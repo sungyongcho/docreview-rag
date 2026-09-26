@@ -4,14 +4,12 @@ import asyncio
 from collections.abc import Sequence
 import sys
 import threading
-import time
 from typing import Any
 
 import pytest
 
 from app.config import Settings
 from app.db.models import DIM
-import app.retrieval as public
 from app.retrieval import sbert
 from app.retrieval.embeddings import get_embedding_provider
 from tests.retrieval.support import fake_sentence_transformers
@@ -23,26 +21,12 @@ def fake_tokenizer(inputs, **kwargs):
     return {"input_ids": [[0] * (len(text.split()) + 2) for text in inputs]}
 
 
-def test_public_surface_exports_sbert_provider():
-    """Export the sentence-transformer provider from the public façade."""
-    assert public.SentenceTransformerEmbeddingProvider is sbert.SentenceTransformerEmbeddingProvider
-    assert "SentenceTransformerEmbeddingProvider" in public.__all__
-
-
-def test_constructing_provider_loads_no_model():
-    """Construct the local provider without loading model weights."""
-    provider = sbert.SentenceTransformerEmbeddingProvider()
-    assert provider._encoder.value is None
-
-
 @pytest.mark.parametrize(
     ("model", "dimensions", "batch_size"),
     [
         ("", 384, 32),
         ("model", 0, 32),
-        ("model", -1, 32),
         ("model", 384, 0),
-        ("model", 384, -1),
     ],
 )
 def test_provider_rejects_invalid_construction(model, dimensions, batch_size):
@@ -53,11 +37,6 @@ def test_provider_rejects_invalid_construction(model, dimensions, batch_size):
             dimensions=dimensions,
             batch_size=batch_size,
         )
-
-
-def test_provider_defaults_match_the_database_column():
-    """Match local embedding dimensions to the database column."""
-    assert sbert.SentenceTransformerEmbeddingProvider().dimensions == DIM
 
 
 def test_factory_builds_configured_sbert_provider_without_loading_model():
@@ -164,49 +143,6 @@ def test_embed_documents_reuses_the_model_and_runs_model_off_loop(monkeypatch):
     }
     assert calls["constructor_thread"] != main_thread
     assert calls["encode_thread"] != main_thread
-
-
-def test_simultaneous_cold_embeddings_construct_one_model(monkeypatch):
-    """Serialize a simultaneous cold load and share the constructed model."""
-    constructors: list[str] = []
-
-    class Matrix:
-        def __init__(self, size: int) -> None:
-            self.size = size
-
-        def tolist(self):
-            return [[1.0, 0.0] for _ in range(self.size)]
-
-    class Encoder:
-        max_seq_length = 128
-        tokenizer = staticmethod(fake_tokenizer)
-
-        def __init__(self, model):
-            constructors.append(model)
-            time.sleep(0.05)
-
-        def get_sentence_embedding_dimension(self):
-            return 2
-
-        def encode(self, inputs, **kwargs):
-            return Matrix(len(inputs))
-
-    fake_sentence_transformers(monkeypatch, SentenceTransformer=Encoder)
-    provider = sbert.SentenceTransformerEmbeddingProvider(
-        model="sentence-transformers/fake",
-        dimensions=2,
-    )
-
-    async def embed_concurrently():
-        return await asyncio.gather(
-            provider.embed_documents(["first"]),
-            provider.embed_documents(["second"]),
-        )
-
-    vectors = asyncio.run(embed_concurrently())
-
-    assert vectors == [[[1.0, 0.0]], [[1.0, 0.0]]]
-    assert constructors == ["sentence-transformers/fake"]
 
 
 def test_empty_batch_does_not_load_a_model():

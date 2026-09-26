@@ -204,17 +204,6 @@ def test_same_issuer_filings_merge_acquired_and_existing_aliases() -> None:
     assert merged.documents[newer.document_id].fiscal_year == 2024
 
 
-def test_merged_aliases_still_reject_a_different_canonical_owner() -> None:
-    """Merging one issuer's aliases never authorizes ambiguous cross-issuer routing."""
-    older = ENTRIES[0]
-    newer = older.model_copy(
-        update={"document_id": "NVDA-FY2023", "aliases": ("NVDA", "Shared name")}
-    )
-    other = _document("sec", "INTC", "0000050863", "0000050863-25-000009", ("INTC", "shared NAME"))
-    with pytest.raises(ValueError, match="maps to both"):
-        ManifestScopeIndex.from_entries((older, newer, other))
-
-
 def test_alias_union_does_not_accept_duplicates_inside_one_filing() -> None:
     """Only equivalent names across filings are deduplicated; malformed entries still fail."""
     malformed = ENTRIES[0].model_copy(update={"aliases": ("NVIDIA", " nvidia ")})

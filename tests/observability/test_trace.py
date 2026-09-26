@@ -25,50 +25,51 @@ def provider_metadata(**overrides):
     return ProviderMetadata(**values)
 
 
-def test_provider_refusal_mapping_keeps_trace_metadata_and_typed_reason():
-    """Map a provider refusal into a trace without losing its typed reason."""
-    result = ProviderResult[AnswerDecision](
-        status="schema_rejected",
-        parsed=None,
-        refusal=SchemaRejected(errors=("label is required",)),
-        metadata=provider_metadata(),
+def test_provider_results_map_to_traces_with_canonical_refusal_json_or_no_error():
+    """Copy provider metadata into the trace, with canonical refusal JSON or no error."""
+    refused = step_trace_from_provider_result(
+        ProviderResult[AnswerDecision](
+            status="schema_rejected",
+            parsed=None,
+            refusal=SchemaRejected(errors=("label is required",)),
+            metadata=provider_metadata(),
+        ),
+        step=1,
+        node="grade",
     )
 
-    trace = step_trace_from_provider_result(result, step=1, node="grade")
-
-    assert trace.llm_output == "not json"
-    assert trace.input_tokens == 11
-    assert trace.output_tokens == 3
-    assert trace.retries == 1
+    assert refused.llm_output == "not json"
+    assert refused.input_tokens == 11
+    assert refused.output_tokens == 3
+    assert refused.retries == 1
     # The provider already charged this against its budget; the trace copies it.
-    assert trace.estimated_cost_usd == Decimal("0.0000092")
-    assert trace.error == (
+    assert refused.estimated_cost_usd == Decimal("0.0000092")
+    assert refused.error == (
         '{"refusal":{"attempts":2,"errors":["label is required"],'
         '"status":"schema_rejected"},"status":"schema_rejected"}'
     )
 
-
-def test_successful_provider_result_records_no_error():
-    """Leave the trace error empty when the provider returned parsed output."""
-    result = ProviderResult[AnswerDecision](
-        status="ok",
-        parsed=AnswerDecision(
-            label="NOT_IN_DOCS",
-            answer="NOT_IN_DOCS",
-            citation_chunk_ids=(),
-            reason="The filing does not discuss it.",
+    succeeded = step_trace_from_provider_result(
+        ProviderResult[AnswerDecision](
+            status="ok",
+            parsed=AnswerDecision(
+                label="NOT_IN_DOCS",
+                answer="NOT_IN_DOCS",
+                citation_chunk_ids=(),
+                reason="The filing does not discuss it.",
+            ),
+            refusal=None,
+            metadata=provider_metadata(
+                retries=0,
+                request_ids=("req_1",),
+                llm_output="{}",
+                raw_outputs=("{}",),
+            ),
         ),
-        refusal=None,
-        metadata=provider_metadata(
-            retries=0,
-            request_ids=("req_1",),
-            llm_output="{}",
-            raw_outputs=("{}",),
-        ),
+        step=2,
+        node="check",
     )
 
-    trace = step_trace_from_provider_result(result, step=2, node="check")
-
-    assert trace.error is None
-    assert trace.step == 2
-    assert trace.node == "check"
+    assert succeeded.error is None
+    assert succeeded.step == 2
+    assert succeeded.node == "check"

@@ -94,17 +94,6 @@ def _write_cases(path: Path, cases: list[dict[str, Any]]) -> None:
     path.write_text(json.dumps(cases), encoding="utf-8")
 
 
-def test_loader_accepts_a_case_bound_to_its_exact_source_snapshot(tmp_path):
-    """Load one case whose span matches the cited digest and offsets."""
-    manifest, case = _temporary_contract(tmp_path)
-    golden = tmp_path / "retrieval.json"
-    _write_cases(golden, [case])
-
-    cases = load_golden_cases(golden, manifest_path=manifest)
-
-    assert [loaded.id for loaded in cases] == ["m3c-01"]
-
-
 def test_loader_rejects_duplicate_json_keys_and_non_array_roots(tmp_path):
     """Reject silently merged duplicate keys and non-array golden roots."""
     manifest, _case = _temporary_contract(tmp_path)

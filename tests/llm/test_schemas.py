@@ -50,8 +50,8 @@ def supported_decision():
     )
 
 
-def test_prompt_is_strict_frozen_and_forbids_unknown_fields():
-    """Freeze a prompt and refuse any field the schema does not declare."""
+def test_prompt_is_strict_frozen_nonblank_and_forbids_unknown_fields():
+    """Freeze a prompt, reject a blank half and refuse any field the schema does not declare."""
     prompt = Prompt(system="Return structured evidence.", user="What changed?")
 
     with pytest.raises(ValidationError):
@@ -60,16 +60,10 @@ def test_prompt_is_strict_frozen_and_forbids_unknown_fields():
         Prompt(system="Return structured evidence.", user="What changed?", extra=True)
     with pytest.raises(ValidationError):
         prompt.user = "mutated"
-
-
-@pytest.mark.parametrize("field", ["system", "user"])
-def test_prompt_rejects_whitespace_only_text(field):
-    """Reject a prompt whose system or user text is only whitespace."""
-    values = {"system": "system", "user": "user"}
-    values[field] = "   "
-
     with pytest.raises(ValidationError):
-        Prompt(**values)
+        Prompt(system="   ", user="user")
+    with pytest.raises(ValidationError):
+        Prompt(system="system", user="   ")
 
 
 def test_token_pricing_uses_exact_decimal_arithmetic():

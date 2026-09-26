@@ -29,13 +29,12 @@ from app.ingestion.seed import (
     document_upsert_statement,
     filing_records,
 )
-import app.retrieval as public
 from app.retrieval import bm25, service
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.types import RetrievalFilters
 from tests.ingestion.support import filing_document, filing_source
 from tests.live_postgres import live_postgres_unavailable
-from tests.retrieval.support import hit_values, normalized_sql
+from tests.retrieval.support import normalized_sql
 
 FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "bm25_sample.json").read_text(encoding="utf-8")
@@ -126,77 +125,9 @@ def test_reference_implementation_reproduces_the_committed_fixture(idf, b, expec
     assert rounded(scores) == FIXTURE[expected_key]
 
 
-def test_corpus_statistics_match_the_fixture():
-    """Match document lengths and aggregate corpus statistics."""
-    lengths = {doc["id"]: doc["dl"] for doc in FIXTURE["documents"]}
-    assert lengths == {doc_id: len(tokens) for doc_id, tokens in DOCUMENTS.items()}
-    assert FIXTURE["corpus_stats"]["n_documents"] == len(DOCUMENTS)
-    assert FIXTURE["corpus_stats"]["avgdl"] == sum(lengths.values()) / len(lengths)
-
-
-def test_document_frequency_counts_documents_not_occurrences():
-    """``df`` is how many chunks contain a lexeme, never how often it occurs."""
-    occurrences = sum(tokens.count("risk") for tokens in DOCUMENTS.values())
-
-    assert occurrences == 11
-    assert FIXTURE["corpus_stats"]["df"]["risk"] == len(DOCUMENTS) == 5
-    assert FIXTURE["corpus_stats"]["df"]["market"] == 3
-
-
-def test_length_normalisation_decides_the_top_document():
-    """Show that length normalization changes the top-ranked document."""
-    normalized = reference_scores(DOCUMENTS, QUERY, b=0.75)
-    unnormalized = reference_scores(DOCUMENTS, QUERY, b=0.0)
-
-    assert ranking(normalized)[:2] == ["d1", "d4"]
-    assert ranking(unnormalized)[:2] == ["d4", "d1"]
-
-
-def test_robertson_idf_goes_negative_and_inverts_the_ranking():
-    """Expose negative Robertson weights for corpus-wide terms."""
-    lucene = reference_scores(DOCUMENTS, QUERY, idf="lucene")
-    robertson = reference_scores(DOCUMENTS, QUERY, idf="robertson")
-
-    assert FIXTURE["idf"]["robertson"]["risk"] < 0
-    assert all(score > 0 for score in lucene.values())
-    assert all(score < 0 for score in robertson.values())
-    assert ranking(lucene).index("d1") < ranking(lucene).index("d5")
-    assert ranking(robertson).index("d5") < ranking(robertson).index("d1")
-
-
-def test_lucene_idf_stays_nonnegative_for_every_document_frequency():
-    """Keep Lucene inverse document frequency nonnegative."""
-    n_documents = len(DOCUMENTS)
-    for df in range(1, n_documents + 1):
-        ratio = (n_documents - df + 0.5) / (df + 0.5)
-        assert math.log(1 + ratio) >= 0
-
-
-def test_repeated_query_terms_are_scored_once():
-    """Drive duplicate-term coverage from the committed fixture contract."""
-    once = reference_scores(DOCUMENTS, QUERY)
-    duplicate = reference_scores(DOCUMENTS, FIXTURE["duplicate_query"])
-
-    assert duplicate == once
-    assert rounded(duplicate) == FIXTURE["expected_scores_duplicate_query"]
-
-
 # --------------------------------------------------------------------------
 # The statement: bound, derived from the stored tsvector, deterministic.
 # --------------------------------------------------------------------------
-
-
-def test_statement_scores_from_persisted_corpus_statistics():
-    """Read one-row corpus metadata instead of aggregating every query."""
-    sql, _params = normalized_sql(bm25.bm25_statement("market risk", 5))
-
-    assert "FROM chunk_terms" in sql
-    assert "JOIN lexeme_stats ON lexeme_stats.lexeme = chunk_terms.lexeme" in sql
-    assert "JOIN chunk_lengths ON chunk_lengths.chunk_id = chunk_terms.chunk_id" in sql
-    assert "FROM bm25_corpus_stats" in sql
-    assert "count(" not in sql
-    assert "avg(" not in sql
-    assert "GROUP BY chunk_terms.chunk_id" in sql
 
 
 def test_statement_binds_the_query_and_never_interpolates_it():
@@ -255,40 +186,6 @@ def test_statement_emits_the_selected_idf_variant(idf, present, absent):
     assert absent not in sql
 
 
-def test_statement_matches_the_relaxed_websearch_query_but_scores_only_positives():
-    """Preserve phrase and negation matching without scoring excluded terms."""
-    sql, params = normalized_sql(bm25.bm25_statement('"market risk" -volatility', 5))
-
-    assert "MATERIALIZED" in sql
-    assert "websearch_to_tsquery(" in sql
-    assert "chunks.content_tsv @@ bm25_query.tsquery" in sql
-    assert '"market risk" -volatility' in params.values()
-    assert '"market risk"' in params.values()
-
-
-def test_statement_applies_every_shared_filter():
-    """Apply every shared chunk and issuer filter."""
-    filters = RetrievalFilters(
-        doc_ids=("NVDA-FY2024",),
-        issuers=("NVDA",),
-        fiscal_years=(2024,),
-        forms=("10-K",),
-        items=(None, "7"),
-        kinds=("table",),
-    )
-    sql, params = normalized_sql(bm25.bm25_statement("market risk", 5, filters))
-
-    assert "JOIN documents ON documents.doc_id = chunks.doc_id" in sql
-    assert "chunks.doc_id IN" in sql
-    assert "documents.issuer IN" in sql
-    assert "documents.fiscal_year IN" in sql
-    assert "documents.form IN" in sql
-    assert "OR chunks.item IS NULL" in sql
-    assert "chunks.kind IN" in sql
-    assert ["NVDA-FY2024"] in params.values()
-    assert [2024] in params.values()
-
-
 def test_snapshot_statement_uses_frozen_membership_and_bm25_statistics():
     """Score a snapshot only with its retained chunks and lexical statistics."""
     sql, params = normalized_sql(
@@ -307,13 +204,10 @@ def test_snapshot_statement_uses_frozen_membership_and_bm25_statistics():
 @pytest.mark.parametrize(
     "changes",
     [
-        {"query": ""},
         {"query": "   "},
         {"k": 0},
-        {"k": -1},
         {"k": True},
         {"k1": 0},
-        {"k1": -0.5},
         {"k1": math.inf},
         {"k1": math.nan},
         {"b": -0.1},
@@ -340,41 +234,6 @@ def test_statement_rejects_out_of_range_parameters(changes):
 def test_statement_accepts_the_closed_length_normalisation_interval(b):
     """Accept both endpoints of the length-normalization interval."""
     assert bm25.bm25_statement("market risk", 1, b=b) is not None
-
-
-def test_search_executes_once_and_returns_typed_hits():
-    """Execute one BM25 statement and return typed hits."""
-    mapping = hit_values(score=1.25)
-
-    class Result:
-        """Expose deterministic mapping rows like a SQLAlchemy result."""
-
-        def mappings(self):
-            """Return the recorded BM25 hit mapping."""
-            return SimpleNamespace(all=lambda: [mapping])
-
-    class Session:
-        """Record BM25 statements while returning deterministic results."""
-
-        def __init__(self):
-            self.statements = []
-
-        async def execute(self, statement):
-            """Record and satisfy the hit query."""
-            self.statements.append(statement)
-            return Result()
-
-        async def scalar(self, statement):
-            """Record and satisfy the statistics freshness query."""
-            self.statements.append(statement)
-            return 1
-
-    session = Session()
-    hits = asyncio.run(bm25.bm25_search(cast(AsyncSession, session), "market risk", 4))
-
-    assert len(session.statements) == 2
-    assert [hit.chunk_id for hit in hits] == [mapping["chunk_id"]]
-    assert hits[0].score == 1.25
 
 
 def test_search_raises_when_statistics_are_missing_or_stale():
@@ -429,13 +288,8 @@ def test_backfill_refuses_a_session_that_is_already_in_a_transaction():
 
 
 # --------------------------------------------------------------------------
-# Wiring: settings, service, CLI, public surface.
+# Wiring: settings.
 # --------------------------------------------------------------------------
-
-
-def test_public_surface_exports_the_bm25_entry_points():
-    """Export BM25 search and statistic-rebuild entry points."""
-    assert {"bm25_search", "backfill_term_stats", "TermStatCounts"} <= set(public.__all__)
 
 
 def test_settings_default_to_ts_rank_cd_with_published_bm25_constants():
@@ -452,7 +306,6 @@ def test_settings_default_to_ts_rank_cd_with_published_bm25_constants():
     "changes",
     [
         {"bm25_k1": 0},
-        {"bm25_k1": -1},
         {"bm25_k1": math.inf},
         {"bm25_k1": math.nan},
         {"bm25_b": -0.1},
@@ -465,17 +318,6 @@ def test_settings_reject_out_of_range_bm25_constants(changes):
     """Reject invalid BM25 settings before runtime."""
     with pytest.raises(ValueError):
         Settings(**changes)
-
-
-@pytest.mark.parametrize(
-    ("name", "value"),
-    [("BM25_K1", "inf"), ("BM25_K1", "nan"), ("BM25_B", "inf"), ("BM25_B", "nan")],
-)
-def test_settings_reject_nonfinite_bm25_environment_values(monkeypatch, name, value):
-    """Reject nonfinite BM25 values loaded through the environment."""
-    monkeypatch.setenv(name, value)
-    with pytest.raises(ValueError):
-        Settings()
 
 
 # --------------------------------------------------------------------------

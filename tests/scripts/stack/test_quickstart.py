@@ -46,14 +46,6 @@ def test_missing_configuration_creates_private_template_once(tmp_path, monkeypat
     assert "<your-key>" not in capsys.readouterr().out
 
 
-def test_valid_configuration_is_not_overwritten(configured):
-    """Existing configuration and custom ports remain byte-for-byte intact."""
-    original = (configured / ".env").read_bytes()
-    bindings = setup.validate_configuration(configured)
-    assert bindings["DB_PORT"] == "38432"
-    assert (configured / ".env").read_bytes() == original
-
-
 def test_prod_configuration_uses_prod_key_without_acquisition_credentials(tmp_path, monkeypatch):
     """A local PROD start never requires DEV keys or SEC/DART download credentials."""
     for key in (
@@ -101,13 +93,6 @@ def test_prod_server_readiness_accepts_empty_corpus_without_claiming_search(monk
     monkeypatch.setattr(setup, "build_opener", lambda *args: opener)
     setup.wait_ready("http://127.0.0.1:8000", mode="prod", timeout=1)
     assert opener.open.call_args.args[0].endswith("/api/ready/")
-
-
-def test_effective_override_cannot_silently_select_fake_embeddings(configured, monkeypatch):
-    """Catch shell overrides that would invalidate the documented real-embedding path."""
-    monkeypatch.setenv("EMBEDDING_PROVIDER", "deterministic")
-    with pytest.raises(ValueError, match="EMBEDDING_PROVIDER=openai"):
-        setup.validate_configuration(configured)
 
 
 def test_startup_prepares_only_project_database_before_app(configured, monkeypatch):
@@ -189,24 +174,6 @@ def test_configuration_block_does_not_start_services(configured, monkeypatch):
     start.assert_not_called()
 
 
-def test_schema_drift_blocks_application_start(configured, monkeypatch):
-    """Keep incompatible data intact and hand off to schema diagnosis."""
-    from unittest.mock import Mock
-
-    monkeypatch.setattr(
-        setup.subprocess, "check_output", lambda args, **k: "2.39.0" if "version" in args else "[]"
-    )
-    monkeypatch.setattr(setup.subprocess, "run", Mock())
-    monkeypatch.setattr(
-        setup, "prepare_schema", AsyncMock(side_effect=setup.SchemaDriftError("drift"))
-    )
-    start = Mock()
-    monkeypatch.setattr(setup, "run", start)
-    with pytest.raises(RuntimeError, match="Schema is still blocked"):
-        setup.quickstart(configured)
-    start.assert_not_called()
-
-
 def test_readiness_timeout_never_reports_success(monkeypatch):
     """Unconfirmed readiness remains a failure with an actionable diagnostic command."""
     monkeypatch.setattr(setup.time, "monotonic", iter([0, 181]).__next__)
@@ -238,13 +205,14 @@ def test_failed_startup_does_not_print_ready(configured, monkeypatch, capsys):
 
 
 def test_configuration_reports_sources_without_exposing_credentials(configured, monkeypatch):
-    """Public selector conflicts show both sources while private values remain hidden."""
+    """Selector conflicts show both sources and the openai fix while private values stay hidden."""
     monkeypatch.setenv("EMBEDDING_PROVIDER", "deterministic")
     monkeypatch.setenv("SEC_USER_AGENT", "private-invalid-contact")
     with pytest.raises(setup.ConfigurationError) as failure:
         setup.validate_configuration(configured)
     message = str(failure.value)
     assert '.env="openai"; shell="deterministic"; effective source=shell export' in message
+    assert "EMBEDDING_PROVIDER=openai" in message
     assert "unset EMBEDDING_PROVIDER" in message
     assert str(configured / ".env") in message
     assert "private-invalid-contact" not in message

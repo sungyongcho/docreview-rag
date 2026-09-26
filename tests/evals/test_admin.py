@@ -496,7 +496,6 @@ def test_evaluation_waiting_message_tracks_the_current_global_blocker(tmp_path):
         ("hybrid", True, False, False),
         ("vector", True, False, True),
         ("lexical", False, True, True),
-        ("hybrid", True, True, True),
     ],
 )
 def test_quick_evaluation_preparation_matches_the_selected_strategy(

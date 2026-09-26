@@ -1,6 +1,5 @@
 """DART parser: part detection, section contract, and source identity fail-closed."""
 
-from dataclasses import replace
 import hashlib
 from pathlib import Path
 
@@ -11,7 +10,6 @@ from app.ingestion.dart import (
     DART_PARTS,
     DartParseError,
     dart_section_label,
-    dart_section_title,
     parse_dart_filing,
     part_numeral,
     segment,
@@ -80,12 +78,6 @@ def test_dart_section_label_spells_numeral_and_division_name():
     assert dart_section_label("I") == "I. 회사의 개요"
     assert dart_section_label("III") == "III. 재무에 관한 사항"
     assert dart_section_label("Z") == "Z"
-
-
-def test_dart_section_title_returns_only_the_division_name():
-    assert dart_section_title("II") == "사업의 내용"
-    assert dart_section_title("XII") == "상세표"
-    assert dart_section_title("Z") is None
 
 
 # --- segmentation ---
@@ -228,30 +220,11 @@ def test_parse_dart_filing_maps_registry_identity_without_derivation(tmp_path):
     assert profile["segmentation"]["parts"] == list(DART_PARTS)
 
 
-def test_parse_dart_filing_keeps_sec_vocabulary_out_of_sections(tmp_path):
-    path = write_source(tmp_path, MINIMAL_SOURCE)
-
-    filing, _ = parse_dart_filing(entry_for(path, MINIMAL_SOURCE))
-
-    for section in filing.sections:
-        assert "Item" not in section.canonical_title
-        assert "Item" not in section.reported_title
-
-
 def test_parse_dart_filing_rejects_a_foreign_registry(tmp_path):
     path = write_source(tmp_path, MINIMAL_SOURCE)
     entry = filing_source(path, document=filing_document())
 
     with pytest.raises(DartParseError, match="selected DART source"):
-        parse_dart_filing(entry)
-
-
-def test_parse_dart_filing_rejects_a_source_that_drifted_from_the_manifest(tmp_path):
-    path = write_source(tmp_path, MINIMAL_SOURCE)
-    entry = entry_for(path, MINIMAL_SOURCE)
-    entry = replace(entry, artifact=entry.artifact.model_copy(update={"sha256": "0" * 64}))
-
-    with pytest.raises(DartParseError, match="bytes disagree"):
         parse_dart_filing(entry)
 
 

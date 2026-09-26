@@ -124,40 +124,19 @@ def test_provider_turn_rejects_duplicate_call_ids():
         turn(tool_calls=(duplicate, duplicate))
 
 
-def test_openai_adapter_disables_hidden_sdk_retries_and_records_the_client_url(monkeypatch):
-    """Build the owned client with retries off and record its resolved URL as provenance."""
+def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
+    """Build the owned client with retries off, record its resolved URL as provenance,
+    close it on aclose, and leave an injected client alone."""
     captured = {}
+    closed = []
 
     class FakeClient:
-        """Client standing in for the SDK, capturing its constructor arguments."""
+        """SDK stand-in capturing its constructor arguments, with an observable close."""
 
         base_url = "https://api.openai.com/v1"
 
         def __init__(self, **kwargs):
             captured.update(kwargs)
-            self.responses = SimpleNamespace()
-
-    module = sys.modules[OpenAIToolProvider.__module__]
-    monkeypatch.setattr(module, "AsyncOpenAI", FakeClient)
-
-    provider = OpenAIToolProvider(model_name="gpt-5.6-terra", api_key="sk-test")
-
-    assert captured["max_retries"] == 0
-    assert "base_url" not in captured
-    assert provider.api_url == "https://api.openai.com/v1/responses"
-
-
-def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
-    """Close the owned connection pool on aclose and leave an injected client alone."""
-    closed = []
-
-    class FakeClient:
-        """SDK stand-in whose close call is observable."""
-
-        base_url = "https://api.openai.com/v1"
-
-        def __init__(self, **kwargs):
-            del kwargs
             self.responses = SimpleNamespace()
 
         async def close(self):
@@ -168,6 +147,9 @@ def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
     monkeypatch.setattr(module, "AsyncOpenAI", FakeClient)
 
     owned = OpenAIToolProvider(model_name="gpt-5.6-terra", api_key="sk-test")
+    assert captured["max_retries"] == 0
+    assert "base_url" not in captured
+    assert owned.api_url == "https://api.openai.com/v1/responses"
     asyncio.run(owned.aclose())
     assert closed == [True]
 

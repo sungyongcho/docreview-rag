@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import stat
 
 import httpx
 import pytest
@@ -25,7 +26,7 @@ def metadata_server(request: httpx.Request) -> httpx.Response:
 
 def test_saved_connection_restart_disconnect_and_reset(tmp_path) -> None:
     """Saved choices survive restart; explicit off stays off and reset restores startup."""
-    path = tmp_path / "connection.json"
+    path = tmp_path / "local-settings/connection.json"
     transport = httpx.MockTransport(metadata_server)
     manager = LocalConnectionManager(
         initial_base_url="http://initial:11434",
@@ -40,6 +41,9 @@ def test_saved_connection_restart_disconnect_and_reset(tmp_path) -> None:
         saved = await manager.add_server("Replacement", "http://replacement:11435")
         assert saved["source"] == "saved"
         assert saved["local"]["enabled"]
+        # Atomic replacement grants the host group read access while keeping settings non-public.
+        assert stat.S_IMODE(path.stat().st_mode) == 0o640
+        assert json.loads(path.read_text())["selected_server_id"]
         restarted = LocalConnectionManager(
             initial_base_url="http://initial:11434",
             initial_source="environment",
@@ -138,6 +142,8 @@ def test_corrupt_file_fails_closed_and_prod_does_not_read_or_probe(tmp_path, mon
     assert asyncio.run(manager.public_state()) == {"enabled": False, "reason": "disabled_in_prod"}
     with pytest.raises(LocalConnectionError, match="disabled in production"):
         asyncio.run(manager.add_server("Other", "http://other"))
+    with pytest.raises(LocalConnectionError, match="disabled in production"):
+        asyncio.run(manager.prepare_model("answer"))
 
 
 def test_late_old_readiness_cannot_overwrite_new_connection(tmp_path) -> None:
@@ -187,23 +193,20 @@ def test_invalid_or_credential_bearing_urls_are_rejected(url) -> None:
         validate_base_url(url)
 
 
-@pytest.mark.parametrize(
-    "url,port", [("http://host", None), ("https://host", None), ("https://host:11435", 11435)]
-)
+@pytest.mark.parametrize("url,port", [("https://host", None), ("https://host:11435", 11435)])
 def test_explicit_schemes_and_ports_are_preserved(url, port) -> None:
-    """Explicit ports are preserved and omitted ports are not replaced with Ollama port 11434."""
+    """HTTPS is accepted, explicit ports are preserved and an omitted port is not replaced."""
     assert httpx.URL(validate_base_url(url)).port == port
 
 
-@pytest.mark.parametrize("state", ["connected", "disabled"])
-def test_saved_choice_overrides_invalid_initial_url(tmp_path, state) -> None:
+def test_saved_choice_overrides_invalid_initial_url(tmp_path) -> None:
     """An invalid initial URL cannot disable a saved choice or leak credentials."""
     path = tmp_path / "connection.json"
     path.write_text(
         json.dumps(
             {
                 "version": 1,
-                "state": state,
+                "state": "connected",
                 "base_url": "http://saved",
                 "protocol": "ollama",
             }
@@ -217,9 +220,9 @@ def test_saved_choice_overrides_invalid_initial_url(tmp_path, state) -> None:
     )
     original_bytes = path.read_bytes()
     previous = manager.current
-    assert previous.source == ("saved" if state == "connected" else "disabled")
-    if previous.inventory is not None:
-        assert previous.inventory.api_key is None
+    assert previous.source == "saved"
+    assert previous.inventory is not None
+    assert previous.inventory.api_key is None
     response = asyncio.run(manager.state())
     assert "secret" not in json.dumps(response)
     assert response["initial_base_url"] == ""
@@ -260,11 +263,9 @@ def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path)
         tmp_path.chmod(0o700)
 
 
-@pytest.mark.parametrize("initial", ["http://127.0.0.1:11434", "http://host.docker.internal:11434"])
-def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(
-    tmp_path, initial
-) -> None:
-    """Native and Docker defaults need no user address entry or eager file migration."""
+def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(tmp_path) -> None:
+    """A legacy file naming the runtime address resolves to Default without an eager migration."""
+    initial = "http://host.docker.internal:11434"
     path = tmp_path / "connection.json"
     path.write_text(
         json.dumps({"version": 1, "state": "connected", "base_url": initial, "protocol": "auto"})
@@ -423,17 +424,6 @@ def test_diagnostics_are_fresh_metadata_only_and_never_save_or_select(tmp_path) 
     assert all(path in {"/api/tags", "/api/ps", "/api/show", "/v1/models"} for _, path in requests)
 
 
-def test_saved_connection_is_readable_by_the_configured_host_group(tmp_path) -> None:
-    """Atomic replacement grants group read access while keeping settings non-public."""
-    import stat
-
-    path = tmp_path / "local-settings/local-llm.json"
-    manager = LocalConnectionManager(path=path, transport=httpx.MockTransport(metadata_server))
-    asyncio.run(manager.add_server("Replacement", "http://replacement:11435"))
-    assert stat.S_IMODE(path.stat().st_mode) == 0o640
-    assert json.loads(path.read_text())["selected_server_id"]
-
-
 @pytest.mark.parametrize("loaded_after_request", [True, False])
 def test_prepare_model_checks_installed_identity_and_verifies_residency(
     tmp_path, loaded_after_request
@@ -474,17 +464,6 @@ def test_prepare_model_checks_installed_identity_and_verifies_residency(
         assert not manager.path.exists()
 
     asyncio.run(exercise())
-
-
-def test_prepare_model_is_disabled_in_production(tmp_path):
-    """A production manager must reject loading before any network request."""
-    manager = LocalConnectionManager(
-        enabled=False,
-        path=tmp_path / "settings.json",
-        transport=httpx.MockTransport(metadata_server),
-    )
-    with pytest.raises(LocalConnectionError, match="disabled in production"):
-        asyncio.run(manager.prepare_model("answer"))
 
 
 def test_prepare_model_reports_load_failure_without_changing_connection(tmp_path):

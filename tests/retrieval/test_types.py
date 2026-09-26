@@ -60,22 +60,6 @@ def test_chunk_hit_accepts_body_as_index_text_when_context_is_empty():
     assert hit.index_text == "Research evidence."
 
 
-def test_chunk_hit_uses_the_canonical_index_text_composer(monkeypatch):
-    """Delegate the persistence-boundary invariant to the ingestion helper."""
-    calls: list[tuple[str, str]] = []
-
-    def compose(context_header: str, body: str) -> str:
-        calls.append((context_header, body))
-        return "canonical index text"
-
-    monkeypatch.setattr(retrieval_types, "compose_index_text", compose)
-    values = hit_values(index_text="canonical index text")
-
-    retrieval_types.ChunkHit(**values)
-
-    assert calls == [(values["context_header"], values["body"])]
-
-
 @pytest.mark.parametrize(
     "changes",
     [

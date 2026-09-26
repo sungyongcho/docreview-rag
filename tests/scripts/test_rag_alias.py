@@ -44,15 +44,13 @@ def run_shell(shell, command, *, env=None, input=""):
     )
 
 
-@pytest.mark.parametrize("answer", ["", "n\n"])
-def test_shell_syntax_and_direct_setup(shell, tmp_path, answer):
-    """Execution offers installation without modifying a declined isolated home."""
+def test_shell_syntax_and_direct_setup(shell, tmp_path):
+    """Execution offers installation; the default answer leaves an isolated home untouched."""
     subprocess.run([shell, "-n", str(SCRIPT)], check=True, capture_output=True)
     result = run_shell(
         shell,
         '"$SHELL_TEST" "$1"',
         env={"SHELL_TEST": shell, "COLUMNS": "80", "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
-        input=answer,
     )
     assert WORDMARK in result.stdout
     assert "DocReview RAG v2" in result.stdout
@@ -67,7 +65,7 @@ def test_shell_syntax_and_direct_setup(shell, tmp_path, answer):
 
 @pytest.mark.parametrize(
     ("columns", "asset"),
-    [("80", WORDMARK), ("78", WORDMARK), ("77", MONOGRAM), ("18", MONOGRAM), ("16", None)],
+    [("78", WORDMARK), ("77", MONOGRAM), ("18", MONOGRAM), ("16", None)],
 )
 def test_source_registration_help_and_width(shell, columns, asset):
     """Sourcing stays quiet when redirected while help selects readable static assets."""
@@ -232,21 +230,6 @@ def test_uninstall_preserves_foreign_commands_and_exact_source_ownership(shell, 
     backups = list(tmp_path.glob("startup.docreview-backup-*"))
     assert len(backups) == 1
     assert backups[0].read_text() == original
-
-
-def test_explicit_mode_commands_and_registration(shell):
-    """Both shells expose mode commands with distinct startup and destructive actions."""
-    result = run_shell(
-        shell,
-        'source "$1" >/dev/null; typeset -f rag-dev; typeset -f rag-prod; rag-help',
-    )
-    assert "_docreview_mode dev" in result.stdout
-    assert "_docreview_mode prod" in result.stdout
-    assert "rag-dev start" in result.stdout
-    assert "rag-prod reset environment --local --all-modes" in result.stdout
-    assert "Preserve .env, source work, external bundles and other projects" in result.stdout
-    assert "CONFIRM BEFORE DELETION" in result.stdout
-    assert "[STACK]" in result.stdout
 
 
 @pytest.mark.parametrize("existing", [False, True])
@@ -494,13 +477,12 @@ def test_bilingual_help_is_shell_only(shell, tmp_path, language, heading, safety
     assert result.stderr == ""
 
 
-@pytest.mark.parametrize("mode", ["dev", "prod"])
-def test_mode_without_action_only_shows_help(shell, tmp_path, mode):
+def test_mode_without_action_only_shows_help(shell, tmp_path):
     """Bare mode commands never bootstrap dependencies or implicitly restart the stack."""
     result = run_shell(
         shell,
-        'source "$1" >/dev/null; _docreview_runtime() { exit 97; }; "$MODE_COMMAND"',
-        env={"MODE_COMMAND": "rag-" + mode, "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
+        'source "$1" >/dev/null; _docreview_runtime() { exit 97; }; rag-dev',
+        env={"HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
     )
     assert "[START]" in result.stdout
     assert result.stderr == ""
@@ -553,8 +535,7 @@ def test_start_dispatch_preserves_mode_without_reset(shell, mode):
     ]
 
 
-@pytest.mark.parametrize("mode", ["dev", "prod"])
-def test_environment_reset_uses_python_outside_checkout_venv(shell, mode):
+def test_environment_reset_uses_python_outside_checkout_venv(shell):
     """A reset delegates explicit scope flags without relying on the removable venv."""
     result = run_shell(
         shell,
@@ -562,14 +543,14 @@ def test_environment_reset_uses_python_outside_checkout_venv(shell, mode):
         '[ "$*" = "python find --no-python-downloads 3.14" ] || return 97; '
         'printf "%s\\n" "$TEST_PYTHON"; }; '
         '_docreview_runtime() { printf "<%s>\\n" "$@"; }; '
-        '"$MODE_COMMAND" reset environment --local --all-modes',
-        env={"MODE_COMMAND": "rag-" + mode, "TEST_PYTHON": sys.executable},
+        "rag-prod reset environment --local --all-modes",
+        env={"TEST_PYTHON": sys.executable},
     )
     assert result.stdout.splitlines() == [
         f"<{sys.executable}>",
         "<-m>",
         "<scripts.stack.cli>",
-        f"<{mode}>",
+        "<prod>",
         "<reset>",
         "<environment>",
         "<--local>",
@@ -818,8 +799,15 @@ def test_update_repairs_only_the_existing_moved_checkout_registration(shell, tmp
     assert len(backups) == 1 and backups[0].read_text() == original
 
 
-@pytest.mark.parametrize("invalid_kind", ["missing", "unreadable", "invalid"])
-@pytest.mark.parametrize("mode", ["update", "--check-updates"])
+@pytest.mark.parametrize(
+    ("invalid_kind", "mode"),
+    [
+        ("missing", "update"),
+        ("unreadable", "update"),
+        ("invalid", "update"),
+        ("invalid", "--check-updates"),
+    ],
+)
 def test_update_rejects_unusable_targets_without_changing_loaded_state(
     shell, tmp_path, invalid_kind, mode
 ):

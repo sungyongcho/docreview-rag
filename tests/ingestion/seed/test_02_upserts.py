@@ -45,11 +45,6 @@ def test_chunk_upsert_targets_stable_identity_and_never_writes_embeddings():
     assert "end_char = excluded.end_char" in sql
     assert "embedding" not in sql.split("ON CONFLICT", maxsplit=1)[0]
     assert not any("embedding" in name for name in statement.compile().params)
-
-
-def test_chunk_upsert_leaves_independent_embedding_versions_untouched():
-    """Keep source chunk persistence separate from every embedding configuration."""
-    sql = _sql(seed.chunk_upsert_statement(sample_batch().chunks))
     normalized = " ".join(sql.split())
     assert "embedding" not in normalized
     assert "ON CONFLICT (stable_key)" in normalized

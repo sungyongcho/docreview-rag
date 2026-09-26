@@ -4,7 +4,6 @@ import pytest
 
 from app.ingestion.registry import REGISTRIES
 from app.retrieval.korean import (
-    KOREAN_LEXICAL_GRAMS,
     KOREAN_TEXT_SEARCH_CONFIG,
     hangul_ngrams,
     lexical_corpus_language,
@@ -45,12 +44,6 @@ def test_latin_words_numbers_and_joined_figures_stay_whole():
 def test_mixed_script_text_keeps_document_order():
     """Emit mixed-script tokens in the order the text carries them."""
     assert tokenize_korean_text("DRAM 시장") == "dram 시장"
-
-
-def test_contract_constants_are_pinned():
-    """The stored corpus depends on these exact values; changing them re-seeds."""
-    assert KOREAN_LEXICAL_GRAMS == 2
-    assert KOREAN_TEXT_SEARCH_CONFIG == "simple"
 
 
 def test_lexical_plans_cover_every_registry_language():

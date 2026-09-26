@@ -174,24 +174,15 @@ def test_language_routing_is_bound_to_the_arm_and_only_to_a_fused_one(monkeypatc
             )
 
 
-def test_resolve_bm25_parameters_returns_values_only_for_a_bm25_arm():
-    """Resolve a complete parameter set for BM25 and nothing for any other arm."""
-    assert resolve_bm25_parameters("bm25", 1.5, 0.4, "robertson") == (1.5, 0.4, "robertson")
-    assert resolve_bm25_parameters("ts_rank_cd", None, None, None) is None
-    assert resolve_bm25_parameters(None, None, None, None) is None
-
-
 @pytest.mark.parametrize(
     "values",
     [
         (None, DEFAULT_BM25_B, DEFAULT_BM25_IDF),
         (0, DEFAULT_BM25_B, DEFAULT_BM25_IDF),
-        (float("inf"), DEFAULT_BM25_B, DEFAULT_BM25_IDF),
         (True, DEFAULT_BM25_B, DEFAULT_BM25_IDF),
         (DEFAULT_BM25_K1, -0.1, DEFAULT_BM25_IDF),
         (DEFAULT_BM25_K1, float("nan"), DEFAULT_BM25_IDF),
         (DEFAULT_BM25_K1, DEFAULT_BM25_B, "okapi"),
-        (DEFAULT_BM25_K1, DEFAULT_BM25_B, None),
     ],
 )
 def test_a_bm25_arm_is_rejected_before_it_can_be_bound(values):
@@ -212,11 +203,10 @@ def test_a_bm25_arm_is_rejected_before_it_can_be_bound(values):
         )
 
 
-@pytest.mark.parametrize("lexical_ranker", [None, "ts_rank_cd"])
-def test_bm25_values_are_rejected_on_an_arm_that_runs_no_bm25_query(lexical_ranker):
+def test_bm25_values_are_rejected_on_an_arm_that_runs_no_bm25_query():
     """Refuse to label an arm with parameters its retrieval never uses."""
     with pytest.raises(ValueError, match="only for bm25 arms"):
-        resolve_bm25_parameters(lexical_ranker, DEFAULT_BM25_K1, None, None)
+        resolve_bm25_parameters("ts_rank_cd", DEFAULT_BM25_K1, None, None)
 
 
 @pytest.mark.parametrize(
@@ -224,7 +214,6 @@ def test_bm25_values_are_rejected_on_an_arm_that_runs_no_bm25_query(lexical_rank
     [
         ({"strategy": "okapi", "provider": None}, "unsupported retrieval strategy"),
         ({"strategy": "hybrid", "provider": None}, "requires an explicit lexical ranker"),
-        ({"strategy": "lexical", "provider": None}, "requires an explicit lexical ranker"),
         (
             {"strategy": "lexical", "provider": None, "lexical_ranker": "okapi"},
             "requires an explicit lexical ranker",

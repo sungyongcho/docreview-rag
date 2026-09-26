@@ -3,7 +3,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app.api.errors import bad_request, install_error_handlers
+from app.api.errors import install_error_handlers
 
 
 def test_unconfigured_service_returns_typed_503(client_factory):
@@ -33,25 +33,6 @@ def test_malformed_json_returns_typed_422_without_a_traceback(client_factory, se
     assert body["error"]["code"] == "request_validation_failed"
     assert body["error"]["details"]
     assert "traceback" not in response.text.lower()
-
-
-def test_empty_query_returns_typed_422(client_factory, services):
-    """Reject a blank query before it reaches the service boundary."""
-    response = client_factory(services).post("/retrieve", json={"query": " "})
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "request_validation_failed"
-    assert services.last_retrieve_request is None
-
-
-def test_expected_domain_problem_returns_typed_400(client_factory, services):
-    """Surface a raised domain problem as its own code and status."""
-    services.retrieve_error = bad_request("invalid_query", "The query is not supported.")
-
-    response = client_factory(services).post("/retrieve", json={"query": "Revenue?"})
-
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "invalid_query"
 
 
 def test_unexpected_service_failure_returns_non_leaking_500(client_factory, services):

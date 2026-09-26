@@ -127,7 +127,8 @@ def test_fetch_chunk_returns_the_stored_row_and_rejects_missing_ids():
 
 
 def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
-    """Query each year separately, group the results in year order, and require a real span."""
+    """Query each year separately through one shared query-embedding cache, group the
+    results in year order, and require a real span."""
     calls = patch_retrieve(monkeypatch, [(hit(1, 0.5),), (hit(2, 0.5),)])
     factory = FakeSessionFactory()
     registry = build_default_registry(factory, embedding_provider=DeterministicEmbeddingProvider())
@@ -141,6 +142,9 @@ def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
     assert [call[1]["filters"].fiscal_years for call in calls] == [(2023,), (2024,)]
     assert [year["fiscal_year"] for year in output["years"]] == [2023, 2024]
     assert evidence_ids(tool, output) == (1, 2)
+    providers = [call[1]["provider"] for call in calls]
+    assert all(isinstance(provider, _QueryEmbeddingCache) for provider in providers)
+    assert len({id(provider) for provider in providers}) == 1
     (session,) = factory.sessions
     assert session.closed
     assert not session.in_transaction()
@@ -149,23 +153,6 @@ def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
         tool.parameters.model_validate(
             {"query": "revenue", "issuer": "NVDA", "fiscal_years": [2024]}
         )
-
-
-def test_compare_years_shares_one_query_embedding_cache(monkeypatch):
-    """Hand every per-year retrieval the same caching provider around the injected one."""
-    calls = patch_retrieve(monkeypatch, [(hit(1, 0.5),), (hit(2, 0.5),), (hit(3, 0.5),)])
-    inner = CountingEmbeddings()
-    registry = build_default_registry(FakeSessionFactory(), embedding_provider=inner)
-    tool = registry.get("compare_years")
-
-    params = tool.parameters.model_validate(
-        {"query": "revenue", "issuer": "NVDA", "fiscal_years": [2022, 2023, 2024]}
-    )
-    asyncio.run(tool.run(params))
-
-    providers = [call[1]["provider"] for call in calls]
-    assert all(isinstance(provider, _QueryEmbeddingCache) for provider in providers)
-    assert len({id(provider) for provider in providers}) == 1
 
 
 def test_query_embedding_cache_embeds_each_distinct_text_once():

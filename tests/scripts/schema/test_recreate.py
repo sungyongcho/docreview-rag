@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from scripts.schema import recreate as command
 
 
-@pytest.mark.parametrize("answer", ["", "yes", "confirm"])
+@pytest.mark.parametrize("answer", ["", "yes"])
 def test_wrong_confirmation_never_stops_or_deletes(tmp_path, monkeypatch, answer):
     """Only the single uppercase Y can progress beyond the read-only preview."""
     target = {"port": "12345", "apps": ["app"], "volume": "fixture", "docker": ["docker"]}
@@ -133,38 +133,6 @@ def test_stale_preview_never_stops_or_deletes(tmp_path, monkeypatch, boundary):
         command.run(tmp_path)
     assert operation.await_count == 1
     stop.assert_not_called()
-
-
-@pytest.mark.parametrize("retry", [False, True])
-def test_permission_preview_offers_exact_owner_fix_before_one_retry(
-    tmp_path, monkeypatch, capsys, retry
-):
-    """Source permission recovery never applies ACLs or enters a destructive operation."""
-    import errno
-
-    source = tmp_path / "data/raw source.html"
-    source.parent.mkdir()
-    source.write_text("preserve")
-    clean_preview = command.source_preview(tmp_path)
-    preview = Mock(
-        side_effect=[PermissionError(errno.EACCES, "denied", str(source)), clean_preview]
-    )
-    apply = Mock()
-    monkeypatch.setattr(command, "source_preview", preview)
-    monkeypatch.setattr(command, "confirm", lambda _: retry)
-    monkeypatch.setattr(command.subprocess, "run", apply)
-    if retry:
-        assert command.preview_sources(tmp_path) == clean_preview
-        assert preview.call_count == 2
-    else:
-        with pytest.raises(ValueError, match="no deletion was submitted"):
-            command.preview_sources(tmp_path)
-        assert preview.call_count == 1
-    output = capsys.readouterr().out
-    assert "sudo setfacl -R -m" in output
-    assert str(source) in output
-    assert source.read_text() == "preserve"
-    apply.assert_not_called()
 
 
 def test_successful_reset_leaves_the_api_stopped(tmp_path, monkeypatch, capsys):

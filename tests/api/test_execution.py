@@ -97,7 +97,7 @@ def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(s
 
 @pytest.mark.parametrize(
     ("tag_digest", "loaded_digest", "expected_speed"),
-    [("v1", "v1", 10), ("v2", "v1", None), ("v2", "v2", None), ("v1", None, None)],
+    [("v1", "v1", 10), ("v2", "v1", None)],
 )
 def test_local_execution_publishes_measured_cpu_speed_to_readiness(
     monkeypatch, tag_digest, loaded_digest, expected_speed

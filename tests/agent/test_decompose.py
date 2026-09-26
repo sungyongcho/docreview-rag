@@ -8,11 +8,7 @@ from types import SimpleNamespace
 from pydantic import ValidationError
 import pytest
 
-from app.agent.decompose import (
-    QueryDecomposition,
-    decompose_query,
-    make_decomposed_retriever,
-)
+from app.agent.decompose import QueryDecomposition, make_decomposed_retriever
 from app.llm.schemas import ProviderBudget, TokenPricing
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.agent.support import FakeSessionFactory
@@ -46,35 +42,9 @@ def test_decomposition_contract_accepts_one_to_four_distinct_sub_questions():
         QueryDecomposition(sub_questions=tuple(f"Question {index}?" for index in range(5)))
 
 
-def test_decompose_query_returns_sub_questions_and_names_the_fallback_cause():
-    """Return the parsed sub-questions, and carry the provider status on fallback."""
-    provider = DeterministicLLMProvider(
-        [raw('{"sub_questions":["What was 2023 revenue?","What was 2024 revenue?"]}')]
-    )
-    decomposition = asyncio.run(
-        decompose_query(
-            "How did revenue change between 2023 and 2024?",
-            llm_provider=provider,
-            provider_budget=budget(),
-        )
-    )
-    assert decomposition.sub_questions == ("What was 2023 revenue?", "What was 2024 revenue?")
-    assert decomposition.fallback_status is None
-
-    refusing = DeterministicLLMProvider([raw("not json"), raw("still not json")])
-    fallback = asyncio.run(
-        decompose_query(
-            "How did revenue change between 2023 and 2024?",
-            llm_provider=refusing,
-            provider_budget=budget(),
-        )
-    )
-    assert fallback.sub_questions == ("How did revenue change between 2023 and 2024?",)
-    assert fallback.fallback_status is not None
-
-
-def test_decomposed_retriever_gathers_per_sub_question_sessions_and_fuses(monkeypatch):
-    """Retrieve each sub-question over its own session and fuse the rankings."""
+def test_decomposed_retriever_gathers_per_sub_question_sessions_and_fuses(monkeypatch, caplog):
+    """Retrieve each parsed sub-question over its own session, fuse the rankings, and log
+    no fallback."""
     provider = DeterministicLLMProvider(
         [raw('{"sub_questions":["What was 2023 revenue?","What was 2024 revenue?"]}')]
     )
@@ -99,9 +69,11 @@ def test_decomposed_retriever_gathers_per_sub_question_sessions_and_fuses(monkey
         provider_budget=budget(),
         embedding_provider=DeterministicEmbeddingProvider(),
     )
-    hits = asyncio.run(retriever("How did revenue change between 2023 and 2024?", 2))
+    with caplog.at_level("WARNING", logger="app.agent.decompose"):
+        hits = asyncio.run(retriever("How did revenue change between 2023 and 2024?", 2))
 
     assert sorted(queries) == ["What was 2023 revenue?", "What was 2024 revenue?"]
+    assert not any("fell back" in record.getMessage() for record in caplog.records)
     assert [item.chunk_id for item in hits] == [2, 1]
     assert len(factory.sessions) == 2
     assert all(session.closed for session in factory.sessions)

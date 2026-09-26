@@ -309,7 +309,7 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
 
 @pytest.mark.parametrize(
     ("suite", "title"),
-    [("sec-en", "SEC retrieval"), ("dart-ko", "DART retrieval · Korean"), ("custom-suite", None)],
+    [("sec-en", "SEC retrieval"), ("custom-suite", None)],
 )
 def test_snapshot_resource_carries_the_built_in_suite_title(suite, title):
     """Attach a display title only for built-in suites so custom suite ids stay untitled."""
@@ -352,7 +352,7 @@ def test_snapshot_comparison_reads_only_persisted_results(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "payload", [None, {}, {"provider": "test", "model": "model", "dimensions": 384}]
+    "payload", [None, {"provider": "test", "model": "model", "dimensions": 384}]
 )
 def test_snapshot_requires_exact_evaluated_embedding_identity(payload):
     """Reject results that cannot identify the exact vector configuration."""

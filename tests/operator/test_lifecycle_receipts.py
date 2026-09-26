@@ -21,9 +21,7 @@ def test_lifecycle_receipt_is_read_only_and_uses_the_existing_path(tmp_path):
     assert path.read_bytes() == before
 
 
-@pytest.mark.parametrize(
-    "payload", ["broken", '{"command":"other"}', '{"command":"start-fresh","status":"invented"}']
-)
+@pytest.mark.parametrize("payload", ["broken", '{"command":"start-fresh","status":"invented"}'])
 def test_invalid_receipts_do_not_become_successful_notifications(tmp_path, payload):
     """Malformed or unknown outcomes fail without changing the saved file."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)

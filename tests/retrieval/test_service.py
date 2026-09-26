@@ -8,9 +8,8 @@ from pydantic import ValidationError
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import Settings
 import app.retrieval as public
-from app.retrieval import service
+from app.retrieval import cross_encoder, sbert, service
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.rerank import RerankProvider
 from app.retrieval.types import RetrievalFilters
@@ -154,7 +153,6 @@ def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypa
     [
         ({"query": " "}, "blank"),
         ({"k": 0}, "positive"),
-        ({"k": -3}, "positive"),
         ({"k": 3, "candidate_k": 2}, "at least k"),
         ({"rrf_k": 0}, "positive"),
         ({"bm25_k1": math.inf}, "finite positive"),
@@ -183,43 +181,6 @@ def test_service_rejects_invalid_requests_before_provider_or_search(monkeypatch,
         asyncio.run(service.retrieve(cast(AsyncSession, object()), **arguments))
 
 
-def test_service_rejects_a_shallow_candidate_pool_with_a_reranker(monkeypatch):
-    """Keep candidate depth at least the requested final result count."""
-
-    class Provider(DeterministicEmbeddingProvider):
-        """Test double for Provider behavior."""
-
-        async def embed_query(self, _query):
-            """Exercise embed query behavior."""
-            raise AssertionError("invalid limits must not call the provider")
-
-    class Reranker(RerankProvider):
-        """Test double for Reranker behavior."""
-
-        async def score(self, _query, _documents):
-            """Exercise score behavior."""
-            raise AssertionError("invalid limits must not call the reranker")
-
-    async def search(*_args, **_kwargs):
-        """Exercise search behavior."""
-        raise AssertionError("invalid limits must not access the database")
-
-    monkeypatch.setattr(service, "vector_search", search)
-    monkeypatch.setattr(service, "lexical_search", search)
-
-    with pytest.raises(ValueError, match="candidate_k must be at least k"):
-        asyncio.run(
-            service.retrieve(
-                cast(AsyncSession, object()),
-                "query",
-                provider=Provider(),
-                k=3,
-                candidate_k=2,
-                reranker=Reranker(),
-            )
-        )
-
-
 def test_service_forwards_default_provider_width_and_identity(monkeypatch):
     """Forward the provider's actual vector width and identity to the search boundary."""
     provider = DeterministicEmbeddingProvider(dimensions=32)
@@ -245,22 +206,19 @@ def test_service_forwards_default_provider_width_and_identity(monkeypatch):
     assert calls == ["provider", "vector"]
 
 
-def test_application_settings_freeze_the_database_dimension_at_384():
-    """Keep application embedding dimensions fixed to the database schema."""
-    assert Settings().embed_dim == 384
-
-    with pytest.raises(ValidationError):
-        Settings.model_validate({"embed_dim": 256})
-
-
 def test_package_exports_the_complete_production_surface():
-    """Expose the complete baseline retrieval façade."""
+    """Expose the complete retrieval façade, including the optional local providers."""
     expected = {
         "ComponentRankings",
+        "CrossEncoderReranker",
         "DeterministicEmbeddingProvider",
         "EmbeddingProvider",
         "OpenAIEmbeddingProvider",
         "RetrievalResult",
+        "SentenceTransformerEmbeddingProvider",
+        "TermStatCounts",
+        "backfill_term_stats",
+        "bm25_search",
         "embed_missing_chunks",
         "lexical_search",
         "retrieve",
@@ -269,6 +227,8 @@ def test_package_exports_the_complete_production_surface():
 
     assert expected <= set(public.__all__)
     assert public.retrieve is service.retrieve
+    assert public.CrossEncoderReranker is cross_encoder.CrossEncoderReranker
+    assert public.SentenceTransformerEmbeddingProvider is sbert.SentenceTransformerEmbeddingProvider
 
 
 def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch):
@@ -388,35 +348,6 @@ def test_korean_corpus_filter_tokenizes_the_lexical_query(monkeypatch):
     )
 
     assert calls == [("삼성 성전 전자 매출", "simple")]
-
-
-def test_english_corpus_keeps_the_raw_query_and_english_config(monkeypatch):
-    """Without a ko filter the lexical component behaves exactly as committed."""
-    calls = []
-    session = cast(AsyncSession, object())
-
-    async def vector(received_session, query_vector, *, k, filters, identity=None):
-        """Exercise vector behavior."""
-        return [hit(1, 0.9)]
-
-    async def lexical(received_session, query, k, filters, *, text_search_config):
-        """Exercise lexical behavior."""
-        calls.append((query, text_search_config))
-        return [hit(2, 5.0)]
-
-    monkeypatch.setattr(service, "vector_search", vector)
-    monkeypatch.setattr(service, "lexical_search", lexical)
-
-    asyncio.run(
-        service.retrieve(
-            session,
-            "NVDA data center revenue",
-            provider=DeterministicEmbeddingProvider(),
-            k=2,
-        )
-    )
-
-    assert calls == [("NVDA data center revenue", "english")]
 
 
 def test_mixed_language_filter_fans_out_lexical_retrieval(monkeypatch):

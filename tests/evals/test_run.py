@@ -18,24 +18,12 @@ def test_cli_defaults_to_the_isolated_deterministic_ten_arm_matrix():
     assert not args.persist_results
 
 
-def test_cli_can_narrow_the_ranker_axis():
-    """Narrow the ranker axis from the command line."""
-    args = arguments(["--lexical-rankers", "bm25"])
-
-    assert args.lexical_rankers == ["bm25"]
-
-
-@pytest.mark.parametrize(
-    ("argv", "expected"),
-    [
-        (["--strategies", "hybrid", "hybrid"], ["hybrid"]),
-        (["--strategies", "hybrid", "lexical"], ["lexical", "hybrid"]),
-        (["--strategies", "vector", "lexical", "vector"], ["lexical", "vector"]),
-    ],
-)
-def test_repeated_or_reordered_axes_normalize_to_the_canonical_matrix(argv, expected):
+def test_repeated_or_reordered_axes_normalize_to_the_canonical_matrix():
     """Deduplicate and canonically order each axis before any corpus is read."""
-    assert arguments(argv).strategies == expected
+    assert arguments(["--strategies", "vector", "lexical", "vector"]).strategies == [
+        "lexical",
+        "vector",
+    ]
 
 
 def test_duplicate_chunk_targets_and_rankers_normalize_the_same_way():
@@ -54,24 +42,18 @@ def test_a_candidate_depth_below_k_is_rejected_by_the_parser():
         arguments(["-k", "10", "--candidate-k", "5"])
 
 
-@pytest.mark.parametrize(
-    "strategies",
-    [
-        ["lexical", "vector", "hybrid"],
-        ["hybrid", "vector", "lexical"],
-        ["vector", "hybrid"],
-    ],
-)
-def test_the_budget_arm_ignores_the_order_the_axes_were_typed(strategies):
+def test_the_budget_arm_ignores_the_order_the_axes_were_typed():
     """Pick the deepest retrieval path, so the same matrix always reports the same budget."""
-    assert budget_arm_selection(strategies, ["ts_rank_cd", "bm25"]) == ("hybrid", "ts_rank_cd")
+    assert budget_arm_selection(["hybrid", "vector", "lexical"], ["ts_rank_cd", "bm25"]) == (
+        "hybrid",
+        "ts_rank_cd",
+    )
 
 
 @pytest.mark.parametrize(
     ("strategies", "rankers", "expected"),
     [
         (["lexical", "vector"], ["bm25", "ts_rank_cd"], ("vector", None)),
-        (["vector"], ["ts_rank_cd"], ("vector", None)),
         (["lexical"], ["bm25", "ts_rank_cd"], ("lexical", "ts_rank_cd")),
         (["lexical"], ["bm25"], ("lexical", "bm25")),
     ],

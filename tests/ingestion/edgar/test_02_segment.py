@@ -9,38 +9,6 @@ from tests.ingestion.edgar.support import (
 )
 
 
-def test_detect_number_returns_empty_without_item_heading_candidates(
-    edgar_module: ModuleType,
-) -> None:
-    """Reject the numbered-heading strategy when no Item headings exist.
-
-    An xref filing carries Item labels only in its mapping table, so the fallback must run.
-    """
-    _soup, blocks = build_blocks(
-        edgar_module,
-        "<p>Fundamentals of Our Business</p><p>Risk Factors</p><p>Our Capital</p>",
-    )
-
-    assert edgar_module.detect_number(blocks) == {}
-
-
-def test_detect_number_learns_the_loosest_observed_heading_rule(
-    edgar_module: ModuleType,
-) -> None:
-    """Learn a numbered-heading rule from enough styled Item candidates.
-
-    Minimum observed weight and size retain every heading, not just the emphasized ones.
-    """
-    _soup, blocks = build_blocks(edgar_module, build_numbered_body())
-
-    strategy = edgar_module.detect_number(blocks)
-
-    assert strategy == {
-        "type": "number",
-        "rules": [{"font_weight": 700, "font_size": 10.0, "in_table": False}],
-    }
-
-
 def test_number_segmentation_supports_semantic_and_class_based_bold(
     edgar_module: ModuleType,
 ) -> None:

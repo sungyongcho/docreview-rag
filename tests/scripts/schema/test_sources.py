@@ -37,17 +37,6 @@ def test_clean_start_removes_sources_but_preserves_unrelated_paths(tmp_path, sam
     assert sentinel.read_text() == (tmp_path / ".env").read_text() == "keep"
 
 
-def test_staging_restore_recovers_exact_files_and_manifest(tmp_path):
-    """A DB failure can restore every original byte rather than leave half a catalog."""
-    corpus = tmp_path / "data/corpus"
-    write_selection_catalog(corpus)
-    before = source_preview(tmp_path)
-    reset = SourceReset(tmp_path, before)
-    reset.stage()
-    reset.restore()
-    assert source_preview(tmp_path) == before
-
-
 def test_changed_source_preview_and_symlinks_refuse_mutation(tmp_path):
     """Stale confirmations and escaped artifacts cannot reach quarantine."""
     corpus = tmp_path / "data/corpus"

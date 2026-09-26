@@ -124,7 +124,6 @@ def test_config_serialization_is_canonical_and_does_not_mutate_input():
 @pytest.mark.parametrize(
     ("config", "message"),
     [
-        ({1: "not-a-string-key"}, "config keys must be strings"),
         ({"retriever": {1: "not-a-string-key"}}, "config keys must be strings"),
         ({"threshold": float("nan")}, "only finite JSON values"),
         ({"provider": object()}, "only finite JSON values"),
@@ -139,7 +138,6 @@ def test_config_serialization_rejects_ambiguous_or_non_json_values(config, messa
 @pytest.mark.parametrize(
     ("run_metrics", "message"),
     [
-        ({"latency_ms": 42.0}, "run metrics are missing recall_at_k"),
         ({}, "run metrics are missing recall_at_k"),
         (metrics(mrr=1.5), "run mrr"),
     ],

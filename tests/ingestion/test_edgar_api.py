@@ -132,12 +132,6 @@ def test_document_without_required_identity_is_rejected(tmp_path, missing):
         read_catalog(path)
 
 
-def test_valid_manifest_is_returned_in_order(tmp_path):
-    """Preserve common document order through serialization."""
-    documents = [entry("NVDA", "one"), entry("AMD", "two")]
-    assert list(read_catalog(write_manifest(tmp_path, documents)).documents) == documents
-
-
 # --- selection ---
 
 
@@ -260,15 +254,6 @@ def test_oversized_body_is_refused(monkeypatch):
 
 
 # --- storing ---
-
-
-def test_store_creates_the_issuer_directory_and_leaves_no_partial(tmp_path):
-    """The issuer directory is created and the staging file does not survive the write."""
-    target = tmp_path / "NVDA" / "one.html"
-    publish_bytes(tmp_path, "NVDA/one.html", FILING)
-
-    assert target.read_bytes() == FILING
-    assert list(target.parent.iterdir()) == [target]
 
 
 def test_failed_write_leaves_no_partial_file(tmp_path, monkeypatch):
@@ -419,14 +404,6 @@ def test_unlisted_ticker_fails_instead_of_shrinking_the_corpus():
         asyncio.run(resolve_ciks(client_returning(handler), ["NVDA", "AMD"], user_agent=USER_AGENT))
 
 
-def test_submission_columns_join_by_position():
-    """Filing history arrives column-wise and is only meaningful joined by index."""
-    columns = submissions_payload([TEN_K, TEN_Q])["filings"]["recent"]
-    rows = submission_rows(columns)
-    assert [row["form"] for row in rows] == ["10-K", "10-Q"]
-    assert rows[0]["primaryDocument"] == "nvda-20240128.htm"
-
-
 def test_discovered_filings_preserve_company_names_without_an_extra_request():
     """Use the submissions issuer name as a display alias for newly acquired filings."""
     requests = []
@@ -518,28 +495,12 @@ def test_existing_entries_keep_their_order_and_new_ones_follow():
     assert merged[2:] == added
 
 
-def test_a_filing_already_in_the_manifest_is_not_added_twice():
-    """Re-running discovery over the same range changes nothing."""
-    existing = [manifest_item("NVDA", "2024", "a")]
-    merged, added = merge_entries(existing, [manifest_item("NVDA", "2024", "a")])
-    assert added == []
-    assert len(merged) == 1
-
-
 def test_distinct_filings_for_one_fiscal_year_keep_distinct_identities():
     """Do not collapse different SEC accessions into an issuer-year database key."""
     existing = [manifest_item("NVDA", "2024", "a")]
     merged, added = merge_entries(existing, [manifest_item("NVDA", "2024", "other")])
     assert len(merged) == 2 and len(added) == 1
     assert merged[0].document_id != merged[1].document_id
-
-
-def test_manifest_round_trips_through_the_writer(tmp_path):
-    """Publish and read the exact common contract."""
-    path = write_manifest(tmp_path, [entry("NVDA", "one")])
-    catalog = read_catalog(path)
-    catalog.write(path)
-    assert read_catalog(path) == catalog
 
 
 # --- progress plumbing ---

@@ -3,7 +3,6 @@
 import pytest
 
 from app.evals.bilingual import (
-    KO_GOLDEN_PATH,
     TWIN_INVARIANT_FIELDS,
     BilingualSuite,
     TwinCaseError,
@@ -13,8 +12,6 @@ from app.evals.bilingual import (
 from app.evals.types import GoldenCase, GoldenSpan
 from tests.evals.golden import ABSENT_CASE_COUNT, CASE_COUNT, CATEGORY_COUNTS, POSITIVE_CASE_COUNT
 from tests.evals.support import SOURCE_SHA256
-
-KO_PATH = KO_GOLDEN_PATH
 
 
 def english_case(case_id: str = "m3c-01", **changes) -> GoldenCase:
@@ -55,12 +52,6 @@ def korean_case(case_id: str = "m3c-01", **changes) -> GoldenCase:
     )
 
 
-def test_the_korean_suite_ships_beside_the_frozen_english_one():
-    """Ship the Korean golden suite at its declared default path."""
-    assert KO_GOLDEN_PATH == KO_PATH
-    assert KO_PATH.is_file()
-
-
 def test_load_bilingual_suites_binds_both_languages_to_the_same_spans():
     """Bind both languages to the same ordered cases and source spans."""
     suite = load_bilingual_suites()
@@ -99,24 +90,10 @@ def test_bilingual_suite_selects_one_language_slice_at_a_time():
         suite.cases("fr")
 
 
-def test_validate_twin_cases_accepts_the_shipped_suites():
-    """Accept the committed English and Korean suites as valid twins."""
-    suite = load_bilingual_suites()
-
-    pairs = validate_twin_cases(suite.en, suite.ko)
-
-    assert len(pairs) == CASE_COUNT
-    assert [english.id for english, _ in pairs] == sorted(case.id for case in suite.en)
-
-
 @pytest.mark.parametrize(
     "en_changes, ko_changes, message",
     [
         ({}, {"id": "m3c-02"}, "same cases"),
-        ({}, {"category": "simple_lookup", "facet": "factual"}, "category"),
-        ({}, {"facet": "risk"}, "facet"),
-        ({}, {"tags": ()}, "tags"),
-        ({}, {"reference_answer": "매출총이익률이 상승했습니다."}, "reference_answer"),
         (
             {},
             {

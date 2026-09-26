@@ -5,22 +5,11 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 import pytest
 
-from app.api.review_profile import PromptPolicy
 from app.api.runtime import RuntimeApiServices
 from app.llm.openai_limits import OpenAILimitsManager
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
-
-
-def test_limits_expose_public_policy_without_consuming_allowance() -> None:
-    """The public workflow contract comes from the same model required by the guard."""
-    with TestClient(create_release_app()) as client:
-        first = client.get("/limits").json()
-        second = client.get("/limits").json()
-    assert first["prompt_policy"] == PromptPolicy().model_dump(mode="json")
-    assert first["per_call"]["editable"] is False
-    assert first["remaining_minute"] == second["remaining_minute"]
 
 
 def test_limits_expose_effective_runtime_call_caps(tmp_path) -> None:

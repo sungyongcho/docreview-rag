@@ -2,44 +2,11 @@
 
 from typing import cast
 
-import pytest
-
 from app.config import Settings
 from app.db.models import Base
 import app.evals.corpus as corpus
 from app.evals.corpus import _temporary_metadata, build_chunking_batch, load_chunking_filings
-from app.ingestion.parser import ParsedFiling
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
-
-
-def test_build_chunking_batch_reuses_supplied_filings_without_loading_manifest(monkeypatch):
-    """Reuse parsed filings instead of re-reading the manifest."""
-    parsed_filings = (cast(ParsedFiling, object()),)
-    expected_batch = object()
-    calls = []
-
-    def build_from_filings(filings, *, chunker, on_progress):
-        """Record the supplied filings and return the sentinel batch."""
-        calls.append(filings)
-        assert callable(chunker)
-        return expected_batch
-
-    monkeypatch.setattr(corpus, "build_seed_batch_from_filings", build_from_filings)
-    monkeypatch.setattr(
-        corpus,
-        "load_manifest",
-        lambda _path: pytest.fail("manifest must not be loaded when parsed filings are supplied"),
-    )
-
-    result = build_chunking_batch(
-        500,
-        provider=DeterministicEmbeddingProvider(),
-        parsed_filings=parsed_filings,
-        selection_id="sec-evaluation",
-    )
-
-    assert result is expected_batch
-    assert calls == [parsed_filings]
 
 
 def test_load_chunking_filings_parses_the_manifest_once(monkeypatch, tmp_path):

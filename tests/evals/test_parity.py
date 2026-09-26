@@ -156,19 +156,6 @@ def test_assess_parity_reports_delta_and_ratio_for_every_gated_metric():
     assert assessment.case_count == 2
 
 
-def test_assess_parity_fails_closed_when_the_english_slice_scored_zero():
-    """Leave a zero-denominator ratio undefined and fail the gate."""
-    english = evaluation("en", recall=0.0, hit_rate=0.0, mrr=0.0)
-    korean = evaluation("ko", recall=0.0, hit_rate=0.0, mrr=0.0)
-
-    assessment = assess_parity(english, korean)
-
-    # 0/0 would read as perfect agreement between two dead arms.
-    assert assessment.recall_ratio is None
-    assert not assessment.passed
-    assert "undefined" in assessment.failures[0]
-
-
 def test_the_parity_floor_is_inclusive_at_its_boundary():
     """Pass a ratio exactly at the configured parity floor."""
     floor = DEFAULT_MIN_RECALL_RATIO

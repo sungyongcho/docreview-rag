@@ -177,35 +177,6 @@ def test_repair_does_not_start_after_the_first_attempt_exhausts_budget():
     assert len(provider.prompts) == 1
 
 
-def test_budget_refusal_before_any_validation_carries_no_schema_errors():
-    """Leave the schema evidence empty when nothing failed validation."""
-    provider = DeterministicLLMProvider(
-        [raw(valid_output(), input_tokens=10, output_tokens=5)],
-        clock=TickClock(),
-    )
-
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=9)))
-
-    assert isinstance(result.refusal, BudgetExceeded)
-    assert result.refusal.schema_errors == ()
-
-
-def test_explicit_model_refusal_is_typed_and_not_repaired():
-    """Report a model refusal as typed evidence without repairing it."""
-    provider = DeterministicLLMProvider(
-        [raw("", refusal="I cannot provide that output.")],
-        clock=TickClock(),
-    )
-
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
-
-    assert result.status == "provider_refused"
-    assert isinstance(result.refusal, ProviderRefusal)
-    assert result.refusal.attempts == 1
-    assert result.metadata.retries == 0
-    assert len(provider.prompts) == 1
-
-
 @pytest.mark.parametrize(
     ("budget_changes", "response_changes", "which"),
     [
@@ -231,21 +202,9 @@ def test_explicit_usage_and_cost_budgets_fail_closed(budget_changes, response_ch
     assert result.status == "budget_exceeded"
     assert isinstance(result.refusal, BudgetExceeded)
     assert result.refusal.which == which
+    # Nothing failed validation before the refusal, so the schema evidence stays empty.
+    assert result.refusal.schema_errors == ()
     assert result.parsed is None
-
-
-def test_provider_exception_becomes_typed_error_without_fake_usage():
-    """Turn a transport exception into a typed error without inventing usage."""
-    provider = DeterministicLLMProvider([], clock=TickClock())
-
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
-
-    assert result.status == "provider_error"
-    assert isinstance(result.refusal, ProviderRefusal)
-    assert "response queue is empty" in result.refusal.message
-    assert result.metadata.input_tokens == 0
-    assert result.metadata.output_tokens == 0
-    assert result.metadata.raw_outputs == ("",)
 
 
 def test_provider_boundary_rejects_untyped_prompt_budget_and_mock_responses():
@@ -336,6 +295,8 @@ def test_openai_adapter_maps_structured_refusal_without_network_or_retry():
     assert result.status == "provider_refused"
     assert isinstance(result.refusal, ProviderRefusal)
     assert result.refusal.message == "Request refused by the model."
+    assert result.refusal.attempts == 1
+    assert result.metadata.retries == 0
     assert len(client.responses.calls) == 1
 
 
@@ -361,6 +322,8 @@ def test_openai_adapter_rejects_missing_usage_as_typed_provider_error():
     assert "token usage" in result.refusal.message
     assert result.metadata.input_tokens == 0
     assert result.metadata.output_tokens == 0
+    # The failed attempt is recorded as one empty raw output, never as invented usage.
+    assert result.metadata.raw_outputs == ("",)
 
 
 def test_provider_closes_only_the_client_it_opened_itself():
@@ -394,6 +357,8 @@ def test_strict_format_closes_every_object_and_requires_every_key():
     grade = nested["$defs"]["ChunkRelevance"]
     assert grade["additionalProperties"] is False
     assert grade["required"] == list(grade["properties"])
+    # The rationale length bound survives the strict rewrite and reaches the provider.
+    assert grade["properties"]["reason"]["maxLength"] == 160
 
 
 def test_strict_format_strips_defaults_and_requires_every_field():
@@ -410,11 +375,6 @@ def test_strict_format_strips_defaults_and_requires_every_field():
 
     assert "default" not in schema["properties"]["label"]
     assert schema["required"] == ["label"]
-
-
-def test_strict_format_is_deterministic_between_calls():
-    """Produce the same strict format on every call."""
-    assert strict_response_format(AnswerDecision) == strict_response_format(AnswerDecision)
 
 
 def test_repair_loop_still_guards_the_strict_path():
@@ -562,27 +522,3 @@ def test_post_hoc_accounting_is_unchanged_when_the_projection_undershoots():
     assert result.refusal.which == "input_tokens"
     assert result.refusal.used == 1_100
     assert result.refusal.projected_input_tokens is None
-
-
-def test_deterministic_provider_projects_nothing_by_default():
-    """Fixtures without an injected projection keep today's usage-only accounting."""
-    provider = DeterministicLLMProvider(
-        [raw(valid_output(), input_tokens=100, output_tokens=20)], clock=TickClock()
-    )
-
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=5)))
-
-    assert len(provider.prompts) == 1
-    assert result.status == "budget_exceeded"
-    assert isinstance(result.refusal, BudgetExceeded)
-    assert result.refusal.projected_input_tokens is None
-
-
-def test_strict_format_keeps_the_reason_bound():
-    """The strict decoding schema carries the rationale length bound to the provider."""
-    schema = strict_response_format(RelevanceJudgment)["schema"]
-    assert isinstance(schema, dict)
-    definitions = schema["$defs"]
-    assert isinstance(definitions, dict)
-    reason = definitions["ChunkRelevance"]["properties"]["reason"]
-    assert reason["maxLength"] == 160

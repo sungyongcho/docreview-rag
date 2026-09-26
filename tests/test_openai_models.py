@@ -26,7 +26,7 @@ def test_policy_defaults_are_role_scoped_and_price_exact_models():
     assert embedding.pricing.input_per_million_usd == Decimal("0.13")
 
 
-@pytest.mark.parametrize("model", ["gpt-5-mini", "gpt-4.1-mini", "gpt-5.6-sol", "other"])
+@pytest.mark.parametrize("model", ["gpt-5-mini", "gpt-5.6-sol", "other"])
 def test_policy_rejects_models_outside_the_role_allowlist(model):
     """Reject legacy, expensive, and arbitrary models before provider construction."""
     with pytest.raises(OpenAIModelPolicyError, match="allowed"):

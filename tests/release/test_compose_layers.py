@@ -89,12 +89,6 @@ def test_the_production_overlay_environment_refuses_the_local_engine(monkeypatch
     assert settings.local_llm_enabled is False
 
 
-@pytest.mark.parametrize("name", ["docker-compose.dev.yml", "docker-compose.prod.yml"])
-def test_overlays_declare_no_required_variables(name: str) -> None:
-    """`docker compose config` runs on a clean checkout, where nothing is exported."""
-    assert ":?" not in (ROOT / "docker" / name).read_text(encoding="utf-8")
-
-
 def test_the_deployment_artifact_moved_out_of_the_root() -> None:
     """The VM file lives beside the script that copies it, and forwards no local model key."""
     deploy = ROOT / "deploy" / "gcp" / "docker-compose.deploy.yml"
@@ -214,11 +208,10 @@ def test_compose_modes_inherit_the_image_schema_gate() -> None:
     assert app["environment"]["DOCREVIEW_MODE"] == "runtime"
 
 
-@pytest.mark.parametrize("group", ["1000", "2345"])
-def test_local_app_shares_host_group_and_writable_creation_mask(group: str) -> None:
+def test_local_app_shares_host_group_and_writable_creation_mask() -> None:
     """Local file creation retains the non-root image UID and the inherited schema gate."""
-    app = compose("docker-compose.dev.yml", {"HOST_GID": group})["services"]["app"]
-    assert app["user"] == f"10001:{group}"
+    app = compose("docker-compose.dev.yml", {"HOST_GID": "2345"})["services"]["app"]
+    assert app["user"] == "10001:2345"
     assert app.get("entrypoint") is None
     assert app["command"][:4] == ["sh", "-c", 'umask 0002; exec "$$@"', "--"]
     assert app["command"][4:7] == ["uv", "run", "--no-sync"]

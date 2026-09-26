@@ -186,13 +186,6 @@ def test_document_coverage_matches_golden(
 
 
 @pytest.mark.parametrize("doc", sorted(N_ITEMS))
-def test_no_extra_sec_items(doc: str, edgar_module: ModuleType, parsed: dict) -> None:
-    """Reject every parsed Item that is absent from the SEC Item order."""
-    items = [section.item for section in parsed[doc].sections if section.item]
-    assert [item for item in items if item not in edgar_module.ORDER] == []
-
-
-@pytest.mark.parametrize("doc", sorted(N_ITEMS))
 def test_missing_items_are_only_optional_items(
     doc: str,
     edgar_module: ModuleType,

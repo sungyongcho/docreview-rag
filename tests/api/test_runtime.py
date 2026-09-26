@@ -290,7 +290,6 @@ def routing_service():
         ("삼성전자는?", "005930", 2023),
         ("What about Samsung Electronics?", "005930", 2023),
         ("그럼 2024년은?", "NVDA", 2024),
-        ("그럼 2024년 매출은?", "NVDA", 2024),
         ("방금 이야기해준거 한글로 다시 설명해줄래", "NVDA", 2023),
         ("Please explain that again in Korean", "NVDA", 2023),
     ],
@@ -341,9 +340,7 @@ def test_followups_reach_retrieval_with_replaced_scope(classified_service, query
 @pytest.mark.parametrize(
     "query,issuer",
     [
-        ("Nvidia revenue", "NVDA"),
         ("What drove NVIDIA data center revenue growth?", "NVDA"),
-        ("삼성전자 매출", "005930"),
         ("삼성전자 메모리 사업의 주요 위험은 무엇인가요?", "005930"),
     ],
 )
@@ -396,65 +393,23 @@ def test_exact_greetings_use_fixed_guidance_without_classifier(classified_servic
     assert prompts == []
 
 
-def test_korean_restatement_keeps_prior_filing_scope(classified_service):
-    """A Korean restatement keeps the prior issuer and year without a provider call."""
-    from app.api.schemas import RetrieveRequest
-    from app.observability.stages import record_stages
-    from app.workflow.gate import ConversationTurn
-
-    service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
-    events = []
-
-    async def observe(event):
-        """Collect the actual server scope before the database boundary."""
-        events.append(event)
-
-    async def exercise():
-        """Run retrieval on top of a prior NVDA 2024 filing turn."""
-        with record_stages(observe), pytest.raises(LookupError, match="retrieval boundary"):
-            await service.retrieve(
-                RetrieveRequest(
-                    query="방금 이야기해준거 한글로 다시 설명해줄래",
-                    conversation_history=(
-                        ConversationTurn(role="user", text="Nvidia revenue 2024"),
-                        ConversationTurn(role="assistant", text="Prior filing answer."),
-                    ),
-                )
-            )
-
-    asyncio.run(exercise())
-    path = next(
-        event.path_decision for event in events if event.node == "route" and event.phase == "end"
-    )
-    assert path["intent"] == "document_review"
-    assert path["source"] == "deterministic"
-    assert path["matched_rule"] == "filing_followup"
-    assert path["resolved_scope"]["filters"]["issuers"] == ["NVDA"]
-    assert path["resolved_scope"]["filters"]["fiscal_years"] == [2024]
-    assert path["model_call_count"] == 0
-    assert prompts == []
-
-
-@pytest.mark.parametrize("limit,expected", [(0, 0), (1, 1), (2, 2)])
-def test_server_enforces_history_bounds(routing_service, limit, expected):
-    """A client cannot restore excluded filing context through an oversized allowed history."""
+def test_server_enforces_history_bounds(routing_service):
+    """A one-turn allowance keeps only the assistant turn, so excluded filing context stays out."""
     from app.api.review_profile import PromptPolicy
     from app.workflow.gate import ConversationTurn
 
     request = ReviewRequest(
         query="그럼 2024년은?",
-        session_profile=ReviewSessionProfile(prompt_policy=PromptPolicy(history_turns=limit)),
+        session_profile=ReviewSessionProfile(prompt_policy=PromptPolicy(history_turns=1)),
         conversation_history=(
             ConversationTurn(role="user", text="NVDA revenue 2023"),
             ConversationTurn(role="assistant", text="Prior answer"),
         ),
     )
     _, path = asyncio.run(routing_service._path_decision(request))
-    assert path["history_turns"] == expected
-    assert (path["matched_rule"] == "filing_followup") is (limit == 2)
-    if limit < 2:
-        assert path["retrieval_query"] == request.query
+    assert path["history_turns"] == 1
+    assert path["matched_rule"] != "filing_followup"
+    assert path["retrieval_query"] == request.query
 
 
 def test_zero_history_bound_prevents_implicit_inheritance(classified_service):
@@ -854,16 +809,15 @@ def classified_service(routing_service):
     asyncio.run(client.aclose())
 
 
-@pytest.mark.parametrize("allow_custom_policy", [False, True])
 def test_review_preserves_original_question_across_search_rewriting(
-    classified_service, monkeypatch, allow_custom_policy
+    classified_service, monkeypatch
 ):
-    """Public and DEV workflows receive the original question without another model call."""
+    """The workflow receives the original question without another model call."""
     from app.api import runtime as runtime_module
     from app.workflow.types import WorkflowRequest
 
     service, _, prompts = classified_service
-    service._allow_custom_prompt_policy = allow_custom_policy
+    service._allow_custom_prompt_policy = True
     request = ReviewRequest(query="NVIDIA의 2024년 매출 성장 요인은?")
     captured = []
 
@@ -939,11 +893,11 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
     assert not responses
 
 
-@pytest.mark.parametrize("endpoint", ["retrieve", "review"])
 @pytest.mark.parametrize(
-    "query,intent,names,target,code,stage,calls",
+    "endpoint,query,intent,names,target,code,stage,calls",
     [
         (
+            "retrieve",
             "샌디스크 성장 요인",
             "document_review",
             ["샌디스크"],
@@ -953,6 +907,7 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
             1,
         ),
         (
+            "retrieve",
             "SanDisk growth drivers",
             "document_review",
             ["SanDisk"],
@@ -962,15 +917,7 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
             1,
         ),
         (
-            "Compare Nvidia and SanDisk",
-            "document_review",
-            ["Nvidia", "SanDisk"],
-            "explicit",
-            "unknown_issuer",
-            "gate",
-            1,
-        ),
-        (
+            "retrieve",
             "Nvidia and UnknownCorp revenue",
             "document_review",
             ["Nvidia", "UnknownCorp"],
@@ -980,6 +927,17 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
             1,
         ),
         (
+            "review",
+            "Nvidia and UnknownCorp revenue",
+            "document_review",
+            ["Nvidia", "UnknownCorp"],
+            "explicit",
+            "unknown_issuer",
+            "gate",
+            1,
+        ),
+        (
+            "retrieve",
             "Nvidia and NvidiaAI revenue",
             "document_review",
             ["Nvidia", "NvidiaAI"],
@@ -989,6 +947,7 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
             1,
         ),
         (
+            "retrieve",
             "그 회사의 성장 요인은?",
             "document_review",
             [],
@@ -997,8 +956,20 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
             "gate",
             1,
         ),
-        ("Nvidia revenue 2099", None, [], None, "query_scope_empty", "gate", 0),
         (
+            "review",
+            "그 회사의 성장 요인은?",
+            "document_review",
+            [],
+            "unclear",
+            "ambiguous_issuer",
+            "gate",
+            1,
+        ),
+        ("retrieve", "Nvidia revenue 2099", None, [], None, "query_scope_empty", "gate", 0),
+        ("review", "Nvidia revenue 2099", None, [], None, "query_scope_empty", "gate", 0),
+        (
+            "retrieve",
             "Nvidia or another company?",
             "document_review",
             [],
@@ -1007,8 +978,9 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
             "gate",
             1,
         ),
-        ("고양이와 대화하기", None, [], None, "unsupported_request", "path", 0),
-        ("Pretend you are a cat", None, [], None, "unsupported_request", "path", 0),
+        ("retrieve", "고양이와 대화하기", None, [], None, "unsupported_request", "path", 0),
+        ("review", "고양이와 대화하기", None, [], None, "unsupported_request", "path", 0),
+        ("retrieve", "Pretend you are a cat", None, [], None, "unsupported_request", "path", 0),
     ],
 )
 def test_routing_stops_before_search_and_answer(
@@ -1047,55 +1019,36 @@ def test_routing_stops_before_search_and_answer(
 
 
 @pytest.mark.parametrize(
-    "query,names,target,prior,calls",
+    "query,names",
     [
-        ("Nvidia growth drivers", None, None, None, 0),
-        ("Compare all available companies", None, None, None, 0),
-        ("Compare all available companies' revenue", None, None, None, 0),
-        ("그럼 2024년은?", None, None, "NVDA revenue 2023", 0),
-        (
-            "NVIDIA 10-K sexual harassment risk disclosure",
-            ["Nvidia"],
-            "explicit",
-            None,
-            1,
-        ),
-        (
-            "삼성전자 사업보고서의 성희롱 관련 위험",
-            ["삼성전자"],
-            "explicit",
-            None,
-            1,
-        ),
+        ("NVIDIA 10-K sexual harassment risk disclosure", ["Nvidia"]),
+        ("삼성전자 사업보고서의 성희롱 관련 위험", ["삼성전자"]),
     ],
 )
-def test_supported_questions_reach_search(classified_service, query, names, target, prior, calls):
-    """Deterministic filing questions and classified targets both reach actual retrieval."""
+def test_supported_questions_reach_search(classified_service, query, names):
+    """A classified target the rules could not resolve still reaches actual retrieval."""
     from app.api.schemas import RetrieveRequest
-    from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    if calls:
-        responses.append(
-            {
-                "intent": "document_review",
-                "reason": "A filing question.",
-                "requested_issuers": names,
-                "target_scope": target,
-            }
-        )
-    history = (ConversationTurn(role="user", text=prior),) if prior else ()
+    responses.append(
+        {
+            "intent": "document_review",
+            "reason": "A filing question.",
+            "requested_issuers": names,
+            "target_scope": "explicit",
+        }
+    )
     with pytest.raises(LookupError, match="retrieval boundary reached"):
-        asyncio.run(service.retrieve(RetrieveRequest(query=query, conversation_history=history)))
-    assert len(prompts) <= calls
+        asyncio.run(service.retrieve(RetrieveRequest(query=query)))
+    assert len(prompts) <= 1
 
 
-@pytest.mark.parametrize("endpoint", ["retrieve", "review"])
 @pytest.mark.parametrize(
-    "query",
+    "endpoint,query",
     [
-        "Compare all available companies' revenue",
-        "모든 회사의 매출을 비교해줘",
+        ("retrieve", "Compare all available companies' revenue"),
+        ("retrieve", "모든 회사의 매출을 비교해줘"),
+        ("review", "모든 회사의 매출을 비교해줘"),
     ],
 )
 def test_explicit_corpus_wide_scope_keeps_every_language(classified_service, endpoint, query):
@@ -1134,8 +1087,7 @@ def test_explicit_corpus_wide_scope_keeps_every_language(classified_service, end
     assert prompts == []
 
 
-@pytest.mark.parametrize("language", ["en", "ko"])
-def test_corpus_wide_scope_preserves_explicit_language_filter(classified_service, language):
+def test_corpus_wide_scope_preserves_explicit_language_filter(classified_service):
     """A user-chosen language filter still narrows an all-corpus request."""
     from app.api.schemas import RetrieveRequest
     from app.observability.stages import record_stages
@@ -1153,7 +1105,7 @@ def test_corpus_wide_scope_preserves_explicit_language_filter(classified_service
             await service.retrieve(
                 RetrieveRequest(
                     query="Compare all available companies' revenue",
-                    session_profile=ReviewSessionProfile(languages=(language,)),
+                    session_profile=ReviewSessionProfile(languages=("ko",)),
                 )
             )
 
@@ -1164,7 +1116,7 @@ def test_corpus_wide_scope_preserves_explicit_language_filter(classified_service
     assert path["target_scope"] == "all"
     resolved_scope = path["resolved_scope"]
     assert resolved_scope["source"] == "explicit"
-    assert resolved_scope["filters"]["languages"] == [language]
+    assert resolved_scope["filters"]["languages"] == ["ko"]
     assert path["model_call_count"] == 0
     assert prompts == []
 

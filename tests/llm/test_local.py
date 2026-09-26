@@ -25,10 +25,19 @@ def budget() -> ProviderBudget:
     )
 
 
-def test_ollama_native_normalizes_structured_output_and_usage() -> None:
-    """Map native message and token counters onto the shared provider contract."""
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(
+@pytest.mark.parametrize(("context_window", "expected_num_ctx"), [(None, 150), (12_600, 12_600)])
+def test_ollama_request_states_its_window_and_maps_the_native_reply(
+    context_window, expected_num_ctx
+) -> None:
+    """Ask Ollama for the budget's window, or the configured run-wide one, and map its reply.
+    Ollama drops overflow past its default window and reloads the model when the window changes.
+    """
+    sent: list[dict[str, object]] = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        """Record the request body and answer with a structured reply and token counters."""
+        sent.append(json.loads(request.content))
+        return httpx.Response(
             200,
             json={
                 "message": {"content": '{"answer":"hello"}'},
@@ -36,18 +45,25 @@ def test_ollama_native_normalizes_structured_output_and_usage() -> None:
                 "eval_count": 3,
             },
         )
-    )
-    client = httpx.AsyncClient(transport=transport)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
     provider = LocalLLMProvider(
         base_url="http://127.0.0.1:11434",
         model_name="test",
         protocol="ollama",
         client=client,
+        context_window=context_window,
     )
 
     result = asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
     asyncio.run(client.aclose())
 
+    options = sent[0]["options"]
+    assert isinstance(options, dict)
+    # The window must cover both halves of the budget, or be the configured run-wide window.
+    assert options["num_ctx"] == expected_num_ctx
+    assert options["num_predict"] == 50
+    assert sent[0]["think"] is False, "hidden reasoning would consume the output allowance"
     assert result.status == "ok"
     assert result.parsed == ChatReply(answer="hello")
     assert result.metadata.api_url == "local://ollama"
@@ -72,42 +88,6 @@ def test_local_provider_fails_closed_when_usage_is_missing() -> None:
 
     assert result.status == "provider_error"
     assert result.metadata.input_tokens == 0
-
-
-def test_ollama_request_asks_for_a_window_that_fits_the_budget() -> None:
-    """Ollama defaults to a small context and silently drops the overflow.
-
-    Notes
-    -----
-    A truncated evidence prompt would yield an answer about filings the model never read,
-    so the request states the window the caller's budget already assumes.
-    """
-    sent: list[dict[str, object]] = []
-
-    def capture(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content))
-        return httpx.Response(
-            200,
-            json={
-                "message": {"content": '{"answer":"hello"}'},
-                "prompt_eval_count": 8,
-                "eval_count": 3,
-            },
-        )
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
-    provider = LocalLLMProvider(
-        base_url="http://127.0.0.1:11434", model_name="test", protocol="ollama", client=client
-    )
-
-    asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
-    asyncio.run(client.aclose())
-
-    options = sent[0]["options"]
-    assert isinstance(options, dict)
-    assert options["num_ctx"] == 150, "the window must cover both halves of the budget"
-    assert options["num_predict"] == 50
-    assert sent[0]["think"] is False, "hidden reasoning would consume the output allowance"
 
 
 def test_ollama_timing_preserves_attempts_and_omits_unreceived_fields() -> None:
@@ -188,39 +168,6 @@ def test_local_provider_refuses_an_oversized_prompt_before_contacting_ollama() -
     assert getattr(result.refusal, "which", None) == "input_tokens"
     assert getattr(result.refusal, "projected_input_tokens", 0) > 100
     assert result.metadata.input_tokens == 0
-
-
-def test_ollama_keeps_the_configured_window_when_the_remaining_budget_shrinks() -> None:
-    """A configured window is requested unchanged so later calls of a run never reload the model."""
-    sent: list[dict[str, object]] = []
-
-    def capture(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content))
-        return httpx.Response(
-            200,
-            json={
-                "message": {"content": '{"answer":"hello"}'},
-                "prompt_eval_count": 8,
-                "eval_count": 3,
-            },
-        )
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
-    provider = LocalLLMProvider(
-        base_url="http://127.0.0.1:11434",
-        model_name="test",
-        protocol="ollama",
-        client=client,
-        context_window=12_600,
-    )
-
-    asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
-    asyncio.run(client.aclose())
-
-    options = sent[0]["options"]
-    assert isinstance(options, dict)
-    assert options["num_ctx"] == 12_600
-    assert options["num_predict"] == 50
 
 
 def test_provider_carries_the_configured_timeout_and_refuses_a_nonpositive_one() -> None:

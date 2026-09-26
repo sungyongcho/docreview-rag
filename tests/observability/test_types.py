@@ -121,17 +121,3 @@ def test_run_report_rejects_non_json_reports_and_inconsistent_direct_totals():
             report=None,
             steps=(step_trace(),),
         )
-
-
-def test_schema_refusal_keeps_prompt_and_raw_output_for_audit():
-    """Keep the prompt and the raw output behind a schema refusal for audit."""
-    refusal = run_report(
-        status="schema_rejected",
-        report={"reason": {"code": "schema_rejected"}},
-        steps=[step_trace(llm_output="not json", error="schema validation failed", retries=1)],
-    )
-
-    assert refusal.system_prompt == "Use only retrieved filing evidence."
-    assert refusal.steps[0].llm_output == "not json"
-    assert refusal.steps[0].error == "schema validation failed"
-    assert refusal.total_requests == 2

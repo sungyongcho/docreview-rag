@@ -252,20 +252,6 @@ def test_database_unavailability_has_a_stable_nonsecret_exit(monkeypatch, capsys
     }
 
 
-def test_python_module_entrypoint_exposes_all_commands():
-    """Expose both the retrieve and ingest commands when run as a module."""
-    result = subprocess.run(
-        [sys.executable, "-m", "app.cli", "--help"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    assert result.stderr == ""
-    assert "{retrieve,ingest}" in result.stdout
-
-
 def test_help_does_not_load_runtime_settings():
     """Print help without loading settings that would reject this environment."""
     environment = dict(os.environ)

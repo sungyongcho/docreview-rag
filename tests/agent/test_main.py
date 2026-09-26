@@ -22,20 +22,19 @@ def test_cli_arguments_default_to_the_offline_demo():
 
 
 @pytest.mark.parametrize(
-    "argv",
+    ("option", "out_of_range"),
     [
-        ["--question", "q", "--k", "0"],
-        ["--question", "q", "--k", "21"],
-        ["--question", "q", "--max-iterations", "0"],
-        ["--question", "q", "--max-iterations", "65"],
+        pytest.param("--k", ("0", "21"), id="k"),
+        pytest.param("--max-iterations", ("0", "65"), id="max_iterations"),
     ],
 )
-def test_cli_rejects_out_of_range_limits_at_parse_time(argv):
-    """Fail as a usage error before any runtime module loads."""
+def test_cli_rejects_out_of_range_limits_at_parse_time(option, out_of_range):
+    """Fail as a usage error at both ends of the range before any runtime module loads."""
     from app.agent.__main__ import arguments
 
-    with pytest.raises(SystemExit):
-        arguments(argv)
+    for value in out_of_range:
+        with pytest.raises(SystemExit):
+            arguments(["--question", "q", option, value])
 
 
 def test_main_requires_a_question_before_loading_runtime_modules():

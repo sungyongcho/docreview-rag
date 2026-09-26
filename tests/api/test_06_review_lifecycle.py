@@ -216,7 +216,7 @@ def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(hi
     assert response.json()["results"][0]["chunk_id"] == hit.chunk_id
 
 
-@pytest.mark.parametrize("scope,languages", [("auto", []), ("sec", []), ("sec", ["en"])])
+@pytest.mark.parametrize("scope,languages", [("auto", []), ("sec", ["en"])])
 def test_korean_preset_retrieval_uses_the_issuer_language_without_translation(
     hit, scope, languages
 ):

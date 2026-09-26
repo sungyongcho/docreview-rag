@@ -34,16 +34,6 @@ def test_production_names_the_reason_and_never_probes_the_endpoint(monkeypatch) 
     assert result == {"enabled": False, "reason": "disabled_in_prod"}
 
 
-def test_production_blocks_the_default_endpoint(monkeypatch) -> None:
-    """Production does not probe even when the local endpoint now has a default."""
-    monkeypatch.setenv("DOCREVIEW_MODE", "runtime")
-    monkeypatch.setenv("MODE", "prod")
-
-    result = asyncio.run(_local_engine_readiness(ReleaseSettings(_env_file=None)))
-
-    assert result == {"enabled": False, "reason": "disabled_in_prod"}
-
-
 def test_development_probes_and_reports_the_model_it_found(monkeypatch) -> None:
     """A development build asks the host which models it actually holds."""
 

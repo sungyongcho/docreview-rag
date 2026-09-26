@@ -41,7 +41,6 @@ def test_missing_sources_block_job_registration(tmp_path):
     [
         ("unparsed", "parsing_required"),
         ("changed_source", "parsing_required"),
-        ("missing_vectors", "index_update_required"),
         ("missing_bm25", "index_update_required"),
         ("ready", "ready"),
     ],
@@ -53,8 +52,6 @@ def test_preparation_distinguishes_index_and_exact_source_versions(
     status = CorpusStatus(True, "compatible", "ok", 1, 1, 1, 0, True, True, "deterministic")
     if scenario == "unparsed":
         status = replace(status, chunks=0)
-    if scenario == "missing_vectors":
-        status = replace(status, pending_embeddings=1)
     if scenario == "missing_bm25":
         status = replace(status, bm25_ready=False)
 

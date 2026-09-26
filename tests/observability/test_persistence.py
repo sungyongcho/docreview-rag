@@ -61,8 +61,8 @@ def test_persistence_mapping_preserves_provenance_and_redacts_secrets():
     assert REDACTED in trace.llm_output
 
 
-def test_redaction_covers_quoted_assignments_and_rejects_key_collisions():
-    """Redact quoted secret assignments and reject colliding redaction keys."""
+def test_redaction_covers_quoted_assignments_explicit_secrets_and_key_collisions():
+    """Redact quoted assignments and explicit secrets in one pass, and reject colliding keys."""
 
     assert redact_sensitive_text('password="alpha beta"') == "password=[REDACTED]"
     assert redact_sensitive_text("secret='alpha beta'") == "secret=[REDACTED]"
@@ -73,6 +73,11 @@ def test_redaction_covers_quoted_assignments_and_rejects_key_collisions():
         )
         == "pair [REDACTED] [REDACTED]"
     )
+    # "REDACT" occurs inside the replacement text, so a second sequential replacement
+    # would rewrite what the first one produced.
+    secrets = ["ABCDEF", "REDACT"]
+    assert redact_sensitive_text("ABCDEF", secret_values=secrets) == REDACTED
+    assert redact_sensitive_text("ABCDEF", secret_values=list(reversed(secrets))) == REDACTED
 
     collision = run_report(report={"api_key=foo": "first", "api_key=bar": "second"})
     with pytest.raises(ValueError, match="duplicate JSON key"):
@@ -118,16 +123,6 @@ def test_credential_keys_in_a_report_have_their_values_replaced_wholesale():
         "openai_api_key": REDACTED,
         "nested": {"password": REDACTED, "label": "SUPPORTED"},
     }
-
-
-def test_equal_length_secrets_redact_in_one_stable_pass():
-    """Replace every explicit secret in one pass, independent of the order supplied."""
-    # "REDACT" occurs inside the replacement text, so a second sequential replacement
-    # would rewrite what the first one produced.
-    secrets = ["ABCDEF", "REDACT"]
-
-    assert redact_sensitive_text("ABCDEF", secret_values=secrets) == REDACTED
-    assert redact_sensitive_text("ABCDEF", secret_values=list(reversed(secrets))) == REDACTED
 
 
 def test_persistence_flushes_without_committing_or_live_services():

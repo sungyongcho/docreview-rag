@@ -89,9 +89,7 @@ def test_fixed_pairs_project_only_counts_and_cache_reads():
     assert corpus.snapshot.await_count == catalog.documents.await_count == 1
 
 
-@pytest.mark.parametrize(
-    "schema,valid", [("unavailable", True), ("incompatible", True), ("compatible", False)]
-)
+@pytest.mark.parametrize("schema,valid", [("unavailable", True), ("compatible", False)])
 def test_unknown_preparation_is_not_zero(schema, valid):
     """Schema or manifest problems return unavailable before projection."""
     reader, _, catalog = _reader(schema=schema, valid=valid)

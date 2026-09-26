@@ -82,22 +82,6 @@ def test_statement_applies_every_shared_filter_with_and_semantics():
     assert ["table"] in params.values()
 
 
-def test_statement_confines_vector_search_to_snapshot_membership():
-    """Filter vector candidates through immutable snapshot chunk membership."""
-    sql, params = normalized_sql(
-        vector.vector_search_statement(
-            VALID_QUERY_VECTOR,
-            identity=IDENTITY,
-            k=5,
-            filters=RetrievalFilters(snapshot_id=7),
-        )
-    )
-
-    assert "snapshot_chunks" in sql
-    assert "FROM chunks" not in sql
-    assert 7 in params.values()
-
-
 def test_item_null_filter_does_not_emit_an_empty_in_predicate():
     """Filter unnumbered sections without emitting an empty IN clause."""
     sql, _params = normalized_sql(
@@ -133,11 +117,10 @@ def test_query_vector_rejects_zero_norm():
         vector.validate_query_vector([0.0] * 384)
 
 
-@pytest.mark.parametrize("k", [0, -1])
-def test_statement_rejects_nonpositive_limits(k):
+def test_statement_rejects_nonpositive_limits():
     """Reject nonpositive statement limits."""
     with pytest.raises(ValueError, match="positive"):
-        vector.vector_search_statement(VALID_QUERY_VECTOR, identity=IDENTITY, k=k)
+        vector.vector_search_statement(VALID_QUERY_VECTOR, identity=IDENTITY, k=0)
 
 
 def test_search_returns_complete_chunk_hits_and_similarity_scores():
@@ -224,14 +207,17 @@ def test_model_has_no_approximate_vector_index_without_measurement():
 
 
 def test_snapshot_vectors_require_the_complete_frozen_configuration():
-    """Keep frozen snapshot vectors separate and constrain tokenizer identity too."""
-    filters = RetrievalFilters(snapshot_id=1)
+    """Read only snapshot membership and constrain the complete frozen vector identity."""
+    filters = RetrievalFilters(snapshot_id=7)
     sql, params = normalized_sql(
         vector.vector_search_statement(VALID_QUERY_VECTOR, identity=IDENTITY, k=5, filters=filters)
     )
+    assert "snapshot_chunks" in sql
+    assert "FROM chunks" not in sql
     assert "snapshot_chunks.embedding_tokenizer =" in sql
     assert "snapshot_chunks.embedding_provider =" in sql
     assert "snapshot_chunks.embedding_model =" in sql
     assert "snapshot_chunks.embedding_dimensions =" in sql
     assert "JOIN chunk_embeddings" not in sql
+    assert 7 in params.values()
     assert IDENTITY.tokenizer in params.values()

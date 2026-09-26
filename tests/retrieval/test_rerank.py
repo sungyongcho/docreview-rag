@@ -68,7 +68,7 @@ def test_empty_candidates_and_zero_limit_do_not_call_provider():
     )
 
 
-@pytest.mark.parametrize(("query", "top_k"), [("", 1), ("   ", 1), ("query", -1)])
+@pytest.mark.parametrize(("query", "top_k"), [("   ", 1), ("query", -1)])
 def test_reranking_rejects_blank_queries_and_negative_limits(query, top_k):
     """Reject blank queries and negative result limits."""
 

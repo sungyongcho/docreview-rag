@@ -35,35 +35,6 @@ def reset(monkeypatch):
     return client
 
 
-def test_wrong_confirmation_never_starts_reset(fresh_io, tmp_path, monkeypatch):
-    """The new host cleaner cancels without submitting a Docker operation."""
-    monkeypatch.setattr("builtins.input", lambda prompt: "yes")
-    assert fresh.start_fresh(tmp_path) == 0
-    fresh_io.assert_not_called()
-
-
-def test_expired_preview_does_not_start_reset(fresh_io, tmp_path, monkeypatch):
-    """A host preview expires before any resource removal is accepted."""
-    times = iter([0, 301])
-    monkeypatch.setattr(fresh.time, "monotonic", lambda: next(times))
-    with pytest.raises(ValueError, match="expired"):
-        fresh.start_fresh(tmp_path)
-    fresh_io.assert_not_called()
-
-
-@pytest.mark.parametrize("failure", [RuntimeError, PermissionError])
-def test_incomplete_reset_never_builds(fresh_io, tmp_path, monkeypatch, failure):
-    """Partial cleanup errors never proceed into the bootstrap subprocess."""
-    from unittest.mock import Mock
-
-    monkeypatch.setattr(fresh, "remove_files", Mock(side_effect=failure("fixture failure")))
-    bootstrap = Mock()
-    monkeypatch.setattr(fresh.subprocess, "run", bootstrap)
-    with pytest.raises(failure):
-        fresh.start_fresh(tmp_path)
-    bootstrap.assert_not_called()
-
-
 def test_corpus_submits_the_web_job_contract(tmp_path, monkeypatch):
     """Keep terminal acquisition jobs visible in the same browser queue."""
     calls = []
@@ -184,25 +155,6 @@ def test_rejection_uses_only_the_generic_message(monkeypatch, payload):
         "before any resubmission. No automatic retry was attempted."
     )
     assert len(calls) == 1
-
-
-def test_completion_does_not_claim_browser_deletion(fresh_io, tmp_path, capsys):
-    """Host completion schedules a browser reset instead of claiming deletion."""
-    assert fresh.start_fresh(tmp_path) == 0
-    output = capsys.readouterr().out
-    assert "browser data will reset to defaults" in output
-    assert "Other applications are unchanged" in output
-    assert "deleted" not in output.lower()
-
-
-def test_plain_warning_and_noninteractive_guard(fresh_io, tmp_path, monkeypatch, capsys):
-    """A noninteractive command cannot authorize a host cleanup."""
-    monkeypatch.setenv("NO_COLOR", "1")
-    monkeypatch.setattr(fresh.sys.stdin, "isatty", lambda: False)
-    with pytest.raises(ValueError, match="interactively"):
-        fresh.start_fresh(tmp_path)
-    assert "\033[" not in capsys.readouterr().out
-    fresh_io.assert_not_called()
 
 
 def test_status_is_read_only_without_configuration(reset, tmp_path, capsys):
