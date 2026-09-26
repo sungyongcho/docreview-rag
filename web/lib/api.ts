@@ -448,7 +448,7 @@ export function getAdminDocuments(params: URLSearchParams): Promise<AdminDocumen
 }
 
 export function getDocumentFacets(registry = "", signal?: AbortSignal): Promise<DocumentFacets> {
-  return request<DocumentFacets>(`/admin/documents/facets${registry ? `?registry=${encodeURIComponent(registry)}` : ""}`, { signal }).then(facets => ({ ...facets, sections: facets.sections ?? [] }));
+  return request<DocumentFacets>(`/admin/documents/facets${registry ? `?registry=${encodeURIComponent(registry)}` : ""}`, { signal });
 }
 
 export function getPublishedDocuments(params: URLSearchParams): Promise<AdminDocumentPage> {
@@ -456,7 +456,7 @@ export function getPublishedDocuments(params: URLSearchParams): Promise<AdminDoc
 }
 
 export function getPublishedDocumentFacets(registry = "", signal?: AbortSignal): Promise<DocumentFacets> {
-  return request<DocumentFacets>(`/public/documents/facets${registry ? `?registry=${encodeURIComponent(registry)}` : ""}`, { signal }).then(facets => ({ ...facets, sections: facets.sections ?? [] }));
+  return request<DocumentFacets>(`/public/documents/facets${registry ? `?registry=${encodeURIComponent(registry)}` : ""}`, { signal });
 }
 
 export function getPublishedDocumentDetail(docId: string): Promise<DocumentDetail> {
