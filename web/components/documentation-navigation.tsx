@@ -4,7 +4,7 @@ import { CreatorSignature } from "@/components/creator-signature";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { HoverBubble } from "@/components/hover-bubble";
 import { DEV_ONLY_NOTE } from "@/lib/dev-mode";
-import { DOCUMENTATION_BASE, documentationDocument, legacyDocumentationTarget, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
+import { DOCUMENTATION_BASE, documentationDocument, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
 import { readingLine } from "@/lib/documentation-reading";
 import { preferredLocale, savedLocale, useI18n, type Locale } from "@/lib/i18n";
 import type { TutorialDocument, TutorialHeading } from "@/lib/tutorial-markdown.mjs";
@@ -71,21 +71,6 @@ export function DocumentationRedirect({ documentId }: { documentId: string }) {
     router.replace(destination.replace(DOCUMENTATION_BASE, ""));
   }, [router, documentId]);
   return <main className="docs-shell"><h1>DocReview RAG</h1><p>사용 안내 · Documentation</p><nav aria-label="Language / 언어"><Link href={documentationDocument(documentId, "ko")!.href.replace(DOCUMENTATION_BASE, "")} lang="ko">한국어</Link>{" · "}<Link href={documentationDocument(documentId, "en")!.href.replace(DOCUMENTATION_BASE, "")} lang="en">English</Link></nav></main>;
-}
-
-/** Retain old overview and Quick Start bookmarks after their sections move to focused pages. */
-export function DocumentationLegacyAnchor({ locale }: { locale: Locale }) {
-  const router = useRouter();
-  useEffect(() => {
-    function redirect() {
-      const target = legacyDocumentationTarget(locale, window.location.hash);
-      if (target) router.replace(target.document.href.replace(DOCUMENTATION_BASE, "") + (target.hash ? `#${encodeURIComponent(target.hash)}` : ""));
-    }
-    redirect();
-    window.addEventListener("hashchange", redirect);
-    return () => window.removeEventListener("hashchange", redirect);
-  }, [locale, router]);
-  return null;
 }
 
 export function DocumentationMenu({ current, documents, locale }: { current: string; documents: TutorialDocument[]; locale: Locale }) {

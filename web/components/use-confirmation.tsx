@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import "./confirmation.css";
 
 /** Optional button copy for a confirmation; defaults stay Cancel / Continue. */
-export interface ConfirmationLabels { confirm?: string; cancel?: string; danger?: boolean }
+interface ConfirmationLabels { confirm?: string; cancel?: string; danger?: boolean }
 
 /** Resolve user consent inside the app; unmounting always cancels pending work. */
 export function useConfirmation() {

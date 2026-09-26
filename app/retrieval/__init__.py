@@ -10,7 +10,6 @@ from app.retrieval.embeddings import (
     embed_missing_chunks,
     get_embedding_provider,
 )
-from app.retrieval.hybrid import hybrid_search, rrf_fuse
 from app.retrieval.lexical import lexical_search
 from app.retrieval.rerank import RerankProvider, rerank_hits
 from app.retrieval.sbert import SentenceTransformerEmbeddingProvider
@@ -35,12 +34,10 @@ __all__ = [
     "bm25_search",
     "embed_missing_chunks",
     "get_embedding_provider",
-    "hybrid_search",
     "lexical_search",
     "normalize_query",
     "rerank_hits",
     "retrieve",
-    "rrf_fuse",
     "sort_hits",
     "vector_search",
 ]

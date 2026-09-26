@@ -14,8 +14,9 @@ from app.llm.openai_limits import CEILING_ENV_KEYS, OpenAILimitsManager
 from app.llm.provider import LLMProvider, RawProviderResponse
 from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
 from app.release.app import create_release_app
-from app.release.config import ReleaseSettings
+from app.release.config import AdminMode, ReleaseSettings
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.support import load_settings
 
 
 class _StubProvider(LLMProvider):
@@ -59,7 +60,7 @@ def ceiling() -> ProviderBudget:
     )
 
 
-def limits_app(tmp_path, environment="dev", admin_mode="live", admin_cors_origin=None):
+def limits_app(tmp_path, environment="dev", admin_mode: AdminMode = "live", admin_cors_origin=None):
     """Build real routes around a fake OpenAI provider and a temporary settings file."""
     manager = OpenAILimitsManager(
         ceiling(), path=tmp_path / "openai-limits.json", enabled=environment == "dev"
@@ -71,10 +72,11 @@ def limits_app(tmp_path, environment="dev", admin_mode="live", admin_cors_origin
         openai_limits=manager,
         allow_local_engine=environment == "dev",
     )
-    settings = ReleaseSettings(
-        _env_file=None,
-        DOCREVIEW_ENVIRONMENT=environment,
-        mode="runtime",
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
+        environment=environment,
+        service_mode="runtime",
         host="127.0.0.1",
         admin_mode=admin_mode,
         admin_cors_origin=admin_cors_origin,
@@ -116,7 +118,7 @@ def test_review_requests_use_the_saved_per_call_cap(tmp_path) -> None:
             max_input_tokens=5_000, max_output_tokens=200, max_cost_usd=Decimal("0.01")
         )
         request = ReviewRequest(query="What is disclosed?", session_profile=ReviewSessionProfile())
-        _, budget = await runtime._engine(request)
+        _, budget = await runtime._engines.resolve_engine(request)
         return budget
 
     budget = asyncio.run(exercise())

@@ -31,37 +31,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Corpus Jobs
-         * @description Return current corpus job queue and bounded history.
-         */
-        get: operations["corpus_jobs_admin_corpus_jobs_get"];
+        get?: never;
         put?: never;
         /**
          * Enqueue Corpus
          * @description Queue one safe corpus acquisition, ingest, or indexing operation.
          */
         post: operations["enqueue_corpus_admin_corpus_jobs_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/corpus/jobs/{job_id}/retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Retry Corpus
-         * @description Retry one known failed corpus job.
-         */
-        post: operations["retry_corpus_admin_corpus_jobs__job_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -180,26 +156,6 @@ export interface paths {
          * @description Return metrics and per-case changes between compatible artifacts.
          */
         get: operations["compare_evaluations_admin_evaluations_compare_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/evaluations/jobs/{job_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Evaluation Job
-         * @description Return one evaluation job by its public identifier.
-         */
-        get: operations["evaluation_job_admin_evaluations_jobs__job_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -569,11 +525,7 @@ export interface paths {
          */
         get: operations["local_connection_state_admin_local_llm_connection_get"];
         put?: never;
-        /**
-         * Connect Local Llm
-         * @description Verify and save a replacement endpoint, leaving the old one active on failure.
-         */
-        post: operations["connect_local_llm_admin_local_llm_connection_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -634,26 +586,6 @@ export interface paths {
          * @description Load one installed model without generating an answer or changing connection settings.
          */
         post: operations["prepare_local_model_admin_local_llm_prepare_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/local-llm/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reset Local Llm
-         * @description Restore the endpoint selected by environment, dotenv, or startup defaults.
-         */
-        post: operations["reset_local_llm_admin_local_llm_reset_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -930,26 +862,6 @@ export interface paths {
         get: operations["list_eval_results_eval_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/ingest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Ingest Manifest
-         * @description Parse and persist one explicit local manifest before responding.
-         */
-        post: operations["ingest_manifest_ingest_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1270,6 +1182,35 @@ export interface components {
             year: number;
         };
         /**
+         * AdminCommand
+         * @description Validated safe operation submitted through the local administrator UI.
+         */
+        AdminCommand: {
+            /** Confirm Delete */
+            confirm_delete?: boolean | null;
+            /** Deletion Token */
+            deletion_token?: string | null;
+            /** Document Ids */
+            document_ids?: string[] | null;
+            /** Expected Documents */
+            expected_documents?: number | null;
+            /**
+             * Identifiers
+             * @default []
+             */
+            identifiers: string[];
+            kind: components["schemas"]["AdminJobKind"];
+            /** Manifest */
+            manifest?: string | null;
+            /** Selection Id */
+            selection_id?: string | null;
+            /**
+             * Years
+             * @default []
+             */
+            years: number[];
+        };
+        /**
          * AdminDocumentResource
          * @description One filing row with current chunk and embedding coverage.
          */
@@ -1316,6 +1257,8 @@ export interface components {
             /** Text Chunks */
             text_chunks: number;
         };
+        /** @enum {string} */
+        AdminJobKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "ingest_selected" | "delete_sources" | "backfill_embeddings" | "rebuild_bm25";
         /**
          * ApiError
          * @description Machine-readable HTTP failure shared by all routes.
@@ -1420,7 +1363,7 @@ export interface components {
              * Blocked Node
              * @enum {string}
              */
-            blocked_node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            blocked_node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1556,7 +1499,7 @@ export interface components {
          * @description The same corpus job snapshot returned to CLI and web clients.
          */
         CorpusJobResource: {
-            command: components["schemas"]["CorpusOperationRequest"];
+            command: components["schemas"]["AdminCommand"];
             /**
              * Created At
              * Format: date-time
@@ -1591,48 +1534,6 @@ export interface components {
             status: "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
             /** Total */
             total: number | null;
-        };
-        /**
-         * CorpusJobsResource
-         * @description Current and terminal snapshots of the shared corpus job queue.
-         */
-        CorpusJobsResource: {
-            active: components["schemas"]["CorpusJobResource"] | null;
-            /** History */
-            history: components["schemas"]["CorpusJobResource"][];
-            /** Queued */
-            queued: components["schemas"]["CorpusJobResource"][];
-        };
-        /** @enum {string} */
-        CorpusOperationKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "ingest_selected" | "delete_sources" | "backfill_embeddings" | "rebuild_bm25";
-        /**
-         * CorpusOperationRequest
-         * @description One safe corpus operation accepted by the local operator API.
-         */
-        CorpusOperationRequest: {
-            /** Confirm Delete */
-            confirm_delete?: boolean | null;
-            /** Deletion Token */
-            deletion_token?: string | null;
-            /** Document Ids */
-            document_ids?: string[] | null;
-            /** Expected Documents */
-            expected_documents?: number | null;
-            /**
-             * Identifiers
-             * @default []
-             */
-            identifiers: string[];
-            kind: components["schemas"]["CorpusOperationKind"];
-            /** Manifest */
-            manifest?: string | null;
-            /** Selection Id */
-            selection_id?: string | null;
-            /**
-             * Years
-             * @default []
-             */
-            years: number[];
         };
         /**
          * CorpusSnapshotResource
@@ -2457,7 +2358,7 @@ export interface components {
         };
         /**
          * ExecutionData
-         * @description Versioned execution envelope; absent historical fields remain explicitly null.
+         * @description Versioned execution envelope with explicitly optional measurements.
          */
         ExecutionData: {
             /**
@@ -2524,12 +2425,10 @@ export interface components {
             input_tokens: number;
             /** Local */
             local?: boolean | null;
-            /** Local Timings */
-            local_timings?: components["schemas"]["LocalModelTiming"][];
             /** Model */
             model: string;
             /** Node */
-            node?: ("gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report") | null;
+            node?: ("gate" | "route" | "retrieve" | "grade" | "check" | "report") | null;
             /** Output Tokens */
             output_tokens: number;
             /** Projected Input Tokens */
@@ -2578,7 +2477,7 @@ export interface components {
              * Node
              * @enum {string}
              */
-            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
             /** Reasons */
             reasons?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -2692,8 +2591,6 @@ export interface components {
             };
             /** Filename */
             filename: string;
-            /** Parent Id */
-            parent_id: number | null;
             /** Payload */
             payload: {
                 [key: string]: unknown;
@@ -2706,15 +2603,13 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "draft" | "validated" | "published";
+            status: "draft" | "validated";
             suite_id: components["schemas"]["GoldenSuiteId"];
             /**
              * Updated At
              * Format: date-time
              */
             updated_at: string;
-            /** Version */
-            version: number;
         };
         /**
          * GoldenSpan
@@ -2824,42 +2719,6 @@ export interface components {
             removed_chunk_ids: number[];
         };
         /**
-         * IngestRequest
-         * @description One explicit local manifest ingestion request.
-         *
-         *     ``manifest_path`` is resolved inside the configured corpus directory; the API never
-         *     opens an arbitrary server path. ``create_schema`` mirrors the CLI flag: schema DDL
-         *     runs only when a caller asks for it, never as a per-request side effect.
-         */
-        IngestRequest: {
-            /**
-             * Chunk Batch Size
-             * @default 500
-             */
-            chunk_batch_size: number;
-            /**
-             * Create Schema
-             * @default false
-             */
-            create_schema: boolean;
-            /** Expected Documents */
-            expected_documents?: number | null;
-            /** Manifest Path */
-            manifest_path: string;
-            /** Selection Id */
-            selection_id: string;
-        };
-        /**
-         * IngestResponse
-         * @description Committed corpus row counts from synchronous ingestion.
-         */
-        IngestResponse: {
-            /** Chunks */
-            chunks: number;
-            /** Documents */
-            documents: number;
-        };
-        /**
          * JobHistoryRequest
          * @description An explicit history operation against a reviewed eligible count.
          */
@@ -2906,20 +2765,6 @@ export interface components {
             visible: number;
         };
         JsonValue: unknown;
-        /**
-         * LocalConnectionRequest
-         * @description A candidate endpoint entered in the developer connection settings.
-         */
-        LocalConnectionRequest: {
-            /** Base Url */
-            base_url: string;
-            /**
-             * Protocol
-             * @default auto
-             * @enum {string}
-             */
-            protocol: "auto" | "ollama" | "openai_responses";
-        };
         /**
          * LocalConnectionResponse
          * @description Private settings state and safe model metadata for the developer UI.
@@ -3163,7 +3008,7 @@ export interface components {
              * Node
              * @enum {string}
              */
-            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
         };
         /**
          * OpenAILimitsRequest
@@ -3479,7 +3324,7 @@ export interface components {
         };
         /**
          * PublicSnapshotDataset
-         * @description One filtered page from the exact published golden version.
+         * @description One filtered page from the exact cases evaluated by a published snapshot.
          */
         PublicSnapshotDataset: {
             /** Cases */
@@ -3490,16 +3335,12 @@ export interface components {
             limit: number;
             /** Offset */
             offset: number;
-            /** Revision Id */
-            revision_id: number | null;
             /** Snapshot Id */
             snapshot_id: number;
             /** Suite */
             suite: string;
             /** Total */
             total: number;
-            /** Version */
-            version: number | null;
         };
         /**
          * PublicSnapshotEvaluation
@@ -3926,7 +3767,7 @@ export interface components {
             /** Iterations */
             iterations: number;
             /** Node Path */
-            node_path: ("gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report")[];
+            node_path: ("gate" | "route" | "retrieve" | "grade" | "check" | "report")[];
             /** Report */
             report: components["schemas"]["WorkflowReport"] | components["schemas"]["ConversationReport"] | null;
             /** Run Id */
@@ -4011,8 +3852,6 @@ export interface components {
         SnapshotCreateRequest: {
             /** Eval Result Id */
             eval_result_id: number;
-            /** Golden Revision Id */
-            golden_revision_id?: number | null;
             /** Label */
             label: string;
             /**
@@ -4058,8 +3897,6 @@ export interface components {
             /** Document Count */
             document_count: number;
             eval_result: components["schemas"]["EvalResultResource"];
-            /** Golden Revision Id */
-            golden_revision_id: number | null;
             /** Label */
             label: string;
             /** Profile */
@@ -4218,7 +4055,7 @@ export interface components {
              * Node
              * @enum {string}
              */
-            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
             /** Path Decision */
             path_decision?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -4278,7 +4115,7 @@ export interface components {
              * Node
              * @enum {string}
              */
-            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
             /** Output Tokens */
             output_tokens: number;
             /**
@@ -4577,44 +4414,6 @@ export interface operations {
             };
         };
     };
-    corpus_jobs_admin_corpus_jobs_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CorpusJobsResource"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     enqueue_corpus_admin_corpus_jobs_post: {
         parameters: {
             query?: never;
@@ -4624,58 +4423,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CorpusOperationRequest"];
+                "application/json": components["schemas"]["AdminCommand"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CorpusJobResource"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    retry_corpus_admin_corpus_jobs__job_id__retry_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -4961,55 +4711,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvaluationComparisonResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    evaluation_job_admin_evaluations_jobs__job_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvaluationJobResource"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Request validation failed. */
@@ -5866,48 +5567,6 @@ export interface operations {
             };
         };
     };
-    connect_local_llm_admin_local_llm_connection_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LocalConnectionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LocalConnectionResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     diagnose_local_server_admin_local_llm_diagnostics_post: {
         parameters: {
             query?: never;
@@ -6000,44 +5659,6 @@ export interface operations {
                 "application/json": components["schemas"]["LocalModelPrepareRequest"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LocalConnectionResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    reset_local_llm_admin_local_llm_reset_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -6744,66 +6365,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalListResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    ingest_manifest_ingest_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["IngestRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IngestResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Request validation failed. */

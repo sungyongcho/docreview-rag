@@ -42,7 +42,7 @@ import type {
   EvaluationPreparation,
   ExperimentDefaults,
   CorpusSnapshot,
-  CorpusOperationRequest,
+  AdminCommand,
   OperatorJobBoard,
   Readiness,
   RetrievalProfile,
@@ -53,7 +53,7 @@ import type { RuntimeHealthKind } from "@/lib/use-runtime-health";
 export type BuildTab = "pipeline" | "documents" | "jobs";
 
 /** Cross-workspace destinations the Build pipeline links to. */
-export type BuildNavigationTarget =
+type BuildNavigationTarget =
   | { view: "review" }
   | { view: "system"; tab: "status" }
   | { view: "measure"; tab: "snapshots" | "runs" | "golden"; resultId?: number };
@@ -257,7 +257,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
     void getPublishedSnapshots().then((rows) => setSnapshotCount(Array.isArray(rows) ? rows.length : 0)).catch(() => undefined);
   }, [live]);
 
-  async function queueCorpus(body: CorpusOperationRequest) {
+  async function queueCorpus(body: AdminCommand) {
     if (!live) return;
     setBusy(true);
     try {
@@ -401,7 +401,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
     : runtimeCounts?.schema_status === "drifted" ? "Database schema is incompatible"
     : runtimeCounts?.schema_status === "unavailable" ? "Database schema is unavailable"
     : runtimeCounts?.writable === false ? "Source directory is not writable"
-    : runtimeCounts?.database_connected !== true || !["ok", "compatible"].includes(runtimeCounts?.schema_status ?? "") ? "Readiness not confirmed"
+    : runtimeCounts?.database_connected !== true || runtimeCounts?.schema_status !== "compatible" ? "Readiness not confirmed"
     : !runtimeCounts?.chunks ? "Finish steps 1–2 to enable retrieval."
     : profile.strategy !== "lexical" && runtimeCounts.pending_embeddings !== 0 && !activeCorpusJobs.some((job) => job.kind === "backfill_embeddings") ? "Complete Embeddings (step 3) before evaluating."
     : profile.strategy !== "vector" && profile.lexical_ranker === "bm25" && runtimeCounts.bm25_ready !== true && !activeCorpusJobs.some((job) => job.kind === "rebuild_bm25") ? "Complete BM25 (step 4) before evaluating."
@@ -475,7 +475,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
         onRefresh={() => live ? refresh("manual") : publicCorpus.refresh()}
       /></RetainedPanel>
 
-      <RetainedPanel active={tab === "documents"}><DocumentInventory active={tab === "documents"} refreshRevision={documentRevision} onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} fallbackDocuments={[]} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
+      <RetainedPanel active={tab === "documents"}><DocumentInventory active={tab === "documents"} refreshRevision={documentRevision} onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
 
       <RetainedPanel active={tab === "jobs"}>{(live
         ? <JobCenter

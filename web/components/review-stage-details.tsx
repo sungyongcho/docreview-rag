@@ -33,8 +33,8 @@ function verificationFields(value: unknown): Field[] {
 }
 
 /** Map the visual strip to the actual nodes recorded by the server. */
-export function disclosureNodes(stage: DisclosureStage, state: ReviewExecution): string[] {
-  return stage === "path" ? ["gate"] : stage === "gate" ? ["gate", "route"] : stage === "report" && state.pathDecision?.intent === "casual_chat" ? ["chat", "report"] : [stage];
+export function disclosureNodes(stage: DisclosureStage): string[] {
+  return stage === "path" ? ["gate"] : stage === "gate" ? ["gate", "route"] : [stage];
 }
 
 const DISCLOSURE_LABELS: Record<DisclosureStage, [number, string]> = {
@@ -51,7 +51,7 @@ export function ReviewStageDetails({ stage, state, performance, finalLabel, comp
   companyLabels?: CompanyLabels;
 }) {
   const { t } = useI18n();
-  const nodes = disclosureNodes(stage, state);
+  const nodes = disclosureNodes(stage);
   const results = records(performance?.stage_results).filter((item) => nodes.includes(String(item.node)));
   const calls = Array.isArray(performance?.model_calls) ? records(performance.model_calls).map((item, index): Record<string, unknown> => ({ ...item, order: index + 1 })).filter((item) => nodes.includes(String(item.node))) : undefined;
   const timingSource = performance?.stages ?? state.stageTimings;
@@ -64,7 +64,7 @@ export function ReviewStageDetails({ stage, state, performance, finalLabel, comp
   const requested = record(settings.requested_profile ?? performance?.requested_profile);
   const retrieval = record(settings.retrieval);
   const resolved = record(settings.resolved_profile ?? performance?.resolved_profile);
-  const skip = state.pathDecision?.intent === "casual_chat" && ["retrieve", "grade", "check"].includes(stage) ? "Skipped: conversation reply without retrieval" : stage === "check" && state.skippedNodes?.check ? "Skipped: relevance threshold not met" : null;
+  const skip = stage === "check" && state.skippedNodes?.check ? "Skipped: relevance threshold not met" : null;
   const sections: Section[] = [];
   if (stage === "path") sections.push({ fields: [
     { label: "Decision source", value: path.source },

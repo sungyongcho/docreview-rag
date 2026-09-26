@@ -3,7 +3,7 @@ import type { ManifestSummary } from "@/lib/types";
 export type AcquisitionCompany = NonNullable<ManifestSummary["issuers"]>[number];
 
 /** Use known source metadata, with the supported ticker/stock-code syntax for new issuers. */
-export function acquisitionRegistry(identifier: string, companies: readonly AcquisitionCompany[] = []): "sec" | "dart" {
+function acquisitionRegistry(identifier: string, companies: readonly AcquisitionCompany[] = []): "sec" | "dart" {
   return companies.find((company) => company.issuer === identifier)?.registry ?? (/^\d{6}$/.test(identifier) ? "dart" : "sec");
 }
 

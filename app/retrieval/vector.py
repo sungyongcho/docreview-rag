@@ -9,7 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DIM, Chunk, ChunkEmbedding, SnapshotChunk
 from app.retrieval._sql import apply_filters, hit_columns, hit_order_by
-from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
+from app.retrieval.embeddings import (
+    EmbeddingIdentity,
+    matching_embedding,
+    matching_snapshot_embedding,
+)
 from app.retrieval.types import ChunkHit, RetrievalFilters, finite_float
 
 
@@ -92,13 +96,7 @@ def vector_search_statement(
     if source is Chunk:
         statement = statement.join(ChunkEmbedding, matching_embedding(identity))
     else:
-        statement = statement.where(
-            SnapshotChunk.embedding_provider == identity.provider,
-            SnapshotChunk.embedding_model == identity.model,
-            SnapshotChunk.embedding_dimensions == identity.dimensions,
-            SnapshotChunk.embedding_tokenizer == identity.tokenizer,
-            SnapshotChunk.embedding.is_not(None),
-        )
+        statement = statement.where(matching_snapshot_embedding(identity))
     statement = apply_filters(statement, restrictions, source)
     return statement.order_by(*hit_order_by(distance.asc(), source)).limit(k)
 

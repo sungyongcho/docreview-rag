@@ -1,15 +1,20 @@
 """Canned-default release application and runtime composition tests."""
 
 from dataclasses import asdict
+from decimal import Decimal
 from typing import cast
 
 from fastapi.testclient import TestClient
 import pytest
 
+from app.api.deps import get_api_services
+from app.api.review_profile import PromptPolicy, ServerBM25
 from app.api.runtime import RuntimeApiServices
-from app.corpus_admin import CorpusStatus, RuntimeCorpusAdminService
-from app.llm.provider import DeterministicLLMProvider
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import CorpusStatus
 from app.llm.schemas import RawProviderResponse
+from app.observability.types import RunReport, build_run_report
+from app.release.ai_allowance import SharedAIAllowance, reserve_openai
 from app.release.app import build_runtime_services, create_release_app
 from app.release.config import ReleaseSettings
 from app.release.middleware import ReleaseGuardMiddleware
@@ -18,6 +23,55 @@ from app.retrieval.embeddings import (
     EmbeddingClient,
     OpenAIEmbeddingProvider,
 )
+from app.workflow.types import WorkflowReport
+from tests.llm.support import DeterministicLLMProvider
+from tests.support import load_settings
+
+
+def _run_report() -> RunReport:
+    """Build one terminal report the synchronous review route can project."""
+    report = WorkflowReport(
+        label="NOT_IN_DOCS",
+        answer="NOT_IN_DOCS",
+        citations=(),
+        rationale="No evidence.",
+        reasons=(),
+    )
+    return build_run_report(
+        run_id="run-metered",
+        request_context={"model_calls": []},
+        status="ok",
+        total_time_seconds=0.0,
+        system_prompt="Use only filing evidence.",
+        node_path=("retrieve",),
+        steps=(),
+        report=report.model_dump(mode="json"),
+    )
+
+
+def _guard_kwargs(app) -> dict[str, object]:
+    """Return the keyword arguments the release app handed to its request guard."""
+    guard = next(
+        middleware for middleware in app.user_middleware if middleware.cls is ReleaseGuardMiddleware
+    )
+    return guard.kwargs
+
+
+class _MeteredReview:
+    """Stand in for the runtime with reviews that reserve through the provider hook."""
+
+    def __init__(self, calls_per_review: int, amount: Decimal) -> None:
+        self.calls_per_review = calls_per_review
+        self.amount = amount
+        self.calls = 0
+
+    async def review(self, request, on_node=None):
+        """Reserve one provider call at a time, skipping the ``free`` query entirely."""
+        if request.query != "free":
+            for _ in range(self.calls_per_review):
+                await reserve_openai(self.amount)
+                self.calls += 1
+        return _run_report()
 
 
 def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> None:
@@ -51,80 +105,21 @@ def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> N
     assert release.json()["frontend"] == "next-static"
 
 
-def test_runtime_readiness_returns_typed_200_or_503_without_provider_calls(monkeypatch) -> None:
-    """Separate live corpus readiness from provider availability and liveness."""
-    for name in ("OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "OPENAI_API_KEY_DEV", "MODE"):
-        monkeypatch.delenv(name, raising=False)
-
-    async def ready_probe():
-        """Return one compatible populated corpus snapshot."""
-        return {
-            "status": {
-                "database_connected": True,
-                "schema_status": "compatible",
-                "schema_message": "compatible",
-                "documents": 2,
-                "chunks": 20,
-                "embedded_chunks": 20,
-                "pending_embeddings": 0,
-                "bm25_ready": True,
-                "writable": True,
-            }
-        }
-
-    async def degraded_probe():
-        """Return schema drift without mutating the database."""
-        return {
-            "status": {
-                "database_connected": True,
-                "schema_status": "drifted",
-                "schema_message": "traces is missing columns",
-                "documents": 0,
-                "chunks": 0,
-                "embedded_chunks": 0,
-                "pending_embeddings": 0,
-                "bm25_ready": False,
-                "writable": False,
-            }
-        }
-
-    settings = ReleaseSettings(mode="runtime", host="127.0.0.1", _env_file=None)
-    with TestClient(
-        create_release_app(
-            settings,
-            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-            readiness_probe=ready_probe,
-        )
-    ) as client:
-        ready = client.get("/ready")
-    assert ready.status_code == 200
-    assert ready.json()["status"] == "ready"
-    assert ready.json()["review_enabled"] is False
-    assert ready.json()["review_engines"]["openai"]["key_slot"] is None
-
-    with TestClient(
-        create_release_app(
-            settings,
-            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-            readiness_probe=degraded_probe,
-        )
-    ) as client:
-        degraded = client.get("/ready")
-    assert degraded.status_code == 503
-    assert degraded.json()["status"] == "degraded"
-    assert degraded.json()["corpus"]["schema_status"] == "drifted"
-
-
 @pytest.mark.parametrize(
-    "environment,admin_mode,headers,public",
+    "environment,admin_mode,headers,public,ready",
     [
-        ("prod", "readonly", {}, True),
-        ("dev", "readonly", {}, True),
-        ("dev", "live", {"x-docreview-public": "true"}, True),
-        ("dev", "live", {}, False),
+        ("prod", "readonly", {}, True, False),
+        ("dev", "readonly", {}, True, True),
+        ("dev", "live", {"x-docreview-public": "true"}, True, True),
+        ("dev", "live", {}, False, True),
+    ],
+    ids=[
+        "prod-surface-with-a-degraded-corpus",
+        "dev-readonly-surface",
+        "dev-live-proxy-marked-request",
+        "dev-live-operator-request",
     ],
 )
-@pytest.mark.parametrize("ready", [True, False])
 def test_public_readiness_publishes_counts_and_withholds_only_write_access(
     environment, admin_mode, headers, public, ready
 ) -> None:
@@ -145,11 +140,12 @@ def test_public_readiness_publishes_counts_and_withholds_only_write_access(
         """Supply private corpus status without accessing a database or provider."""
         return {"status": status, "documents": [{"issuer_name": "PRIVATE_COMPANY_FIXTURE"}]}
 
-    settings = ReleaseSettings(
-        _env_file=None,
-        DOCREVIEW_ENVIRONMENT=environment,
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
+        environment=environment,
         admin_mode=admin_mode,
-        mode="runtime",
+        service_mode="runtime",
         host="127.0.0.1",
     )
     with TestClient(
@@ -180,26 +176,113 @@ def test_public_readiness_publishes_counts_and_withholds_only_write_access(
     assert "PRIVATE_COMPANY_FIXTURE" not in response.text
 
 
-def test_release_app_blocks_ingest_and_rate_limits_post_requests() -> None:
-    """Block ingestion, refuse an unconfigured review, and rate limit, all with headers set."""
+def test_canned_mode_refuses_an_unconfigured_review_with_headers_set(monkeypatch, tmp_path) -> None:
+    """Answer a provider route with a typed 503 and the security headers when no runtime exists."""
+    monkeypatch.chdir(tmp_path)
+    request = {"query": "What revenue was reported?", "k": 1, "filters": {}}
+
+    with TestClient(create_release_app(ReleaseSettings())) as client:
+        unavailable = client.post("/retrieve", json=request)
+
+    assert unavailable.status_code == 503
+    assert unavailable.json()["error"]["code"] == "service_unavailable"
+    assert unavailable.headers["x-content-type-options"] == "nosniff"
+
+
+@pytest.mark.parametrize(
+    ("mode", "environment"),
+    [("canned", "dev"), ("runtime", "dev"), ("runtime", "prod")],
+)
+def test_every_mode_guards_with_the_shared_allowance(
+    monkeypatch, tmp_path, mode, environment
+) -> None:
+    """Build one allowance type in every mode so metering cannot differ between them."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MODE", environment)
+    settings = ReleaseSettings(service_mode=mode, host="127.0.0.1")
+    services = (
+        RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
+        if mode == "runtime"
+        else None
+    )
+
+    kwargs = _guard_kwargs(create_release_app(settings, services=services))
+
+    assert isinstance(kwargs["allowance"], SharedAIAllowance)
+    assert kwargs["allowance"].path == settings.public_allowance_path
+
+
+def test_public_review_meters_every_provider_call_against_the_day_cap(
+    monkeypatch, tmp_path
+) -> None:
+    """Charge each actual provider call of one admitted review to the UTC-day cost cap."""
+    monkeypatch.chdir(tmp_path)
     settings = ReleaseSettings(
-        _env_file=None,
+        service_mode="runtime",
+        public_daily_cost_usd=Decimal("0.03"),
+        openai_max_cost_usd=Decimal("0.01"),
+    )
+    app = create_release_app(
+        settings, services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
+    )
+    review = _MeteredReview(calls_per_review=3, amount=Decimal("0.01"))
+    app.dependency_overrides[get_api_services] = lambda: review
+
+    with TestClient(app) as client:
+        first = client.post("/review", json={"query": "What was revenue?"})
+        calls_after_first = review.calls
+        limits = client.get("/limits").json()
+        second = client.post("/review", json={"query": "What was revenue?"})
+
+    assert first.status_code == 200
+    assert calls_after_first == 3
+    assert Decimal(limits["remaining_daily_cost_usd"]) == 0
+    assert second.status_code == 429
+    assert second.json()["error"]["code"] == "daily_cost_limit"
+    assert review.calls * review.amount <= settings.public_daily_cost_usd
+
+
+def test_public_ai_routes_are_rate_limited_while_exempt_requests_pass(
+    monkeypatch, tmp_path
+) -> None:
+    """Rate limit public provider-bearing requests, leaving the operator and free work alone."""
+    monkeypatch.chdir(tmp_path)
+    settings = ReleaseSettings(
+        service_mode="runtime",
+        admin_mode="live",
+        host="127.0.0.1",
         rate_limit_per_minute=1,
         rate_limit_per_day=1,
     )
-    request = {"query": "What revenue was reported?", "k": 1, "filters": {}}
+    app = create_release_app(
+        settings, services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
+    )
+    app.dependency_overrides[get_api_services] = lambda: _MeteredReview(1, Decimal("0.001"))
+    public = {"x-docreview-public": "true"}
+    metered = {"query": "What was revenue?"}
 
-    with TestClient(create_release_app(settings)) as client:
-        ingest = client.post("/ingest", json={})
-        unavailable = client.post("/retrieve", json=request)
-        limited = client.post("/retrieve", json=request)
+    with TestClient(app) as client:
+        private = [client.post("/review", json=metered) for _ in range(2)]
+        free = client.post("/review", json={"query": "free"}, headers=public)
+        untouched = client.get("/limits", headers=public).json()
+        admitted = client.post("/review", json=metered, headers=public)
+        denied = client.post("/review", json=metered, headers=public)
+        free_after = client.post("/review", json={"query": "free"}, headers=public)
+        private_after = client.post("/review", json=metered)
 
-    assert ingest.status_code == 403
-    assert ingest.headers["x-content-type-options"] == "nosniff"
-    assert unavailable.status_code == 503
-    assert unavailable.json()["error"]["code"] == "service_unavailable"
-    assert limited.status_code == 429
-    assert limited.headers["x-content-type-options"] == "nosniff"
+    assert [response.status_code for response in private] == [200, 200]
+    assert all("x-ratelimit-remaining-minute" not in response.headers for response in private)
+    assert free.status_code == 200
+    assert "x-ratelimit-remaining-minute" not in free.headers
+    assert untouched["remaining_minute"] == 1
+    assert admitted.status_code == 200
+    assert admitted.headers["x-ratelimit-remaining-minute"] == "0"
+    assert denied.status_code == 429
+    assert denied.json()["error"]["code"] == "rate_limited"
+    assert int(denied.headers["retry-after"]) > 0
+    assert denied.headers["x-content-type-options"] == "nosniff"
+    assert free_after.status_code == 200
+    assert private_after.status_code == 200
 
 
 def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypatch) -> None:
@@ -217,7 +300,7 @@ def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypat
         )
 
     services = build_runtime_services(
-        ReleaseSettings(mode="runtime", _env_file=None),
+        load_settings(ReleaseSettings, service_mode="runtime", env_file=None),
         provider_factory=provider_factory,
     )
 
@@ -232,67 +315,85 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> 
     for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
         monkeypatch.delenv(name, raising=False)
 
-    services = build_runtime_services(ReleaseSettings(mode="runtime", _env_file=None))
+    services = build_runtime_services(
+        load_settings(ReleaseSettings, service_mode="runtime", env_file=None)
+    )
 
-    assert services._llm_provider is None
-    assert services._provider_budget is None
+    import asyncio
+
+    from app.api.errors import ApiProblemError
+    from app.api.review_profile import ReviewSessionProfile
+    from app.api.schemas import ReviewRequest
+
+    async def retrieval(session, query, k, filters):
+        """Fail the test if a review on the unconfigured engine reaches retrieval."""
+        raise AssertionError("an unconfigured engine reached retrieval")
+
+    request = ReviewRequest(
+        query="What are the risk factors?", session_profile=ReviewSessionProfile(engine="openai")
+    )
+    with pytest.raises(ApiProblemError) as refused:
+        asyncio.run(services.review_with_retrieval(request, retrieval))
+    assert refused.value.status_code == 503
+    assert refused.value.error.code == "provider_unavailable"
+
+
+def test_runtime_composition_serves_the_configured_bm25_settings(monkeypatch, tmp_path) -> None:
+    """Hand BM25_* settings to the served runtime and keep the built-in defaults otherwise."""
+    monkeypatch.chdir(tmp_path)
+    for name in ("BM25_K1", "BM25_B", "BM25_IDF"):
+        monkeypatch.delenv(name, raising=False)
+    default = build_runtime_services(ReleaseSettings(service_mode="runtime"))
+    monkeypatch.setenv("BM25_K1", "1.6")
+    monkeypatch.setenv("BM25_B", "0.5")
+    monkeypatch.setenv("BM25_IDF", "robertson")
+    configured = build_runtime_services(ReleaseSettings(service_mode="runtime"))
+
+    assert default.bm25_parameters == ServerBM25(1.2, 0.75, "lucene")
+    assert configured.bm25_parameters == ServerBM25(1.6, 0.5, "robertson")
 
 
 def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
-    """Expose administrator routes only in explicit loopback live mode."""
+    """Expose administrator routes and developer controls, and lift only the public request
+    limits, in explicit loopback live mode."""
     with TestClient(
-        create_release_app(ReleaseSettings(admin_mode="off", _env_file=None))
+        create_release_app(load_settings(ReleaseSettings, admin_mode="off", env_file=None))
     ) as client:
         hidden_paths = set(client.get("/openapi.json").json()["paths"])
 
-    live_settings = ReleaseSettings(
-        mode="runtime",
+    live_settings = load_settings(
+        ReleaseSettings,
+        service_mode="runtime",
         admin_mode="live",
         host="127.0.0.1",
-        _env_file=None,
+        env_file=None,
     )
-    with TestClient(
-        create_release_app(
-            live_settings,
-            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-        )
-    ) as client:
+    live = create_release_app(
+        live_settings,
+        services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+    )
+    guard = _guard_kwargs(live)
+    with TestClient(live) as client:
         live_paths = set(client.get("/openapi.json").json()["paths"])
+        capabilities = client.get("/capabilities").json()
 
     assert not any(path.startswith("/admin") for path in hidden_paths)
     assert "/admin/corpus" in live_paths
     assert "/admin/evaluations/runs" in live_paths
-
-
-def test_live_operator_disables_only_public_request_limits() -> None:
-    """Keep private bypass while retaining a cost limiter for proxy-marked public requests."""
-    settings = ReleaseSettings(
-        mode="runtime",
-        admin_mode="live",
-        host="127.0.0.1",
-        _env_file=None,
-    )
-    application = create_release_app(
-        settings, services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
-    )
-    guard = next(
-        middleware
-        for middleware in application.user_middleware
-        if middleware.cls is ReleaseGuardMiddleware
-    )
-
-    assert guard.kwargs["enforce_rate_limit"] is False
-    assert guard.kwargs["cost_limiter"] is not None
-    assert guard.kwargs["public_read_only"] is False
-    assert guard.kwargs["allow_ingest"] is False
+    assert capabilities["can_edit_prompt_policy"] is True
+    assert capabilities["can_run_evaluation"] is True
+    assert guard["enforce_rate_limit"] is False
+    assert isinstance(guard["allowance"], SharedAIAllowance)
+    assert guard["public_read_only"] is False
 
 
 def test_capabilities_and_limit_peek_reflect_release_mode_without_consuming_slots() -> None:
-    """Expose mode controls and inspect allowance without spending it."""
-    settings = ReleaseSettings(
+    """Expose mode controls, the public policy and the allowance without spending it."""
+    settings = load_settings(
+        ReleaseSettings,
         rate_limit_per_minute=2,
         rate_limit_per_day=3,
-        _env_file=None,
+        env_file=None,
     )
     with TestClient(create_release_app(settings)) as client:
         capabilities = client.get("/capabilities")
@@ -302,32 +403,14 @@ def test_capabilities_and_limit_peek_reflect_release_mode_without_consuming_slot
     assert capabilities.json()["can_edit_prompt_policy"] is False
     assert capabilities.json()["can_change_custom_retrieval"] is True
     assert capabilities.json()["can_compare_published_snapshots"] is True
+    assert first.json()["prompt_policy"] == PromptPolicy().model_dump(mode="json")
+    assert first.json()["per_call"]["editable"] is False
     assert first.json()["remaining_minute"] == 2
     assert second.json()["remaining_day"] == 3
     assert first.json()["retry_after_seconds"] == 0
     assert first.json()["minute_reset_seconds"] == 0
     assert first.json()["day_reset_seconds"] == 0
     assert first.json()["daily_cost_reset_at_utc"].endswith(("Z", "+00:00"))
-
-
-def test_live_capabilities_enable_developer_controls() -> None:
-    """Enable experiment controls only on explicit loopback live mode."""
-    settings = ReleaseSettings(
-        mode="runtime",
-        admin_mode="live",
-        host="127.0.0.1",
-        _env_file=None,
-    )
-    with TestClient(
-        create_release_app(
-            settings,
-            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-        )
-    ) as client:
-        capabilities = client.get("/capabilities").json()
-
-    assert capabilities["can_edit_prompt_policy"] is True
-    assert capabilities["can_run_evaluation"] is True
 
 
 @pytest.mark.parametrize("environment", ["dev", "prod"])
@@ -353,12 +436,13 @@ def test_release_uses_configured_embedding_identity_and_credential_slot(
 
     monkeypatch.setattr(release_app, "get_embedding_provider", embedding_factory)
     services = build_runtime_services(
-        ReleaseSettings(
-            mode="runtime",
+        load_settings(
+            ReleaseSettings,
+            service_mode="runtime",
             MODE=environment,
             OPENAI_API_KEY_LOCAL="sk-development-fixture",
             OPENAI_API_KEY_PROD="sk-production-fixture",
-            _env_file=None,
+            env_file=None,
         )
     )
 
@@ -375,7 +459,8 @@ def test_release_uses_configured_embedding_identity_and_credential_slot(
 def test_runtime_readiness_default_probe_shares_admin_status_and_keeps_the_payload(
     monkeypatch,
 ) -> None:
-    """The default probe reads the memoized administrator status and matches an injected probe."""
+    """The default probe reads the memoized administrator status, matches an injected probe,
+    and reports corpus readiness separately from provider availability."""
     for name in ("OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "OPENAI_API_KEY_DEV", "MODE"):
         monkeypatch.delenv(name, raising=False)
     status = CorpusStatus(
@@ -403,7 +488,9 @@ def test_runtime_readiness_default_probe_shares_admin_status_and_keeps_the_paylo
         """Return the same status through the injection seam."""
         return {"status": asdict(status)}
 
-    settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1", _env_file=None)
+    settings = load_settings(
+        ReleaseSettings, service_mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
+    )
     with TestClient(
         create_release_app(
             settings,
@@ -423,6 +510,9 @@ def test_runtime_readiness_default_probe_shares_admin_status_and_keeps_the_paylo
     assert ages == [2.0]
     assert default.status_code == injected.status_code == 200
     assert default.text == injected.text
+    assert default.json()["status"] == "ready"
+    assert default.json()["review_enabled"] is False
+    assert default.json()["review_engines"]["openai"]["key_slot"] is None
 
 
 def test_bm25_missing_is_normal_preparation_after_embeddings_finish():
@@ -445,7 +535,9 @@ def test_bm25_missing_is_normal_preparation_after_embeddings_finish():
             }
         }
 
-    settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1", _env_file=None)
+    settings = load_settings(
+        ReleaseSettings, service_mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
+    )
     with TestClient(
         create_release_app(
             settings,
@@ -486,7 +578,7 @@ def test_readiness_reports_update_without_hiding_existing_counts():
             }
 
         app = create_release_app(
-            ReleaseSettings(mode="runtime", host="127.0.0.1", _env_file=None),
+            load_settings(ReleaseSettings, service_mode="runtime", host="127.0.0.1", env_file=None),
             services=runtime,
             readiness_probe=probe,
         )

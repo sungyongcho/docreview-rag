@@ -21,7 +21,7 @@ from app.llm.schemas import (
     StrictSchema,
 )
 
-WorkflowNode = Literal["gate", "route", "retrieve", "chat", "grade", "check", "report"]
+WorkflowNode = Literal["gate", "route", "retrieve", "grade", "check", "report"]
 RunStatus = Literal["ok", "budget_exceeded", "schema_rejected", "error"]
 BudgetResource = Literal["iterations", "input_tokens", "output_tokens", "wall_clock_s"]
 JsonObject = dict[str, JsonValue]
@@ -40,20 +40,20 @@ _PROVIDER_RESOURCES: tuple[BudgetResource, ...] = (
     "wall_clock_s",
 )
 
-# A node is refused only on the resources it can actually consume. `retrieve` and
-# `report` issue no provider call, so blocking them on token exhaustion cannot prevent
-# any spend — it only discards work the run has already paid for. Declaring the draw per
-# node means a fifth node must state its resource class instead of silently inheriting
-# the wrong one.
+# A node is refused only on the resources it can actually consume. `retrieve` issues no
+# provider call, so blocking it on token exhaustion cannot prevent any spend, but it
+# opens the run and stays paced. `report` draws nothing: it issues no call and runs
+# after every provider call was paid for, so refusing it on any resource could only
+# discard a finished, verified answer. Declaring the draw per node means a fifth node
+# must state its resource class instead of silently inheriting the wrong one.
 NODE_BUDGET_RESOURCES: Final[Mapping[WorkflowNode, tuple[BudgetResource, ...]]] = MappingProxyType(
     {
         "gate": _PROVIDER_RESOURCES,
         "route": _PROVIDER_RESOURCES,
         "retrieve": _PACING_RESOURCES,
-        "chat": _PROVIDER_RESOURCES,
         "grade": _PROVIDER_RESOURCES,
         "check": _PROVIDER_RESOURCES,
-        "report": _PACING_RESOURCES,
+        "report": (),
     }
 )
 
@@ -75,19 +75,9 @@ class StepTrace(StrictSchema):
     llm_output: StrictStr
     retries: NonNegativeInt
     #: Requests actually sent for this step; zero for a refusal made before any call.
-    #: Records written before the field existed default to one request per attempt.
     requests: NonNegativeInt
     error: NonBlank | None = None
     local_timings: tuple[LocalModelTiming, ...] = ()
-
-    @model_validator(mode="before")
-    @classmethod
-    def default_requests(cls, data: object) -> object:
-        """Count one request per attempt unless the trace states how many were sent."""
-        if isinstance(data, dict) and data.get("requests") is None:
-            retries = data.get("retries")
-            data = {**data, "requests": retries + 1 if isinstance(retries, int) else 1}
-        return data
 
     @model_validator(mode="after")
     def validate_usage_details(self) -> Self:

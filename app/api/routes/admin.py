@@ -10,8 +10,6 @@ from fastapi.responses import FileResponse
 from app.api.admin_deps import AdminServices
 from app.api.admin_schemas import (
     CorpusJobResource,
-    CorpusJobsResource,
-    CorpusOperationRequest,
     CorpusSnapshotResource,
     DocumentDetailResponse,
     DocumentEmbeddingStatus,
@@ -34,7 +32,6 @@ from app.api.admin_schemas import (
     JobHistoryRequest,
     JobHistoryResultResource,
     JobHistorySummaryResource,
-    LocalConnectionRequest,
     LocalConnectionResponse,
     LocalDiagnosticsRequest,
     LocalDiagnosticsResponse,
@@ -56,7 +53,8 @@ from app.api.admin_schemas import (
     UsageResponse,
 )
 from app.api.errors import ApiProblemError, not_found, translate_runtime_errors
-from app.api.preset_store import PresetCatalog, StoredPreset, preset_store
+from app.api.preset_store import PresetCatalog, StoredPreset, effective_catalog, preset_store
+from app.api.review_profile import with_server_bm25
 from app.api.schemas import (
     ErrorResponse,
     SnapshotComparisonResponse,
@@ -64,6 +62,7 @@ from app.api.schemas import (
     ValidationIssue,
 )
 from app.config import get_settings
+from app.corpus_admin.types import AdminCommand
 from app.evals.drafts import DraftConflictError, DraftInputError
 from app.operator.job_history import HistoryConflictError
 
@@ -170,29 +169,12 @@ async def source_deletion_preview(
     "/corpus/jobs", response_model=CorpusJobResource, responses={400: {"model": ErrorResponse}}
 )
 async def enqueue_corpus(
-    request: CorpusOperationRequest,
+    request: AdminCommand,
     services: AdminServices,
 ) -> dict[str, Any]:
     """Queue one safe corpus acquisition, ingest, or indexing operation."""
     async with translate_runtime_errors():
         return await services.enqueue_corpus(request)
-
-
-@router.get("/corpus/jobs", response_model=CorpusJobsResource)
-async def corpus_jobs(services: AdminServices) -> dict[str, Any]:
-    """Return current corpus job queue and bounded history."""
-    return await services.corpus_jobs()
-
-
-@router.post(
-    "/corpus/jobs/{job_id}/retry",
-    response_model=CorpusJobResource,
-    responses={400: {"model": ErrorResponse}},
-)
-async def retry_corpus(job_id: str, services: AdminServices) -> dict[str, Any]:
-    """Retry one known failed corpus job."""
-    async with translate_runtime_errors():
-        return await services.retry_corpus(job_id)
 
 
 @router.post("/evaluations/preparation", response_model=EvaluationPreparationResource)
@@ -471,19 +453,6 @@ async def cancel_operator_job(job_id: str, services: AdminServices) -> OperatorJ
 
 
 @router.get(
-    "/evaluations/jobs/{job_id}",
-    response_model=EvaluationJobResource,
-    responses={404: {"model": ErrorResponse}},
-)
-async def evaluation_job(job_id: str, services: AdminServices) -> EvaluationJobResource:
-    """Return one evaluation job by its public identifier."""
-    job = await services.evaluation_job(job_id)
-    if job is None:
-        raise not_found("evaluation_job", job_id)
-    return job
-
-
-@router.get(
     "/evaluations/results/{result_id}",
     response_model=EvaluationResultDetailResponse,
     responses={404: {"model": ErrorResponse}},
@@ -538,16 +507,6 @@ async def local_connection_state(services: AdminServices) -> dict[str, Any]:
         return await services.local_connection_state()
 
 
-@router.post("/local-llm/connection", response_model=LocalConnectionResponse)
-async def connect_local_llm(
-    request: LocalConnectionRequest,
-    services: AdminServices,
-) -> dict[str, Any]:
-    """Verify and save a replacement endpoint, leaving the old one active on failure."""
-    async with translate_runtime_errors():
-        return await services.update_local_connection("connect", request.base_url, request.protocol)
-
-
 @router.post("/local-llm/disconnect", response_model=LocalConnectionResponse)
 async def disconnect_local_llm(services: AdminServices) -> dict[str, Any]:
     """Save explicit disconnection so environment defaults cannot reactivate it."""
@@ -595,13 +554,6 @@ async def diagnose_local_server(
         )
 
 
-@router.post("/local-llm/reset", response_model=LocalConnectionResponse)
-async def reset_local_llm(services: AdminServices) -> dict[str, Any]:
-    """Restore the endpoint selected by environment, dotenv, or startup defaults."""
-    async with translate_runtime_errors():
-        return await services.update_local_connection("reset")
-
-
 @router.get("/openai/limits", response_model=OpenAILimitsResponse)
 async def openai_limits_state(services: AdminServices) -> dict[str, Any]:
     """Return the effective OpenAI per-call caps and the ceiling they may not exceed."""
@@ -639,7 +591,7 @@ def _require_preset_dev() -> None:
 def list_presets(services: AdminServices, version: str | None = None) -> PresetCatalog:
     """Read a debounced catalog or return only its unchanged version."""
     _require_preset_dev()
-    return preset_store.catalog(version)
+    return effective_catalog(preset_store.catalog(version), services.bm25_parameters)
 
 
 @router.put("/presets", response_model=StoredPreset)
@@ -647,7 +599,11 @@ def put_preset(preset: StoredPreset, services: AdminServices) -> StoredPreset:
     """Atomically create or update one custom DEV preset."""
     _require_preset_dev()
     try:
-        return preset_store.save(preset)
+        return preset_store.save(
+            preset.model_copy(
+                update={"retrieval": with_server_bm25(preset.retrieval, services.bm25_parameters)}
+            )
+        )
     except ValueError as error:
         raise ApiProblemError(status_code=400, code="invalid_preset", message=str(error)) from error
     except OSError as error:
@@ -670,4 +626,4 @@ def delete_preset(services: AdminServices, id: str = Query(min_length=1)) -> Pre
         raise ApiProblemError(
             status_code=503, code="preset_write_failed", message="Could not delete the preset file."
         ) from error
-    return preset_store.catalog()
+    return effective_catalog(preset_store.catalog(), services.bm25_parameters)

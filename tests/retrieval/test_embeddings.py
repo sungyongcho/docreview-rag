@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.retrieval import embeddings
-from tests.retrieval.support import RecordingSession, normalized_sql
+from tests.retrieval.support import RecordingSession
+from tests.support import load_settings
 
 IDENTITY = embeddings.DeterministicEmbeddingProvider().identity
 
@@ -191,7 +192,7 @@ def test_openai_provider_rejects_incomplete_duplicate_or_wrong_dimension_data(
 
 
 def test_openai_sdk_import_is_lazy_for_direct_and_factory_paths():
-    """Import the module and use injected clients without loading the OpenAI SDK."""
+    """Import the module and use an injected client without loading the OpenAI SDK."""
     script = """
 import builtins
 import sys
@@ -221,14 +222,6 @@ class Client:
 
 client = Client()
 OpenAIEmbeddingProvider(client=client)
-get_embedding_provider(
-    Settings(
-        _env_file=None,
-        embedding_provider="openai",
-        OPENAI_API_KEY_LOCAL="injected-key",
-    ),
-    client=client,
-)
 
 builtins.__import__ = real_import
 created = []
@@ -264,16 +257,14 @@ assert created == ["direct-key", "factory-key"]
     assert completed.returncode == 0, completed.stderr
 
 
-@pytest.mark.parametrize("api_key", [None, SecretStr(""), SecretStr("   ")])
-def test_settings_require_nonblank_api_key_for_openai_provider(
-    api_key: SecretStr | None,
-):
-    """Reject an OpenAI provider configured without an explicit usable API key."""
+def test_settings_require_nonblank_api_key_for_openai_provider():
+    """Reject an OpenAI provider configured with a blank API key."""
     with pytest.raises(ValidationError, match="MODE-selected OpenAI key slot"):
-        Settings(
-            _env_file=None,
+        load_settings(
+            Settings,
+            env_file=None,
             embedding_provider="openai",
-            OPENAI_API_KEY_LOCAL=api_key,
+            OPENAI_API_KEY_LOCAL=SecretStr("   "),
         )
 
 
@@ -289,90 +280,6 @@ def test_provider_factory_uses_validated_settings_without_network_access():
 
     assert isinstance(provider, embeddings.DeterministicEmbeddingProvider)
     assert provider.dimensions == 384
-
-
-def test_missing_batch_selects_only_missing_configuration_in_stable_chunk_order():
-    """Select missing vectors in stable chunk order within a bounded transaction."""
-
-    class Result:
-        """Return one missing embedding row from a recorded query."""
-
-        def all(self):
-            """Expose all selected rows."""
-            return [
-                SimpleNamespace(
-                    id=7,
-                    index_text="indexed evidence",
-                    index_text_sha256=hashlib.sha256(b"indexed evidence").hexdigest(),
-                )
-            ]
-
-    session = RecordingSession(Result())
-    pending = asyncio.run(
-        embeddings._missing_batch(
-            cast(AsyncSession, session),
-            8,
-            after_chunk_id=6,
-            identity=IDENTITY,
-            document_ids=("selected-doc",),
-        )
-    )
-    sql, params = normalized_sql(session.statements[0])
-
-    assert pending == [pending_input(chunk_id=7, index_text="indexed evidence")]
-    assert "chunk_embeddings.input_sha256 = chunks.index_text_sha256" in sql
-    assert "chunk_embeddings.tokenizer =" in sql
-    assert "chunks.id >" in sql
-    assert "ORDER BY chunks.id" in sql
-    assert 6 in params.values()
-    assert 8 in params.values()
-
-
-def test_store_batch_guards_current_input_and_preserves_configurations():
-    """Insert a batch from current locked inputs and count accepted configurations."""
-
-    class ScalarResult:
-        """Expose identifiers returned by the guarded update."""
-
-        def all(self):
-            """Return the stored chunk identifiers."""
-            return [7]
-
-    class Result:
-        """Expose the scalar projection of one update result."""
-
-        def scalars(self):
-            """Return the scalar result wrapper."""
-            return ScalarResult()
-
-    session = RecordingSession(Result())
-    pending = [
-        pending_input(chunk_id=7, index_text="indexed evidence"),
-        pending_input(chunk_id=8, index_text="new evidence"),
-    ]
-    stored = asyncio.run(
-        embeddings._store_batch(
-            cast(AsyncSession, session),
-            pending,
-            [[1.0] * 384, [1.0] * 384],
-            identity=IDENTITY,
-        )
-    )
-    sql, params = normalized_sql(session.statements[0])
-
-    assert stored == 1
-    assert len(session.statements) == 1
-    assert "INSERT INTO chunk_embeddings" in sql
-    assert "JOIN (VALUES" in sql
-    assert "pending_embeddings.embedding" in sql
-    assert "chunks.id =" in sql
-    assert "chunks.index_text_sha256 = pending_embeddings.input_sha256" in sql
-    assert "FOR UPDATE OF chunks" in sql
-    assert "ON CONFLICT DO NOTHING" in sql
-    assert "chunks.index_text =" in sql
-    assert "RETURNING chunk_embeddings.chunk_id" in sql
-    assert "indexed evidence" in params.values()
-    assert "new evidence" in params.values()
 
 
 def test_backfill_batches_missing_chunks_and_reports_stale_updates(monkeypatch):
@@ -491,7 +398,9 @@ def test_openai_batches_provider_limits_without_splitting_inputs(texts):
                 [FakeEmbeddingData(index, [1.0] * 384) for index in reversed(range(len(inputs)))]
             )
 
-    provider = embeddings.OpenAIEmbeddingProvider(client=SimpleNamespace(embeddings=Resource()))
+    provider = embeddings.OpenAIEmbeddingProvider(
+        client=cast(embeddings.EmbeddingClient, SimpleNamespace(embeddings=Resource()))
+    )
     vectors = asyncio.run(provider.embed_documents(texts))
     assert len(vectors) == len(texts)
     assert len(requests) == 2

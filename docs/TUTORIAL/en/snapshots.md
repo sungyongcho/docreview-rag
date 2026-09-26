@@ -65,7 +65,7 @@ The **Snapshot comparison** panel shows a **Directly comparable** or **Limited c
 <!-- details: compatibility-reference | What to inspect before attributing a difference -->
 | Inspect | Why it matters |
 |---|---|
-| Suite and golden revision/hash | Different questions or source spans change what the scores measure. |
+| Suite and evaluated-case hash | Different questions or source spans change what the scores measure. |
 | Corpus identity and document count | A larger or changed evidence collection may explain better coverage. |
 | Embedding provider/model/dimensions | Vector identities determine which search configuration the data supports. |
 | Strategy, `k`, candidates, reranker | More returned evidence or work can change both quality and latency. |
@@ -103,14 +103,16 @@ Reach for this step only when a new snapshot is needed — applying or comparing
 |---|---|
 | Baseline | The result you want to improve on. |
 | Candidate | A different result to assess against the baseline. |
-| Dataset and revision | Identify the questions and ground truth behind the scores. |
+| Dataset and recorded cases | Identify the questions and ground truth behind the scores. |
 | Snapshot label | A recognizable name, such as `SEC hybrid k5 baseline`. The label does not establish compatibility. |
 
 2. Inspect changed cases and latency alongside metrics.
 3. Return to **3. Run evaluation**, select the suitable result, and open **Result details**.
 4. Enter the snapshot label and click **Save result as snapshot**. Saving does not publish the snapshot.
 
-Saving binds the result to the current document, chunk, vector, and lexical-index data. The server checks that the evaluation's recorded source fingerprint matches the current index, so only live-index quick evaluations qualify; where a golden revision is linked, it must be published and match the evaluation's golden hash. A creation notice confirms the private snapshot, and the result page then shows **View saved snapshot**; a repeat save returns the same snapshot unchanged. Find it by label in [snapshot management](#management).
+Saving binds the result to the current document, chunk, vector, and lexical-index data. The server checks that the evaluation's recorded source fingerprint matches the current index, so only live-index quick evaluations qualify. It verifies the actual evaluated questions and source spans against the recorded artifact; built-in and user-created dataset files use the same path. The original dataset-file hash remains provenance, separate from the evaluated-case identity. A creation notice confirms the private snapshot, and the result page then shows **View saved snapshot**; a repeat save returns the same snapshot unchanged. Find it by label in [snapshot management](#management).
+
+Older artifacts without the evaluated-case identity are unsupported and report an explicit error. Reading them does not modify or delete their files or database rows.
 
 The saved identity should match the intended result and the snapshot should appear in **Saved snapshots**, with its comparison limits understood. If the source corpus changed after evaluation, or a matrix result cannot become a queryable current-index snapshot, read the error; select a matching quick result or deliberately evaluate the desired current corpus. See [evaluation and snapshot recovery](troubleshooting.md#evaluation).
 

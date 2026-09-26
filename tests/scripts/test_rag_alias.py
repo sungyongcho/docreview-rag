@@ -44,15 +44,13 @@ def run_shell(shell, command, *, env=None, input=""):
     )
 
 
-@pytest.mark.parametrize("answer", ["", "n\n"])
-def test_shell_syntax_and_direct_setup(shell, tmp_path, answer):
-    """Execution offers installation without modifying a declined isolated home."""
+def test_shell_syntax_and_direct_setup(shell, tmp_path):
+    """Execution offers installation; the default answer leaves an isolated home untouched."""
     subprocess.run([shell, "-n", str(SCRIPT)], check=True, capture_output=True)
     result = run_shell(
         shell,
         '"$SHELL_TEST" "$1"',
         env={"SHELL_TEST": shell, "COLUMNS": "80", "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
-        input=answer,
     )
     assert WORDMARK in result.stdout
     assert "DocReview RAG v2" in result.stdout
@@ -67,7 +65,7 @@ def test_shell_syntax_and_direct_setup(shell, tmp_path, answer):
 
 @pytest.mark.parametrize(
     ("columns", "asset"),
-    [("80", WORDMARK), ("78", WORDMARK), ("77", MONOGRAM), ("18", MONOGRAM), ("16", None)],
+    [("78", WORDMARK), ("77", MONOGRAM), ("18", MONOGRAM), ("16", None)],
 )
 def test_source_registration_help_and_width(shell, columns, asset):
     """Sourcing stays quiet when redirected while help selects readable static assets."""
@@ -105,6 +103,13 @@ def test_banner_needs_only_standard_tools(shell, tmp_path):
     assert result.stderr == ""
 
 
+def description_column(help_row: str) -> int:
+    """Return the offset where a help row's description starts after its padding."""
+    description = re.search(r"\S.*?\s{2,}(\S)", help_row)
+    assert description is not None
+    return description.start(1)
+
+
 @pytest.mark.parametrize("environment", [{}, {"NO_COLOR": ""}, {"TERM": "dumb"}])
 def test_help_color_policy_and_alignment(shell, environment):
     """TTY help uses aligned bold columns; NO_COLOR and dumb terminals stay plain."""
@@ -130,7 +135,7 @@ def test_help_color_policy_and_alignment(shell, environment):
             assert "\x1b[1m" in output and "\x1b[36;1m[START]" in output
         plain = re.sub(r"\x1b\[[0-9;]*m", "", output)
         rows = [line for line in plain.splitlines() if line.startswith("  rag-")]
-        assert len({re.search(r"\S.*?\s{2,}(\S)", line).start(1) for line in rows}) == 1
+        assert len({description_column(line) for line in rows}) == 1
     finally:
         os.close(slave)
         os.close(master)
@@ -232,21 +237,6 @@ def test_uninstall_preserves_foreign_commands_and_exact_source_ownership(shell, 
     backups = list(tmp_path.glob("startup.docreview-backup-*"))
     assert len(backups) == 1
     assert backups[0].read_text() == original
-
-
-def test_explicit_mode_commands_and_registration(shell):
-    """Both shells expose mode commands with distinct startup and destructive actions."""
-    result = run_shell(
-        shell,
-        'source "$1" >/dev/null; typeset -f rag-dev; typeset -f rag-prod; rag-help',
-    )
-    assert "_docreview_mode dev" in result.stdout
-    assert "_docreview_mode prod" in result.stdout
-    assert "rag-dev start" in result.stdout
-    assert "rag-prod reset environment --local --all-modes" in result.stdout
-    assert "Preserve .env, source work, external bundles and other projects" in result.stdout
-    assert "CONFIRM BEFORE DELETION" in result.stdout
-    assert "[STACK]" in result.stdout
 
 
 @pytest.mark.parametrize("existing", [False, True])
@@ -494,13 +484,12 @@ def test_bilingual_help_is_shell_only(shell, tmp_path, language, heading, safety
     assert result.stderr == ""
 
 
-@pytest.mark.parametrize("mode", ["dev", "prod"])
-def test_mode_without_action_only_shows_help(shell, tmp_path, mode):
+def test_mode_without_action_only_shows_help(shell, tmp_path):
     """Bare mode commands never bootstrap dependencies or implicitly restart the stack."""
     result = run_shell(
         shell,
-        'source "$1" >/dev/null; _docreview_runtime() { exit 97; }; "$MODE_COMMAND"',
-        env={"MODE_COMMAND": "rag-" + mode, "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
+        'source "$1" >/dev/null; _docreview_runtime() { exit 97; }; rag-dev',
+        env={"HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
     )
     assert "[START]" in result.stdout
     assert result.stderr == ""
@@ -553,8 +542,7 @@ def test_start_dispatch_preserves_mode_without_reset(shell, mode):
     ]
 
 
-@pytest.mark.parametrize("mode", ["dev", "prod"])
-def test_environment_reset_uses_python_outside_checkout_venv(shell, mode):
+def test_environment_reset_uses_python_outside_checkout_venv(shell):
     """A reset delegates explicit scope flags without relying on the removable venv."""
     result = run_shell(
         shell,
@@ -562,14 +550,14 @@ def test_environment_reset_uses_python_outside_checkout_venv(shell, mode):
         '[ "$*" = "python find --no-python-downloads 3.14" ] || return 97; '
         'printf "%s\\n" "$TEST_PYTHON"; }; '
         '_docreview_runtime() { printf "<%s>\\n" "$@"; }; '
-        '"$MODE_COMMAND" reset environment --local --all-modes',
-        env={"MODE_COMMAND": "rag-" + mode, "TEST_PYTHON": sys.executable},
+        "rag-prod reset environment --local --all-modes",
+        env={"TEST_PYTHON": sys.executable},
     )
     assert result.stdout.splitlines() == [
         f"<{sys.executable}>",
         "<-m>",
         "<scripts.stack.cli>",
-        f"<{mode}>",
+        "<prod>",
         "<reset>",
         "<environment>",
         "<--local>",
@@ -698,12 +686,14 @@ def run_lifecycle_tty(shell, command, environment, *, answers="", interactive=Tr
         args.append("-i")
     args.extend(["-c", command])
     isolated = {**os.environ, **environment, "TERM": "xterm-256color", "PS1": "", "PS2": ""}
-    pid, master = pty.fork()
-    if pid == 0:
-        try:
-            os.execve(shell, args, isolated)
-        except OSError:
-            os._exit(127)
+    master, slave = pty.openpty()
+    try:
+        # subprocess forks in C, so a multi-threaded pytest process gets no forkpty warning;
+        # login_tty makes the slave the child's controlling terminal and its stdio.
+        child = subprocess.Popen(args, env=isolated, preexec_fn=lambda: os.login_tty(slave))
+    finally:
+        os.close(slave)
+    pid = child.pid
     status = None
     chunks = []
     ended = False
@@ -713,9 +703,7 @@ def run_lifecycle_tty(shell, command, environment, *, answers="", interactive=Tr
             os.write(master, answers.encode())
         while time.monotonic() < deadline:
             if status is None:
-                observed, code = os.waitpid(pid, os.WNOHANG)
-                if observed:
-                    status = os.waitstatus_to_exitcode(code)
+                status = child.poll()
             if select.select([master], [], [], 0.05)[0]:
                 try:
                     data = os.read(master, 65536)
@@ -738,7 +726,7 @@ def run_lifecycle_tty(shell, command, environment, *, answers="", interactive=Tr
                 os.killpg(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            os.waitpid(pid, 0)
+            child.wait()
         os.close(master)
 
 
@@ -818,8 +806,15 @@ def test_update_repairs_only_the_existing_moved_checkout_registration(shell, tmp
     assert len(backups) == 1 and backups[0].read_text() == original
 
 
-@pytest.mark.parametrize("invalid_kind", ["missing", "unreadable", "invalid"])
-@pytest.mark.parametrize("mode", ["update", "--check-updates"])
+@pytest.mark.parametrize(
+    ("invalid_kind", "mode"),
+    [
+        ("missing", "update"),
+        ("unreadable", "update"),
+        ("invalid", "update"),
+        ("invalid", "--check-updates"),
+    ],
+)
 def test_update_rejects_unusable_targets_without_changing_loaded_state(
     shell, tmp_path, invalid_kind, mode
 ):

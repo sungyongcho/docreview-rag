@@ -17,6 +17,8 @@ import time
 from urllib.parse import urlparse
 from uuid import uuid4
 
+from app.atomic_write import write_text_atomically
+from app.operator.lifecycle_receipts import receipt_path
 from scripts.stack.operator import LocalOperator
 from scripts.stack.prompts import confirm
 from scripts.stack.terminal import activity, run_step
@@ -31,7 +33,7 @@ PRESERVED = {
     ".idea",
     ".freshstart-keep",
 }
-VOLUMES = {"pg_data", "prod_pg_data", "web_next", "web_node_modules", "ollama_models"}
+VOLUMES = {"pg_data", "prod_pg_data", "web_next", "web_node_modules"}
 
 
 def git(root: Path, *args: str) -> str:
@@ -39,21 +41,18 @@ def git(root: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(root), *args], text=True)
 
 
-def receipt_path(root: Path, command: str) -> Path:
-    """Store receipts outside the deletion set in the current worktree's Git directory."""
-    path = Path(git(root, "rev-parse", "--git-path", f"docreview-receipts/{command}.json").strip())
-    return path if path.is_absolute() else root / path
-
-
 def write_receipt(root: Path, command: str, **values: object) -> None:
     """Atomically retain completed steps without storing configuration or credentials."""
     path = receipt_path(root, command)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps({"command": command, "updated": time.time(), **values}, indent=2)
+    write_text_atomically(
+        path,
+        json.dumps({"command": command, "updated": time.time(), **values}, indent=2),
+        mode=0o666,
+        apply_umask=True,
+        encoding=None,
+        fsync_file=False,
     )
-    temporary.replace(path)
 
 
 def status(root: Path, command: str) -> int:
@@ -78,10 +77,8 @@ def tracked_state(root: Path) -> dict[str, str]:
     }
 
 
-def inventory(
-    root: Path, *, extreme: bool, discard_tracked: bool, runtime_only: bool = False
-) -> dict:
-    """Pin removable file identities and tracked changes; never follow directory links."""
+def inventory(root: Path) -> dict:
+    """Pin removable runtime file identities and tracked state; never follow directory links."""
     root = root.resolve()
     if Path(git(root, "rev-parse", "--show-toplevel").strip()).resolve() != root:
         raise ValueError("Run from a Git checkout root; nothing changed.")
@@ -99,23 +96,14 @@ def inventory(
                 raise ValueError(".freshstart-keep entries must be checkout-relative paths.")
             keep.add(path.as_posix().rstrip("/"))
     tracked = set(filter(None, git(root, "ls-files", "-z").split("\0")))
-    changed = set(filter(None, git(root, "diff", "--name-only", "-z").split("\0")))
-    changed.update(filter(None, git(root, "diff", "--cached", "--name-only", "-z").split("\0")))
-    outside = sorted(path for path in changed if not path.startswith("data/"))
-    if outside and not discard_tracked and not runtime_only:
-        raise ValueError(
-            "Tracked changes outside data/ block cleanup: "
-            + ", ".join(outside)
-            + ". Review them or explicitly use --discard-tracked; nothing changed."
-        )
     if git(root, "ls-files", "-u", "-z"):
         raise ValueError("Resolve unmerged Git entries first; nothing changed.")
 
     def preserved(relative: str) -> bool:
         """Protect exact paths and descendants, including root environment files."""
-        return any(relative == item or relative.startswith(item + "/") for item in keep) or (
-            not extreme and relative.split("/", 1)[0].startswith(".env")
-        )
+        return any(
+            relative == item or relative.startswith(item + "/") for item in keep
+        ) or relative.split("/", 1)[0].startswith(".env")
 
     def generated(relative: str) -> bool:
         """Limit environment resets to known generated trees, preserving source work."""
@@ -151,11 +139,11 @@ def inventory(
                 raise ValueError(f"Nested Git repository refused: {relative}; nothing changed.")
             if stat.S_ISDIR(info.st_mode):
                 visit(path)
-                if (not runtime_only or generated(relative)) and not any(
+                if generated(relative) and not any(
                     item.startswith(relative + "/") for item in tracked | keep
                 ):
                     directories.append(relative)
-            elif relative not in tracked and (not runtime_only or generated(relative)):
+            elif relative not in tracked and generated(relative):
                 files[relative] = [
                     info.st_dev,
                     info.st_ino,
@@ -165,17 +153,14 @@ def inventory(
                 ]
 
     visit(root)
-    revert = [] if runtime_only else sorted(path for path in changed if not preserved(path))
-    # Environment templates are tracked product files, even in extreme mode.
     return {
         "files": files,
         "directories": directories,
-        "revert": revert,
         **tracked_state(root),
     }
 
 
-def docker_inventory(root: Path, *, extreme: bool) -> dict:
+def docker_inventory(root: Path) -> dict:
     """Pin local daemon resources using project, checkout and resource ownership labels."""
     host = os.environ.get("DOCKER_HOST") if not os.environ.get("DOCKER_CONTEXT") else None
     if not host:
@@ -220,7 +205,7 @@ def docker_inventory(root: Path, *, extreme: bool) -> dict:
         row = json.loads(output("volume", "inspect", name))[0]
         labels = row.get("Labels") or {}
         kind = labels.get("com.docker.compose.volume")
-        if kind not in VOLUMES or kind == "ollama_models" and not extreme:
+        if kind not in VOLUMES:
             continue
         if (
             labels.get("com.docker.compose.project") != project
@@ -257,7 +242,7 @@ def docker_inventory(root: Path, *, extreme: bool) -> dict:
 
 
 def preview(root: Path, files: dict, resources: dict) -> None:
-    """Show numbered top-level file totals and the exact tracked/Docker deletion scope."""
+    """Show numbered top-level file totals and the exact Docker deletion scope."""
     print(f"Fresh-start preview: {root}\nNo backup will be created.")
     print(
         "DocReview browser data: conversations, settings and basket "
@@ -271,7 +256,6 @@ def preview(root: Path, files: dict, resources: dict) -> None:
     rows = [
         f"{name}: {count} files, {size:,} bytes" for name, (count, size) in sorted(groups.items())
     ]
-    rows.extend("Revert tracked: " + path for path in files["revert"])
     for kind in ("containers", "volumes", "images"):
         rows.extend(f"{kind}: {item}" for item in resources[kind])
     for number, row in enumerate(rows, 1):
@@ -350,34 +334,21 @@ def remove_files(root: Path, files: dict) -> None:
             remove_directory(root, relative)
 
 
-def start_fresh(
-    root: Path,
-    *,
-    extreme: bool = False,
-    no_start: bool = False,
-    discard_tracked: bool = False,
-    runtime_only: bool = False,
-) -> int:
-    """Delete only a confirmed, unchanged checkout inventory and optionally bootstrap again."""
+def start_fresh(root: Path) -> int:
+    """Delete only a confirmed, unchanged runtime inventory and leave services stopped."""
     if not sys.stdin.isatty():
         raise ValueError("Run interactively to review the preview; nothing changed.")
     root = root.resolve()
-    files = inventory(
-        root, extreme=extreme, discard_tracked=discard_tracked, runtime_only=runtime_only
-    )
-    resources = docker_inventory(root, extreme=extreme)
+    files = inventory(root)
+    resources = docker_inventory(root)
     preview(root, files, resources)
     expires = time.monotonic() + 300
-    if not confirm("Remove this previewed checkout data and Docker resources?") or (
-        extreme and not confirm("Also delete previewed .env* files and Ollama models?")
-    ):
+    if not confirm("Remove this previewed checkout data and Docker resources?"):
         print("Cancelled; nothing changed.")
         return 0
     if time.monotonic() >= expires:
         raise ValueError("Preview expired; nothing changed.")
-    if files != inventory(
-        root, extreme=extreme, discard_tracked=discard_tracked, runtime_only=runtime_only
-    ) or resources != docker_inventory(root, extreme=extreme):
+    if files != inventory(root) or resources != docker_inventory(root):
         raise ValueError("Preview changed; nothing changed. Run again for a new preview.")
     completed = []
     write_receipt(root, "start-fresh", status="running", completed=completed)
@@ -400,28 +371,6 @@ def start_fresh(
         with activity("Remove checkout files"):
             remove_files(root, files)
         completed.append("files")
-        if files["revert"]:
-            if tracked_state(root) != {
-                key: files[key] for key in ("head", "worktree_diff", "index_diff")
-            }:
-                raise ValueError(
-                    "Tracked Git state changed during cleanup; tracked files were not restored. "
-                    "Cleanup may be partial. Inspect the changes before requesting a new preview."
-                )
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(root),
-                    "restore",
-                    "--source=HEAD",
-                    "--staged",
-                    "--worktree",
-                    "--",
-                    *files["revert"],
-                ],
-                check=True,
-            )
         completed.append("tracked files")
         (root / "data").mkdir(parents=True, exist_ok=True)
         with parent_descriptor(root, "data/browser-reset.json") as (parent, name):
@@ -461,59 +410,4 @@ def start_fresh(
         "Checkout cleanup complete. DocReview browser data will reset to defaults "
         "when the web interface next connects. Other applications are unchanged."
     )
-    if extreme:
-        print("Services remain stopped. Run rag-dev start to create .env and prepare setup again.")
-    elif not no_start:
-        result = subprocess.run(
-            ["bash", str(root / "scripts/stack/quickstart.sh")], cwd=root, check=False
-        )
-        write_receipt(
-            root,
-            "start-fresh",
-            status="succeeded" if result.returncode == 0 else "failed",
-            completed=completed,
-            restarted=result.returncode == 0,
-        )
-        return result.returncode
     return 0
-
-
-def main() -> int:
-    """Expose cleanup before a virtual environment exists, using only the standard library."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--extreme", action="store_true")
-    parser.add_argument("--no-start", action="store_true")
-    parser.add_argument("--discard-tracked", action="store_true")
-    parser.add_argument("--status", action="store_true")
-    parser.add_argument("--verbose", "-vv", action="store_true")
-    args = parser.parse_args()
-    if args.verbose:
-        os.environ["DOCREVIEW_VERBOSE"] = "1"
-    root = Path(__file__).resolve().parents[2]
-    try:
-        return (
-            status(root, "start-fresh")
-            if args.status
-            else start_fresh(
-                root,
-                extreme=args.extreme,
-                no_start=args.no_start,
-                discard_tracked=args.discard_tracked,
-            )
-        )
-    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
-        print(str(error), file=sys.stderr)
-        return 1
-    except KeyboardInterrupt, EOFError:
-        print(
-            "Interrupted. Run rag-prod reset environment --local --all-modes --status "
-            "before requesting another preview.",
-            file=sys.stderr,
-        )
-        return 130
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

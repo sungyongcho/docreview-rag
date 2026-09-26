@@ -1,6 +1,7 @@
 """Measured stage ordering, failures, cancellation, and request isolation."""
 
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -24,7 +25,8 @@ def test_stage_starts_before_work_and_ends_on_handled_and_raised_failures() -> N
             with pytest.raises(RuntimeError):
                 async with stage("check"):
                     raise RuntimeError("failure")
-            metadata = stage_metadata()
+            # Read the JSON metadata untyped so the assertion can index each recorded stage.
+            metadata: dict[str, Any] = stage_metadata()
             assert [event["node"] for event in metadata["stages"]] == ["grade", "check"]
         assert stage_metadata() == {}
 
@@ -37,7 +39,7 @@ def test_stage_starts_before_work_and_ends_on_handled_and_raised_failures() -> N
 def test_independent_reviews_never_share_stage_metadata() -> None:
     """Concurrent requests get separate clocks and completed histories."""
 
-    async def review(node):
+    async def review(node) -> dict[str, Any]:
         """Yield once so both recorders are active concurrently."""
         with record_stages():
             async with stage(node):
@@ -46,11 +48,11 @@ def test_independent_reviews_never_share_stage_metadata() -> None:
 
     async def exercise():
         """Run independent review entry points in distinct tasks."""
-        return await asyncio.gather(review("grade"), review("chat"))
+        return await asyncio.gather(review("grade"), review("check"))
 
     first, second = asyncio.run(exercise())
     assert [event["node"] for event in first["stages"]] == ["grade"]
-    assert [event["node"] for event in second["stages"]] == ["chat"]
+    assert [event["node"] for event in second["stages"]] == ["check"]
 
 
 def test_routing_metadata_appears_only_after_actual_resolution() -> None:

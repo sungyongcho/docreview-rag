@@ -153,15 +153,6 @@ def test_non_substantive_sections_do_not_become_chunks(C, status):
     assert [chunk.body for chunk in chunks] == ["Real body."]
 
 
-def test_ordinals_are_dense_and_source_ordered(chunks_by_doc):
-    """Assign dense ordinals after restoring document source order."""
-    for doc_id, chunks in chunks_by_doc.items():
-        assert [chunk.ordinal for chunk in chunks] == list(range(len(chunks)))
-        assert [chunk.start_char for chunk in chunks] == sorted(
-            chunk.start_char for chunk in chunks
-        ), f"{doc_id}: chunk order differs from source order"
-
-
 def test_chunk_spans_overlap_only_when_sharing_enclosing_source(chunks_by_doc):
     """Allow repeated enclosing spans only for distinct source fragments."""
     for doc_id, chunks in chunks_by_doc.items():

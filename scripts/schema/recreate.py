@@ -26,7 +26,7 @@ from scripts.schema.sources import (
     check_source_write_access,
     source_preview,
 )
-from scripts.stack.__main__ import compose_command, compose_environment
+from scripts.stack.__main__ import compose_command, compose_environment, parse_compose_ps
 from scripts.stack.environment import load_local_environment
 from scripts.stack.prompts import confirm
 
@@ -49,12 +49,7 @@ def local_target(root: Path) -> tuple[dict, dict[str, str]]:
     command = (
         docker + compose_command(root, "dev", ["ps", "--all", "--format", "json", "db", "app"])[1:]
     )
-    output = subprocess.check_output(command, cwd=root, env=environment, text=True).strip()
-    rows = (
-        json.loads(output)
-        if output.startswith("[")
-        else [json.loads(row) for row in output.splitlines()]
-    )
+    rows = parse_compose_ps(subprocess.check_output(command, cwd=root, env=environment, text=True))
     databases = [row for row in rows if row["Service"] == "db"]
     if len(databases) != 1:
         raise ValueError("Start this checkout's DB first: rag-dev compose up -d db")
@@ -215,7 +210,6 @@ def run(
     *,
     keep_sources: bool = False,
     sample: bool = False,
-    restart_planned: bool = False,
 ) -> Literal["cancelled", "succeeded", "incomplete"]:
     """Require exact interactive approval before stopping the API or changing any table."""
     if not sys.stdin.isatty():
@@ -255,11 +249,7 @@ def run(
         + "Preserved: code, .env, evaluation exports, unrelated tables, "
         "the database volume and host Ollama. Dependent unknown objects cause rollback."
     )
-    print(
-        "The API stops after confirmation. Guided setup rebuilds/starts it after success."
-        if restart_planned
-        else "The local API will stop after confirmation and is not restarted automatically."
-    )
+    print("The local API will stop after confirmation and is not restarted automatically.")
     expires = time.monotonic() + 300
     if not confirm("Confirm this entire irreversible preview?"):
         print("Cancelled; nothing changed.")
@@ -358,11 +348,7 @@ def run(
             else "Downloaded sources and manifest source entries cleared. "
         )
         + "Code, .env, exports, unrelated tables and volume preserved. "
-        + (
-            "Guided setup will now rebuild/start DEV and verify readiness. "
-            if restart_planned
-            else "Run rag-dev start, then re-check Build and repeat data preparation. "
-        )
+        + "Run rag-dev start, then re-check Build and repeat data preparation. "
         + "No paid work was started."
     )
     return "succeeded"

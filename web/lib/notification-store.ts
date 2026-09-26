@@ -1,8 +1,8 @@
 import { readStoredValue, writeStoredValue } from "./storage";
 import type { NotificationDetail, NotificationKind, NotificationTarget } from "./notification-registry";
 
-export const NOTIFICATION_STORAGE_KEY = "docreview:notifications:v1";
-export const NOTIFICATION_LIMIT = 100;
+const NOTIFICATION_STORAGE_KEY = "docreview:notifications:v1";
+const NOTIFICATION_LIMIT = 100;
 export interface NotificationEntry {
   id: string;
   key: string;

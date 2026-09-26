@@ -1,9 +1,9 @@
 import { DOCUMENTATION_BASE, DOCUMENTS } from "./documentation-registry.mjs";
 
-export type QuickStartMode = "cli" | "web";
+type QuickStartMode = "cli" | "web";
 
 /** What a language switch captures on the source document and replays on the target. */
-export interface CapturedPosition {
+interface CapturedPosition {
   /** Canonical section ids from the containing H2 down to the section at the reading line. */
   path: string[];
   /** Fraction of the current section span that sits above the reading line. */
@@ -21,7 +21,7 @@ export interface ReadingState extends CapturedPosition {
   targetLocale?: "ko" | "en";
 }
 
-export interface DocumentSection {
+interface DocumentSection {
   element: HTMLElement;
   id: string;
   depth: number;

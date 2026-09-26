@@ -6,15 +6,14 @@ import accuracyPreset from "../../data/presets/accuracy.json";
 /** One canonical shipped JSON source is shared with the server. */
 export const BUILTIN_PRESETS = [balancedPreset, koreanPreset, accuracyPreset] as Array<{ id: string; name: string; description: string; builtin: boolean; updated_at: string; retrieval: RetrievalProfile }>;
 
+export type RetrievalPresets = ReadonlyArray<{ id: string; retrieval: RetrievalProfile }>;
 
-export type Strategy = "vector" | "lexical" | "hybrid";
-export type LexicalRanker = "ts_rank_cd" | "bm25";
+
 export type SuiteId = "sec-en" | "sec-ko" | "dart-en" | "dart-ko" | "sec-en_v2_astra" | "sec-ko_v2_astra" | "sec-mixed_v2_astra";
 
 export type RetrievalProfile = components["schemas"]["RetrievalProfile"];
 export type CustomRetrievalProfile = components["schemas"]["CustomRetrievalProfile"];
 
-export type ReviewEngine = "openai" | "local";
 export type CorpusScope = "auto" | "sec" | "dart";
 export type RetrievalPreset = "balanced" | "korean" | "accuracy" | "custom";
 
@@ -25,14 +24,7 @@ export interface ExperimentDefaults {
 
 }
 
-export interface WorkflowBudget {
-  max_iterations: number;
-  max_input_tokens: number;
-  max_output_tokens: number;
-  max_wall_clock_s: number;
-}
-
-export type PromptPolicy = components["schemas"]["PromptPolicy"];
+type PromptPolicy = components["schemas"]["PromptPolicy"];
 
 export type ReviewSessionProfile = components["schemas"]["ReviewSessionProfile"];
 /** Fully initialized form state; wire requests may omit fields with server defaults. */
@@ -41,16 +33,17 @@ export type ReviewSessionDraft = Required<Omit<ReviewSessionProfile, "prompt_pol
 };
 
 export type EvidenceHit = components["schemas"]["EvidenceHit"];
+export type ReviewRun = components["schemas"]["RunResponse"];
 
-export type ReviewEventNode = "waiting" | "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report" | "candidates";
-/** Actual scope resolved by the server; absent on older conversation records. */
+export type ReviewEventNode = "waiting" | "gate" | "route" | "retrieve" | "grade" | "check" | "report" | "candidates";
+/** Actual scope resolved by the server, when routing has occurred. */
 export interface ReviewResolvedScope {
   source?: string;
   filters: { registries: string[]; issuers: string[]; fiscal_years: number[] };
 }
 /** Server-recorded intent and scope decision, retained with each conversation turn. */
 export interface ReviewPathDecision {
-  intent: "document_review" | "casual_chat" | "service_help" | "out_of_scope";
+  intent: "document_review" | "service_help" | "out_of_scope";
   source: "deterministic" | "classifier";
   matched_rule: string;
   rationale: string;
@@ -76,7 +69,7 @@ export interface ReviewExecution {
   evidence: number;
   relevant: number;
   steps: number;
-  observed?: ReviewEventNode[];
+  observed: ReviewEventNode[];
   outcome?: "running" | "completed" | "failed" | "cancelled" | "limited";
   revalidating?: boolean;
   retries?: number;
@@ -84,12 +77,12 @@ export interface ReviewExecution {
   startedAt?: number;
   lastEventAt?: number;
   activeNode?: ReviewEventNode | null;
-  completedNodes?: ReviewEventNode[];
+  completedNodes: ReviewEventNode[];
   selectedScope?: CorpusScope;
   resolvedScope?: ReviewResolvedScope;
   stageTimings?: Array<{ node: ReviewEventNode; elapsed_ms: number; status: string }>;
   /** Intentional bypasses backed by the terminal server result, never inferred from missing events. */
-  skippedNodes?: Partial<Record<ReviewEventNode, "relevance_below_threshold" | "casual_chat">>;
+  skippedNodes?: Partial<Record<ReviewEventNode, "relevance_below_threshold">>;
 }
 
 export interface ChatMessage {
@@ -103,7 +96,7 @@ export interface ChatMessage {
   /** Citations the report actually made; the evidence list above is the wider candidate pool. */
   citations?: number;
   trace?: string;
-  /** Only events observed for this request; absent for older conversations. */
+  /** Only events observed for this request; user messages have no execution. */
   execution?: ReviewExecution;
   performance?: Record<string, unknown>;
   /** Run and failure facts for the diagnostic table, in display order. */
@@ -117,7 +110,7 @@ export interface ChatMessage {
   excludedChunkIds?: number[];
 }
 
-export interface ModelPolicyRole {
+interface ModelPolicyRole {
   default: string;
   allowed: string[];
   reasoning_effort: "low" | "medium" | null;
@@ -190,8 +183,6 @@ export interface Readiness {
   };
 }
 
-export type UsageModel = components["schemas"]["UsageModelResource"];
-
 export type ProviderUsage = components["schemas"]["UsageResponse"];
 
 /** Browser selection intent; resolved IDs are pinned once a target is published. */
@@ -208,11 +199,9 @@ export interface Conversation {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
-  profile: ReviewSessionDraft | null;
-  /** Unsent composer text saved in this browser; absent for older conversations. */
+  profile: ReviewSessionDraft;
+  /** Unsent composer text saved only after the user edits the draft. */
   draft?: string;
-  /** Browser-only exact public selection; absent means all, [] means explicitly empty. */
-  publishedScope?: string[];
   publishedTargets?: PublicTarget[];
   pipelineDraft?: { candidates?: PublicTarget[]; targets: PublicTarget[]; stage: string; checked: string[] };
 }
@@ -226,26 +215,7 @@ export type EvaluationJob = components["schemas"]["EvaluationJobResource"];
 
 export type EvaluationComparison = components["schemas"]["EvaluationComparisonResponse"];
 
-export interface PublishedSnapshot {
-  snapshot_id: number;
-  label: string;
-  status: "ready" | "archived";
-  public: boolean;
-  corpus_fingerprint: string;
-  profile: Record<string, unknown>;
-  golden_revision_id: number | null;
-  /** Human name of a built-in suite, filled by the server when `eval_result.suite` is one. */
-  suite_title?: string | null;
-  eval_result: {
-    result_id: number;
-    suite: string;
-    config: Record<string, unknown>;
-    metrics: Record<string, number>;
-    created_at: string;
-  };
-  document_count: number;
-  created_at: string;
-}
+export type PublishedSnapshot = components["schemas"]["SnapshotResource"];
 
 export type GoldenRevision = components["schemas"]["GoldenRevisionResource"];
 
@@ -255,10 +225,9 @@ export type SnapshotComparison = components["schemas"]["SnapshotComparisonRespon
 
 /** One selectable corpus manifest as reported by `/admin/corpus`. */
 export type ManifestSummary = components["schemas"]["ManifestResource"];
-export type ProcessingSelection = components["schemas"]["ProcessingSelectionResource"];
 export type CorpusDocument = components["schemas"]["CorpusDocumentResource"];
 export type CorpusSnapshot = components["schemas"]["CorpusSnapshotResource"];
-export type CorpusOperationRequest = components["schemas"]["CorpusOperationRequest"];
+export type AdminCommand = components["schemas"]["AdminCommand"];
 
 
 /** Field subset shared by `/ready`.corpus and `/admin/corpus`.status. */
@@ -282,8 +251,6 @@ export type DocumentEmbeddingStatus = "complete" | "partial" | "missing";
 
 export type AdminDocument = components["schemas"]["AdminDocumentResource"];
 
-export type DocumentFacetValue = components["schemas"]["DocumentFacetValue"];
-
 export type DocumentFacets = components["schemas"]["DocumentFacetsResponse"];
 
 export type DocumentDetail = components["schemas"]["DocumentDetailResponse"];
@@ -292,8 +259,6 @@ export type PublicSnapshotDataset = components["schemas"]["PublicSnapshotDataset
 export type PublicSnapshotEvaluation = components["schemas"]["PublicSnapshotEvaluation"];
 
 export type AdminDocumentPage = components["schemas"]["DocumentInventoryResponse"];
-
-export type OperatorJobStatus = "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
 
 export type OperatorJob = components["schemas"]["OperatorJobResource"];
 
@@ -379,7 +344,7 @@ export interface LocalLLMConnection {
   selected_server_id?: string | null;
 }
 
-export interface LocalLLMServer {
+interface LocalLLMServer {
   id: string;
   name: string;
   base_url: string;
@@ -418,7 +383,7 @@ export interface ReleaseLimits {
   minute_reset_seconds: number;
   day_reset_seconds: number;
   daily_cost_reset_at_utc: string;
-  scope: "single_process" | "shared_storage";
+  scope: "shared_storage";
 }
 
 /** Session fields for choosing a preset: only Custom keeps an explicit retrieval profile. */
@@ -426,11 +391,11 @@ export function applyRetrievalPreset(profile: ReviewSessionProfile, preset: Retr
   return { retrieval_preset: preset, custom_retrieval: preset === "custom" ? profile.custom_retrieval ?? DEFAULT_PROFILE : null };
 }
 
-export function resolvedRetrievalProfile(profile: ReviewSessionProfile): RetrievalProfile {
+export function resolvedRetrievalProfile(profile: ReviewSessionProfile, presets: RetrievalPresets = BUILTIN_PRESETS): RetrievalProfile {
   if (profile.retrieval_preset === "custom" && profile.custom_retrieval) {
     return profile.custom_retrieval;
   }
-  return structuredClone(BUILTIN_PRESETS.find(p => p.id === profile.retrieval_preset)?.retrieval ?? BUILTIN_PRESETS[0].retrieval);
+  return structuredClone(presets.find(p => p.id === profile.retrieval_preset)?.retrieval ?? BUILTIN_PRESETS[0].retrieval);
 }
 
 export type SourceDeletionPreview = components["schemas"]["SourceDeletionPreviewResource"];

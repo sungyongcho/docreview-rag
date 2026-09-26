@@ -7,7 +7,7 @@ import { useI18n } from "@/lib/i18n";
 import { useId } from "react";
 import type { RetrievalProfile } from "@/lib/types";
 
-export interface ProfileFieldsProps {
+interface ProfileFieldsProps {
   profile: RetrievalProfile;
   onChange: (profile: RetrievalProfile) => void;
   /** Help screen prefix, e.g. `measure.playground`; each field then carries `data-help="<prefix>.<field>"`. */
@@ -19,7 +19,7 @@ export interface ProfileFieldsProps {
 }
 
 export function ProfileFields({ profile, onChange, helpPrefix, conversation = false, fields = "all" }: ProfileFieldsProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const uid = useId();
   const fieldId = (name: string) => `${uid}-${name}`;
   function patch(update: Partial<RetrievalProfile>) { onChange({ ...profile, ...update }); }

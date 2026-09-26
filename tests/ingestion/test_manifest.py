@@ -159,7 +159,7 @@ def test_failed_publish_preserves_manifest(tmp_path, monkeypatch):
         """Simulate a filesystem publication error."""
         raise OSError("publication failed")
 
-    monkeypatch.setattr("app.ingestion.manifest.os.replace", fail_replace)
+    monkeypatch.setattr("app.atomic_write.os.replace", fail_replace)
     with pytest.raises(OSError, match="publication failed"):
         manifest.write(path)
     assert path.read_text() == "existing"

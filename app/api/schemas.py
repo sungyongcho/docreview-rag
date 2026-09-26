@@ -21,7 +21,11 @@ from pydantic.functional_validators import model_validator
 
 from app.api.evidence import EvidenceSelection
 from app.api.execution import ExecutionData
-from app.api.review_profile import ResolvedRetrievalProfile, ReviewSessionProfile
+from app.api.review_profile import (
+    ResolvedRetrievalProfile,
+    ReviewSessionProfile,
+    _tuple_from_json_array,
+)
 from app.ingestion.registry import section_title as registry_section_title
 from app.llm.schemas import NonNegativeDecimal
 from app.observability.persistence import redact_sensitive_text, sanitize_json
@@ -42,11 +46,6 @@ from app.workflow.types import (
     WorkflowReport,
     run_status_for_failure,
 )
-
-
-def _tuple_from_json_array(value: object) -> object:
-    """Accept transport JSON arrays while retaining strict nested validation."""
-    return tuple(value) if isinstance(value, list) else value
 
 
 def _require_nonblank(value: str) -> str:
@@ -227,28 +226,6 @@ class DocumentListResponse(StrictApiModel):
     documents: tuple[DocumentResource, ...]
 
 
-class IngestRequest(StrictApiModel):
-    """One explicit local manifest ingestion request.
-
-    ``manifest_path`` is resolved inside the configured corpus directory; the API never
-    opens an arbitrary server path. ``create_schema`` mirrors the CLI flag: schema DDL
-    runs only when a caller asks for it, never as a per-request side effect.
-    """
-
-    manifest_path: NonBlank
-    selection_id: NonBlank
-    expected_documents: PositiveInt | None = None
-    chunk_batch_size: PositiveInt = 500
-    create_schema: StrictBool = False
-
-
-class IngestResponse(StrictApiModel):
-    """Committed corpus row counts from synchronous ingestion."""
-
-    documents: NonnegativeInt
-    chunks: NonnegativeInt
-
-
 class ReviewRequest(StrictApiModel):
     """One synchronous evidence-checked workflow request."""
 
@@ -378,64 +355,6 @@ class RunResponse(StrictApiModel):
             failure = _RUN_FAILURE_ADAPTER.validate_json(
                 json.dumps(raw_failure, allow_nan=False, separators=(",", ":"), sort_keys=True)
             )
-        context = run.request_context or {}
-        from app.observability.usage import provider_identity
-
-        calls = context.get("model_calls") or [
-            {
-                "step": trace.step,
-                "node": trace.node,
-                "model": trace.model_name,
-                "attempts": trace.requests,
-                "elapsed_ms": trace.request_time_ms,
-                "input_tokens": trace.input_tokens,
-                "output_tokens": trace.output_tokens,
-                "cached_input_tokens": trace.cached_input_tokens,
-                "cache_write_input_tokens": trace.cache_write_input_tokens,
-                "reasoning_tokens": trace.reasoning_tokens,
-                "estimated_cost_usd": str(trace.estimated_cost_usd),
-                "error": trace.error,
-                **provider_identity(api_url=trace.api_url),
-                "local_timings": [t.model_dump(mode="json") for t in trace.local_timings],
-            }
-            for trace in run.steps
-        ]
-        if not isinstance(calls, list):
-            raise ValueError("recorded model calls must be a list")
-        projected_calls = []
-        for call in calls:
-            if not isinstance(call, dict):
-                raise ValueError("recorded model calls must be objects")
-            item = dict(call)
-            timings = item.get("local_timings") or []
-            item["provider_timing"] = timings or None
-            item["timing_unavailable_reason"] = (
-                None
-                if timings
-                else "provider_does_not_report_timing"
-                if item.get("provider") in {"openai_responses", "openai"}
-                else "ollama_timing_not_recorded"
-                if item.get("provider") == "ollama"
-                else "not_recorded"
-            )
-            projected_calls.append(item)
-        execution = {
-            "total_elapsed_ms": context.get("total_elapsed_ms", run.total_time_seconds * 1000),
-            "stages": context.get("stages", []),
-            "model_calls": projected_calls,
-            **{
-                key: context.get(key)
-                for key in (
-                    "path_decision",
-                    "effective_settings",
-                    "provider_identity",
-                    "resolved_scope",
-                    "routing_queries",
-                    "stage_results",
-                    "local_placement",
-                )
-            },
-        }
         return cls(
             run_id=run.run_id,
             status=run.status,
@@ -452,7 +371,7 @@ class RunResponse(StrictApiModel):
             node_path=run.node_path,
             report=report,
             failure=failure,
-            execution=ExecutionData.model_validate_json(json.dumps(sanitize_json(execution))),
+            execution=ExecutionData.from_run_report(run),
         )
 
 
@@ -497,7 +416,6 @@ class SnapshotResource(StrictApiModel):
     public: StrictBool
     corpus_fingerprint: Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
     profile: JsonObject
-    golden_revision_id: PositiveInt | None
     eval_result: EvalResultResource
     suite_title: NonBlank | None = None
     document_count: NonnegativeInt

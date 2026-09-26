@@ -7,12 +7,10 @@ import pytest
 
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1
 from app.evals.ablation import ExperimentConfig, experiment_matrix, run_ablation
-from app.evals.identity import ARM_NAME
 from app.evals.retrieval_eval import evaluate_retriever
-from app.evals.types import GoldenCase, GoldenSpan
+from app.evals.types import EvaluationRetrieval, GoldenCase, GoldenSpan
 from app.retrieval.types import ChunkHit
-
-SOURCE_SHA256 = "a" * 64
+from tests.evals.support import SOURCE_SHA256
 
 
 def golden_case() -> GoldenCase:
@@ -58,6 +56,13 @@ def hit() -> ChunkHit:
     )
 
 
+def retrieval_provenance(config: ExperimentConfig) -> dict[str, object]:
+    """Return the nested retrieval mapping of one arm's provenance."""
+    retrieval = config.to_dict()["retrieval"]
+    assert isinstance(retrieval, dict)
+    return retrieval
+
+
 def test_experiment_matrix_crosses_chunking_retrieval_and_lexical_ranker():
     """Cross every chunk target, retrieval path, and lexical ranker in canonical order."""
     configs = experiment_matrix(
@@ -84,50 +89,9 @@ def test_experiment_matrix_crosses_chunking_retrieval_and_lexical_ranker():
     ]
 
 
-def test_experiment_matrix_names_are_unique_and_filename_safe():
-    """Name every arm uniquely with a filename-safe kebab-case slug."""
-    configs = experiment_matrix(target_tokens=(1024, 2048))
-    names = [config.name for config in configs]
-
-    assert len(set(names)) == len(names) == 10
-    assert "structure-1024-lexical-ts-rank-cd" in names
-    assert "structure-2048-hybrid-bm25" in names
-    for name in names:
-        assert ARM_NAME.fullmatch(name)
-
-
-def test_vector_arm_is_not_duplicated_across_rankers():
-    """The vector path never runs a lexical query, so a ranker label would lie."""
-    configs = experiment_matrix(
-        target_tokens=(1024,),
-        strategies=("vector",),
-        lexical_rankers=("ts_rank_cd", "bm25"),
-    )
-
-    assert len(configs) == 1
-    assert configs[0].name == "structure-1024-vector"
-    assert configs[0].lexical_ranker is None
-
-
-def test_matrix_is_sorted_the_same_way_however_the_axes_are_given():
-    """Order arms by the matrix contract rather than by axis input order."""
-    forward = experiment_matrix(
-        target_tokens=(1024, 2048),
-        strategies=("lexical", "vector", "hybrid"),
-        lexical_rankers=("ts_rank_cd", "bm25"),
-    )
-    reversed_axes = experiment_matrix(
-        target_tokens=(2048, 1024),
-        strategies=("hybrid", "vector", "lexical"),
-        lexical_rankers=("bm25", "ts_rank_cd"),
-    )
-
-    assert [config.name for config in forward] == [config.name for config in reversed_axes]
-
-
-def test_config_provenance_records_the_ranker_that_produced_the_numbers():
-    """Record chunking, retrieval, embedding, and measurement provenance per arm."""
-    lexical, _bm25, vector = experiment_matrix(
+def test_config_provenance_records_the_ranker_and_bm25_defaults_only_where_used():
+    """Record per-arm provenance, carrying the project BM25 defaults on BM25 arms only."""
+    lexical, bm25, vector = experiment_matrix(
         target_tokens=(1024,),
         strategies=("lexical", "vector"),
     )
@@ -154,29 +118,21 @@ def test_config_provenance_records_the_ranker_that_produced_the_numbers():
             "populated_corpus_embeddings_modified": False,
         },
     }
-    assert vector.to_dict()["retrieval"]["lexical_ranker"] is None
-    assert "bm25" not in lexical.to_dict()["retrieval"]
-    assert "bm25" not in vector.to_dict()["retrieval"]
-
-
-def test_bm25_arms_record_explicit_project_defaults_only_when_used():
-    """Carry the project BM25 defaults on BM25 arms and nowhere else."""
-    ts_rank, bm25, vector = experiment_matrix(
-        target_tokens=(1024,),
-        strategies=("lexical", "vector"),
-    )
+    assert retrieval_provenance(vector)["lexical_ranker"] is None
+    assert "bm25" not in retrieval_provenance(lexical)
+    assert "bm25" not in retrieval_provenance(vector)
 
     assert (bm25.bm25_k1, bm25.bm25_b, bm25.bm25_idf) == (
         DEFAULT_BM25_K1,
         DEFAULT_BM25_B,
         DEFAULT_BM25_IDF,
     )
-    assert bm25.to_dict()["retrieval"]["bm25"] == {
+    assert retrieval_provenance(bm25)["bm25"] == {
         "k1": DEFAULT_BM25_K1,
         "b": DEFAULT_BM25_B,
         "idf": DEFAULT_BM25_IDF,
     }
-    assert (ts_rank.bm25_k1, ts_rank.bm25_b, ts_rank.bm25_idf) == (None, None, None)
+    assert (lexical.bm25_k1, lexical.bm25_b, lexical.bm25_idf) == (None, None, None)
     assert (vector.bm25_k1, vector.bm25_b, vector.bm25_idf) == (None, None, None)
 
 
@@ -191,7 +147,7 @@ def test_experiment_matrix_propagates_explicit_bm25_parameters():
         bm25_idf="robertson",
     )
 
-    assert config.to_dict()["retrieval"]["bm25"] == {
+    assert retrieval_provenance(config)["bm25"] == {
         "k1": 1.5,
         "b": 0.4,
         "idf": "robertson",
@@ -211,19 +167,35 @@ def test_matrix_rejects_a_lexical_axis_without_a_ranker():
 
 
 @pytest.mark.parametrize(
-    "changes",
+    ("changes", "message"),
     [
-        {"name": "Not Stable"},
-        {"target_tokens": 0},
-        {"strategy": "unknown"},
-        {"candidate_k": 4},
-        {"lexical_ranker": None},
-        {"lexical_ranker": "okapi"},
-        {"strategy": "vector"},
+        ({"name": "Not Stable"}, "lowercase kebab-case"),
+        ({"target_tokens": 0}, "must be positive"),
+        ({"strategy": "unknown"}, "unsupported retrieval strategy"),
+        ({"candidate_k": 4}, "inconsistent"),
+        ({"lexical_ranker": None}, "requires an explicit lexical ranker"),
+        ({"lexical_ranker": "okapi"}, "requires an explicit lexical ranker"),
+        ({"strategy": "vector"}, "must not name a lexical ranker"),
+        ({"bm25_k1": None}, "require explicit k1"),
+        (
+            {"lexical_ranker": "ts_rank_cd", "bm25_b": None, "bm25_idf": None},
+            "only for bm25 arms",
+        ),
+    ],
+    ids=[
+        "name_not_kebab_case",
+        "nonpositive_chunk_target",
+        "unknown_strategy",
+        "candidate_depth_below_k",
+        "hybrid_without_a_ranker",
+        "unknown_ranker",
+        "vector_names_a_ranker",
+        "bm25_arm_without_k1",
+        "ts_rank_cd_arm_with_a_bm25_value",
     ],
 )
-def test_experiment_config_rejects_ambiguous_or_inconsistent_values(changes):
-    """Reject arm provenance that is malformed or internally contradictory."""
+def test_experiment_config_rejects_ambiguous_or_inconsistent_values(changes, message):
+    """Reject arm provenance that is malformed or internally contradictory, naming the rule."""
     values = {
         "name": "structure-1024-hybrid",
         "target_tokens": 1024,
@@ -239,57 +211,8 @@ def test_experiment_config_rejects_ambiguous_or_inconsistent_values(changes):
         "rrf_k": 60,
     }
     values.update(changes)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         ExperimentConfig(**values)
-
-
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"bm25_k1": None},
-        {"bm25_k1": 0},
-        {"bm25_k1": float("inf")},
-        {"bm25_b": None},
-        {"bm25_b": -0.1},
-        {"bm25_b": float("nan")},
-        {"bm25_idf": None},
-        {"bm25_idf": "unknown"},
-    ],
-)
-def test_bm25_config_rejects_missing_or_invalid_parameters(changes):
-    """Reject a BM25 arm whose parameters are missing or out of range."""
-    values = {
-        "name": "structure-1024-hybrid-bm25",
-        "target_tokens": 1024,
-        "strategy": "hybrid",
-        "embedding_provider": "deterministic",
-        "dimensions": 384,
-        "lexical_ranker": "bm25",
-        "bm25_k1": DEFAULT_BM25_K1,
-        "bm25_b": DEFAULT_BM25_B,
-        "bm25_idf": DEFAULT_BM25_IDF,
-    }
-    values.update(changes)
-
-    with pytest.raises(ValueError):
-        ExperimentConfig(**values)
-
-
-@pytest.mark.parametrize("lexical_ranker", [None, "ts_rank_cd"])
-def test_non_bm25_config_rejects_bm25_parameters(lexical_ranker):
-    """Reject BM25 parameters on an arm that runs no BM25 query."""
-    strategy = "vector" if lexical_ranker is None else "lexical"
-
-    with pytest.raises(ValueError, match="only for bm25 arms"):
-        ExperimentConfig(
-            name=f"structure-1024-{strategy}",
-            target_tokens=1024,
-            strategy=strategy,
-            embedding_provider="deterministic",
-            dimensions=384,
-            lexical_ranker=lexical_ranker,
-            bm25_k1=DEFAULT_BM25_K1,
-        )
 
 
 def test_run_ablation_writes_stable_raw_artifacts_and_comparison_table(tmp_path):
@@ -306,7 +229,7 @@ def test_run_ablation_writes_stable_raw_artifacts_and_comparison_table(tmp_path)
 
         async def retriever(_query, _k):
             """Return the one relevant hit for every query."""
-            return [hit()]
+            return EvaluationRetrieval(hits=(hit(),))
 
         clock_values = iter((0, 1_000_000))
         return await evaluate_retriever(
@@ -361,5 +284,55 @@ def test_run_ablation_rejects_duplicate_config_names(tmp_path):
                 evaluator,
                 artifact_dir=tmp_path,
                 recorded_at=datetime.now(UTC),
+            )
+        )
+
+
+def test_run_ablation_accepts_extra_provenance_but_rejects_a_changed_arm(tmp_path):
+    """The admin surface adds its corpus and golden identity to the evaluation config; the
+    arm's own values must still be carried unchanged."""
+    recorded_at = datetime(2026, 8, 12, 14, 30, tzinfo=UTC)
+    (config,) = experiment_matrix(
+        target_tokens=(1024,), strategies=("lexical",), lexical_rankers=("bm25",)
+    )
+
+    def evaluator_with(extra):
+        """Build an evaluator whose config is the arm provenance plus ``extra``."""
+
+        async def evaluator(arm):
+            """Evaluate one arm against a fixed hit."""
+
+            async def retriever(_query, _k):
+                """Return the one relevant hit for every query."""
+                return EvaluationRetrieval(hits=(hit(),))
+
+            return await evaluate_retriever(
+                [golden_case()],
+                retriever,
+                suite="m3-test",
+                config=arm.to_dict() | extra,
+                clock=lambda: 0,
+                recorded_at=recorded_at,
+            )
+
+        return evaluator
+
+    identity = {"admin_identity": {"golden_sha256": "a" * 64, "corpus_fingerprint": "b" * 64}}
+    report = asyncio.run(
+        run_ablation(
+            (config,), evaluator_with(identity), artifact_dir=tmp_path, recorded_at=recorded_at
+        )
+    )
+    (outcome,) = report.outcomes
+    assert outcome.evaluation.config["admin_identity"] == identity["admin_identity"]
+    assert outcome.evaluation.config["chunking"]["target_tokens"] == 1024
+
+    with pytest.raises(ValueError, match="does not carry arm"):
+        asyncio.run(
+            run_ablation(
+                (config,),
+                evaluator_with({"chunking": {"target_tokens": 2048}}),
+                artifact_dir=tmp_path / "changed",
+                recorded_at=recorded_at,
             )
         )

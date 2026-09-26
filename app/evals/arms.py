@@ -2,34 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
-import math
+from collections.abc import Awaitable, Callable
 from typing import Literal, get_args
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import BM25Idf, LexicalRanker
-from app.retrieval.bm25 import bm25_search
+from app.evals.types import EvaluationRetrieval
+from app.retrieval.bm25 import bm25_search, validate_bm25_parameters
 from app.retrieval.embeddings import EmbeddingProvider
 from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.korean import lexical_corpus_language, lexical_plan
 from app.retrieval.lexical import lexical_search
 from app.retrieval.service import normalize_query, retrieve
-from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.retrieval.types import RetrievalFilters
 from app.retrieval.vector import vector_search
 
 type RetrievalStrategy = Literal["lexical", "vector", "hybrid"]
-type Retriever = Callable[[str, int], Awaitable[Sequence[ChunkHit]]]
+type Retriever = Callable[[str, int], Awaitable[EvaluationRetrieval]]
 type BM25Parameters = tuple[float, float, BM25Idf]
 
 RETRIEVAL_STRATEGIES: tuple[RetrievalStrategy, ...] = ("lexical", "vector", "hybrid")
 LEXICAL_RANKERS: tuple[LexicalRanker, ...] = get_args(LexicalRanker)
-BM25_IDF_VARIANTS: tuple[BM25Idf, ...] = get_args(BM25Idf)
-
-
-def _is_finite_number(value: object) -> bool:
-    """Accept only a real finite number, rejecting ``bool`` and non-numeric values."""
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
 def resolve_bm25_parameters(
@@ -70,13 +64,8 @@ def resolve_bm25_parameters(
         return None
     if bm25_k1 is None or bm25_b is None or bm25_idf is None:
         raise ValueError("bm25 arms require explicit k1, b, and idf values")
-    if not _is_finite_number(bm25_k1) or bm25_k1 <= 0:
-        raise ValueError("bm25_k1 must be a finite positive number")
-    if not _is_finite_number(bm25_b) or not 0 <= bm25_b <= 1:
-        raise ValueError("bm25_b must be a finite number between 0 and 1")
-    if bm25_idf not in BM25_IDF_VARIANTS:
-        raise ValueError("bm25_idf must be 'lucene' or 'robertson'")
-    return (float(bm25_k1), float(bm25_b), bm25_idf)
+    k1, b = validate_bm25_parameters(bm25_k1, bm25_b, bm25_idf, parameter_prefix="bm25_")
+    return (k1, b, bm25_idf)
 
 
 def _require_depth(candidate_k: int, k: int) -> None:
@@ -100,31 +89,33 @@ def _lexical_retriever(
     """
     plan = lexical_plan(lexical_corpus_language(filters))
 
-    async def run(query: str, k: int) -> Sequence[ChunkHit]:
+    async def run(query: str, k: int) -> EvaluationRetrieval:
         """Search the lexical index for one normalized query."""
         _require_depth(candidate_k, k)
         lexical_query = plan.query_transform(normalize_query(query))
         if not lexical_query.strip():
-            return []
+            return EvaluationRetrieval(hits=())
         if bm25 is None:
-            return await lexical_search(
+            hits = await lexical_search(
                 session,
                 lexical_query,
                 k,
                 filters,
                 text_search_config=plan.text_search_config,
             )
-        k1, b, idf = bm25
-        return await bm25_search(
-            session,
-            lexical_query,
-            k,
-            filters,
-            k1=k1,
-            b=b,
-            idf=idf,
-            text_search_config=plan.text_search_config,
-        )
+        else:
+            k1, b, idf = bm25
+            hits = await bm25_search(
+                session,
+                lexical_query,
+                k,
+                filters,
+                k1=k1,
+                b=b,
+                idf=idf,
+                text_search_config=plan.text_search_config,
+            )
+        return EvaluationRetrieval(hits=tuple(hits))
 
     return run
 
@@ -138,13 +129,14 @@ def _vector_retriever(
 ) -> Retriever:
     """Bind the vector-only lane, embedding each normalized query before search."""
 
-    async def run(query: str, k: int) -> Sequence[ChunkHit]:
+    async def run(query: str, k: int) -> EvaluationRetrieval:
         """Embed one normalized query and search by vector distance."""
         _require_depth(candidate_k, k)
         query_vector = await provider.embed_query(normalize_query(query))
-        return await vector_search(
+        hits = await vector_search(
             session, query_vector, k=k, filters=filters, identity=provider.identity
         )
+        return EvaluationRetrieval(hits=tuple(hits))
 
     return run
 
@@ -162,7 +154,7 @@ def _hybrid_retriever(
 ) -> Retriever:
     """Bind the fused lane; BM25 values are forwarded only for a BM25 arm."""
 
-    async def run(query: str, k: int) -> Sequence[ChunkHit]:
+    async def run(query: str, k: int) -> EvaluationRetrieval:
         """Fuse the vector and lexical lanes for one normalized query."""
         _require_depth(candidate_k, k)
         bm25_arguments = (
@@ -180,7 +172,7 @@ def _hybrid_retriever(
             lexical_ranker=lexical_ranker,
             **bm25_arguments,
         )
-        return result.hits
+        return EvaluationRetrieval(hits=result.hits)
 
     return run
 

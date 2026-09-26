@@ -1,7 +1,5 @@
 """Reviewed expectations for the committed retrieval golden suite."""
 
-from app.evals.curation import MAX_CANDIDATE_SPAN_CHARS
-
 CASE_ID_PATTERN = r"m3c-[0-9]{2}"
 CASE_COUNT = 16
 POSITIVE_CASE_COUNT = 12
@@ -9,9 +7,9 @@ ABSENT_CASE_COUNT = 4
 POSITIVE_DOCUMENT_COUNT = 10
 DEMO_HERO_COUNT = 4
 
-# The committed suite is held to the same width gate that admits new cases, so
-# widening intake cannot leave the suite's own expectation behind.
-MAX_ANSWER_SPAN_CHARS = MAX_CANDIDATE_SPAN_CHARS
+# A committed answer span never exceeds this many raw characters. A wider span is
+# reconnaissance, not an answer: it inflates IoU denominators.
+MAX_ANSWER_SPAN_CHARS = 2_500
 
 CATEGORY_COUNTS = {
     "simple_lookup": 6,
@@ -43,7 +41,3 @@ DOCUMENT_ISSUERS = {
 }
 
 POSITIVE_ISSUER_COUNTS = {"AMD": 6, "NVDA": 6}
-
-# Generated candidates awaiting review, from data/golden/candidates/r1.json.
-COMMITTED_CANDIDATE_COUNT = 2
-COMMITTED_ABSENT_CANDIDATE_COUNT = 1

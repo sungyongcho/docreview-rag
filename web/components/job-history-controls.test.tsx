@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getJobHistorySummary, manageJobHistory } from "@/lib/api";
 import { JobHistoryControls } from "./job-history-controls";
@@ -9,8 +9,12 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 it("only reads on open, traps focus, and returns focus on Escape", async () => {
   render(<JobHistoryControls onChanged={vi.fn()} />);
   const trigger = screen.getByRole("button", { name: "Manage history" });
-  fireEvent.click(trigger);
-  await screen.findByText("3 visible · 2 archived · 1 active");
+  // Escape is ignored while the dialog is busy, and its window key handler only learns that the
+  // summary read finished once React has run the dialog's effects, which can lag behind the text
+  // on a loaded machine. Let the open settle inside act, then require the idle dialog.
+  await act(async () => { fireEvent.click(trigger); });
+  expect(screen.getByText("3 visible · 2 archived · 1 active")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Close" })).toBeEnabled();
   expect(manageJobHistory).not.toHaveBeenCalled();
   fireEvent.keyDown(window, { key: "Tab" });
   expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();

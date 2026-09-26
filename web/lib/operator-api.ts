@@ -2,15 +2,13 @@ import type { components as OperatorComponents } from "./operator-api-generated"
 import { requestFetch } from "./http-request";
 
 // Read at call time: Next inlines NEXT_PUBLIC_* either way, and tests can stub the env per case.
-function operatorBaseUrl() {
+export function operatorBase() {
   return process.env.NEXT_PUBLIC_OPERATOR_BASE_URL ?? "";
 }
 
 function operatorToken() {
   return process.env.NEXT_PUBLIC_OPERATOR_TOKEN ?? "";
 }
-
-export type OperatorJobStatus = "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
 
 /** The sidecar schema owns command metadata; retain the existing category union. */
 export type OperatorCommand = Omit<OperatorComponents["schemas"]["CommandResource"], "category"> & {
@@ -28,7 +26,7 @@ export interface OperatorJob {
   job_id: string;
   command_id: string;
   label: string;
-  status: OperatorJobStatus;
+  status: OperatorComponents["schemas"]["JobStatus"];
   output: string;
   exit_code: number | null;
   started_at: string;
@@ -36,11 +34,7 @@ export interface OperatorJob {
 }
 
 export function operatorAvailable() {
-  return Boolean(operatorBaseUrl() && operatorToken());
-}
-
-export function operatorBase() {
-  return operatorBaseUrl();
+  return Boolean(operatorBase() && operatorToken());
 }
 
 export class OperatorRequestError extends Error {
@@ -52,7 +46,7 @@ export class OperatorRequestError extends Error {
 
 async function operatorRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!operatorAvailable()) throw new Error("Local Operations is not enabled for this build.");
-  const response = await requestFetch(`${operatorBaseUrl()}${path}`, {
+  const response = await requestFetch(`${operatorBase()}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
@@ -101,7 +95,6 @@ export interface WipeDiagnosis {
 }
 export interface WipeCapability { available: boolean; reason: string | null; checked_at?: string; diagnosis?: WipeDiagnosis | null }
 export interface WipeResult {
-  extreme?: boolean;
   id?: string;
   status: string;
   stage?: string;
@@ -118,13 +111,6 @@ export function previewWipe() { return operatorRequest<WipePreview>("/wipe/previ
 export function startWipe(token: string, confirmation: string) { return operatorRequest<WipeResult>("/wipe", { method: "POST", body: JSON.stringify({ token, confirmation }) }); }
 export function getWipeStatus() { return operatorRequest<WipeResult>("/wipe", { cache: "no-store" }); }
 export function recoverWipe() { return operatorRequest<WipeResult>("/wipe/recover", { method: "POST" }); }
-
-export function acknowledgeWipeBrowser(operationId: string) {
-  return operatorRequest<{ acknowledged: boolean; id: string }>("/wipe/browser-cleared", {
-    method: "POST", body: JSON.stringify({ operation_id: operationId }),
-  });
-}
-
 
 /** Read recorded fresh-start outcomes without executing a command or changing its receipt. */
 export function getLifecycleReceipts(signal?: AbortSignal) {

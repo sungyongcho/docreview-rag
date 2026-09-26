@@ -1,10 +1,13 @@
 """Publishing registries resolve only explicitly typed filing sources."""
 
+from collections.abc import MutableMapping
+from typing import cast
+
 import pytest
 
 from app.ingestion.dart import DART_PARTS, parse_dart_filing
 from app.ingestion.edgar import CANONICAL, parse_filing
-from app.ingestion.registry import REGISTRIES, registry_for, resolve_registry, section_title
+from app.ingestion.registry import REGISTRIES, Registry, registry_for, section_title
 from tests.ingestion.support import filing_document, filing_source
 
 
@@ -14,14 +17,8 @@ def test_explicit_source_selects_the_registered_parser(tmp_path):
     path.write_text("<html>source</html>")
     for name, parser in [("sec", parse_filing), ("dart", parse_dart_filing)]:
         source = filing_source(path, document=filing_document(registry=name))
-        assert resolve_registry(source).parse is parser
-        assert resolve_registry(source).name == name
-
-
-def test_missing_registry_never_defaults_to_sec():
-    """Reject a legacy dictionary instead of implicitly treating it as SEC."""
-    with pytest.raises(AttributeError):
-        resolve_registry({})
+        assert registry_for(source.document.registry).parse is parser
+        assert registry_for(source.document.registry).name == name
 
 
 def test_unknown_registry_fails_closed():
@@ -33,7 +30,8 @@ def test_unknown_registry_fails_closed():
 def test_registry_configuration_is_immutable_and_has_no_chunk_profiles():
     """Keep source syntax in adapters and processing budgets in the shared contract."""
     with pytest.raises(TypeError):
-        REGISTRIES["other"] = REGISTRIES["sec"]
+        # Write through a mutable view on purpose: the read-only proxy must refuse it.
+        cast(MutableMapping[str, Registry], REGISTRIES)["other"] = REGISTRIES["sec"]
     assert registry_for("dart").language == "ko"
     assert registry_for("sec").language == "en"
     assert registry_for("sec").section_label("7") == "Item 7"
@@ -62,6 +60,8 @@ def test_section_title_falls_back_across_registries_without_a_name():
     assert section_title("") is None
 
 
-def test_registry_section_codes_never_overlap():
-    """The registry-less fallback is only sound while EDGAR and DART codes stay disjoint."""
-    assert not set(CANONICAL) & set(DART_PARTS)
+def test_registry_less_lookup_gives_every_code_its_own_registry_title():
+    """The fallback takes the first registry that knows a code, so no code may know two."""
+    for registry, codes in (("sec", CANONICAL), ("dart", DART_PARTS)):
+        for code in codes:
+            assert section_title(code) == section_title(code, registry), (registry, code)

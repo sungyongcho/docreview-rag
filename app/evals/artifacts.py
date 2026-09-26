@@ -7,7 +7,65 @@ import json
 from pathlib import Path
 from typing import Any, Final
 
+from app.evals.identity import EVALUATED_GOLDEN_KEY, evaluated_golden_sha256
+
 JSON_SUFFIX: Final[str] = ".json"
+
+
+class EvaluationArtifacts:
+    """Read stored evaluation evidence within one configured directory."""
+
+    def __init__(self, directory: Path) -> None:
+        """Resolve the allowed directory once, before any artifact paths are read."""
+        self.directory = directory.resolve()
+
+    def read(
+        self, raw: str, *, max_bytes: int | None = None, max_cases: int | None = None
+    ) -> dict[str, Any]:
+        """Confine reads before filesystem inspection and apply the caller's public limits."""
+        path = Path(raw).resolve()
+        if path.parent != self.directory:
+            raise ValueError("evaluation artifact is outside the configured directory")
+        if max_bytes is not None and path.stat().st_size > max_bytes:
+            raise ValueError("evaluation artifact exceeds the byte limit")
+        payload = read_strict_json(path, error=ValueError)
+        if not isinstance(payload, dict):
+            raise ValueError("evaluation artifact root must be an object")
+        if max_cases is not None:
+            cases = payload.get("cases")
+            if not isinstance(cases, list) or len(cases) > max_cases:
+                raise ValueError("evaluation artifact exceeds the case limit")
+        return payload
+
+
+def cases_by_id(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Index complete case identities without discarding malformed or duplicate rows."""
+    cases = payload.get("cases")
+    if not isinstance(cases, list):
+        raise ValueError("evaluation artifact cases must be an array")
+    indexed = {}
+    for item in cases:
+        golden = item.get("golden") if isinstance(item, dict) else None
+        case_id = golden.get("id") if isinstance(golden, dict) else None
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise ValueError("evaluation artifact case requires a nonblank string id")
+        if case_id in indexed:
+            raise ValueError("evaluation artifact contains duplicate case ids")
+        indexed[case_id] = item
+    return indexed
+
+
+def recorded_evaluation_cases(
+    payload: dict[str, Any], *, suite: str, config: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Verify artifact settings and exact evaluated cases against the stored result."""
+    if payload.get("suite") != suite or payload.get("config") != config:
+        raise ValueError("evaluation artifact does not match the stored configuration")
+    cases = cases_by_id(payload)
+    digest = evaluated_golden_sha256([case["golden"] for case in cases.values()])
+    if config.get(EVALUATED_GOLDEN_KEY) != digest:
+        raise ValueError("evaluation artifact does not match the recorded golden cases")
+    return cases
 
 
 def read_strict_json(path: str | Path, *, error: type[Exception]) -> object:
@@ -62,46 +120,6 @@ def read_strict_json(path: str | Path, *, error: type[Exception]) -> object:
     return payload
 
 
-def encode_json_document(payload: object, *, sort_keys: bool = True) -> str:
-    """Encode one reviewable JSON document with exactly one terminal newline.
-
-    Parameters
-    ----------
-    payload : object
-        JSON-compatible value to serialize.
-    sort_keys : bool
-        Sort object keys, which every generated artifact wants and a
-        human-authored file whose field order is part of its review does not.
-
-    Returns
-    -------
-    str
-        Two-space indented, non-ASCII-preserving JSON text.
-
-    Raises
-    ------
-    ValueError
-        If the payload contains a non-finite number.
-    TypeError
-        If the payload contains a value JSON cannot encode.
-
-    Notes
-    -----
-    Every evaluation file narrows through this encoder, so two runs that recorded
-    the same evidence produce byte-identical bytes whatever wrote them.
-    """
-    return (
-        json.dumps(
-            payload,
-            allow_nan=False,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=sort_keys,
-        )
-        + "\n"
-    )
-
-
 def utc_text(value: datetime) -> str:
     """Format a timezone-aware datetime as a UTC ``Z`` timestamp.
 
@@ -151,5 +169,6 @@ def write_json_artifact(path: str | Path, payload: dict[str, object]) -> Path:
     if artifact_path.suffix != JSON_SUFFIX:
         raise ValueError("evaluation artifact path must end in .json")
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_path.write_text(encode_json_document(payload), encoding="utf-8")
+    text = json.dumps(payload, allow_nan=False, ensure_ascii=False, indent=2, sort_keys=True)
+    artifact_path.write_text(text + "\n", encoding="utf-8")
     return artifact_path

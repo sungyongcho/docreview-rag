@@ -1,8 +1,10 @@
 """Builders shared by the agent tests."""
 
+from typing import cast
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.agent.provider import ProviderTurn
-from app.retrieval.types import ChunkHit
-from tests.retrieval.support import hit_values
 
 
 def turn(**changes):
@@ -15,14 +17,6 @@ def turn(**changes):
     }
     values.update(changes)
     return ProviderTurn(**values)
-
-
-def hit(chunk_id, *, score=0.5):
-    """Build one retrieval hit with offsets derived from its chunk id."""
-    start = chunk_id * 100
-    return ChunkHit(
-        **hit_values(chunk_id=chunk_id, score=score, start_char=start, end_char=start + 50)
-    )
 
 
 class FakeSession:
@@ -69,8 +63,9 @@ class FakeSessionFactory:
         self.chunk = chunk
         self.sessions = []
 
-    def __call__(self):
+    def __call__(self) -> AsyncSession:
         """Produce one fresh fake session per call, the way a sessionmaker does."""
         session = FakeSession(self.chunk)
         self.sessions.append(session)
-        return session
+        # The duck-typed fake stands in for the AsyncSession a SessionFactory returns.
+        return cast(AsyncSession, session)

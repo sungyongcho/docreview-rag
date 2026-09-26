@@ -138,7 +138,7 @@ export function PublicEvaluationWorkspace({ tab, snapshots, loading, error, onRe
     {selected && <section className="public-evaluation-result">
       <div className="surface-heading"><div><h2>{selected.label}</h2><p className="helper">{selected.suite_title ?? selected.eval_result.suite} · {new Date(selected.eval_result.created_at).toLocaleString(locale)}</p></div></div>
       {busy && !record ? <p role="status">{t("Loading recorded evidence…")}</p> : detailError ? <div role="alert"><p>{t("This published record could not be verified or loaded. The current editable dataset is not used as a replacement.")}</p><button className="button" onClick={() => setRevision((value) => value + 1)}>{t("Retry")}</button></div> : record && <>
-        {dataset && <p className="helper">{t("Dataset version")}: {dataset.version ?? "—"} · SHA-256 <code>{dataset.golden_sha256}</code></p>}
+        {dataset && <p className="helper">SHA-256 <code>{dataset.golden_sha256}</code></p>}
         {evaluation && <>
           <p className="public-evaluation-purpose">{t("Can retrieval find the evidence? This recorded run checks ranked search results against a fixed set of questions and expected sources.")}</p>
           <p className="helper">{t("Retrieval profile ·")} {t(String(evaluation.config.strategy ?? "—"))} · {String(evaluation.config.lexical_ranker ?? "—")} · k {String(evaluation.config.k ?? "—")}</p>

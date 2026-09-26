@@ -1,5 +1,5 @@
 "use client";
-import { NotificationOutlet, useNotificationSurface } from "./notifications";
+import { NotificationOutlet } from "./notifications";
 import { useI18n } from "@/lib/i18n";
 import { DatabaseZap, Layers, RefreshCw, RotateCw, ServerCrash, X } from "lucide-react";
 
@@ -31,7 +31,7 @@ export function ServiceHealthModal({
   degradedMessage,
   readOnly = false,
 }: ServiceHealthModalProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   if (!visible || (kind !== "api_down" && kind !== "db_degraded" && kind !== "preparation_needed")) return null;
   const apiDown = kind === "api_down";
   const preparationNeeded = kind === "preparation_needed";

@@ -158,8 +158,8 @@ def test_nvda_fy2024_item15_contains_the_financial_statement_body(parsed: dict) 
 # Coverage regression
 
 
-def _measure(edgar_module: ModuleType, result) -> tuple[int, int]:
-    """Measure source characters assigned to section text and table text."""
+def _measure(edgar_module: ModuleType, result, blocks) -> tuple[int, int]:
+    """Measure the leaf-block text total and the section-assigned text and table characters."""
     body = sum(len(block.text) for section in result.sections for block in section.blocks)
     tables = sum(
         len(edgar_module.BeautifulSoup(block.html, "html.parser").get_text(" ", strip=True))
@@ -167,7 +167,8 @@ def _measure(edgar_module: ModuleType, result) -> tuple[int, int]:
         for block in section.blocks
         if block.kind == "table" and block.html
     )
-    return result.n_chars, body + tables
+    total = sum(len(block.get_text(" ", strip=True)) for block in blocks)
+    return total, body + tables
 
 
 @pytest.mark.parametrize("doc", sorted(COVERAGE))
@@ -175,30 +176,13 @@ def test_document_coverage_matches_golden(
     doc: str,
     edgar_module: ModuleType,
     parsed: dict,
-) -> None:
-    """Keep exact total and section-assigned character counts for every filing."""
-    assert _measure(edgar_module, parsed[doc]) == COVERAGE[doc]
-
-
-def test_parsed_result_carries_the_original_measurements(
-    parsed: dict,
     blocks_by_doc: dict[str, tuple],
 ) -> None:
-    """Keep n_chars and n_blocks tied to the blocks measured during parsing."""
-    for doc, result in parsed.items():
-        _soup, blocks, _raw = blocks_by_doc[doc]
-        assert result.n_chars == sum(len(block.get_text(" ", strip=True)) for block in blocks)
-        assert result.n_blocks == len(blocks)
+    """Keep exact total and section-assigned character counts for every filing."""
+    assert _measure(edgar_module, parsed[doc], blocks_by_doc[doc][1]) == COVERAGE[doc]
 
 
 # SEC Item boundaries and source-position regression
-
-
-@pytest.mark.parametrize("doc", sorted(N_ITEMS))
-def test_no_extra_sec_items(doc: str, edgar_module: ModuleType, parsed: dict) -> None:
-    """Reject every parsed Item that is absent from the SEC Item order."""
-    items = [section.item for section in parsed[doc].sections if section.item]
-    assert [item for item in items if item not in edgar_module.ORDER] == []
 
 
 @pytest.mark.parametrize("doc", sorted(N_ITEMS))

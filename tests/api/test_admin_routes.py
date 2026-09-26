@@ -5,12 +5,12 @@ from decimal import Decimal
 from typing import cast
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.admin_schemas import (
     AdminDocumentResource,
     CorpusJobResource,
-    CorpusOperationRequest,
     DocumentFacetsResponse,
     DocumentFacetValue,
     DocumentInventoryResponse,
@@ -19,12 +19,15 @@ from app.api.admin_schemas import (
     EvaluationRunRequest,
     GoldenCanonicalResource,
     OperatorJobsResponse,
+    SourceDeletionPreviewResource,
+    SourceDeletionRequest,
     UsageResponse,
 )
 from app.api.app import create_api_app
+from app.corpus_admin.types import AdminCommand
 
 
-def _corpus_job(request: CorpusOperationRequest, job_id: str = "corpus-1") -> CorpusJobResource:
+def _corpus_job(request: AdminCommand, job_id: str = "corpus-1") -> CorpusJobResource:
     """Return one complete shared job resource for route contract tests."""
     return CorpusJobResource(
         job_id=job_id,
@@ -159,14 +162,6 @@ class FakeAdminServices:
         """Echo one safe operation kind."""
         return _corpus_job(request)
 
-    async def corpus_jobs(self):
-        """Return an empty queue."""
-        return {"active": None, "queued": (), "history": ()}
-
-    async def retry_corpus(self, job_id):
-        """Return one retry identity."""
-        return _corpus_job(CorpusOperationRequest(kind="rebuild_bm25"), job_id)
-
     async def suites(self):
         """Return no suites for this route fixture."""
         return ()
@@ -194,10 +189,6 @@ class FakeAdminServices:
     async def evaluation_jobs(self):
         """Return an empty evaluation job list."""
         return EvaluationJobsResponse(jobs=())
-
-    async def evaluation_job(self, job_id):
-        """Return no job for this route fixture."""
-        return None
 
     async def operator_job(self, job_id):
         """Return no persisted unified job for this route fixture."""
@@ -234,13 +225,11 @@ class FakeAdminServices:
         """Leave review unused in this focused route test."""
         raise AssertionError(request)
 
-
-def test_admin_routes_are_absent_without_explicit_composition() -> None:
-    """Keep the stable public OpenAPI surface free of administrator operations."""
-    with TestClient(create_api_app()) as client:
-        paths = set(client.get("/openapi.json").json()["paths"])
-
-    assert not any(path.startswith("/admin") for path in paths)
+    async def source_deletion_preview(
+        self, request: SourceDeletionRequest
+    ) -> SourceDeletionPreviewResource:
+        """Leave the deletion preview to the test that stages its own reply."""
+        raise AssertionError(request)
 
 
 def test_admin_routes_are_injected_and_typed() -> None:
@@ -357,15 +346,71 @@ def test_ingestion_route_requires_and_forwards_explicit_selection():
                 "kind": "ingest_manifest",
                 "manifest": "manifest.json",
                 "selection_id": "selected",
+                "document_ids": ["filing-a"],
+                "years": [2024],
+                "expected_documents": 1,
             },
         )
         schema = client.get("/openapi.json").json()
     assert invalid.status_code == 422
     assert valid.status_code == 200
+    assert isinstance(received[0], AdminCommand)
     assert received[0].selection_id == "selected"
+    assert received[0].document_ids == ("filing-a",)
+    assert received[0].years == (2024,)
+    assert valid.json()["command"]["document_ids"] == ["filing-a"]
     assert schema["paths"]["/admin/corpus"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]["$ref"].endswith("CorpusSnapshotResource")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"kind": "delete_sources"},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": False},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": "true"},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": 1},
+        {
+            "kind": "delete_sources",
+            "deletion_token": "preview",
+            "confirm_delete": True,
+            "identifiers": ["NVDA"],
+        },
+        {"kind": "rebuild_bm25", "deletion_token": "preview", "confirm_delete": True},
+        {"kind": "acquire_edgar", "identifiers": ["NVDA"], "years": [1800]},
+        {"kind": "acquire_dart", "identifiers": ["unsupported"], "years": [2024]},
+        {"kind": "acquire_edgar", "identifiers": [], "years": [2024]},
+        {"kind": "acquire_edgar", "identifiers": ["NVDA"], "years": ["2024"]},
+        {"kind": "acquire_edgar", "identifiers": ["NVDA"], "years": [True]},
+        {"kind": "ingest_selected", "document_ids": ["filing-a", "filing-a"]},
+        {"kind": "ingest_selected", "document_ids": []},
+        {"kind": "ingest_selected", "document_ids": None},
+        {"kind": "ingest_selected", "document_ids": [1]},
+        {"kind": "ingest_selected", "document_ids": ["filing-a"], "years": [0]},
+        {"kind": "rebuild_bm25", "document_ids": ["filing-a"]},
+        {"kind": "rebuild_bm25", "expected_documents": 0},
+        {"kind": "rebuild_bm25", "expected_documents": True},
+        {"kind": "rebuild_bm25", "unknown": True},
+    ],
+)
+def test_corpus_route_rejects_invalid_commands_before_enqueue(payload):
+    """The current command boundary rejects unsafe scope and scalar coercion over HTTP."""
+    services = FakeAdminServices()
+    received = []
+
+    async def enqueue(request):
+        """Expose any accidental dispatch of a rejected command."""
+        received.append(request)
+        return _corpus_job(request)
+
+    services.enqueue_corpus = enqueue
+    with TestClient(
+        create_api_app(admin_services=cast(RuntimeAdminApiServices, services))
+    ) as client:
+        response = client.post("/admin/corpus/jobs", json=payload)
+    assert response.status_code == 422
+    assert received == []
 
 
 def test_history_routes_validate_scope_and_translate_conflicts(tmp_path) -> None:
@@ -436,8 +481,6 @@ def test_history_routes_validate_scope_and_translate_conflicts(tmp_path) -> None
 
 def test_source_deletion_preview_is_admin_only_and_validates_exact_ids():
     """The preview route remains unavailable publicly and forwards only explicit IDs."""
-    from app.api.admin_schemas import SourceDeletionPreviewResource
-
     with TestClient(create_api_app()) as client:
         assert (
             client.post(

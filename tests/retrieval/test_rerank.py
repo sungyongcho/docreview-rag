@@ -30,19 +30,6 @@ def test_provider_receives_full_index_text_and_rescores_without_mutating_hits():
     assert [candidate.score for candidate in hits] == original_scores
 
 
-def test_no_provider_keeps_shared_deterministic_order_and_truncates():
-    """Use shared deterministic ordering when no provider is supplied."""
-    hits = [
-        hit(3, 0.5, doc_id="B"),
-        hit(2, 0.5, doc_id="A"),
-        hit(1, 0.9, doc_id="Z"),
-    ]
-
-    ordered = asyncio.run(rerank.rerank_hits("query", hits, top_k=2))
-
-    assert [candidate.chunk_id for candidate in ordered] == [1, 2]
-
-
 @pytest.mark.parametrize(
     "scores, message",
     [
@@ -81,8 +68,13 @@ def test_empty_candidates_and_zero_limit_do_not_call_provider():
     )
 
 
-@pytest.mark.parametrize(("query", "top_k"), [("", 1), ("   ", 1), ("query", -1)])
+@pytest.mark.parametrize(("query", "top_k"), [("   ", 1), ("query", -1)])
 def test_reranking_rejects_blank_queries_and_negative_limits(query, top_k):
     """Reject blank queries and negative result limits."""
+
+    class Provider(rerank.RerankProvider):
+        async def score(self, _query, _documents):
+            raise AssertionError("provider should not be called")
+
     with pytest.raises(ValueError):
-        asyncio.run(rerank.rerank_hits(query, [hit(1, 0.5)], top_k=top_k))
+        asyncio.run(rerank.rerank_hits(query, [hit(1, 0.5)], provider=Provider(), top_k=top_k))

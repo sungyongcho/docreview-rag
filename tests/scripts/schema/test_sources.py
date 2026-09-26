@@ -31,21 +31,12 @@ def test_clean_start_removes_sources_but_preserves_unrelated_paths(tmp_path, sam
     reset.stage()
     assert not Manifest.read(corpus / "manifest.json").artifacts
     assert not source_inventory(corpus)
-    assert len(acquisition_draft(corpus)["pairs"]) == (4 if sample else 18)
+    pairs = acquisition_draft(corpus)["pairs"]
+    assert isinstance(pairs, list)
+    assert len(pairs) == (4 if sample else 18)
     reset.finish()
     assert not reset.journal.exists()
     assert sentinel.read_text() == (tmp_path / ".env").read_text() == "keep"
-
-
-def test_staging_restore_recovers_exact_files_and_manifest(tmp_path):
-    """A DB failure can restore every original byte rather than leave half a catalog."""
-    corpus = tmp_path / "data/corpus"
-    write_selection_catalog(corpus)
-    before = source_preview(tmp_path)
-    reset = SourceReset(tmp_path, before)
-    reset.stage()
-    reset.restore()
-    assert source_preview(tmp_path) == before
 
 
 def test_changed_source_preview_and_symlinks_refuse_mutation(tmp_path):
@@ -103,7 +94,7 @@ def test_cleanup_failure_reports_database_commit_and_retains_journal(
     assert recreate.run(tmp_path) == "incomplete"
     output = capsys.readouterr().err
     assert "DB committed" in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
     journal = tmp_path / "data/.schema-recreate-journal/journal.json"
     assert json.loads(journal.read_text())["phase"] == "database_committed_source_cleanup_pending"
     with pytest.raises(ValueError, match="Unfinished"):
@@ -146,7 +137,7 @@ def test_uncertain_database_outcome_retains_durable_recovery_evidence(
     output = capsys.readouterr().err
     assert "Database outcome is unconfirmed" in output
     assert "database and sources are unchanged" not in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
     assert (corpus / "manifest.json").read_bytes() == original
     journal = tmp_path / "data/.schema-recreate-journal/journal.json"
     assert (
@@ -251,7 +242,7 @@ def test_failed_source_rollback_preserves_journal_and_reports_unconfirmed_recove
     output = capsys.readouterr().err
     assert "rollback could not be confirmed" in output
     assert "database and sources are unchanged" not in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
     assert (tmp_path / "data/.schema-recreate-journal/journal.json").exists()
 
 

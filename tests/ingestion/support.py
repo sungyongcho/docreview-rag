@@ -1,6 +1,6 @@
 """Shared pure helpers for ingestion API tests."""
 
-import asyncio
+from typing import Literal
 
 import httpx
 
@@ -10,15 +10,18 @@ def client_returning(handler) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
-def run(coroutine):
-    """Run one asynchronous client operation to completion."""
-    return asyncio.run(coroutine)
-
-
 def filing_document(
-    *, registry="sec", issuer=None, filing_id=None, fiscal_year=2024, document_id=None, aliases=()
+    *,
+    registry: Literal["sec", "dart"] = "sec",
+    issuer=None,
+    filing_id=None,
+    fiscal_year=2024,
+    document_id=None,
+    aliases=(),
 ):
     """Construct valid common metadata directly for one synthetic filing."""
+    from datetime import date
+
     from app.ingestion.manifest import DartMetadata, DocumentReference, SecMetadata
 
     issuer = issuer or ("NVDA" if registry == "sec" else "005930")
@@ -33,8 +36,8 @@ def filing_document(
         filing_id=filing_id,
         fiscal_year=fiscal_year,
         form="10-K" if registry == "sec" else "사업보고서",
-        filing_date=f"{fiscal_year + (registry == 'dart')}-03-11",
-        report_period=f"{fiscal_year}-12-31",
+        filing_date=date(fiscal_year + (registry == "dart"), 3, 11),
+        report_period=date(fiscal_year, 12, 31),
         source_url=f"https://example.test/{filing_id}",
         sec=SecMetadata(cik="0001045810", accession=filing_id, primary_document="report.html")
         if registry == "sec"
@@ -50,7 +53,7 @@ def filing_document(
     )
 
 
-def filing_source(path, *, document=None, encoding="utf-8"):
+def filing_source(path, *, document=None, encoding: Literal["utf-8", "euc-kr", "cp949"] = "utf-8"):
     """Bind a synthetic typed document to exact bytes already written by a test."""
     from datetime import UTC, datetime
     import hashlib
@@ -132,6 +135,8 @@ def acquired_filing(root, *, document=None, payload=b"synthetic source"):
 
     document = document or filing_document()
     if document.registry == "dart":
+        # A DART document always carries DART metadata; the manifest validator enforces it.
+        assert document.dart is not None
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr(f"{document.filing_id}.xml", payload)

@@ -80,6 +80,51 @@ def test_pre_node_guard_returns_structured_budget_exceeded_refusal(
     }
 
 
+@pytest.mark.parametrize(
+    ("budget", "expected_resource", "limit"),
+    [
+        (Budget(max_iterations=3, max_wall_clock_s=2.0), "iterations", 3),
+        (Budget(max_iterations=10, max_wall_clock_s=1.0), "wall_clock_s", 1.0),
+    ],
+    ids=["iterations", "wall_clock"],
+)
+def test_pre_node_guard_never_refuses_the_report_node_on_pacing_budgets(
+    budget,
+    expected_resource,
+    limit,
+):
+    """Admit the pure report node on a spent pacing budget while the first node stays paced.
+
+    The report node sends nothing, so refusing it saves no time or money; it would only
+    discard the answer the run already paid for.
+    """
+
+    def guard(node):
+        """Ask the guard for one node after three entered nodes and one second elapsed."""
+        return pre_node_budget_guard(
+            run_id="run-report",
+            node=node,
+            budget=budget,
+            elapsed_seconds=1.0,
+            system_prompt="Ground every claim.",
+            node_path=["retrieve", "grade", "check"],
+            steps=[step_trace()],
+        )
+
+    assert guard("report") is None
+    refused = guard("retrieve")
+    assert refused is not None
+    assert refused.report == {
+        "reason": {
+            "code": "budget_exceeded",
+            "resource": expected_resource,
+            "limit": limit,
+            "observed": limit,
+            "blocked_node": "retrieve",
+        }
+    }
+
+
 def test_zero_budget_refuses_the_first_node_and_negative_budgets_are_invalid():
     """Refuse the first node on a zero budget and reject a negative one outright."""
     budget = Budget(
@@ -101,7 +146,10 @@ def test_zero_budget_refuses_the_first_node_and_negative_budgets_are_invalid():
 
     assert result is not None
     assert result.status == "budget_exceeded"
-    assert result.report["reason"]["resource"] == "iterations"
+    assert result.report is not None
+    reason = result.report["reason"]
+    assert isinstance(reason, dict)
+    assert reason["resource"] == "iterations"
     with pytest.raises(ValidationError):
         Budget(max_input_tokens=-1)
     with pytest.raises(ValidationError):

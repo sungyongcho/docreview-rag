@@ -4,17 +4,9 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility, prepare_empty_schema
+from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility
 from app.db.models import Base
-
-
-async def prepare_schema(url: str) -> bool:
-    """Bootstrap an empty database, or only inspect an existing compatible schema."""
-    engine = create_async_engine(url, echo=False)
-    try:
-        return await prepare_empty_schema(engine)
-    finally:
-        await engine.dispose()
+from app.db.startup import prepare as prepare_schema
 
 
 async def schema_status(url: str, *, prepare: bool = False) -> dict[str, object]:

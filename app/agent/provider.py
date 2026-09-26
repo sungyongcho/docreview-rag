@@ -10,14 +10,19 @@ from openai.types.responses import ResponseInputParam, ToolParam
 from pydantic.functional_validators import model_validator
 
 from app.agent.types import ToolCall
-from app.llm.schemas import NonNegativeInt, StrictSchema, TokenPricing
+from app.llm.provider import openai_usage
+from app.llm.schemas import NonBlank, NonNegativeInt, StrictSchema, TokenPricing
 from app.openai_models import ReasoningEffort, resolve_openai_model
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
 class ProviderTurn(StrictSchema):
-    """One raw provider response: prose, requested tool calls, and usage."""
+    """One raw provider response: prose, requested tool calls, and usage.
+
+    ``incomplete_reason`` names why a cut-off turn stopped (``max_output_tokens``
+    or ``content_filter``) so the loop can tell a budget stop from a provider one.
+    """
 
     output_text: str
     tool_calls: tuple[ToolCall, ...]
@@ -28,6 +33,7 @@ class ProviderTurn(StrictSchema):
     reasoning_tokens: NonNegativeInt = 0
     request_id: str | None = None
     incomplete: bool = False
+    incomplete_reason: NonBlank | None = None
 
     @model_validator(mode="after")
     def unique_call_ids(self) -> Self:
@@ -35,6 +41,8 @@ class ProviderTurn(StrictSchema):
         call_ids = [call.call_id for call in self.tool_calls]
         if len(call_ids) != len(set(call_ids)):
             raise ValueError("provider tool call ids must be unique")
+        if self.incomplete_reason is not None and not self.incomplete:
+            raise ValueError("incomplete_reason requires an incomplete turn")
         if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
             raise ValueError("detailed input tokens must not exceed input_tokens")
         if self.reasoning_tokens > self.output_tokens:
@@ -164,35 +172,25 @@ class OpenAIToolProvider(ToolCallingProvider):
     def __init__(
         self,
         *,
-        model_name: str,
+        model_name: str | None = None,
         client: AsyncOpenAI | None = None,
         api_key: str | None = None,
-        base_url: str | None = None,
     ) -> None:
         selection = resolve_openai_model("agent", model_name)
-        if base_url is not None and not base_url.strip():
-            raise ValueError("base_url must not be blank")
         self.model_name = selection.model
         self.reasoning_effort: ReasoningEffort | None = selection.reasoning_effort
-        self.pricing = TokenPricing(
-            input_per_million_usd=selection.pricing.input_per_million_usd,
-            output_per_million_usd=selection.pricing.output_per_million_usd,
-            cached_input_per_million_usd=selection.pricing.cached_input_per_million_usd,
-            cache_write_input_per_million_usd=(selection.pricing.cache_write_input_per_million_usd),
-        )
+        self.pricing = selection.pricing
         if client is None:
-            owned = AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0)
+            owned = AsyncOpenAI(api_key=api_key, max_retries=0)
             self._owned_client: AsyncOpenAI | None = owned
             self._client: AsyncOpenAI = owned
         else:
             self._owned_client = None
             self._client = client
-        # Recorded provenance mirrors where requests actually go: the explicit
-        # base_url, the owned client's resolved URL (env overrides included), or
-        # the SDK default when a caller injected an opaque client.
-        if base_url is not None:
-            resolved = base_url
-        elif client is None:
+        # Recorded provenance mirrors where requests actually go: the owned
+        # client's resolved URL (env overrides included), or the SDK default when
+        # a caller injected an opaque client.
+        if client is None:
             resolved = str(self._client.base_url)
         else:
             resolved = str(getattr(client, "base_url", "") or DEFAULT_BASE_URL)
@@ -238,14 +236,20 @@ class OpenAIToolProvider(ToolCallingProvider):
         Raises
         ------
         ValueError
-            If the response omits authoritative token usage.
+            If the response omits authoritative token usage or carries invalid
+            usage details.
+        RuntimeError
+            If the response status is ``failed`` or ``cancelled``: the model
+            produced no turn, and replaying an empty turn would nudge the model
+            and bill another request for a provider-side failure.
 
         Notes
         -----
         Responses are not stored and SDK retries are disabled so every billed
         request is represented by exactly one agent step. An ``incomplete``
-        response (the output-token ceiling interrupted generation) is surfaced
-        so the loop can stop instead of nudging a truncated turn.
+        response is surfaced with its reason so the loop can tell the
+        output-token ceiling from a content filter instead of nudging a
+        truncated turn.
         """
         response = await self._client.responses.create(
             model=self.model_name,
@@ -256,21 +260,19 @@ class OpenAIToolProvider(ToolCallingProvider):
             reasoning={"effort": self.reasoning_effort},
             store=False,
         )
-        usage = getattr(response, "usage", None)
-        input_tokens = getattr(usage, "input_tokens", None)
-        output_tokens = getattr(usage, "output_tokens", None)
-        if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
-            raise ValueError("OpenAI response did not include token usage")
-        input_details = getattr(usage, "input_tokens_details", None)
-        output_details = getattr(usage, "output_tokens_details", None)
-        cached_input_tokens = getattr(input_details, "cached_tokens", 0)
-        cache_write_input_tokens = getattr(input_details, "cache_write_tokens", 0)
-        reasoning_tokens = getattr(output_details, "reasoning_tokens", 0)
-        if not all(
-            isinstance(value, int)
-            for value in (cached_input_tokens, cache_write_input_tokens, reasoning_tokens)
-        ):
-            raise ValueError("OpenAI response included invalid token usage details")
+        status = getattr(response, "status", None)
+        if status in {"failed", "cancelled"}:
+            code = getattr(getattr(response, "error", None), "code", None) or "unknown"
+            raise RuntimeError(f"OpenAI response {status} ({code})")
+        incomplete = status == "incomplete"
+        reason = getattr(getattr(response, "incomplete_details", None), "reason", None)
+        (
+            input_tokens,
+            output_tokens,
+            cached_input_tokens,
+            cache_write_input_tokens,
+            reasoning_tokens,
+        ) = openai_usage(response)
         output_text = getattr(response, "output_text", "")
         return ProviderTurn(
             output_text=output_text if isinstance(output_text, str) else "",
@@ -281,5 +283,8 @@ class OpenAIToolProvider(ToolCallingProvider):
             cache_write_input_tokens=cache_write_input_tokens,
             reasoning_tokens=reasoning_tokens,
             request_id=getattr(response, "id", None),
-            incomplete=getattr(response, "status", None) == "incomplete",
+            incomplete=incomplete,
+            incomplete_reason=(
+                reason if incomplete and isinstance(reason, str) and reason.strip() else None
+            ),
         )

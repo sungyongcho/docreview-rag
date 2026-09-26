@@ -53,8 +53,6 @@ export function validateDocumentationRegistry(value = registry) {
   }
   unique(steps, "step");
   if (steps.sort((a, b) => a - b).some((number, index) => number !== index + 1)) throw new Error("Tutorial steps must be continuous");
-  for (const locale of value.locales) unique(value.documents.flatMap((document) => Object.keys(document.legacyAnchors?.[locale] ?? {})), `legacy anchor (${locale})`);
-  unique(value.documents.flatMap((document) => document.legacyFiles ?? []), "legacy file");
   return value;
 }
 
@@ -80,23 +78,11 @@ export function documentationDocument(id, locale = "ko", value = registry) {
   return documentationDocuments(value).find((document) => document.id === id && document.locale === locale);
 }
 
-/** Map an old walkthrough section to its focused document and stable bilingual anchor. */
-export function legacyDocumentationTarget(locale, hash, value = registry) {
-  const anchor = fragment(hash);
-  for (const language of [locale, ...value.locales.filter((item) => item !== locale)]) {
-    const target = value.documents.find((document) => Object.hasOwn(document.legacyAnchors?.[language] ?? {}, anchor));
-    if (target) return { document: documentationDocument(target.id, locale, value), hash: target.legacyAnchors[language][anchor] };
-  }
-  return null;
-}
-
-/** Resolve only registered Markdown filenames, including maintained legacy links. */
+/** Resolve only registered Markdown filenames. */
 export function documentationLink(file, hash, locale = "ko", value = registry) {
-  const source = value.documents.find((document) => document.source === file || document.legacyFiles?.includes(file));
+  const source = value.documents.find((document) => document.source === file);
   if (!source) return null;
-  const legacy = source.legacyFiles?.includes(file) || (source.id === "quickstart" && fragment(hash).startsWith("qs-"))
-    ? legacyDocumentationTarget(locale, hash, value) : null;
-  return legacy ?? { document: documentationDocument(source.id, locale, value), hash };
+  return { document: documentationDocument(source.id, locale, value), hash };
 }
 
 /** Preserve the document, deployment prefix, and useful section when switching languages. */
@@ -106,16 +92,9 @@ export function localizedDocumentationRoute(pathname, locale, hash = "", value =
   if (match[3] === "development") return `${match[1]}/docs/${locale}/development/${hash ? `#${encodeURIComponent(fragment(hash))}` : ""}`;
   const source = value.documents.find((document) => document.slug === (match[3] ?? ""));
   if (!source) return null;
-  let target = documentationDocument(source.id, locale, value);
+  const target = documentationDocument(source.id, locale, value);
   let anchor = fragment(hash);
   const section = source.localizedSections?.find((entry) => match[2] ? entry[match[2]] === anchor : value.locales.some((language) => entry[language] === anchor));
   if (section) anchor = section[locale];
-  if ((!source.slug || source.id === "quickstart") && anchor) {
-    const legacy = legacyDocumentationTarget(match[2] ?? locale, anchor, value);
-    if (legacy) {
-      target = documentationDocument(legacy.document.id, locale, value);
-      anchor = legacy.hash;
-    }
-  }
   return `${match[1]}/docs/${locale}/${target.slug ? target.slug + "/" : ""}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }

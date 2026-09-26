@@ -145,7 +145,7 @@ export function RunDetailsPanel({ editable = true, message: incomingMessage, onC
         <section id={`${uid}-preview`} role="tabpanel" aria-labelledby={`${uid}-preview-tab`} hidden={section !== "preview"} tabIndex={0}>{section === "preview" && (draftProfile ? <RequestPreviewContent editable={editable} profile={draftProfile} query={draftQuery} /> : <p>{t("No next-request settings available.")}</p>)}</section>
         <section id={`${uid}-performance`} role="tabpanel" aria-labelledby={`${uid}-performance-tab`} hidden={section !== "performance"} tabIndex={0}>
           <h3>{t("Execution performance")}</h3>
-          {message.execution ? <ExecutionPerformance data={message.performance} state={message.execution} selectedNodes={stageRequest?.stage ? disclosureNodes(stageRequest.stage, message.execution) : []} embedded /> : <p className="helper">{t("Execution measurements were not recorded for this message.")}</p>}
+          {message.execution ? <ExecutionPerformance data={message.performance} state={message.execution} selectedNodes={stageRequest?.stage ? disclosureNodes(stageRequest.stage) : []} embedded /> : <p className="helper">{t("Execution measurements were not recorded for this message.")}</p>}
         </section>
         <section id={`${uid}-settings`} role="tabpanel" aria-labelledby={`${uid}-settings-tab`} hidden={section !== "settings"} tabIndex={0}>
           <h3>{t("Server-applied settings")}</h3>

@@ -5,24 +5,12 @@ import pytest
 
 from app.api.admin_schemas import (
     AcquisitionDraftResource,
-    CorpusOperationRequest,
     EvaluationRunRequest,
     RetrievalPreviewResponse,
     RetrievalProfile,
     SourceInventoryResource,
 )
 from app.retrieval.service import ComponentRankings
-
-
-def test_default_profile_is_explicit_hybrid_ts_rank() -> None:
-    """Expose every session parameter without inheriting hidden process state."""
-    profile = RetrievalProfile()
-
-    assert profile.strategy == "hybrid"
-    assert profile.lexical_ranker == "ts_rank_cd"
-    assert profile.k == 5
-    assert profile.candidate_k == 20
-    assert profile.rrf_k == 60
 
 
 @pytest.mark.parametrize(
@@ -34,6 +22,13 @@ def test_default_profile_is_explicit_hybrid_ts_rank() -> None:
         {"strategy": "vector", "lexical_ranker": None, "reranker": "cross_encoder"},
         {"k": 10, "candidate_k": 5},
     ],
+    ids=[
+        "vector_names_a_lexical_ranker",
+        "lexical_without_a_ranker",
+        "language_routing_without_hybrid",
+        "reranking_without_hybrid",
+        "candidate_depth_below_k",
+    ],
 )
 def test_profile_rejects_contradictory_retrieval_plans(values) -> None:
     """Reject mislabeled retrieval paths before database or provider access."""
@@ -43,11 +38,11 @@ def test_profile_rejects_contradictory_retrieval_plans(values) -> None:
 
 def test_matrix_axes_must_be_unique_and_nonempty() -> None:
     """Refuse a matrix whose repeated axes would duplicate artifacts."""
-    with pytest.raises(ValidationError, match="target_text_chars"):
+    with pytest.raises(ValidationError, match="target_tokens must be nonempty and unique"):
         EvaluationRunRequest(
             suite_id="sec-en",
             mode="matrix",
-            target_text_chars=(500, 500),
+            target_tokens=(1024, 1024),
         )
 
 
@@ -90,55 +85,6 @@ def test_source_download_recovery_is_a_strict_boolean(can_redownload):
     assert resource.on_disk and resource.can_redownload is can_redownload
     with pytest.raises(ValidationError):
         SourceInventoryResource.model_validate({**values, "can_redownload": str(can_redownload)})
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"kind": "delete_sources"},
-        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": False},
-        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": "true"},
-        {
-            "kind": "delete_sources",
-            "deletion_token": "preview",
-            "confirm_delete": True,
-            "identifiers": ["NVDA"],
-        },
-        {"kind": "rebuild_bm25", "deletion_token": "preview", "confirm_delete": True},
-    ],
-)
-def test_source_deletion_requires_a_dedicated_explicit_confirmation(payload):
-    """Reject coercion and a target scope that was not part of the preview."""
-    from app.api.admin_schemas import CorpusOperationRequest
-
-    with pytest.raises(ValidationError):
-        CorpusOperationRequest.model_validate(payload)
-
-
-@pytest.mark.parametrize("document_ids", [None, [], ["filing-a", "filing-a"]])
-def test_selected_ingestion_requires_nonempty_unique_document_ids(document_ids):
-    """Refuse old issuer/year-only requests before source selection can be inferred."""
-    with pytest.raises(ValidationError, match="nonempty unique document_ids"):
-        CorpusOperationRequest.model_validate(
-            {
-                "kind": "ingest_selected",
-                "identifiers": ["NVDA"],
-                "years": [2024],
-                "document_ids": document_ids,
-            }
-        )
-
-
-def test_exact_ingestion_and_current_cli_manifest_requests_remain_valid():
-    """Require IDs only for selected-source jobs while preserving explicit manifest ingestion."""
-    selected = CorpusOperationRequest(
-        kind="ingest_selected", identifiers=("NVDA",), years=(2024,), document_ids=("filing-a",)
-    )
-    assert selected.document_ids == ("filing-a",)
-    manifest = CorpusOperationRequest(
-        kind="ingest_manifest", manifest="manifest.json", selection_id="selection-a"
-    )
-    assert manifest.document_ids is None
 
 
 @pytest.mark.parametrize("field", ["filing_id", "ready", "can_redownload"])

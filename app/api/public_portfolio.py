@@ -11,7 +11,7 @@ from app.api.public_portfolio_schemas import (
     PublicPortfolioPreparation,
     PublicPortfolioPreparationPair,
 )
-from app.corpus_admin import RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
 
 TARGET_GROUPS: tuple[tuple[Literal["sec", "dart"], str, range], ...] = (
     ("sec", "NVDA", range(2019, 2025)),

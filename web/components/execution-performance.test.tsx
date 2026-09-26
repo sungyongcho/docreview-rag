@@ -4,7 +4,7 @@ import { I18nProvider, LOCALE_KEY } from "@/lib/i18n";
 import type { ReviewExecution } from "@/lib/types";
 import { ExecutionPerformance } from "./execution-performance";
 
-const state: ReviewExecution = { node: "report", evidence: 5, relevant: 2, steps: 3, outcome: "completed" };
+const state: ReviewExecution = { node: "report", observed: ["report"], completedNodes: ["report"], evidence: 5, relevant: 2, steps: 3, outcome: "completed" };
 
 afterEach(() => { cleanup(); localStorage.clear(); });
 
@@ -77,7 +77,7 @@ describe("Measured execution performance", () => {
   });
 
   it("derives speed only from collected positive token counts and durations", () => {
-    const { container } = showPerformance({ model_calls: [{ node: "grade", model: "test-model", attempts: 3, local_timings: [
+    const { container } = showPerformance({ model_calls: [{ node: "grade", model: "test-model", attempts: 3, provider_timing: [
       { eval_count: 50, eval_duration_ms: 2000, load_duration_ms: 0.08 },
       { eval_count: 0, eval_duration_ms: 20 },
       { eval_count: 10, eval_duration_ms: 0 },
@@ -123,7 +123,7 @@ describe("Provider execution facts", () => {
   it("shows OpenAI usage and retries with one provider timing explanation", () => {
     showPerformance({ model_calls: [
       { node: "gate", provider: "openai_responses", elapsed_ms: 250, attempts: 2, input_tokens: 110, output_tokens: 30, cached_input_tokens: 40, reasoning_tokens: 12, provider_timing: null, timing_unavailable_reason: "provider_does_not_report_timing" },
-      { node: "chat", provider: "openai_responses", elapsed_ms: 800, attempts: 1, provider_timing: null, timing_unavailable_reason: "provider_does_not_report_timing" },
+      { node: "check", provider: "openai_responses", elapsed_ms: 800, attempts: 1, provider_timing: null, timing_unavailable_reason: "provider_does_not_report_timing" },
     ] });
     expect(screen.queryByText(/Provider timing breakdown/)).toBeNull();
     expect(screen.getAllByText("OpenAI does not report server-side timings.")).toHaveLength(1);

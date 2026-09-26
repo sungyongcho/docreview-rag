@@ -34,26 +34,6 @@ class SourceInventory:
     blocker: str | None = None
 
 
-def catalogs(root: Path, *, strict: bool = True) -> tuple[tuple[Path, Manifest], ...]:
-    """Read canonical source catalogs, excluding immutable generated job selections."""
-    rows = []
-    for path in sorted(root.glob("*.json")):
-        if path.name.startswith("selected-") or not (
-            path.name == "manifest.json" or path.name.endswith("-manifest.json")
-        ):
-            continue
-        try:
-            if path.is_symlink() or path.resolve().parent != root.resolve():
-                raise ValueError("manifest resolves outside the corpus root")
-            rows.append((path, Manifest.read(path)))
-        except OSError, ValueError:
-            if strict:
-                raise
-            # Invalid catalogs stay visible as invalid in the companion manifest summaries.
-            continue
-    return tuple(rows)
-
-
 def acquired_catalog(root: Path) -> Manifest | None:
     """Read only the canonical catalog written by the two acquisition adapters."""
     path = root / "manifest.json"

@@ -5,7 +5,6 @@ from fastapi import APIRouter
 from app.api.routes import (
     documents,
     eval,
-    ingest,
     public_documents,
     retrieve,
     review,
@@ -19,7 +18,6 @@ for module in (
     retrieve,
     documents,
     public_documents,
-    ingest,
     review,
     runs,
     eval,

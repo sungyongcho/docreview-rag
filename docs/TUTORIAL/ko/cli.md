@@ -318,7 +318,7 @@ rag-dev doctor --web-url http://localhost:18080
 
 진단은 설치, 모델 다운로드·로드, 서비스 시작, 설정 저장, 답변 생성을 수행하지 않습니다. 설정·백엔드 연결·답변 모델 검사를 나누어 읽습니다. 목록을 확인하지 못하면 미확인이며, 설치됐지만 로드되지 않은 모델은 정상 대기입니다.
 
-공유 진단 route가 없는 이전 API에서는 읽기 전용 호환 진단으로 전환했음을 명시합니다. `ollama list`와 `ollama ps`는 설치 모델·현재 로드된 모델을 별도로 확인합니다. [서버 선택](settings.md#local-server), [연결 복구](ollama.md#diagnostics), [답변 구성](answers.md#engines)에서 이어갑니다.
+`ollama list`와 `ollama ps`는 설치 모델·현재 로드된 모델을 별도로 확인합니다. [서버 선택](settings.md#local-server), [연결 복구](ollama.md#diagnostics), [답변 구성](answers.md#engines)에서 이어갑니다.
 
 <!-- heading-alias: nvidia-한-건만-준비하기 -->
 ## NVIDIA 한 건만 준비하기 {#prepare-one-nvidia-filing}
@@ -338,9 +338,7 @@ rag-dev corpus status
 실행할 때마다 BM25도 명시적으로 다시 계산합니다. Build 4단계는 처음에 **BM25 계산**,
 통계나 성공한 계산 기록이 있으면 **BM25 재계산**을 표시하며 준비 완료 후에도 재계산할 수 있습니다.
 
-직접 호출하는 runtime seed API는 기존 API 사용자의 호환성을 위해 파싱과 BM25를
-함께 수행합니다. 격리 평가용 코퍼스도 자체 통계를 준비합니다. 이 경로들은 Build/CLI
-파싱 작업과 별개입니다.
+격리 평가용 코퍼스는 자체 통계를 준비합니다. 이 경로는 Build/CLI 파싱 작업과 별개입니다.
 
 <!-- heading-alias: python-cli-참고 -->
 ## Python CLI 참고 {#python-cli-reference}
@@ -469,7 +467,7 @@ rag-dev compose exec -T db psql -U filing -d filing -c '\dt'
 ```
 
 새 DB에는 아직 앱 테이블이 없습니다. 원문과 `.env` 등은 그대로 있어야 합니다.
-[초기 schema 준비](#초기-schema-준비)로 빈 DB에 테이블을 만들고 [실습 가이드](walkthrough.md)의 DB 적재부터 다시 진행합니다.
+[초기 schema 준비](#초기-schema-준비)로 빈 DB에 테이블을 만들고 [실습 가이드](overview.md)의 DB 적재부터 다시 진행합니다.
 embedding 재생성은 다시 유료입니다. 웹 재시작 후 DB 문서와 과거 job/eval 기록 상태를 확인합니다.
 브라우저의 예전 대화는 남지만 삭제된 DB 근거·run을 더 이상 조회하지 못할 수 있습니다.
 
@@ -573,7 +571,7 @@ job의 `queued`·`running`은 진행 중, `succeeded`·`failed`·`cancelled`는 
 
 실패가 발생한 단계와 조치가 연결되고, schema 재생성이나 원문 삭제를 진단 대신 쓰지 않습니다.
 
-해당 상태가 복구되면 실패했던 단계부터 이어갑니다. 웹 실습은 [첫 공시부터 인용 답변까지](walkthrough.md)에서 이어갑니다.
+해당 상태가 복구되면 실패했던 단계부터 이어갑니다. 웹 실습은 [첫 공시부터 인용 답변까지](overview.md)에서 이어갑니다.
 
 <!-- heading-alias: 명령-등록-해제 -->
 ## 명령 등록 해제 {#remove-command-registration}
@@ -652,7 +650,7 @@ NVDA/AMD FY2023–2024 선택을 준비합니다. 두 옵션은 동시에 사용
 <!-- heading-alias: 현재-단계에서-설정-복구 -->
 ### 현재 단계에서 설정 복구 {#configuration-repair-within-the-current-step}
 
-`rag-dev start`와 `rag-dev reset data --local`는 잘못된 키의 `.env` 줄과 실제 shell/file 출처를
+`rag-dev start`는 잘못된 키의 `.env` 줄과 실제 shell/file 출처를
 알리고 인증 값은 숨깁니다. `[f]`는 이번 실행의 잘못된 shell export 제외,
 `[e]`는 두 공개 임베딩 설정 저장, `[r]`은 로컬 수정 후 재검사, `[q]`는 취소입니다.
 부모 셸은 변경하지 않으며 시작 실패 시 볼륨을 보존하는 확인된 복구를 제안합니다.

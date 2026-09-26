@@ -3,16 +3,19 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 import pytest
 
+from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import create_api_app
 from app.api.preset_store import BUILTIN_IDS, DEFAULT_PRESET_DIRECTORY, PresetStore, StoredPreset
 from app.api.review_profile import (
     CustomRetrievalProfile,
     ReviewSessionProfile,
+    ServerBM25,
     resolve_retrieval_profile,
 )
 
@@ -69,20 +72,20 @@ def test_corrupt_and_changed_files_debounce_without_rereading_unchanged(store: P
     with patch.object(Path, "read_text", side_effect=AssertionError("unchanged files reread")):
         assert store.catalog(changed.presets_version).unchanged
     (store.directory / "research.json").write_text('{"invalid":')
-    corrupt = store.catalog(force=True)
+    corrupt = store.refresh()
     assert [e.file for e in corrupt.errors] == ["research.json"]
     assert len(corrupt.presets) == 3
     (store.directory / "research.json").write_text(custom(k=9).model_dump_json())
-    assert not store.catalog(force=True).errors
+    assert not store.refresh().errors
     (store.directory / "research.json").unlink()
-    assert len(store.catalog(force=True).presets) == 3
+    assert len(store.refresh().presets) == 3
 
 
 def test_atomic_failure_preserves_previous_bytes(store: PresetStore):
     """A failed replacement leaves the previous valid preset and no temporary file."""
     store.save(custom())
     before = (store.directory / "research.json").read_bytes()
-    with patch("app.api.preset_store.os.replace", side_effect=OSError("disk unavailable")):
+    with patch("app.atomic_write.os.replace", side_effect=OSError("disk unavailable")):
         with pytest.raises(OSError):
             store.save(custom(k=8))
     assert (store.directory / "research.json").read_bytes() == before
@@ -92,6 +95,8 @@ def test_atomic_failure_preserves_previous_bytes(store: PresetStore):
 def test_server_resolves_canonical_files(store: PresetStore):
     """Named request profiles match the exact canonical JSON shipped to the web."""
     for preset in store.catalog().presets:
+        # The fixture seeds only the built-ins, whose IDs are the named retrieval presets.
+        assert preset.id in ("balanced", "korean", "accuracy")
         resolved = resolve_retrieval_profile(ReviewSessionProfile(retrieval_preset=preset.id))
         assert resolved.model_dump(exclude={"preset"}) == preset.retrieval.model_dump()
 
@@ -103,7 +108,13 @@ def test_admin_api_validation_and_production_boundary(store: PresetStore):
     with (
         patch("app.api.routes.admin.preset_store", store),
         patch("app.api.routes.admin.get_settings", return_value=SimpleNamespace(environment="dev")),
-        TestClient(create_api_app(admin_services=object())) as client,
+        TestClient(
+            create_api_app(
+                admin_services=cast(
+                    RuntimeAdminApiServices, SimpleNamespace(bm25_parameters=ServerBM25())
+                )
+            )
+        ) as client,
     ):
         initial = client.get("/admin/presets").json()
         assert client.get("/admin/presets", params={"version": initial["presets_version"]}).json()[
@@ -129,3 +140,55 @@ def test_hand_written_file_infers_identity_from_filename(store: PresetStore):
         json.dumps({"name": "Handwritten", "retrieval": CustomRetrievalProfile().model_dump()})
     )
     assert next(p for p in store.catalog().presets if p.id == "handwritten").name == "Handwritten"
+
+
+def test_catalog_and_resolution_present_the_effective_bm25_values(store: PresetStore):
+    """Built-ins show the served settings; stated file and request values stay unchanged."""
+    server = ServerBM25(k1=1.6, b=0.5, idf="robertson")
+    tuned = json.loads((store.directory / "korean.json").read_text())
+    tuned["retrieval"]["bm25_k1"] = 0.9
+    (store.directory / "korean.json").write_text(json.dumps(tuned))
+    store.save(custom())
+    omitted = custom("inherits").model_dump()
+    for field in ("bm25_k1", "bm25_b", "bm25_idf"):
+        del omitted["retrieval"][field]
+    with (
+        patch("app.api.routes.admin.preset_store", store),
+        patch("app.api.preset_store.preset_store", store),
+        patch("app.api.routes.admin.get_settings", return_value=SimpleNamespace(environment="dev")),
+        TestClient(
+            create_api_app(
+                admin_services=cast(
+                    RuntimeAdminApiServices, SimpleNamespace(bm25_parameters=server)
+                )
+            )
+        ) as client,
+    ):
+        served = {p["id"]: p["retrieval"] for p in client.get("/admin/presets").json()["presets"]}
+        saved = client.put("/admin/presets", json=omitted).json()["retrieval"]
+        remaining = client.delete("/admin/presets", params={"id": "research"}).json()
+        korean = resolve_retrieval_profile(ReviewSessionProfile(retrieval_preset="korean"), server)
+
+    def values(retrieval) -> tuple[float, float, str]:
+        """Project one served retrieval plan onto its BM25 values."""
+        return retrieval["bm25_k1"], retrieval["bm25_b"], retrieval["bm25_idf"]
+
+    assert values(served["balanced"]) == values(served["accuracy"]) == (1.6, 0.5, "robertson")
+    assert values(served["korean"]) == (0.9, 0.5, "robertson")
+    assert (korean.bm25_k1, korean.bm25_b, korean.bm25_idf) == (0.9, 0.5, "robertson")
+    assert values(served["research"]) == (1.2, 0.75, "lucene")
+    assert values(saved) == (1.6, 0.5, "robertson")
+    assert values(json.loads((store.directory / "inherits.json").read_text())["retrieval"]) == (
+        1.6,
+        0.5,
+        "robertson",
+    )
+    assert {p["id"] for p in remaining["presets"]} == BUILTIN_IDS | {"inherits"}
+    assert all(
+        values(p["retrieval"]) == (1.6, 0.5, "robertson")
+        for p in remaining["presets"]
+        if p["id"] in {"balanced", "accuracy", "inherits"}
+    )
+    assert (
+        json.loads((store.directory / "balanced.json").read_text())["retrieval"]["bm25_k1"] == 1.2
+    )

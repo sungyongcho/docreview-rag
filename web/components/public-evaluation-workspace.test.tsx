@@ -6,16 +6,16 @@ import { PublicEvaluationWorkspace } from "./public-evaluation-workspace";
 
 const snapshots: PublishedSnapshot[] = [1, 2].map(id => ({
   snapshot_id: id, label: `Published run ${id}`, status: "ready", public: true,
-  corpus_fingerprint: "a".repeat(64), profile: {}, golden_revision_id: 3,
+  corpus_fingerprint: "a".repeat(64), profile: {},
   document_count: 1, created_at: "2026-09-01T00:00:00Z",
-  eval_result: { result_id: id + 10, suite: "sec-en", config: { golden_sha256: "b".repeat(64) },
+  eval_result: { result_id: id + 10, suite: "sec-en", raw_artifact_path: "recorded-run.json", config: { evaluated_golden_sha256: "b".repeat(64) },
     metrics: { mrr: 0.625 }, created_at: "2026-09-01T00:00:00Z" },
 }));
 const question = { id: "case-01", question: "What changed in revenue?", category: "simple_lookup",
   facet: "factual", tags: [], expected_label: "SUPPORTED", reference_answer: "Recorded reference answer",
   answers: [{ doc_id: "NVDA-FY2024", source_sha256: "c".repeat(64), start_char: 10, end_char: 25 }] };
-const dataset = { snapshot_id: 1, suite: "sec-en", golden_sha256: "b".repeat(64), revision_id: 3,
-  version: 2, total: 26, offset: 0, limit: 25, cases: [question] };
+const dataset = { snapshot_id: 1, suite: "sec-en", golden_sha256: "b".repeat(64),
+  total: 26, offset: 0, limit: 25, cases: [question] };
 const evaluation = { snapshot_id: 1, eval_result_id: 11, suite: "sec-en", created_at: "2026-09-01T00:00:00Z",
   config: { k: 5, mode: "hybrid" }, metrics: { mrr: 0.625 }, total: 26, offset: 0, limit: 25,
   cases: [{ case_id: "case-01", question: question.question, latency_ms: 12.5,

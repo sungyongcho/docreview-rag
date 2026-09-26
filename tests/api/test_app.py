@@ -6,12 +6,12 @@ from fastapi.testclient import TestClient
 
 from app.api.admin_deps import get_admin_services
 from app.api.admin_runtime import RuntimeAdminApiServices
-from app.api.app import create_api_app
+from app.api.app import PROD_SURFACE, create_api_app
 
 
 def test_read_only_docs_include_admin_contracts_without_exposing_handlers() -> None:
     """Production documentation describes every operation but mounts no admin handler."""
-    application = create_api_app(enable_docs_execution=False, include_admin_schema=True)
+    application = create_api_app(surface=PROD_SURFACE)
     dev_application = create_api_app(
         admin_services=cast(RuntimeAdminApiServices, object()),
     )
@@ -36,7 +36,7 @@ def test_read_only_docs_include_admin_contracts_without_exposing_handlers() -> N
 
 def test_documented_schema_includes_later_application_routes() -> None:
     """Factory callers can still add release routes before or after schema generation."""
-    application = create_api_app(include_admin_schema=True)
+    application = create_api_app(surface=PROD_SURFACE)
     initial_schema = application.openapi()
     assert application.openapi() is initial_schema
 

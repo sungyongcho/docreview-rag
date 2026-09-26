@@ -8,7 +8,7 @@ from app.ingestion.chunk import chunk_filing
 from app.ingestion.dart import DART_PARTS
 from app.ingestion.manifest import Manifest
 from app.ingestion.parser import ParsedFiling
-from app.ingestion.registry import resolve_registry
+from app.ingestion.registry import registry_for
 from tests.ingestion.chunk.support import is_subsequence, source_text, tokens
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -21,7 +21,7 @@ def dart_corpus() -> dict[str, tuple[ParsedFiling, str]]:
     catalog = Manifest.read(manifest_path)
     corpus = {}
     for source in catalog.selected_sources("dart-evaluation", manifest_path.parent):
-        registry = resolve_registry(source)
+        registry = registry_for(source.document.registry)
         assert registry.name == "dart"
         filing, _ = registry.parse(source)
         corpus[filing.source.document.document_id] = (filing, source.read())

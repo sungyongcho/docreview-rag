@@ -1,18 +1,18 @@
 """Group one complete scored golden suite by its declared taxonomy.
 
 This module performs no retrieval or I/O. It validates a complete case-to-score
-mapping before delegating every aggregate calculation to ``score_suite``.
+mapping before delegating every aggregate calculation to ``score_suite``, through the
+per-category grouping the decomposition comparison shares.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import get_args
 
-from app.evals.reporting import markdown_table
 from app.evals.scoring import CaseScore, SuiteScore, score_suite
-from app.evals.types import GoldenCase, GoldenCategory, GoldenFacet
+from app.evals.types import GoldenCase, GoldenCategory
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,26 +110,20 @@ def _validated_pairs(
     return pairs
 
 
-def _grouped(
-    pairs: Sequence[tuple[GoldenCase, CaseScore]],
-    groups: Sequence[str],
-    key: Callable[[GoldenCase], str],
+def group_scores_by_category(
+    pairs: Sequence[tuple[GoldenCategory, CaseScore]],
 ) -> tuple[GroupScore, ...]:
-    """Aggregate pairs for each declared group in declaration order.
+    """Aggregate scored cases per golden category.
 
     Parameters
     ----------
-    pairs : Sequence[tuple[GoldenCase, CaseScore]]
-        Validated positive case-score pairs.
-    groups : Sequence[str]
-        Taxonomy values in required output order.
-    key : Callable[[GoldenCase], str]
-        Category or facet selector.
+    pairs : Sequence[tuple[GoldenCategory, CaseScore]]
+        Each scored case's golden category and its retrieval score.
 
     Returns
     -------
     tuple[GroupScore, ...]
-        Nonempty group aggregates in ``groups`` order.
+        Nonempty category aggregates in ``GoldenCategory`` declaration order.
 
     Notes
     -----
@@ -138,11 +132,10 @@ def _grouped(
     a one-pass bucket benchmark saved only microseconds while increasing peak memory.
     """
     results: list[GroupScore] = []
-    for group in groups:
-        members = [score for case, score in pairs if key(case) == group]
-        if not members:
-            continue
-        results.append(GroupScore(group=group, suite=score_suite(members)))
+    for group in get_args(GoldenCategory):
+        members = [score for category, score in pairs if category == group]
+        if members:
+            results.append(GroupScore(group=group, suite=score_suite(members)))
     return tuple(results)
 
 
@@ -170,71 +163,4 @@ def breakdown_by_category(
         If case-score pairing is incomplete or inconsistent.
     """
     pairs = _validated_pairs(cases, scores)
-    return _grouped(pairs, get_args(GoldenCategory), lambda case: case.category)
-
-
-def breakdown_by_facet(
-    cases: Sequence[GoldenCase],
-    scores: Sequence[CaseScore],
-) -> tuple[GroupScore, ...]:
-    """Group a complete scored suite by golden facet.
-
-    Parameters
-    ----------
-    cases : Sequence[GoldenCase]
-        Complete golden suite.
-    scores : Sequence[CaseScore]
-        Complete positive-case retrieval scores.
-
-    Returns
-    -------
-    tuple[GroupScore, ...]
-        Nonempty facet aggregates in ``GoldenFacet`` declaration order.
-
-    Raises
-    ------
-    ValueError
-        If case-score pairing is incomplete or inconsistent.
-    """
-    pairs = _validated_pairs(cases, scores)
-    return _grouped(pairs, get_args(GoldenFacet), lambda case: case.facet)
-
-
-def breakdown_markdown(dimension: str, groups: Sequence[GroupScore]) -> str:
-    """Render one nonempty taxonomy breakdown as a Markdown table.
-
-    Parameters
-    ----------
-    dimension : str
-        Nonblank column heading such as ``Category`` or ``Facet``.
-    groups : Sequence[GroupScore]
-        Ordered group aggregates to render.
-
-    Returns
-    -------
-    str
-        Deterministic Markdown with six-decimal metrics.
-
-    Raises
-    ------
-    ValueError
-        If ``dimension`` is blank or ``groups`` is empty.
-    """
-    if not dimension.strip():
-        raise ValueError("dimension must not be blank")
-    if not groups:
-        raise ValueError("groups must not be empty")
-    return markdown_table(
-        [dimension, "Cases", "Recall@k", "Hit rate@k", "MRR"],
-        ["left", "right", "right", "right", "right"],
-        [
-            [
-                group.group,
-                str(group.suite.case_count),
-                f"{group.suite.recall_at_k:.6f}",
-                f"{group.suite.hit_rate_at_k:.6f}",
-                f"{group.suite.mrr:.6f}",
-            ]
-            for group in groups
-        ],
-    )
+    return group_scores_by_category([(case.category, score) for case, score in pairs])

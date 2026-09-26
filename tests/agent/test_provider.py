@@ -90,11 +90,23 @@ def test_openai_adapter_sends_tools_and_parses_function_calls():
     assert result.incomplete is False
 
 
-def test_openai_adapter_surfaces_an_incomplete_response():
-    """Mark a turn the output ceiling cut off, so the loop can stop instead of nudging."""
+@pytest.mark.parametrize(
+    ("details", "reason"),
+    [
+        pytest.param(None, None, id="no-details"),
+        pytest.param(
+            SimpleNamespace(reason="max_output_tokens"), "max_output_tokens", id="ceiling"
+        ),
+        pytest.param(SimpleNamespace(reason="content_filter"), "content_filter", id="filter"),
+    ],
+)
+def test_openai_adapter_surfaces_an_incomplete_response_with_its_reason(details, reason):
+    """Mark a cut-off turn and name why it stopped, so the loop can tell a budget stop from a
+    provider one instead of nudging a truncated reply."""
     response = SimpleNamespace(
         id="resp-2",
         status="incomplete",
+        incomplete_details=details,
         output_text="The filings sho",
         output=(),
         usage=SimpleNamespace(input_tokens=30, output_tokens=16),
@@ -104,6 +116,7 @@ def test_openai_adapter_surfaces_an_incomplete_response():
     result = asyncio.run(provider.turn("instructions", [], [], max_output_tokens=16))
 
     assert result.incomplete is True
+    assert result.incomplete_reason == reason
     assert result.tool_calls == ()
 
 
@@ -116,55 +129,45 @@ def test_openai_adapter_rejects_missing_usage():
         asyncio.run(provider.turn("instructions", [], [], max_output_tokens=10))
 
 
-def test_provider_turn_rejects_duplicate_call_ids():
-    """Reject a turn carrying the same call id twice."""
-    duplicate = ToolCall(call_id="same", name="search", arguments_json="{}")
+@pytest.mark.parametrize(
+    ("changes", "error"),
+    [
+        pytest.param(
+            {
+                "tool_calls": (
+                    ToolCall(call_id="same", name="search", arguments_json="{}"),
+                    ToolCall(call_id="same", name="fetch", arguments_json="{}"),
+                )
+            },
+            "unique",
+            id="duplicate-call-identity",
+        ),
+        pytest.param(
+            {"incomplete_reason": "content_filter"},
+            "requires an incomplete turn",
+            id="completed-turn-with-cutoff-reason",
+        ),
+    ],
+)
+def test_provider_turn_rejects_inconsistent_fields(changes, error):
+    """Reject ambiguous call identities and a cutoff reason on a completed turn."""
+    with pytest.raises(ValidationError, match=error):
+        turn(**changes)
 
-    with pytest.raises(ValidationError, match="unique"):
-        turn(tool_calls=(duplicate, duplicate))
 
-
-def test_openai_adapter_wires_base_url_and_disables_hidden_sdk_retries(monkeypatch):
-    """Send traffic to the configured endpoint, retries off, and record it as provenance."""
+def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
+    """Build the owned client with retries off, record its resolved URL as provenance,
+    close it on aclose, and leave an injected client alone."""
     captured = {}
+    closed = []
 
     class FakeClient:
-        """Client standing in for the SDK, capturing its constructor arguments."""
+        """SDK stand-in capturing its constructor arguments, with an observable close."""
 
         base_url = "https://api.openai.com/v1"
 
         def __init__(self, **kwargs):
             captured.update(kwargs)
-            self.responses = SimpleNamespace()
-
-    module = sys.modules[OpenAIToolProvider.__module__]
-    monkeypatch.setattr(module, "AsyncOpenAI", FakeClient)
-
-    provider = OpenAIToolProvider(
-        model_name="gpt-5.6-terra",
-        api_key="sk-test",
-        base_url="https://gateway.example/v1",
-    )
-
-    assert captured["max_retries"] == 0
-    assert captured["base_url"] == "https://gateway.example/v1"
-    assert provider.api_url == "https://gateway.example/v1/responses"
-
-    OpenAIToolProvider(model_name="gpt-5.6-terra", api_key="sk-test")
-    assert captured["base_url"] is None
-
-
-def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
-    """Close the owned connection pool on aclose and leave an injected client alone."""
-    closed = []
-
-    class FakeClient:
-        """SDK stand-in whose close call is observable."""
-
-        base_url = "https://api.openai.com/v1"
-
-        def __init__(self, **kwargs):
-            del kwargs
             self.responses = SimpleNamespace()
 
         async def close(self):
@@ -175,6 +178,9 @@ def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
     monkeypatch.setattr(module, "AsyncOpenAI", FakeClient)
 
     owned = OpenAIToolProvider(model_name="gpt-5.6-terra", api_key="sk-test")
+    assert captured["max_retries"] == 0
+    assert "base_url" not in captured
+    assert owned.api_url == "https://api.openai.com/v1/responses"
     asyncio.run(owned.aclose())
     assert closed == [True]
 
@@ -184,3 +190,20 @@ def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
     )
     asyncio.run(injected.aclose())
     assert closed == [True]
+
+
+def test_openai_adapter_reports_a_failed_response_as_a_provider_failure():
+    """A failed reply is a provider failure, not an empty turn the loop would replay."""
+    failed = SimpleNamespace(
+        id="resp-failed",
+        status="failed",
+        error=SimpleNamespace(code="server_error", message="The server had an error."),
+        incomplete_details=None,
+        output_text="",
+        output=(),
+        usage=SimpleNamespace(input_tokens=30, output_tokens=0),
+    )
+    provider, responses = openai_provider(failed)
+    with pytest.raises(RuntimeError, match="failed"):
+        asyncio.run(provider.turn("instructions", [], [], max_output_tokens=16))
+    assert len(responses.calls) == 1

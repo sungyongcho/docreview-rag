@@ -2,7 +2,7 @@
 export const STAGE_LABELS: Record<string, string> = {
   gate: "Understand the question", route: "Resolve filing scope", retrieve: "Retrieve evidence",
   candidates: "Collect candidate evidence", grade: "Select relevant evidence",
-  check: "Verify answer and citations", report: "Prepare the result", chat: "Reply to the conversation",
+  check: "Verify answer and citations", report: "Prepare the result",
 };
 
 /** Reject absent and invalid measurements without conflating a measured zero. */

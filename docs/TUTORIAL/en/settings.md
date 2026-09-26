@@ -63,7 +63,7 @@ Balanced provides the default starting point. Korean enables language-aware retr
 
 In **Settings and preview → Search**, inspect the current parameter cards or expand **Compare retrieval presets** to read the alternatives. DEV also provides direct custom editing. The **?** help describes the selected definition beside the control without running a review. **Preview** summarizes only the selected configuration.
 
-`k` is the returned result count; `candidate_k` is the candidate count used before final selection. RRF combines component ranks. BM25 parameters affect lexical scoring. A reranker changes ordering, not the underlying filing text. Use [retrieval inspection](retrieval.md) to assess the change before attributing a quality improvement to it.
+`k` is the returned result count; `candidate_k` is the candidate count used before final selection. RRF combines component ranks. BM25 parameters affect lexical scoring. A BM25 value stated by Custom or a saved preset applies first, then the server's `BM25_K1`, `BM25_B` and `BM25_IDF` settings, then the defaults `1.2`, `0.75` and `lucene`. The shipped presets repeat those defaults, so they follow the server settings; in DEV the preset list shows the applied values, and each run records them in its resolved retrieval profile. A reranker changes ordering, not the underlying filing text. Use [retrieval inspection](retrieval.md) to assess the change before attributing a quality improvement to it.
 
 <!-- heading-alias: retrieval-preset-files-and-json-editing -->
 ### Retrieval preset files and JSON editing {#preset-files}
@@ -174,6 +174,8 @@ Confirmations for draft changes, settings resets, backup imports, and operator c
 
 In **Settings → Local LLM**, **Default** uses the address prepared for the current DocReview environment. Selecting a server alone does not change the active connection. **Run connection diagnostics** checks the selected candidate without saving settings, downloading/loading models, or generating answers. Inspect the named diagnostic result and checked time; active settings remain in **Connection status**.
 
+Local connection files must use the current version 2 format. Earlier formats are reported as invalid and left unchanged; current saved **Default** selections remain supported.
+
 Use **Connect** to apply an existing choice. **Add a server…** asks for a name, reachable URL, and protocol; **Add & connect** saves the new entry only after a successful check. Failed connection or save attempts preserve the previous working configuration. **Use Default** checks the default endpoint before switching and retains your added servers. **Disconnect** explicitly disables local answers.
 
 The [Ollama setup guide](ollama.md) opens in a new tab from this screen. It covers macOS/Linux installation, Docker access, model preparation, and read-only `rag-dev doctor` diagnostics. Connecting a server does not change the conversation's engine or the corpus embedding provider.
@@ -181,7 +183,7 @@ The [Ollama setup guide](ollama.md) opens in a new tab from this screen. It cove
 <!-- heading-alias: inspect-usage-after-changing-providers -->
 ## Inspect usage after changing providers {#provider-usage}
 
-**System → Usage** groups recorded model/role rows by provider, local/external execution and credential slot name. A key value is never shown. Historical slots stay unknown; provider identity follows the recorded call, not today's settings. Reported tokens, tokenizer estimates and missing usage are distinguished, with matching subtotals. Local API cost is zero. See [recorded provider usage](runtime.md#provider-usage) for backfill coverage, failure accounting and the limits of these local estimates. Opening Usage does not call a model or reset data.
+**System → Usage** groups recorded model/role rows by provider, local/external execution and credential slot name. A key value is never shown. Provider identity and credential slots come from the recorded call, not today's settings. Reported tokens, tokenizer estimates and missing usage are distinguished, with matching subtotals. Local API cost is zero. See [recorded provider usage](runtime.md#provider-usage) for backfill coverage, failure accounting and the limits of these local estimates. Opening Usage does not call a model or reset data.
 
 ## Browser storage {#browser-storage}
 
@@ -194,7 +196,7 @@ Use **Clear conversations** to clear only conversations, **Reset saved defaults*
 <!-- details: storage-inventory | What is stored, and migration edge cases -->
 The inventory includes conversations and their filters, evidence/run-limit overrides and prompt text; the active conversation; new-conversation profile/prompt/run-limit defaults; named retrieval presets when available; experiment defaults; language and theme; onboarding, help and storage-notice dismissal; desktop job notifications; Operations filters; and document/job pane widths. A saved value does not unlock a control that the current server permissions prohibit. Conversation retention remains 30 conversations with 100 messages each.
 
-Valid old records migrate once in PROD. Unreadable or future records are retained in a recovery entry in the export, with a notice and safe defaults. Quota or private-mode failures keep changes usable in the current tab and report that they are not durably saved: export before closing. Private browsing may discard its data when the session ends.
+Only the current conversation and profile shapes are supported. Missing fields in old records are no longer filled from current defaults. Unsupported records are left intact on read; before a later save replaces them, their original serialized contents are preserved in a recovery entry included in exports. Current DEV raw values and PROD versioned values remain readable when switching modes. Quota or private-mode failures keep changes usable in the current tab and report that they are not durably saved: export before closing. Private browsing may discard its data when the session ends.
 <!-- /details -->
 
 The first PROD visit displays **⚠️ Settings and conversations are saved only in this browser**. **Got it** remembers dismissal. The ⚠️ button in **Data & help → Browser storage** reopens it; **Learn more** opens this section. DEV keeps its existing storage behavior.

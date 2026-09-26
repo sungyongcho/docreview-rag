@@ -14,7 +14,7 @@ from app.llm.schemas import NonBlank, StrictSchema
 if TYPE_CHECKING:
     from app.retrieval.scope import ManifestScopeIndex, MatchedAlias
 
-ConversationIntent = Literal["document_review", "service_help", "out_of_scope", "casual_chat"]
+ConversationIntent = Literal["document_review", "service_help", "out_of_scope"]
 
 SERVICE_GUIDANCE = (
     "DocReview analyzes the SEC and DART filings available in its corpus. "
@@ -518,13 +518,6 @@ class ConversationTurn(StrictSchema):
         return self
 
 
-class IntentClassification(StrictSchema):
-    """Strict classifier output for an input the deterministic gate cannot decide."""
-
-    intent: ConversationIntent
-    reason: NonBlank
-
-
 class RoutingClassification(StrictSchema):
     """Extract the request's domain and explicit targets without asserting corpus coverage."""
 
@@ -543,12 +536,6 @@ class RoutingClassification(StrictSchema):
         return self
 
 
-class ChatReply(StrictSchema):
-    """One concise retrieval-free conversational answer."""
-
-    answer: NonBlank
-
-
 class ConversationDecision(StrictSchema):
     """Auditable deterministic or provider-backed conversation routing decision."""
 
@@ -564,7 +551,6 @@ class ConversationDecision(StrictSchema):
 def deterministic_decision(
     query: str,
     *,
-    has_issuer_alias: bool = False,
     prior_filing_query: str | None = None,
     scope_index: ManifestScopeIndex | None = None,
     anchor_issuer: str | None = None,
@@ -631,11 +617,4 @@ def deterministic_decision(
                     rationale="A unique selected issuer anchors the covered finance question.",
                     target_scope="context",
                 )
-    elif has_issuer_alias and FILING_CUES.search(query):
-        return ConversationDecision(
-            intent="document_review",
-            source="deterministic",
-            matched_rule="issuer_and_filing_cue",
-            rationale="The query combines a known issuer with filing-review language.",
-        )
     return None

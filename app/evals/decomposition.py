@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from app.evals.breakdown import group_scores_by_category
 from app.evals.cli import positive_int
 from app.evals.identity import artifact_filename
 from app.evals.loader import DEFAULT_GOLDEN_PATH, load_golden_cases
@@ -19,7 +20,7 @@ from app.evals.retrieval_eval import (
     evaluate_retriever,
     write_evaluation_artifact,
 )
-from app.evals.scoring import CaseScore, score_suite
+from app.evals.types import EvaluationRetrieval
 from app.retrieval.hybrid import DEFAULT_RRF_K
 
 if TYPE_CHECKING:
@@ -48,25 +49,24 @@ def category_metrics(evaluation: RetrievalEvaluation) -> dict[str, dict[str, flo
     Notes
     -----
     Absent cases remain unscored, matching M3. Each category's numbers come from
-    :func:`~app.evals.scoring.score_suite` — the single implementation of macro
-    averaging — so the split shows whether decomposition moves ``multi_hop``
-    without regressing ``simple_lookup``, on exactly the suite-level arithmetic.
+    :func:`~app.evals.breakdown.group_scores_by_category` — the same per-category
+    :func:`~app.evals.scoring.score_suite` the taxonomy breakdown uses — so the split
+    shows whether decomposition moves ``multi_hop`` without regressing
+    ``simple_lookup``, on exactly the suite-level arithmetic. Categories are keyed in
+    name order.
     """
-    grouped: dict[str, list[CaseScore]] = {}
-    for case in evaluation.cases:
-        if case.score is None:
-            continue
-        grouped.setdefault(case.golden.category, []).append(case.score)
-    metrics: dict[str, dict[str, float]] = {}
-    for category in sorted(grouped):
-        suite_score = score_suite(grouped[category])
-        metrics[category] = {
-            "scored_case_count": float(suite_score.case_count),
-            "recall_at_k": suite_score.recall_at_k,
-            "hit_rate_at_k": suite_score.hit_rate_at_k,
-            "mrr": suite_score.mrr,
+    groups = group_scores_by_category(
+        [(case.golden.category, case.score) for case in evaluation.cases if case.score is not None]
+    )
+    return {
+        group.group: {
+            "scored_case_count": float(group.suite.case_count),
+            "recall_at_k": group.suite.recall_at_k,
+            "hit_rate_at_k": group.suite.hit_rate_at_k,
+            "mrr": group.suite.mrr,
         }
-    return metrics
+        for group in sorted(groups, key=lambda group: group.group)
+    }
 
 
 def _arm_payload(
@@ -193,7 +193,11 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--suite", default="m9-decomposition-v1")
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN_PATH)
     parser.add_argument("--artifact-dir", type=Path, default=Path("data/eval_runs"))
-    parser.add_argument("--model", default="gpt-5.6-terra")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Policy-approved decomposition model; defaults to the role's policy default.",
+    )
     parser.add_argument("-k", type=positive_int, default=5)
     parser.add_argument("--candidate-k", type=positive_int, default=20)
     parser.add_argument("--rrf-k", type=positive_int, default=DEFAULT_RRF_K)
@@ -203,7 +207,9 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parsed
 
 
-def decomposition_boundary(model_name: str) -> tuple[OpenAILLMProvider, ProviderBudget]:
+def decomposition_boundary(
+    model_name: str | None,
+) -> tuple[OpenAILLMProvider, ProviderBudget]:
     """Build the paid decomposition provider and the budget one question may spend.
 
     The SDK is imported here rather than at module scope so importing this module
@@ -212,7 +218,7 @@ def decomposition_boundary(model_name: str) -> tuple[OpenAILLMProvider, Provider
     """
     from app.config import get_settings
     from app.llm.provider import OpenAILLMProvider
-    from app.llm.schemas import ProviderBudget, TokenPricing
+    from app.llm.schemas import ProviderBudget
     from app.openai_models import resolve_openai_model
 
     settings = get_settings()
@@ -226,12 +232,7 @@ def decomposition_boundary(model_name: str) -> tuple[OpenAILLMProvider, Provider
         max_input_tokens=DECOMPOSITION_MAX_INPUT_TOKENS,
         max_output_tokens=DECOMPOSITION_MAX_OUTPUT_TOKENS,
         max_cost_usd=Decimal("0.05"),
-        pricing=TokenPricing(
-            input_per_million_usd=selection.pricing.input_per_million_usd,
-            output_per_million_usd=selection.pricing.output_per_million_usd,
-            cached_input_per_million_usd=selection.pricing.cached_input_per_million_usd,
-            cache_write_input_per_million_usd=(selection.pricing.cache_write_input_per_million_usd),
-        ),
+        pricing=selection.pricing,
     )
     return provider, budget
 
@@ -242,18 +243,17 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     Database and provider modules load only here, so ``--help`` and the pure
     comparison helpers stay independent of runtime configuration.
     """
-    from app.agent.decompose import make_decomposed_retriever
     from app.config import get_settings
     from app.db.session import Session
+    from app.evals.decompose import make_decomposed_retriever
     from app.retrieval.embeddings import get_embedding_provider
     from app.retrieval.service import retrieve
-    from app.retrieval.types import ChunkHit
 
     cases = load_golden_cases(args.golden)
     embedding_provider = get_embedding_provider()
     settings = get_settings()
 
-    async def baseline_retriever(question: str, k: int) -> Sequence[ChunkHit]:
+    async def baseline_retriever(question: str, k: int) -> EvaluationRetrieval:
         """Retrieve one question without decomposition, over its own session."""
         async with Session() as session:
             result = await retrieve(
@@ -264,7 +264,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                 candidate_k=args.candidate_k,
                 rrf_k=args.rrf_k,
             )
-            return result.hits
+            return EvaluationRetrieval(hits=result.hits)
 
     llm_provider, provider_budget = decomposition_boundary(args.model)
     shared_config = {
@@ -290,7 +290,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
             decomposed_config={
                 **shared_config,
                 "strategy": "decomposed",
-                "decomposition_model": args.model,
+                "decomposition_model": llm_provider.model_name,
             },
             suite=args.suite,
             artifact_dir=args.artifact_dir,

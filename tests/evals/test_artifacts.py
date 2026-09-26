@@ -4,7 +4,42 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from app.evals.artifacts import utc_text, write_json_artifact
+from app.evals.artifacts import EvaluationArtifacts, cases_by_id, utc_text, write_json_artifact
+
+
+@pytest.mark.parametrize(
+    "cases",
+    [
+        None,
+        [None],
+        [{"golden": None}],
+        [{"golden": {"id": 7}}],
+        [{"golden": {"id": " "}}],
+        [{"golden": {"id": "same"}}, {"golden": {"id": "same"}}],
+    ],
+)
+def test_case_index_rejects_invalid_or_duplicate_identity(cases):
+    """A comparison cannot silently discard malformed cases or overwrite duplicate IDs."""
+    with pytest.raises(ValueError):
+        cases_by_id({"cases": cases})
+
+
+def test_reader_rejects_symlink_escape_before_reading_target(tmp_path, monkeypatch):
+    """An artifact link cannot grant read access outside its configured directory."""
+    directory = tmp_path / "artifacts"
+    directory.mkdir()
+    target = tmp_path / "private.json"
+    target.write_text('{"private":"not evaluation evidence"}')
+    link = directory / "linked.json"
+    link.symlink_to(target)
+
+    def reject_read(*args, **kwargs):
+        """Fail if confinement allows the foreign target to reach the JSON reader."""
+        raise AssertionError("read outside configured directory")
+
+    monkeypatch.setattr("app.evals.artifacts.read_strict_json", reject_read)
+    with pytest.raises(ValueError, match="outside the configured directory"):
+        EvaluationArtifacts(directory).read(str(link))
 
 
 def test_utc_text_rejects_a_naive_timestamp():

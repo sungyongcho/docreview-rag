@@ -112,10 +112,6 @@ const OPERATOR_ACTIONS: ReadonlySet<StageActionKind> = new Set(["acquire", "inge
 /** Stages whose work runs only in DEV mode. */
 const OPERATOR_STAGES: ReadonlySet<Stage["id"]> = new Set(["filings", "index", "embeddings", "lexical", "evaluate"]);
 
-export function splitList(value: string): string[] {
-  return value.split(/[\s,]+/).filter(Boolean);
-}
-
 function isApiDown(pipeline: Pipeline): boolean {
   return pipeline.stages.some((stage) => stage.status === "unknown" && stage.statusDetail === "API unavailable");
 }
@@ -332,7 +328,7 @@ interface RuntimeProblem {
 }
 
 function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaStatus, schemaMessage, writable, answerModel, onRunOperation, onRefresh }: RuntimeStripProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   if (pipeline.readOnly) {
     return <span className="runtime-readonly" data-help="build.runtime">{t("Read-only portfolio · stored snapshots + live retrieval")}</span>;
   }
@@ -341,7 +337,7 @@ function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaSt
   const items = [
     { label: t("API"), value: apiDown ? t("API unavailable") : known ? t("API ok") : t("Checking status"), tone: apiDown ? "bad" : known ? "good" : "pending" },
     { label: t("Database"), value: databaseConnected === true ? t("Database connected") : databaseConnected === false ? t("Not connected") : t("Checking status"), tone: databaseConnected === true ? "good" : databaseConnected === false ? "bad" : "pending" },
-    { label: t("Schema"), value: ["compatible", "ok"].includes(schemaStatus ?? "") ? t("Schema compatible") : schemaStatus === "empty" ? t("Database schema is empty") : schemaStatus === "drifted" ? t("Database schema is incompatible") : schemaStatus === "unavailable" ? t("Database schema is unavailable") : t("Checking status"), tone: ["compatible", "ok"].includes(schemaStatus ?? "") ? "good" : ["drifted", "unavailable"].includes(schemaStatus ?? "") ? "bad" : "pending" },
+    { label: t("Schema"), value: schemaStatus === "compatible" ? t("Schema compatible") : schemaStatus === "empty" ? t("Database schema is empty") : schemaStatus === "drifted" ? t("Database schema is incompatible") : schemaStatus === "unavailable" ? t("Database schema is unavailable") : t("Checking status"), tone: schemaStatus === "compatible" ? "good" : ["drifted", "unavailable"].includes(schemaStatus ?? "") ? "bad" : "pending" },
     { label: t("Source storage"), value: writable === true ? t("Writable") : writable === false ? t("Read-only") : t("Checking status"), tone: writable === true ? "good" : writable === false ? "bad" : "pending" },
     // A configured model name alone does not establish that its engine is ready.
     { label: t("Answer model"), value: answerModel ? `${t("Configured")} · ${t(answerModel)}` : t("Not configured"), tone: "pending" },
@@ -385,7 +381,7 @@ function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaSt
 }
 
 function ActionButton({ stage, primary, handler, disabled, locked = false }: { stage: Stage; primary: boolean; handler: (kind: StageActionKind) => () => void; disabled: (kind: StageActionKind) => boolean; locked?: boolean }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   if (!stage.action) return null;
   const { kind, label } = stage.action;
   if (locked && OPERATOR_ACTIONS.has(kind)) return <DevLockedButton reason={kind === "evaluate" ? "evaluation" : "corpus"} className={primary ? "button primary" : "button"}>{t(label)}</DevLockedButton>;
@@ -427,7 +423,7 @@ interface StageCardProps {
 }
 
 function StageCard({ candidates, answerEngines, onOpenLocalSettings, onLocalPrepared, onDownload, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, evaluationSetup, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAskScope, corpusScope, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const job = stage.job;
   const repeatsJobMessage = job && (stage.hint === job.message || stage.hint === `Last run ${job.status}: ${job.message}`);
   const showHint = Boolean(stage.hint) && !repeatsJobMessage;

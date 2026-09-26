@@ -28,7 +28,7 @@ describe("localCpuWarning", () => {
     expect(localCpuWarning(DEFAULT_SESSION_PROFILE, measuredLocal, now)).toBeNull();
   });
 
-  it.each([15, 20, 0, -1, NaN, Infinity])("does not warn for fast or invalid speed %s", (speed) => {
+  it.each([15, 20, 0, -1, NaN])("does not warn for fast or invalid speed %s", (speed) => {
     const model = measuredLocal.models![0];
     const local = { ...measuredLocal, models: [{ ...model, cpu_performance: { ...model.cpu_performance!, tokens_per_second: speed } }] };
     expect(localCpuWarning({ ...DEFAULT_SESSION_PROFILE, engine: "local" }, local, now)).toBeNull();

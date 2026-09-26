@@ -10,23 +10,19 @@ import re
 import subprocess
 import sys
 import time
-from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, build_opener
+from urllib.error import URLError
 
 from dotenv import dotenv_values, set_key
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.bootstrap import SchemaDriftError
+from app.db.startup import prepare as prepare_schema
 from scripts.diagnostics.ollama import diagnose
-from scripts.schema.recreate import run as recreate_schema
-from scripts.schema.status import prepare_schema
-from scripts.stack.__main__ import compose_command, compose_environment, run
+from scripts.stack.__main__ import compose_command, compose_environment, parse_compose_ps, run
 from scripts.stack.environment import load_local_environment
 from scripts.stack.fresh import write_receipt
+from scripts.stack.local_http import read_local_json
 from scripts.stack.prompts import SetupCancelledError, confirm, step
 from scripts.stack.terminal import activity, run_step
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 def placeholder(value: str) -> bool:
@@ -157,52 +153,36 @@ def configure(root: Path, *, mode: str = "dev") -> dict[str, str]:
 
 def wait_ready(origin: str, *, timeout: float = 180, mode: str = "dev") -> None:
     """Require actual API, database, schema, and DEV permission evidence after startup."""
-    opener = build_opener(ProxyHandler({}))
+    url = origin + (
+        "/docreview-rag/api/admin/corpus/" if mode == "dev" else "/docreview-rag/api/ready/"
+    )
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            with opener.open(
-                origin
-                + (
-                    "/docreview-rag/api/admin/corpus/"
-                    if mode == "dev"
-                    else "/docreview-rag/api/ready/"
-                ),
-                timeout=5,
-            ) as response:
-                snapshot = json.load(response)
-            if mode == "prod":
-                corpus = snapshot.get("corpus", {})
-                if (
-                    snapshot.get("environment") == "prod"
-                    and corpus.get("database_connected")
-                    and corpus.get("schema_status") == "compatible"
-                ):
-                    return
-            state = snapshot["status"] if mode == "dev" else {}
-            if (
-                state.get("database_connected")
-                and state.get("schema_status") == "compatible"
-                and state.get("writable")
-            ):
-                if state["provider"] != "openai":
-                    raise ValueError(
-                        "The running API is not using OpenAI embeddings. "
-                        "Check effective configuration."
-                    )
-                return
-        except HTTPError as error:
-            if mode == "prod" and error.code == 503:
-                snapshot = json.load(error)
-                corpus = snapshot.get("corpus", {})
-                if (
-                    snapshot.get("environment") == "prod"
-                    and corpus.get("database_connected")
-                    and corpus.get("schema_status") == "compatible"
-                ):
-                    return
+            # PROD readiness answers 503 while degraded; its body still carries the evidence.
+            snapshot = read_local_json(url, timeout=5, accept=(503,) if mode == "prod" else ())
         except URLError, TimeoutError, ConnectionError:
-            pass
+            time.sleep(2)
+            continue
+        if mode == "prod":
+            corpus = snapshot.get("corpus", {})
+            if (
+                snapshot.get("environment") == "prod"
+                and corpus.get("database_connected")
+                and corpus.get("schema_status") == "compatible"
+            ):
+                return
+        state = snapshot["status"] if mode == "dev" else {}
+        if (
+            state.get("database_connected")
+            and state.get("schema_status") == "compatible"
+            and state.get("writable")
+        ):
+            if state["provider"] != "openai":
+                raise ValueError(
+                    "The running API is not using OpenAI embeddings. Check effective configuration."
+                )
+            return
         time.sleep(2)
     raise RuntimeError(
         "DEV readiness was not confirmed. Use rag-dev logs -f app and rag-dev doctor; "
@@ -212,16 +192,13 @@ def wait_ready(origin: str, *, timeout: float = 180, mode: str = "dev") -> None:
 
 def report_services(root: Path, environment: dict[str, str], *, mode: str = "dev") -> None:
     """Report only this project's service state, without exposing container configuration."""
-    output = subprocess.check_output(
-        compose_command(root, mode, ["ps", "--all", "--format", "json"]),
-        cwd=root,
-        env=environment,
-        text=True,
-    ).strip()
-    rows = (
-        json.loads(output)
-        if output.startswith("[")
-        else [json.loads(line) for line in output.splitlines() if line.strip()]
+    rows = parse_compose_ps(
+        subprocess.check_output(
+            compose_command(root, mode, ["ps", "--all", "--format", "json"]),
+            cwd=root,
+            env=environment,
+            text=True,
+        )
     )
     services = {row["Service"]: row for row in rows}
     for name in ("db", "app", "web"):
@@ -282,7 +259,7 @@ def start_ready(
         except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError) as error:
             print(f"Startup/readiness blocked: {error}", flush=True)
             print("Read-only diagnostics follow; no model will be loaded or invoked.")
-            diagnose(root, origin, details=True)
+            diagnose(origin, details=True)
             print(
                 "Recovery in this checkout: rag-dev compose down && rag-dev compose up --build -d"
             )
@@ -317,16 +294,8 @@ def handoff(bindings: dict[str, str], *, mode: str = "dev") -> None:
     print("No filings were downloaded and no embedding or answer requests were made.")
 
 
-def _prepare(
-    root: Path,
-    *,
-    mode: str = "dev",
-    reset: bool = False,
-    keep_sources: bool = False,
-    sample: bool = False,
-    timeout: float = 180,
-) -> int:
-    """Guide one local setup, optionally previewing and confirming a host-side clean start."""
+def _prepare(root: Path, *, mode: str = "dev", timeout: float = 180) -> int:
+    """Guide one local setup without replacing existing data."""
     step(1, 5, "Prerequisites", "Check Docker Compose; this step does not change services or data.")
     version = subprocess.check_output(
         ["docker", "compose", "version", "--short"], text=True
@@ -358,45 +327,26 @@ def _prepare(
         if run(mode, ["down"], root=root):
             raise RuntimeError("Stopping this checkout failed; no retry was submitted.") from None
         ensure_database(root, bindings, mode=mode)
-    step(
-        4,
-        5,
-        "Reset preview" if reset else "Schema",
-        "Preview ORM data and selected source scope; deletion requires uppercase Y."
-        if reset
-        else "Inspect compatibility; create schema only in an empty database.",
-    )
-    if reset:
-        outcome = recreate_schema(
-            root, keep_sources=keep_sources, sample=sample, restart_planned=True
-        )
-        if outcome != "succeeded":
-            write_receipt(root, "reset", status=outcome)
-            return 0 if outcome == "cancelled" else 1
-    else:
-        for attempt in range(2):
-            url = f"postgresql+asyncpg://filing:filing@127.0.0.1:{bindings['DB_PORT']}/filing"
-            try:
-                created = asyncio.run(prepare_schema(url))
-                break
-            except (SchemaDriftError, ValueError) as error:
-                print(f"Schema preparation blocked: {error}. Existing data was preserved.")
-                print(
-                    "Inspect: .venv/bin/python -m scripts.schema check\n"
-                    "Preserve this DB: rag-dev schema recover --return-stage index\n"
-                    "A separately confirmed destructive choice is rag-dev schema recreate."
-                )
-                if attempt or not confirm(
-                    "After fixing DB_PORT or compatibility, retry this step?"
-                ):
-                    raise RuntimeError(
-                        "Schema is still blocked; no automatic reset was submitted."
-                    ) from None
-                bindings = configure(root, mode=mode)
-                ensure_database(root, bindings, mode=mode)
-        print(
-            "Empty database schema created." if created else "Existing schema and data preserved."
-        )
+    step(4, 5, "Schema", "Inspect compatibility; create schema only in an empty database.")
+    for attempt in range(2):
+        url = f"postgresql+asyncpg://filing:filing@127.0.0.1:{bindings['DB_PORT']}/filing"
+        try:
+            created = asyncio.run(prepare_schema(url))
+            break
+        except (SchemaDriftError, ValueError) as error:
+            print(f"Schema preparation blocked: {error}. Existing data was preserved.")
+            print(
+                "Inspect: .venv/bin/python -m scripts.schema check\n"
+                "Preserve this DB: rag-dev schema recover --return-stage index\n"
+                "A separately confirmed destructive choice is rag-dev schema recreate."
+            )
+            if attempt or not confirm("After fixing DB_PORT or compatibility, retry this step?"):
+                raise RuntimeError(
+                    "Schema is still blocked; no automatic reset was submitted."
+                ) from None
+            bindings = configure(root, mode=mode)
+            ensure_database(root, bindings, mode=mode)
+    print("Empty database schema created." if created else "Existing schema and data preserved.")
     step(
         5,
         5,
@@ -407,29 +357,19 @@ def _prepare(
     handoff(bindings, mode=mode)
     write_receipt(
         root,
-        "reset" if reset else "start-quick",
+        "start-quick",
         status="succeeded",
         completed=["configuration", "database", "schema", "readiness"],
     )
     return 0
 
 
-def quickstart(
-    root: Path,
-    *,
-    mode: str = "dev",
-    reset: bool = False,
-    keep_sources: bool = False,
-    sample: bool = False,
-    timeout: float = 180,
-) -> int:
+def quickstart(root: Path, *, mode: str = "dev", timeout: float = 180) -> int:
     """Retain one command receipt across success, cancellation, failure and interruption."""
-    name = "reset" if reset else "start-quick"
+    name = "start-quick"
     write_receipt(root, name, status="running", completed=[])
     try:
-        return _prepare(
-            root, mode=mode, reset=reset, keep_sources=keep_sources, sample=sample, timeout=timeout
-        )
+        return _prepare(root, mode=mode, timeout=timeout)
     except (Exception, KeyboardInterrupt) as error:
         write_receipt(
             root,
@@ -438,37 +378,3 @@ def quickstart(
             error=type(error).__name__,
         )
         raise
-
-
-def main() -> int:
-    """Report setup failures without dumping configuration or provider credentials."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--verbose", "-vv", action="store_true")
-    parser.add_argument("--status", action="store_true")
-    args = parser.parse_args()
-    if args.verbose:
-        os.environ["DOCREVIEW_VERBOSE"] = "1"
-    if args.status:
-        from scripts.stack.fresh import status
-
-        return status(ROOT, "start-quick")
-    try:
-        return quickstart(ROOT)
-    except SetupCancelledError as error:
-        print(str(error))
-        return 0
-    except (ValueError, RuntimeError) as error:
-        print(str(error), file=sys.stderr)
-    except OSError, subprocess.CalledProcessError, SQLAlchemyError:
-        print(
-            "A local setup command failed. Check Docker/database access and rerun rag-dev start. "
-            "No database was reset.",
-            file=sys.stderr,
-        )
-    return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

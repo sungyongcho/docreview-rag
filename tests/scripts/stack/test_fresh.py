@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.operator.lifecycle_receipts import receipt_path
 from scripts.stack import fresh
 
 
@@ -79,13 +80,19 @@ def populate(root):
     (root / "data/corpus/manifest.json").write_text('{"modified": true}')
 
 
-def test_clean_restores_data_and_preserves_configuration_with_own_receipt(checkout, capsys):
-    """Actual file cleanup restores tracked manifest edits and leaves preserved files intact."""
+def test_environment_reset_preserves_dirty_and_untracked_source_work(checkout, capsys):
+    """Cleanup removes generated files, keeps source edits, and claims no deletion or repair."""
     populate(checkout)
-    assert fresh.start_fresh(checkout, no_start=True) == 0
-    assert (checkout / "data/corpus/manifest.json").read_text() == "{}"
+    (checkout / "source.py").write_text("active source edit")
+    (checkout / "new_source.py").write_text("untracked source")
+    (checkout / "NOTES.md").write_text("untracked notes")
+    assert fresh.start_fresh(checkout) == 0
+    assert (checkout / "source.py").read_text() == "active source edit"
+    assert (checkout / "new_source.py").read_text() == "untracked source"
+    assert (checkout / "NOTES.md").read_text() == "untracked notes"
+    assert (checkout / ".env").read_text() == "keep"
+    assert (checkout / "data/corpus/manifest.json").read_text() == '{"modified": true}'
     for name in (
-        ".env",
         ".env.local",
         ".claude/config",
         ".agents/config",
@@ -98,83 +105,46 @@ def test_clean_restores_data_and_preserves_configuration_with_own_receipt(checko
         assert (checkout / name).exists()
     for name in (".venv", "web/node_modules", "web/.next", ".pytest_cache", "data/corpus/sec"):
         assert not (checkout / name).exists()
+    assert json.loads(receipt_path(checkout, "start-fresh").read_text())["restarted"] is False
     assert fresh.status(checkout, "start-fresh") == 0
     output = capsys.readouterr().out
     assert "files," in output and "bytes" in output and "1." in output
-    assert "Revert tracked: data/corpus/manifest.json" in output
     assert "browser data will reset to defaults" in output
-    assert json.loads((checkout / "data/browser-reset.json").read_text())["reset_id"]
+    assert "Other applications are unchanged" in output
+    assert "deleted" not in output.lower()
+    assert "sudo" not in output
 
 
-def test_environment_reset_preserves_dirty_and_untracked_source_work(checkout):
-    """Runtime cleanup removes generated files while preserving all source modifications."""
-    populate(checkout)
-    (checkout / "source.py").write_text("active source edit")
-    (checkout / "new_source.py").write_text("untracked source")
-    (checkout / "NOTES.md").write_text("untracked notes")
-    assert fresh.start_fresh(checkout, no_start=True, runtime_only=True) == 0
-    assert (checkout / "source.py").read_text() == "active source edit"
-    assert (checkout / "new_source.py").read_text() == "untracked source"
-    assert (checkout / "NOTES.md").read_text() == "untracked notes"
-    assert (checkout / ".env").read_text() == "keep"
-    assert (checkout / "data/corpus/manifest.json").read_text() == '{"modified": true}'
-    assert not (checkout / ".venv").exists()
-    assert not (checkout / "web/node_modules").exists()
-    assert json.loads(fresh.receipt_path(checkout, "start-fresh").read_text())["restarted"] is False
-
-
-@pytest.mark.parametrize(
-    "answers", [[""], ["y"], ["yes"], ["Y "], ["confirm"], ["Y", "y"], ["Y", ""]]
-)
+@pytest.mark.parametrize("answers", [[""], ["y"], ["yes"], ["Y "]])
 def test_cancel_every_nonuppercase_gate_without_file_or_docker_writes(
     checkout, monkeypatch, answers, capsys
 ):
-    """Both extreme confirmations accept only the exact single uppercase character Y."""
+    """The confirmation accepts only the exact single uppercase character Y."""
     populate(checkout)
     responses = iter(answers)
     monkeypatch.setattr("builtins.input", lambda prompt: next(responses))
-    run = Mock(side_effect=AssertionError("No mutation may run before both confirmations"))
+    run = Mock(side_effect=AssertionError("No mutation may run before confirmation"))
     monkeypatch.setattr(fresh, "run_step", run)
-    assert fresh.start_fresh(checkout, extreme=True, no_start=True) == 0
+    assert fresh.start_fresh(checkout) == 0
     assert (checkout / ".env").exists() and (checkout / ".venv/bin/python").exists()
-    assert not fresh.receipt_path(checkout, "start-fresh").exists()
+    assert not receipt_path(checkout, "start-fresh").exists()
+    assert not (checkout / "data/browser-reset.json").exists()
     assert "nothing changed" in capsys.readouterr().out
 
 
-def test_extreme_removes_environment_but_retains_template_and_never_starts(
-    checkout, monkeypatch, capsys
-):
-    """Extreme cleanup removes private environment files after two prompts and stops."""
-    populate(checkout)
-    prompts = []
-    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "Y")
-    assert fresh.start_fresh(checkout, extreme=True) == 0
-    assert len(prompts) == 2 and all("(Y/n)" in prompt for prompt in prompts)
-    assert ".env*" in prompts[1]
-    assert not (checkout / ".env").exists() and not (checkout / ".env.local").exists()
-    assert (checkout / ".env.example").read_text() == "template"
-    assert "Run rag-dev start" in capsys.readouterr().out
-
-
-def test_noninteractive_does_not_even_inventory(checkout, monkeypatch):
-    """Piped input cannot trigger a preview or deletion."""
+def test_noninteractive_does_not_even_inventory(checkout, monkeypatch, capsys):
+    """Piped input cannot trigger a preview, a deletion or a colored warning."""
+    monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.setattr(fresh.sys.stdin, "isatty", lambda: False)
     inventory = Mock()
     monkeypatch.setattr(fresh, "inventory", inventory)
+    execution = Mock()
+    monkeypatch.setattr(fresh, "run_step", execution)
     with pytest.raises(ValueError, match="interactively"):
         fresh.start_fresh(checkout)
     inventory.assert_not_called()
-
-
-def test_tracked_code_requires_explicit_discard_and_preview(checkout, capsys):
-    """Foreign tracked source edits block the default cleanup and are listed when authorized."""
-    (checkout / "source.py").write_text("edited")
-    with pytest.raises(ValueError, match="outside data/"):
-        fresh.start_fresh(checkout, no_start=True)
-    assert (checkout / "source.py").read_text() == "edited"
-    assert fresh.start_fresh(checkout, no_start=True, discard_tracked=True) == 0
-    assert (checkout / "source.py").read_text() == "original"
-    assert "Revert tracked: source.py" in capsys.readouterr().out
+    execution.assert_not_called()
+    assert "\033[" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("kind", ["symlink", "nested", "traversal"])
@@ -187,28 +157,31 @@ def test_unsafe_paths_abort_without_following_them(checkout, tmp_path, kind):
     else:
         (checkout / ".freshstart-keep").write_text("../outside\n")
     with pytest.raises(ValueError):
-        fresh.start_fresh(checkout, no_start=True)
+        fresh.start_fresh(checkout)
     assert (checkout / "source.py").read_text() == "original"
 
 
 def test_preview_expiry_and_file_drift_require_new_confirmation(checkout, monkeypatch):
     """Expired previews and changed removal targets never execute a cached deletion plan."""
     populate(checkout)
+    execution = Mock()
+    monkeypatch.setattr(fresh, "run_step", execution)
     times = iter([0, 301])
     monkeypatch.setattr(fresh.time, "monotonic", lambda: next(times))
     with pytest.raises(ValueError, match="expired"):
-        fresh.start_fresh(checkout, no_start=True)
+        fresh.start_fresh(checkout)
     monkeypatch.setattr(fresh.time, "monotonic", lambda: 0)
 
     def change(prompt):
         """Introduce a file after the preview to simulate concurrent work."""
-        (checkout / "new-work").write_text("preserve")
+        (checkout / "data/new-work").write_text("preserve")
         return "Y"
 
     monkeypatch.setattr("builtins.input", change)
     with pytest.raises(ValueError, match="Preview changed"):
-        fresh.start_fresh(checkout, no_start=True)
-    assert (checkout / "new-work").read_text() == "preserve"
+        fresh.start_fresh(checkout)
+    assert (checkout / "data/new-work").read_text() == "preserve"
+    execution.assert_not_called()
 
 
 def test_permissions_are_reported_only_after_failure_and_retried_once(
@@ -229,7 +202,7 @@ def test_permissions_are_reported_only_after_failure_and_retried_once(
         return original(path, *args, **kwargs)
 
     monkeypatch.setattr(os, "unlink", unlink)
-    assert fresh.start_fresh(checkout, no_start=True) == 0
+    assert fresh.start_fresh(checkout) == 0
     assert len(calls) == 2
     output = capsys.readouterr().out
     assert output.count('sudo chown -R "$(id -u):$(id -g)" --') == 1
@@ -243,7 +216,7 @@ def test_remote_daemon_rejected_before_contact(tmp_path, monkeypatch):
     contact = Mock()
     monkeypatch.setattr(fresh.subprocess, "check_output", contact)
     with pytest.raises(ValueError, match="local Docker"):
-        fresh.docker_inventory(tmp_path, extreme=False)
+        fresh.docker_inventory(tmp_path)
     contact.assert_not_called()
 
 
@@ -258,14 +231,13 @@ def test_tracked_content_drift_aborts_after_confirmation(checkout, monkeypatch):
 
     monkeypatch.setattr("builtins.input", edit)
     with pytest.raises(ValueError, match="Preview changed"):
-        fresh.start_fresh(checkout, no_start=True)
+        fresh.start_fresh(checkout)
     assert (checkout / "data/corpus/manifest.json").read_text() == "new concurrent content"
 
 
-@pytest.mark.parametrize("extreme", [False, True])
 @pytest.mark.parametrize("foreign", ["none", "container", "volume-user", "image-user"])
 def test_docker_inventory_pins_checkout_and_preserves_shared_resources(
-    tmp_path, monkeypatch, extreme, foreign
+    tmp_path, monkeypatch, foreign
 ):
     """Only matching checkout resources enter the deletion preview; shared resources block it."""
     import json
@@ -348,46 +320,35 @@ def test_docker_inventory_pins_checkout_and_preserves_shared_resources(
     try:
         if foreign != "none":
             with pytest.raises(ValueError, match="another checkout|shared outside"):
-                fresh.docker_inventory(root, extreme=extreme)
+                fresh.docker_inventory(root)
         else:
-            resources = fresh.docker_inventory(root, extreme=extreme)
+            resources = fresh.docker_inventory(root)
             assert resources["containers"] == [container]
             assert resources["images"] == [image]
-            assert (f"{project}_ollama_models" in resources["volumes"]) == extreme
+            assert f"{project}_ollama_models" not in resources["volumes"]
             assert f"{project}_pg_data" in resources["volumes"]
     finally:
         sock.close()
 
 
-def test_permission_free_cleanup_does_not_print_a_repair(checkout, capsys):
-    """Healthy checkout cleanup never lectures about permissions or suggests sudo."""
-    populate(checkout)
-    fresh.start_fresh(checkout, no_start=True)
-    assert "sudo" not in capsys.readouterr().out
-
-
-@pytest.mark.parametrize("relative", ["source.py", "data/corpus/manifest.json"])
-def test_index_changes_cannot_cancel_worktree_guard(checkout, relative):
-    """Opposite index/worktree edits are still changes and data reset clears both."""
+def test_environment_reset_preserves_staged_changes(checkout):
+    """Opposite index/worktree edits survive an environment reset with the index unchanged."""
+    relative = "data/corpus/manifest.json"
     target = checkout / relative
     original = target.read_text()
     target.write_text("staged edit")
     subprocess.run(["git", "-C", str(checkout), "add", "--", relative], check=True)
     target.write_text(original)
     assert fresh.git(checkout, "diff", "HEAD", "--name-only") == ""
-    if relative == "source.py":
-        with pytest.raises(ValueError, match="outside data/"):
-            fresh.start_fresh(checkout, no_start=True)
-        assert fresh.git(checkout, "diff", "--cached", "--name-only").strip() == relative
-    else:
-        assert fresh.start_fresh(checkout, no_start=True) == 0
-        assert fresh.git(checkout, "status", "--porcelain") == ""
+    assert fresh.start_fresh(checkout) == 0
+    assert fresh.git(checkout, "diff", "--cached", "--name-only").strip() == relative
+    assert target.read_text() == original
 
 
 def test_parent_symlink_swap_cannot_unlink_outside_checkout(checkout, tmp_path):
     """A directory swap after preview cannot redirect descriptor-relative unlink."""
     populate(checkout)
-    snapshot = fresh.inventory(checkout, extreme=False, discard_tracked=False)
+    snapshot = fresh.inventory(checkout)
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "a.txt").write_text("foreign work")
@@ -423,79 +384,24 @@ def test_post_preview_inode_change_records_failure_without_restart(checkout, mon
     assert target.stat().st_ino != initial_inode
     assert target.read_text() == "concurrent source"
     assert not (checkout / ".venv/bin/python").exists()
-    receipt = json.loads(fresh.receipt_path(checkout, "start-fresh").read_text())
+    receipt = json.loads(receipt_path(checkout, "start-fresh").read_text())
     assert receipt["status"] == "failed"
     assert receipt["error"] == "ValueError"
     assert "files" not in receipt["completed"]
     assert not any(call.args[0][0] == "bash" for call in commands.call_args_list)
 
 
-@pytest.mark.parametrize("changed_state", ["worktree", "index", "head"])
-def test_post_preview_git_changes_are_preserved_before_restore(
-    checkout, monkeypatch, changed_state
-):
-    """Concurrent tracked changes after confirmation cannot be discarded by the final restore."""
-    populate(checkout)
-    relative = "data/corpus/manifest.json"
-    target = checkout / relative
-
-    def change_tracked_state():
-        """Simulate a writer updating the manifest while cleanup stops its services."""
-        target.write_text("new concurrent content")
-        if changed_state in {"index", "head"}:
-            subprocess.run(["git", "-C", str(checkout), "add", "--", relative], check=True)
-        if changed_state == "head":
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(checkout),
-                    "-c",
-                    "user.name=Fixture",
-                    "-c",
-                    "user.email=fixture@example.invalid",
-                    "-c",
-                    "commit.gpgsign=false",
-                    "commit",
-                    "-qm",
-                    "Concurrent fixture commit",
-                ],
-                check=True,
-            )
-
-    operator = Mock()
-    operator.stop.side_effect = change_tracked_state
-    monkeypatch.setattr(fresh, "LocalOperator", lambda root: operator)
-    with pytest.raises(ValueError, match="Tracked Git state changed"):
-        fresh.start_fresh(checkout, no_start=True)
-    assert target.read_text() == "new concurrent content"
-    if changed_state == "index":
-        assert fresh.git(checkout, "show", f":{relative}") == "new concurrent content"
-    if changed_state == "head":
-        assert fresh.git(checkout, "show", f"HEAD:{relative}") == "new concurrent content"
-    receipt = json.loads(fresh.receipt_path(checkout, "start-fresh").read_text())
-    assert receipt["status"] == "failed"
-    assert "tracked files" not in receipt["completed"]
-
-
 def test_each_successful_fresh_start_issues_a_new_browser_reset(checkout):
     """Only an approved completed fresh cleanup publishes a new web reset identity."""
     from uuid import UUID
 
-    assert fresh.start_fresh(checkout, no_start=True) == 0
+    assert fresh.start_fresh(checkout) == 0
     first = json.loads((checkout / "data/browser-reset.json").read_text())["reset_id"]
     UUID(first)
-    assert fresh.start_fresh(checkout, no_start=True) == 0
+    assert fresh.start_fresh(checkout) == 0
     second = json.loads((checkout / "data/browser-reset.json").read_text())["reset_id"]
     UUID(second)
     assert first != second
-
-
-def test_cancelled_fresh_start_does_not_schedule_browser_reset(checkout, monkeypatch):
-    """Declining cleanup leaves browser reset state entirely unchanged."""
-    monkeypatch.setattr(fresh, "confirm", lambda prompt: False)
-    assert fresh.start_fresh(checkout, no_start=True) == 0
-    assert not (checkout / "data/browser-reset.json").exists()
 
 
 def test_fresh_preserves_builtin_and_custom_golden_files(checkout):
@@ -504,6 +410,5 @@ def test_fresh_preserves_builtin_and_custom_golden_files(checkout):
     folder.mkdir()
     (folder / "retrieval.json").write_text("[]")
     (folder / "my-evaluation.json").write_text('{"cases": []}')
-    plan = fresh.inventory(checkout, extreme=True, discard_tracked=False)
+    plan = fresh.inventory(checkout)
     assert not any(path.startswith("data/golden") for path in plan["files"])
-    assert not any(path.startswith("data/golden") for path in plan["revert"])

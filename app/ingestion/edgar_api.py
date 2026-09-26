@@ -41,7 +41,6 @@ from app.ingestion.progress import ByteProgress, OperationProgress, OperationPro
 from app.ingestion.source_publication import fixed_path, publish_acquired
 
 DEFAULT_MANIFEST: Final[Path] = Path("data/corpus/manifest.json")
-CORPUS_ROOT: Final[Path] = Path("data/corpus")
 TICKERS_URL: Final[str] = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL: Final[str] = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 SUBMISSIONS_PAGE_URL: Final[str] = "https://data.sec.gov/submissions/{name}"
@@ -74,10 +73,9 @@ REQUEST_INTERVAL_SECONDS: Final[float] = 0.5
 BLOCK_PAGE_MARKER: Final[bytes] = b"Undeclared Automated Tool"
 # SEC rejects a User-Agent that names no way to reach the operator.
 CONTACT_MARKER: Final[str] = "@"
-PARTIAL_SUFFIX: Final[str] = ".part"
 
-# Opens the display for one entry's download. The library calls it and passes the
-# hook on; only the command knows that the hook is drawn as a bar.
+# Opens the progress scope for one entry's download. The library calls it and passes
+# the hook on; only the caller knows where the byte counts are shown.
 ProgressFactory = Callable[[DocumentReference], AbstractContextManager[ByteProgress | None]]
 
 
@@ -88,7 +86,6 @@ class EdgarAcquisitionResult:
     manifest_entries: int
     added: tuple[DocumentReference, ...]
     fetched: tuple[tuple[Path, int], ...]
-    dry_run: bool = False
     manifest: str = "manifest.json"
     selection_id: str = ""
 
@@ -128,28 +125,6 @@ def require_user_agent(declared: str | None) -> str:
     return value
 
 
-def parse_years(text: str) -> range:
-    """Return the inclusive fiscal-year range a ``--years`` argument names.
-
-    Accepts ``2024`` for one year and ``2015-2024`` for a span. The year is the one
-    in ``report_date``, which is the field ``doc_id`` reads, so what is asked for and
-    what the corpus is labelled with cannot drift apart.
-
-    Raises
-    ------
-    ValueError
-        If either bound is not a four-digit year, or the span runs backwards.
-    """
-    first, separator, last = text.partition("-")
-    bounds = (first, last if separator else first)
-    if not all(bound.isdigit() and len(bound) == 4 for bound in bounds):
-        raise ValueError(f"--years takes YYYY or YYYY-YYYY, not {text!r}")
-    start, end = int(bounds[0]), int(bounds[1])
-    if start > end:
-        raise ValueError(f"--years runs backwards: {text!r}")
-    return range(start, end + 1)
-
-
 # --- manifest ---
 
 
@@ -175,17 +150,13 @@ def pending(
     *,
     manifest: Manifest,
     corpus_root: Path,
-    force: bool = False,
-    tickers: Collection[str] = (),
 ) -> list[DocumentReference]:
     """Return selected filings lacking a verified acquired artifact."""
-    wanted = {ticker.upper() for ticker in tickers}
     return [
         document
         for document in entries
         if document.registry == "sec"
-        and (not wanted or document.issuer.upper() in wanted)
-        and (force or current_primary(manifest, document.document_id, corpus_root) is None)
+        and current_primary(manifest, document.document_id, corpus_root) is None
     ]
 
 
@@ -540,20 +511,17 @@ async def download_pending(
 
 
 def _entry_label(document: DocumentReference) -> str:
-    """Name one typed filing for terminal and administrative progress."""
+    """Name one typed filing for administrative progress."""
     return f"{document.issuer} FY{document.fiscal_year} · {document.filing_id}"
 
 
 async def acquire_edgar(
-    manifest_path: Path = DEFAULT_MANIFEST,
+    manifest_path: Path,
     *,
     tickers: Sequence[str] = (),
     years: Collection[int] | None = None,
     user_agent: str,
-    force: bool = False,
-    dry_run: bool = False,
     on_progress: OperationProgressCallback | None = None,
-    progress_factory: ProgressFactory | None = None,
 ) -> EdgarAcquisitionResult:
     """Acquire explicit SEC filing scope into the shared manifest and named selection."""
     declared = require_user_agent(user_agent)
@@ -581,21 +549,15 @@ async def acquire_edgar(
         and (years is None or document.fiscal_year in years)
     ]
     selection_id = selection_identity("sec", wanted, tuple(years or ()))
-    if dry_run:
-        return EdgarAcquisitionResult(
-            len(documents), tuple(added), (), True, selection_id=selection_id
-        )
     if not selected:
         raise ValueError("acquisition scope contains no SEC filings")
-    targets = pending(selected, manifest=catalog, corpus_root=manifest_path.parent, force=force)
+    targets = pending(selected, manifest=catalog, corpus_root=manifest_path.parent)
     fetched: list[tuple[Path, int]] = []
 
     def administrative_progress(
         document: DocumentReference,
     ) -> AbstractContextManager[ByteProgress | None]:
         """Bridge source byte progress without exposing transport details to callers."""
-        if progress_factory is not None:
-            return progress_factory(document)
         publish = on_progress
         if publish is None:
             return nullcontext(None)
@@ -649,95 +611,4 @@ async def acquire_edgar(
         on_progress(OperationProgress("download", 0, 0, "Every selected filing is valid"))
     return EdgarAcquisitionResult(
         len(catalog.documents), tuple(added), tuple(fetched), selection_id=selection_id
-    )
-
-
-if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
-    import argparse
-
-    from app.config import get_settings
-    from app.ingestion.progress import byte_bar, overall_bar
-
-    async def _download(
-        manifest_path: Path,
-        tickers: tuple[str, ...],
-        years: range | None,
-        force: bool,
-        dry_run: bool,
-    ) -> None:
-        """Run the reusable acquisition boundary with terminal progress."""
-        try:
-            user_agent = require_user_agent(get_settings().sec_user_agent)
-        except ValueError as error:
-            raise SystemExit(str(error)) from None
-        if years is not None:
-            wanted = tickers or tuple(
-                dict.fromkeys(
-                    entry.issuer
-                    for entry in read_catalog(manifest_path).documents
-                    if entry.registry == "sec"
-                )
-            )
-            if not wanted:
-                raise SystemExit("--years needs --ticker when the manifest names no issuer")
-            print(
-                f"discovering {ANNUAL_REPORT_FORM}s for {', '.join(wanted)} "
-                f"in {years.start}-{years.stop - 1}"
-            )
-
-        def open_bar(entry: DocumentReference) -> AbstractContextManager[ByteProgress]:
-            """Open a byte progress bar for one manifest entry."""
-            return byte_bar(_entry_label(entry))
-
-        try:
-            result = await acquire_edgar(
-                manifest_path,
-                tickers=tickers,
-                years=years,
-                user_agent=user_agent,
-                force=force,
-                dry_run=dry_run,
-                progress_factory=open_bar,
-            )
-        except ValueError as error:
-            raise SystemExit(str(error)) from None
-        for entry in result.added:
-            print(f"  + {entry.document_id}  {entry.filing_id}  {entry.source_url}")
-        if years is not None:
-            print(f"{len(result.added)} new filing(s), {result.manifest_entries} in the manifest")
-        if result.dry_run:
-            print("dry run: neither the manifest nor any document was written")
-            return
-        if not result.fetched:
-            print(f"nothing to fetch; every selected entry of {manifest_path} is on disk")
-            return
-        with overall_bar(len(result.fetched), unit="doc", description="EDGAR") as overall:
-            for path, size in result.fetched:
-                overall.advance(path.stem)
-                overall.write(f"{path} ({size:,} bytes)")
-        print(f"fetched {len(result.fetched)} document(s)")
-
-    ap = argparse.ArgumentParser(
-        description="Discover and download the EDGAR filings a manifest names."
-    )
-    ap.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    ap.add_argument("--ticker", nargs="+", default=[], help="restrict to these tickers")
-    ap.add_argument(
-        "--years",
-        help="widen the manifest to every 10-K in this fiscal-year range (YYYY or YYYY-YYYY); "
-        "without --ticker it widens the issuers the manifest already names",
-    )
-    ap.add_argument("--force", action="store_true", help="re-fetch documents already on disk")
-    ap.add_argument(
-        "--dry-run", action="store_true", help="report what --years would add, and write nothing"
-    )
-    args = ap.parse_args()
-
-    try:
-        requested_years = parse_years(args.years) if args.years else None
-    except ValueError as error:
-        raise SystemExit(str(error)) from None
-
-    asyncio.run(
-        _download(args.manifest, tuple(args.ticker), requested_years, args.force, args.dry_run)
     )

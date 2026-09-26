@@ -4,15 +4,11 @@ from bs4 import BeautifulSoup, Tag
 
 from app.ingestion.tables import (
     MAX_SPAN,
-    drop_empty,
     is_unit_caption,
     merge_unit_columns,
-    render_table,
     split_header,
-    table_captions,
-    table_to_markdown,
+    structured_table,
     to_grid,
-    to_markdown,
 )
 
 
@@ -103,15 +99,8 @@ def test_cell_text_keeps_words_the_filing_split_across_nodes() -> None:
 # Layout collapse
 
 
-def test_empty_rows_and_columns_are_removed() -> None:
-    """Remove axes that contain no non-empty values."""
-    grid = [["", "", ""], ["", "Revenue", "100"], ["", "", ""]]
-    assert drop_empty(grid) == [["Revenue", "100"]]
-
-
 def test_collapse_tolerates_ragged_rows() -> None:
     """Read a missing cell as empty instead of raising or dropping content."""
-    assert drop_empty([["a"], ["b", "c"]]) == [["a", ""], ["b", "c"]]
     assert merge_unit_columns([["a", "b", "c"], ["d"]]) == [["a", "b", "c"], ["d", "", ""]]
 
 
@@ -174,7 +163,7 @@ def test_returned_header_rows_do_not_alias_the_input() -> None:
 
 def test_multirow_header_is_merged_per_column() -> None:
     """Preserve multirow date context in each markdown header cell."""
-    markdown = table_to_markdown(
+    markdown = structured_table(
         """<table>
         <tr><td></td><td colspan="4" style="text-align:center">Year Ended</td></tr>
         <tr><td></td>
@@ -187,7 +176,7 @@ def test_multirow_header_is_merged_per_column() -> None:
             <td colspan="2" style="text-align:right">(40)</td>
             <td colspan="2" style="text-align:right">(30)</td></tr>
         </table>"""
-    )
+    ).render()
     assert markdown == "\n".join(
         [
             "|  | Year Ended 2024 | Year Ended 2023 |",
@@ -200,15 +189,11 @@ def test_multirow_header_is_merged_per_column() -> None:
 
 def test_a_data_row_is_never_promoted_into_the_header() -> None:
     """Leave the header blank instead of labelling columns with a data row."""
-    grid = [["Total revenue", "63,574", "79,699"], ["Total income", "2,334", "19,456"]]
-    assert to_markdown(grid).splitlines()[0] == "|  |  |  |"
-
-
-def test_rows_wider_than_the_header_keep_every_cell() -> None:
-    """Size the table by its widest row so no value is truncated."""
-    assert to_markdown([["", "2024"], ["Revenue", "100", "90"]]) == "\n".join(
-        ["|  | 2024 |  |", "| --- | --- | --- |", "| Revenue | 100 | 90 |"]
+    html = (
+        "<table><tr><td>Total revenue</td><td>63,574</td><td>79,699</td></tr>"
+        "<tr><td>Total income</td><td>2,334</td><td>19,456</td></tr></table>"
     )
+    assert structured_table(html).render().splitlines()[0] == "|  |  |  |"
 
 
 def test_parenthesized_negatives_survive_verbatim() -> None:
@@ -217,47 +202,37 @@ def test_parenthesized_negatives_survive_verbatim() -> None:
     <tr><td>Metric</td><td>Value</td></tr>
     <tr><td>Expense</td><td>(0.4)</td></tr>
     </table>"""
-    markdown = table_to_markdown(html)
+    markdown = structured_table(html).render()
     assert "(0.4)" in markdown
     assert "-0.4" not in markdown
 
 
-def test_markdown_rows_have_the_same_width() -> None:
-    """Serialize every markdown row with the same pipe count."""
-    html = """<table>
-    <tr><td></td><td>2024</td><td>2023</td></tr>
-    <tr><td>Revenue</td><td>100</td><td>90</td></tr>
-    </table>"""
-    widths = {line.count("|") for line in table_to_markdown(html).splitlines()}
-    assert len(widths) == 1
-
-
 def test_degenerate_input_never_raises() -> None:
     """Return empty output for missing or content-free tables."""
-    assert table_to_markdown(None) == ""
-    assert table_to_markdown("") == ""
-    assert table_to_markdown("<p>not a table</p>") == ""
-    assert table_to_markdown("<table></table>") == ""
-    assert table_to_markdown("<table><tr><td></td></tr></table>") == ""
+    assert structured_table(None).render() == ""
+    assert structured_table("").render() == ""
+    assert structured_table("<p>not a table</p>").render() == ""
+    assert structured_table("<table></table>").render() == ""
+    assert structured_table("<table><tr><td></td></tr></table>").render() == ""
 
 
 def test_a_parsed_node_renders_like_its_source_fragment() -> None:
     """Accept a parsed table and produce what the same fragment produces."""
     html = "<table><tr><td>Interest expense</td><td>(<span>257</span>)</td></tr></table>"
-    assert table_to_markdown(_table(html)) == table_to_markdown(html)
-    assert "(257)" in table_to_markdown(_table(html))
+    assert structured_table(_table(html)).render() == structured_table(html).render()
+    assert "(257)" in structured_table(_table(html)).render()
 
 
 def test_cell_pipes_are_escaped() -> None:
     """Escape cell pipes instead of creating extra markdown columns."""
-    markdown = table_to_markdown("<table><tr><td>a|b</td><td>c</td></tr></table>")
+    markdown = structured_table("<table><tr><td>a|b</td><td>c</td></tr></table>").render()
     assert r"a\|b" in markdown
 
 
 def test_an_escaped_pipe_keeps_its_backslash() -> None:
     """Keep a literal backslash distinguishable from the escape it looks like."""
-    escaped = table_to_markdown(r"<table><tr><td>a\|b</td><td>c</td></tr></table>")
-    plain = table_to_markdown("<table><tr><td>a|b</td><td>c</td></tr></table>")
+    escaped = structured_table(r"<table><tr><td>a\|b</td><td>c</td></tr></table>").render()
+    plain = structured_table("<table><tr><td>a|b</td><td>c</td></tr></table>").render()
     assert escaped != plain
 
 
@@ -272,13 +247,13 @@ def test_te_and_tu_cells_expand_like_td() -> None:
 
 def test_unit_caption_row_moves_ahead_of_the_table() -> None:
     """Lift an in-grid unit annotation out of header inference into a caption line."""
-    markdown = table_to_markdown(
+    markdown = structured_table(
         """<table>
           <tr><td colspan="3" align="right">(단위 : 백만원)</td></tr>
           <tr><td>구 분</td><td>제56기</td><td>제55기</td></tr>
           <tr><td>매출액</td><td>300,870,903</td><td>258,935,494</td></tr>
         </table>"""
-    )
+    ).render()
     lines = markdown.splitlines()
     assert lines[0] == "(단위 : 백만원)"
     assert lines[1] == "| 구 분 | 제56기 | 제55기 |"
@@ -289,33 +264,8 @@ def test_caption_only_table_reports_captions_and_no_markdown() -> None:
     """A one-cell unit table renders no markdown but exposes its annotation."""
     html = "<table><tr><td>(단위 : 사)</td></tr></table>"
 
-    assert table_to_markdown(html) == ""
-    assert table_captions(html) == ["(단위 : 사)"]
-
-
-def test_data_table_keeps_captions_inline_and_reports_none() -> None:
-    """A table with data rows keeps its captions in markdown, not in table_captions."""
-    html = (
-        "<table><tr><td colspan='2'>(단위 : 백만원)</td></tr>"
-        "<tr><td>매출액</td><td>300,870</td></tr></table>"
-    )
-
-    assert table_captions(html) == []
-    assert table_to_markdown(html).startswith("(단위 : 백만원)\n")
-
-
-def test_render_table_serves_both_answers_from_one_parse() -> None:
-    """render_table reports captions for a caption-only table, markdown otherwise."""
-    caption_only = "<table><tr><td>(단위 : 사)</td></tr></table>"
-    data = (
-        "<table><tr><td colspan='2'>(단위 : 백만원)</td></tr>"
-        "<tr><td>매출액</td><td>300,870</td></tr></table>"
-    )
-
-    assert render_table(caption_only) == (["(단위 : 사)"], "")
-    captions, markdown = render_table(data)
-    assert captions == []
-    assert markdown.startswith("(단위 : 백만원)\n")
+    assert structured_table(html).render() == ""
+    assert structured_table(html).captions == ("(단위 : 사)",)
 
 
 def test_is_unit_caption_accepts_only_a_whole_annotation() -> None:
@@ -329,13 +279,13 @@ def test_is_unit_caption_accepts_only_a_whole_annotation() -> None:
 
 def test_won_sign_column_merges_onto_its_value() -> None:
     """A ₩-only column folds into the value on its right, like the dollar sign."""
-    markdown = table_to_markdown(
+    markdown = structured_table(
         """<table>
           <tr><td>구 분</td><td></td><td>금액</td></tr>
           <tr><td>매출액</td><td>₩</td><td>300,870</td></tr>
           <tr><td>영업이익</td><td>₩</td><td>32,725</td></tr>
         </table>"""
-    )
+    ).render()
     assert "| 매출액 | ₩ 300,870 |" in markdown
     assert "| 영업이익 | ₩ 32,725 |" in markdown
 
@@ -349,8 +299,6 @@ def test_triangle_negative_reads_as_a_value_not_a_label() -> None:
 
 def test_date_and_unit_caption_tables_preserve_all_annotation_text():
     """Recognize explicit mixed annotations, including date and unit on separate rows."""
-    from app.ingestion.tables import structured_table
-
     html = (
         "<table><tr><td>(기준일 : 2024년 12월 31일 )</td></tr>"
         "<tr><td>(단위 : 백만원)</td></tr></table>"
@@ -366,8 +314,6 @@ def test_date_and_unit_caption_tables_preserve_all_annotation_text():
 
 def test_numeric_tables_are_not_reclassified_as_caption_blocks():
     """A unit or date label next to a value remains data rather than pending context."""
-    from app.ingestion.tables import structured_table
-
     html = (
         "<table><tr><td>(기준일 : 2024년 12월 31일 )</td><td>123</td></tr>"
         "<tr><td>(단위 : 백만원)</td><td>456</td></tr></table>"

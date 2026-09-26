@@ -93,8 +93,3 @@ def section_title(item: str | None, registry_name_: str | None = None) -> str | 
         if title:
             return title
     return None
-
-
-def resolve_registry(source: FilingSource) -> Registry:
-    """Resolve the explicit publishing registry of a selected typed source."""
-    return registry_for(source.document.registry)

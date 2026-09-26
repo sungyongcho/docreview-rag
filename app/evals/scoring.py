@@ -41,7 +41,7 @@ class SuiteScore:
 
         Every metric above moves with the cutoff and with the relevance threshold,
         so a stored baseline is only meaningful against a run that used the same
-        values. Persistence stamps this mapping into the run configuration.
+        values. The evaluator records this mapping in both artifact and stored config.
         """
         return {"k": self.k, "coverage_threshold": COVERAGE_THRESHOLD}
 
@@ -165,21 +165,6 @@ def _validated_scores(case_scores: Sequence[CaseScore]) -> tuple[CaseScore, ...]
 def _macro(scores: tuple[CaseScore, ...], value: Callable[[CaseScore], float]) -> float:
     """Return the mean of one per-case metric over an already-validated suite."""
     return sum(value(result) for result in scores) / len(scores)
-
-
-def recall_at_k(case_scores: Sequence[CaseScore]) -> float:
-    """Return macro recall across a nonempty suite of positive cases."""
-    return _macro(_validated_scores(case_scores), lambda result: result.recall_at_k)
-
-
-def hit_rate_at_k(case_scores: Sequence[CaseScore]) -> float:
-    """Return the fraction of positive cases with at least one relevant top-k hit."""
-    return _macro(_validated_scores(case_scores), lambda result: result.hit_at_k)
-
-
-def mrr(case_scores: Sequence[CaseScore]) -> float:
-    """Return mean reciprocal rank of the first relevant top-k hit per case."""
-    return _macro(_validated_scores(case_scores), lambda result: result.reciprocal_rank)
 
 
 def score_suite(case_scores: Sequence[CaseScore]) -> SuiteScore:

@@ -7,8 +7,7 @@ from typing import Any, cast
 from pydantic import ValidationError
 import pytest
 
-from app.llm.provider import DeterministicLLMProvider
-from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
+from app.llm.schemas import ProviderBudget, TokenPricing
 from app.retrieval.language import QueryLanguage
 from app.retrieval.translate import (
     QueryTranslation,
@@ -16,6 +15,7 @@ from app.retrieval.translate import (
     route_query,
     translate_query,
 )
+from tests.llm.support import DeterministicLLMProvider, raw
 
 KOREAN_QUERY = "AMD는 TSMC와 관련하여 어떤 7nm 공급 위험을 밝혔습니까?"
 ENGLISH_QUERY = "What specific 7 nm supply risk did AMD identify involving TSMC?"
@@ -31,17 +31,6 @@ def budget() -> ProviderBudget:
             input_per_million_usd=Decimal("0.4"),
             output_per_million_usd=Decimal("1.6"),
         ),
-    )
-
-
-def raw(output_text: str, *, refusal: str | None = None) -> RawProviderResponse:
-    """Return one canned provider response with fixed usage accounting."""
-    return RawProviderResponse(
-        output_text=output_text,
-        input_tokens=10,
-        output_tokens=5,
-        request_id="req-1",
-        refusal=refusal,
     )
 
 
@@ -124,13 +113,12 @@ def test_translate_query_rejects_a_translation_that_is_still_korean():
         translate(provider)
 
 
-@pytest.mark.parametrize("query", ["", "   "])
-def test_translate_query_rejects_blank_input_before_any_provider_call(query):
+def test_translate_query_rejects_blank_input_before_any_provider_call():
     """Reject blank input before spending a provider request."""
     provider = DeterministicLLMProvider([])
 
     with pytest.raises(ValueError, match="blank"):
-        asyncio.run(translate_query(query, llm_provider=provider, provider_budget=budget()))
+        asyncio.run(translate_query("   ", llm_provider=provider, provider_budget=budget()))
     assert provider.prompts == ()
 
 
@@ -211,27 +199,37 @@ def test_route_query_repairs_a_source_language_response_once():
 @pytest.mark.parametrize(
     "output, refusal, error, attempts",
     [
-        (
+        pytest.param(
             f'{{"translated_query":"{KOREAN_QUERY}","target_language":"en"}}',
             None,
             "wrong target language",
             1,
+            id="reported-target-differs-from-the-request",
         ),
-        (
+        pytest.param(
             f'{{"translated_query":"{ENGLISH_QUERY}","target_language":"ko"}}',
             None,
             "does not contain the target language",
             1,
+            id="text-not-in-the-target-language",
         ),
-        (
+        pytest.param(
             f'{{"translated_query":"{KOREAN_QUERY}","source_language":"en"}}',
             None,
             "schema_rejected",
             2,
+            id="legacy-source-language-shape-survives-the-repair",
         ),
-        ("not json", None, "schema_rejected", 2),
-        ('{"translated_query":"   ","target_language":"ko"}', None, "schema_rejected", 2),
-        ("", "Cannot translate this query.", "provider_refused", 1),
+        pytest.param(
+            '{"translated_query":"   ","target_language":"ko"}',
+            None,
+            "schema_rejected",
+            2,
+            id="blank-translation-survives-the-repair",
+        ),
+        pytest.param(
+            "", "Cannot translate this query.", "provider_refused", 1, id="provider-refusal"
+        ),
     ],
 )
 def test_route_query_fails_closed_on_invalid_provider_outputs(output, refusal, error, attempts):

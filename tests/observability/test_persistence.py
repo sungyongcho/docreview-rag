@@ -4,13 +4,14 @@ import asyncio
 from decimal import Decimal
 from typing import cast
 
+from pydantic import ValidationError
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Run, Trace
 from app.observability.persistence import (
     REDACTED,
-    persist_run_report,
+    persist_run_records,
     records_to_report,
     redact_sensitive_text,
     report_to_records,
@@ -61,8 +62,8 @@ def test_persistence_mapping_preserves_provenance_and_redacts_secrets():
     assert REDACTED in trace.llm_output
 
 
-def test_redaction_covers_quoted_assignments_and_rejects_key_collisions():
-    """Redact quoted secret assignments and reject colliding redaction keys."""
+def test_redaction_covers_quoted_assignments_explicit_secrets_and_key_collisions():
+    """Redact quoted assignments and explicit secrets in one pass, and reject colliding keys."""
 
     assert redact_sensitive_text('password="alpha beta"') == "password=[REDACTED]"
     assert redact_sensitive_text("secret='alpha beta'") == "secret=[REDACTED]"
@@ -73,6 +74,11 @@ def test_redaction_covers_quoted_assignments_and_rejects_key_collisions():
         )
         == "pair [REDACTED] [REDACTED]"
     )
+    # "REDACT" occurs inside the replacement text, so a second sequential replacement
+    # would rewrite what the first one produced.
+    secrets = ["ABCDEF", "REDACT"]
+    assert redact_sensitive_text("ABCDEF", secret_values=secrets) == REDACTED
+    assert redact_sensitive_text("ABCDEF", secret_values=list(reversed(secrets))) == REDACTED
 
     collision = run_report(report={"api_key=foo": "first", "api_key=bar": "second"})
     with pytest.raises(ValueError, match="duplicate JSON key"):
@@ -120,16 +126,6 @@ def test_credential_keys_in_a_report_have_their_values_replaced_wholesale():
     }
 
 
-def test_equal_length_secrets_redact_in_one_stable_pass():
-    """Replace every explicit secret in one pass, independent of the order supplied."""
-    # "REDACT" occurs inside the replacement text, so a second sequential replacement
-    # would rewrite what the first one produced.
-    secrets = ["ABCDEF", "REDACT"]
-
-    assert redact_sensitive_text("ABCDEF", secret_values=secrets) == REDACTED
-    assert redact_sensitive_text("ABCDEF", secret_values=list(reversed(secrets))) == REDACTED
-
-
 def test_persistence_flushes_without_committing_or_live_services():
     """Flush a run report without committing or reaching any live service."""
 
@@ -154,7 +150,9 @@ def test_persistence_flushes_without_committing_or_live_services():
             self.flushed = True
 
     session = RecordingSession()
-    persisted = asyncio.run(persist_run_report(cast(AsyncSession, session), run_report()))
+    persisted = asyncio.run(
+        persist_run_records(cast(AsyncSession, session), *report_to_records(run_report()))
+    )
 
     assert persisted is session.added[0]
     assert isinstance(persisted, Run)
@@ -174,14 +172,16 @@ def test_local_timing_round_trips_through_existing_jsonb_context() -> None:
     assert records_to_report(run, traces).steps[0].local_timings == (timing,)
     assert record_to_step(traces[0], request_context=run.request_context).local_timings == (timing,)
     assert record_to_step(traces[0]).local_timings == ()
-    assert run.request_context["trace_local_timings"]["1"] == [
-        {"attempt": 2, "load_duration_ms": 1.5, "eval_count": 3}
-    ]
+    context = run.request_context
+    assert context is not None
+    stored_timings = context["trace_local_timings"]
+    assert isinstance(stored_timings, dict)
+    assert stored_timings["1"] == [{"attempt": 2, "load_duration_ms": 1.5, "eval_count": 3}]
 
 
 def test_sent_requests_round_trip_through_existing_jsonb_context() -> None:
     """A step refused before its call keeps zero requests through storage without a new column."""
-    from app.observability.persistence import record_to_step, stored_step_requests
+    from app.observability.persistence import record_to_step
 
     refused = step_trace(
         step=2,
@@ -208,5 +208,6 @@ def test_sent_requests_round_trip_through_existing_jsonb_context() -> None:
     assert [step.requests for step in restored.steps] == [1, 0]
     assert restored.total_requests == 1
     assert record_to_step(traces[1]).requests == 1
-    assert stored_step_requests({"trace_requests": {"2": True}}, step=2, retries=0) == 1
+    with pytest.raises(ValidationError, match="requests"):
+        record_to_step(traces[1], request_context={"trace_requests": {"2": True}})
     assert "trace_requests" not in (report_to_records(run_report())[0].request_context or {})

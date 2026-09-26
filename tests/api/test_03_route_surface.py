@@ -80,7 +80,6 @@ def test_openapi_exposes_resource_oriented_surface(client_factory, services):
         "/public/snapshots/{snapshot_id}/dataset",
         "/public/snapshots/{snapshot_id}/evaluation",
         "/eval",
-        "/ingest",
         "/retrieve",
         "/review",
         "/review/stream",

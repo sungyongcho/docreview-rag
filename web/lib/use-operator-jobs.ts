@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNotifications } from "@/components/notifications";
 import { cancelOperatorJob, getOperatorJobs, retryOperatorJob } from "./api";
 import { useI18n } from "./i18n";
-import type { OperatorJob, OperatorJobBoard } from "./types";
+import type { OperatorJobBoard } from "./types";
 
 const EMPTY_BOARD: OperatorJobBoard = { jobs: [], active_count: 0, queued_count: 0 };
 const POLL_WORKING_MS = 1_000;

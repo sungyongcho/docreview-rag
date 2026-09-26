@@ -7,7 +7,7 @@ import type { Readiness, ReviewEngineState } from "./types";
 
 export type RuntimeHealthKind = "checking" | "healthy" | "api_down" | "db_degraded" | "preparation_needed";
 
-export interface RuntimeHealthState {
+interface RuntimeHealthState {
   kind: RuntimeHealthKind;
   readiness: Readiness | null;
   checkedAt: string | null;
@@ -15,8 +15,8 @@ export interface RuntimeHealthState {
 
 const HEALTH_INTERVAL_MS = 30_000;
 const HEALTH_TIMEOUT_MS = 5_000;
-export const HEALTH_GRACE_MS = 20_000;
-export const HEALTH_RETRY_MS = 3_000;
+const HEALTH_GRACE_MS = 20_000;
+const HEALTH_RETRY_MS = 3_000;
 
 function issueKey(state: RuntimeHealthState): string | null {
   if (state.kind === "api_down") return "api_down";

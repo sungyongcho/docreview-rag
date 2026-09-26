@@ -1,5 +1,6 @@
 """Container entrypoint refuses incompatible runtime data before launching the server."""
 
+import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -8,13 +9,12 @@ from app.db import startup
 from app.db.bootstrap import SchemaDriftError
 
 
-@pytest.mark.parametrize("created", [True, False])
-def test_runtime_prepares_before_exec(monkeypatch, capsys, created):
-    """Both empty and compatible targets must pass the shared gate before server exec."""
+def test_runtime_prepares_before_exec(monkeypatch, capsys):
+    """A runtime target must pass the shared gate before server exec."""
     monkeypatch.setenv("DOCREVIEW_MODE", "runtime")
     monkeypatch.setenv("DATABASE_URL", "private-target")
     monkeypatch.setattr(startup.sys, "argv", ["gate", "server", "arg"])
-    prepare = AsyncMock(return_value=created)
+    prepare = AsyncMock(return_value=True)
     launch = Mock()
     monkeypatch.setattr(startup, "prepare", prepare)
     monkeypatch.setattr(startup.os, "execvp", launch)
@@ -52,6 +52,17 @@ def test_canned_default_does_not_touch_database(monkeypatch):
     monkeypatch.setattr(startup.os, "execvp", Mock())
     assert startup.main() == 0
     prepare.assert_not_called()
+
+
+def test_prepare_uses_the_shared_bootstrap_and_releases_its_engine(monkeypatch):
+    """Preparation delegates to the non-destructive bootstrap and always disposes the engine."""
+    engine = Mock(dispose=AsyncMock())
+    shared = AsyncMock(return_value=False)
+    monkeypatch.setattr(startup, "create_async_engine", lambda *a, **k: engine)
+    monkeypatch.setattr(startup, "prepare_empty_schema", shared)
+    assert asyncio.run(startup.prepare("unused")) is False
+    shared.assert_awaited_once_with(engine)
+    engine.dispose.assert_awaited_once()
 
 
 @pytest.mark.live_postgres

@@ -17,7 +17,6 @@ interface ModelCall {
   reasoning_tokens?: number | null;
   provider?: string;
   timing_unavailable_reason?: string | null;
-  local_timings?: Array<Record<string, number | null>>;
   provider_timing?: Array<Record<string, number | null>> | null;
 }
 interface StageTiming { node?: string; phase?: string; elapsed_ms?: number | null; status?: string }
@@ -31,9 +30,9 @@ function durationBar(value: number, longest: number): string {
   return `[${"#".repeat(filled)}${".".repeat(BAR_WIDTH - filled)}]`;
 }
 
-/** Prefer the explicit contract while accepting historical Ollama timing records. */
+/** Read collected provider timings without inventing omitted measurements. */
 function providerTimings(call: ModelCall) {
-  const records = call.provider_timing ?? call.local_timings ?? [];
+  const records = call.provider_timing ?? [];
   return records.filter((record) => ["total_duration_ms", "load_duration_ms", "prompt_eval_duration_ms", "eval_duration_ms", "eval_count"].some((field) => collectedNumber(record[field])));
 }
 
@@ -45,7 +44,7 @@ function timingReason(call: ModelCall): string | null {
   return null;
 }
 
-/** Display measured execution in recorded order while keeping optional legacy data explicit. */
+/** Display measured execution in recorded order and distinguish uncollected measurements. */
 export function ExecutionPerformance({ data, state, embedded = false, selectedNodes = [] }: { selectedNodes?: readonly string[]; data?: Record<string, unknown>; state: ReviewExecution; embedded?: boolean }) {
   const { t, locale } = useI18n();
   const callsCollected = Array.isArray(data?.model_calls);

@@ -9,13 +9,12 @@ import json
 import os
 from pathlib import Path
 import re
-import tempfile
 
 from pydantic import ValidationError
 
 from app.api.admin_schemas import GoldenCanonicalResource, GoldenRevisionResource, GoldenSuiteId
+from app.atomic_write import write_text_atomically
 from app.config import get_settings
-from app.evals.admin import SUITES
 from app.evals.artifacts import read_strict_json
 from app.evals.drafts import (
     DRAFT_CASES,
@@ -33,6 +32,7 @@ from app.evals.loader import (
     validate_unique_cases,
 )
 from app.evals.source_binding import bind_golden
+from app.evals.suites import SUITES
 
 
 class GoldenAdminService:
@@ -106,7 +106,6 @@ class GoldenAdminService:
                 for case in cases
             },
             suite_id=raw["suite_id"],
-            version=1,
             status="validated"
             if raw.get("checked_sha256") == digest
             and cases
@@ -114,7 +113,6 @@ class GoldenAdminService:
             else "draft",
             payload=tuple(payload),
             sha256=digest,
-            parent_id=None,
             created_at=datetime.fromisoformat(raw["created_at"]),
             updated_at=datetime.fromisoformat(raw["updated_at"]),
         )
@@ -134,17 +132,13 @@ class GoldenAdminService:
             "checked_sha256": item.sha256 if item.status == "validated" else None,
             "cases": list(item.payload),
         }
-        descriptor, temporary = tempfile.mkstemp(prefix=".dataset-", dir=self._golden_dir)
-        try:
-            with os.fdopen(descriptor, "w") as handle:
-                json.dump(envelope, handle, ensure_ascii=False, indent=2)
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        write_text_atomically(
+            path,
+            json.dumps(envelope, ensure_ascii=False, indent=2) + "\n",
+            mode=0o600,
+            apply_umask=True,
+            encoding=None,
+        )
         return self._read_user(path)
 
     async def list(self, suite_id: GoldenSuiteId) -> tuple[GoldenRevisionResource, ...]:
@@ -210,11 +204,9 @@ class GoldenAdminService:
                 revision_id=self._identity(filename),
                 filename=filename,
                 suite_id=suite_id,
-                version=1,
                 status="draft",
                 payload=payload,
                 sha256=golden_payload_sha256(list(payload)),
-                parent_id=None,
                 created_at=now,
                 updated_at=now,
             )

@@ -13,12 +13,11 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import re
-from typing import Literal
 
 from bs4 import BeautifulSoup, Tag
 from bs4.element import NavigableString
 
-from app.ingestion.manifest import FilingSource, Manifest
+from app.ingestion.manifest import FilingSource
 from app.ingestion.parser import (
     HEADING_TAGS,
     REPORTED_TITLE_MAX,
@@ -44,9 +43,6 @@ from app.ingestion.xref import (
     parse_toc,
     parse_xref,
 )
-
-SegmentType = Literal["number", "sec_canonical", "custom_title", "xref", "undefined"]
-
 
 # EDGAR heading and segmentation thresholds. None of these values is arbitrary --
 # all were measured on the 20-document corpus; measure again before changing one.
@@ -247,14 +243,6 @@ def matches_rule(el: Tag, rule: dict) -> bool:
 def matches_any(el: Tag, rules: list[dict]) -> bool:
     """Return whether an element matches at least one rule."""
     return any(matches_rule(el, r) for r in rules)
-
-
-def body_after(blocks: list[Tag], idx: int, span: int = 8) -> int:
-    """Return the text length of up to `span` blocks following `idx`."""
-    return sum(
-        len(blocks[j].get_text(" ", strip=True))
-        for j in range(idx + 1, min(idx + 1 + span, len(blocks)))
-    )
 
 
 def _norm_title(s: str) -> str:
@@ -886,8 +874,6 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
         source=source,
         source_length=len(raw),
         source_sha256=source_digest(raw),
-        n_blocks=len(blocks),
-        n_chars=sum(len(b.get_text(" ", strip=True)) for b in blocks),
     )
 
     profile = load_profile(issuer, year)
@@ -919,135 +905,3 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
     out.parse_status = "parsed" if not problems else "needs_profile_update"
     out.segment_type = profile["segmentation"]["type"]
     return out, profile
-
-
-if __name__ == "__main__":
-    import argparse
-
-    ap = argparse.ArgumentParser(description="10-K parser — step-by-step inspection")
-    ap.add_argument("--manifest", type=Path, default=Path("data/corpus/manifest.json"))
-    ap.add_argument("--selection", required=True)
-    ap.add_argument("--ticker", help="one company only (e.g. NVDA)")
-    ap.add_argument("--file", help="one file only (path)")
-    ap.add_argument("--blocks", action="store_true", help="stages 1–2: block extraction results")
-    ap.add_argument(
-        "--sections", action="store_true", help="body length and table count by section"
-    )
-    ap.add_argument(
-        "--headings",
-        action="store_true",
-        help="block number, source offset, and following body for each Item heading",
-    )
-    ap.add_argument(
-        "--coverage",
-        action="store_true",
-        help="section body total / entire document — catches discarded text",
-    )
-    ap.add_argument(
-        "--items",
-        action="store_true",
-        help="compare against the SEC Item list — catches missing and false-positive headings",
-    )
-    ap.add_argument("--profile", action="store_true", help="learned profile JSON")
-    a = ap.parse_args()
-
-    manifest = Manifest.read(a.manifest)
-    targets = [
-        source
-        for source in manifest.selected_sources(a.selection, a.manifest.parent)
-        if source.document.registry == "sec"
-        and (not a.ticker or source.document.issuer == a.ticker)
-    ]
-    if a.file:
-        targets = [source for source in targets if source.artifact.path == a.file]
-    if not targets:
-        raise SystemExit(f"no targets (ticker={a.ticker} file={a.file})")
-
-    stats: dict[str, int] = {}
-    for entry in targets:
-        # Handle stages 1-2 separately because they precede parsing.
-        if a.blocks:
-            soup = normalize(entry.read())
-            blocks = leaf_blocks(soup)
-            tables = [b for b in blocks if b.name == "table"]
-            print(
-                f"{entry.document.document_id:12} blocks {len(blocks):5,}  "
-                f"table blocks {len(tables):4}  "
-                f"document tables {len(soup.find_all('table')):4}"
-            )
-            continue
-
-        r, profile = parse_filing(entry)
-        stats[r.segment_type] = stats.get(r.segment_type, 0) + 1
-
-        if a.profile:
-            print(f"--- {r.source.document.document_id} ({r.profile_used}) ---")
-            print(json.dumps(profile, indent=2, ensure_ascii=False))
-            continue
-
-        if a.headings:
-            raw = entry.read()
-            print(f"--- {r.source.document.document_id} ({r.segment_type}) ---")
-            for sec in r.sections:
-                head = raw[sec.source_pos : sec.source_pos + 46] if sec.source_pos else ""
-                body = next((b.text for b in sec.blocks if b.kind == "paragraph"), "")
-                print(
-                    f"  {sec.item or '-':4} blk{str(sec.block_index):>6} "
-                    f"pos{str(sec.source_pos):>10}  {sec.reported_title[:42]}"
-                )
-                print(f"       source {head!r}")
-                print(f"       body   {body[:54]!r}")
-            continue
-
-        if a.items:
-            # Coverage cannot detect a missing heading because the prior section absorbs
-            # its text. Compare against the SEC Item list to validate boundaries.
-            got = [s.item for s in r.sections if s.item]
-            missing = [i for i in ORDER if i not in got]
-            extra = [i for i in got if i not in ORDER]
-            # Items 1C (added 2023), 9C (added 2021), and optional 16 may be absent.
-            odd = [m for m in missing if m not in ("1C", "9C", "16")]
-            print(
-                f"{r.source.document.document_id:12} {len(got):2} items  missing={missing or '-'}  "
-                f"extra={extra or '-'}{'  ★' if (odd or extra) else ''}"
-            )
-            continue
-
-        body = sum(len(b.text) for s in r.sections for b in s.blocks)
-        tbl_chars = sum(
-            len(BeautifulSoup(b.html, "html.parser").get_text(" ", strip=True))
-            for s in r.sections
-            for b in s.blocks
-            if b.kind == "table" and b.html
-        )
-
-        if a.coverage:
-            pct = (body + tbl_chars) / r.n_chars * 100 if r.n_chars else 0
-            print(
-                f"{r.source.document.document_id:12} total {r.n_chars:>9,}  "
-                f"sections {body + tbl_chars:>9,}  "
-                f"coverage {pct:5.1f}%{'   ★LOW' if pct < 90 else ''}"
-            )
-            continue
-
-        items = [s.item for s in r.sections if s.item]
-        tbl = sum(1 for s in r.sections for b in s.blocks if b.kind == "table")
-        print(
-            f"{r.source.document.document_id:12} {r.parse_status:20} type={r.segment_type:9} "
-            f"{r.profile_used:10} items={len(items):2} body={body:>8,} tables={tbl:3}"
-        )
-        for w in r.warnings:
-            print(f"               ⚠ {w}")
-
-        if a.sections:
-            for s in r.sections:
-                n = sum(len(b.text) for b in s.blocks)
-                t = sum(1 for b in s.blocks if b.kind == "table")
-                flag = "" if s.status == "parsed" else f"  [{s.status}]"
-                print(
-                    f"     Item {s.item or '-':4} {n:>8,} chars tables={t:3}  "
-                    f"{s.reported_title[:52]}{flag}"
-                )
-
-    if not (a.blocks or a.profile or a.headings):
-        print(f"\nsummary: {stats}")

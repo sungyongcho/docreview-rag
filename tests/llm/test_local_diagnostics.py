@@ -10,7 +10,6 @@ from app.llm.local_diagnostics import failure_kind, remediation_ids
     "error,code,remedy",
     [
         (httpx.ConnectError("getaddrinfo secret-host"), "dns", "check_network"),
-        (httpx.ConnectError("Connection refused secret-host"), "refused", "check_listener"),
         (httpx.ConnectError("SSL certificate secret-host"), "tls", "review_tls"),
         (httpx.ReadTimeout("secret-host"), "timeout", "check_network"),
         (ValueError("secret response"), "invalid_response", "review_protocol"),

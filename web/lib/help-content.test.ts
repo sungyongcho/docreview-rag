@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { accessibleHelpTopic, findHelpTopic, HELP_SCREEN_TITLES, HELP_TOPICS, helpScreen, type HelpScreen } from "./help-content";
+import { accessibleHelpTopic, HELP_SCREEN_TITLES, HELP_TOPICS, helpScreen, type HelpScreen } from "./help-content";
 import type { Capabilities } from "./types";
 
 const SCREENS = Object.keys(HELP_TOPICS) as HelpScreen[];
@@ -37,7 +37,7 @@ describe("help content", () => {
   it("points every See also link at an existing topic other than itself", () => {
     for (const topic of ALL_TOPICS) {
       for (const ref of topic.seeAlso ?? []) {
-        expect(findHelpTopic(ref), `${topic.id} → ${ref}`).not.toBeNull();
+        expect(ALL_TOPICS.some((candidate) => candidate.id === ref), `${topic.id} → ${ref}`).toBe(true);
         expect(ref, topic.id).not.toBe(topic.id);
       }
     }
@@ -70,8 +70,8 @@ describe("help content", () => {
 
   it("requires the evaluation workspace before offering snapshot creation or editing instructions", () => {
     const capabilities: Capabilities = { environment: "dev", can_configure_local_llm: true, can_edit_prompt_policy: true, can_edit_run_limits: true, can_edit_golden: true, can_build_snapshot: true, can_run_evaluation: false, can_change_custom_retrieval: true, can_query_snapshot: true, can_use_operations: true, can_compare_published_snapshots: true };
-    const freeze = findHelpTopic("measure.snapshots.freeze")!;
-    const snapshots = findHelpTopic("measure.snapshots.list")!;
+    const freeze = ALL_TOPICS.find((topic) => topic.id === "measure.snapshots.freeze")!;
+    const snapshots = ALL_TOPICS.find((topic) => topic.id === "measure.snapshots.list")!;
     expect(accessibleHelpTopic(freeze, { capabilities })).toBeNull();
     const publicSnapshots = accessibleHelpTopic(snapshots, { capabilities });
     expect(publicSnapshots?.body.join(" ")).toContain("Browse published snapshots");
@@ -102,7 +102,7 @@ describe("build flavour", () => {
     );
 
     expect(operatorTopic?.body.join(" ")).toContain("Settings › Local LLM");
-    const local = operator.findHelpTopic("system.local-policy")!;
+    const local = Object.values(operator.HELP_TOPICS).flat().find((topic) => topic.id === "system.local-policy")!;
     expect(operator.accessibleHelpTopic(local, { capabilities: { environment: "prod", can_configure_local_llm: true } as import("./types").Capabilities })).toBeNull();
     expect(operator.accessibleHelpTopic(local, { capabilities: { environment: "dev", can_configure_local_llm: true } as import("./types").Capabilities })).not.toBeNull();
   });

@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPresets } from "@/lib/use-saved-presets";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -8,9 +9,9 @@ import { ChevronRight, SlidersHorizontal, LoaderCircle } from "lucide-react";
 import { RetrievalPresetSelect } from "./retrieval-preset-select";
 import { presetDescription } from "@/components/request-preview";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import type { CorpusScope, Readiness, ReleaseLimits, RetrievalPreset, ReviewSessionDraft } from "@/lib/types";
+import type { CorpusScope, Readiness, ReleaseLimits, ReviewSessionDraft } from "@/lib/types";
 import { getReleaseLimits } from "@/lib/api";
-import { applyRetrievalPreset, resolvedRetrievalProfile } from "@/lib/types";
+import { resolvedRetrievalProfile, type RetrievalPresets } from "@/lib/types";
 import { retrievalReadiness } from "@/lib/pipeline";
 import type { OperatorJob } from "@/lib/types";
 
@@ -105,20 +106,21 @@ export function readinessStatusLabel(readiness: Readiness | null): string {
 }
 
 /** Number of active session filters shown on the Filters chip. */
-export function filterCount(profile: ReviewSessionDraft): number {
+function filterCount(profile: ReviewSessionDraft): number {
   return profile.doc_ids.length + profile.registries.length + profile.issuers.length + profile.fiscal_years.length + profile.forms.length + profile.sections.length + profile.languages.length;
 }
 
-export type ComposerBannerKind = "updating" | "empty" | "preparation" | "answer-model" | "budget";
+type ComposerBannerKind = "updating" | "empty" | "preparation" | "answer-model" | "budget";
 
-export interface ComposerBannerModel {
+interface ComposerBannerModel {
   kind: ComposerBannerKind;
   text: string;
   action?: "build" | "answer-model";
   step?: 2 | 3 | 4;
 }
 
-export interface ComposerBannerInput {
+interface ComposerBannerInput {
+  builtins?: RetrievalPresets;
   readiness: Readiness | null;
   live: boolean;
   profile: ReviewSessionDraft;
@@ -128,7 +130,7 @@ export interface ComposerBannerInput {
 }
 
 /** Picks the single banner the composer shows, highest-priority blocker first; null means the plain helper line. */
-export function composerBanner({ readiness, live, profile, resetAt, jobs = [] }: ComposerBannerInput): ComposerBannerModel | null {
+export function composerBanner({ readiness, live, profile, resetAt, jobs = [], builtins }: ComposerBannerInput): ComposerBannerModel | null {
   if (readiness?.corpus.updating) return { kind: "updating", text: "Search data is updating. Existing answers can finish; new questions will be available after preparation." };
   if (live && readiness?.corpus.documents === 0) {
     return { kind: "empty", text: "The corpus is empty. Build it first.", action: "build" };
@@ -136,7 +138,7 @@ export function composerBanner({ readiness, live, profile, resetAt, jobs = [] }:
   // Public readiness deliberately hides corpus counts; its ready status remains authoritative.
   if (readiness?.mode === "runtime" && readiness.corpus.availability !== "not_applicable"
     && (live || readiness.corpus.availability !== "ready")) {
-    const requirement = retrievalReadiness(readiness.corpus, resolvedRetrievalProfile(profile).strategy, jobs);
+    const requirement = retrievalReadiness(readiness.corpus, resolvedRetrievalProfile(profile, builtins).strategy, jobs);
     if (requirement.status !== "done") return live ? { kind: "preparation", text: requirement.hint, action: "build", step: requirement.blockedBy === "embeddings" ? 3 : requirement.blockedBy === "lexical" ? 4 : 2 } : { kind: "preparation", text: "Published search is not ready yet.", action: "build" };
   }
   if (readiness?.mode === "runtime" && readiness.review_enabled === false) {
@@ -152,7 +154,7 @@ export function composerBanner({ readiness, live, profile, resetAt, jobs = [] }:
   return null;
 }
 
-export interface ComposerBannerProps {
+interface ComposerBannerProps {
   banner: ComposerBannerModel | null;
   onOpenBuild: () => void;
   /** Deep link to Build › step 6 (answer model). */
@@ -160,7 +162,7 @@ export interface ComposerBannerProps {
 }
 
 export function ComposerBanner({ banner, onOpenBuild, onOpenAnswerModel }: ComposerBannerProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   if (!banner) return null;
   return (
     <p className={`composer-banner ${banner.kind}`} role="status">
@@ -174,9 +176,10 @@ export function ComposerBanner({ banner, onOpenBuild, onOpenAnswerModel }: Compo
 
 export function ComposerToolbar({ publicScopeStatus, profile, query = "", onChange, canUseCustom, onLocked, onOpenSettings, onOpenCustom, readiness, live, onOpenBuild, engineControls, settingsOpen = false, settingsTriggerRef, requestPending = false }: ComposerToolbarProps) {
   const { t, locale } = useI18n();
+  const { builtins } = useSavedPresets();
   const filters = filterCount(profile);
-  const preset = presetDescription(profile, profile.retrieval_preset);
-  const effective = resolvedRetrievalProfile(profile);
+  const preset = presetDescription(profile, profile.retrieval_preset, builtins);
+  const effective = resolvedRetrievalProfile(profile, builtins);
   const corpusLabel = readinessChipLabel(readiness, live);
   const corpusCount = live && corpusLabel.startsWith("Corpus total · ") ? readiness?.corpus.documents : undefined;
   const readinessStatus = !live && publicScopeStatus ? publicScopeStatus : readinessStatusLabel(readiness);

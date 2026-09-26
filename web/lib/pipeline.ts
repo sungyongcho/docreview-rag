@@ -1,6 +1,5 @@
 import { answerEngineStates, answerEngineSummary } from "./answer-engine-state";
 import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
-import { CANNED_CORPUS } from "./canned";
 import type { CorpusSnapshot, CorpusCounts, ManifestSummary, OperatorJob, Readiness, RetrievalProfile } from "./types";
 import type { RuntimeHealthKind } from "./use-runtime-health";
 
@@ -8,7 +7,7 @@ export type StageId = "filings" | "index" | "embeddings" | "lexical" | "ask" | "
 export type StageStatus = "done" | "action" | "running" | "queued" | "failed" | "blocked" | "readonly" | "unknown";
 export type StageActionKind = "acquire" | "ingest_all" | "embed" | "bm25" | "ask" | "recheck" | "evaluate" | "compare";
 
-export interface StageAction {
+interface StageAction {
   label: string;
   kind: StageActionKind;
 }
@@ -41,7 +40,7 @@ export interface Pipeline {
   corpusReady: boolean;
   readOnly: boolean;
   /** `pending`: a live build with neither readiness nor the administrator snapshot yet. */
-  source: "admin" | "readiness" | "fixture" | "pending";
+  source: "admin" | "readiness" | "pending";
 }
 
 export interface PipelineInput {
@@ -51,7 +50,7 @@ export interface PipelineInput {
   /** A failed connection check is retrying while last-known readiness is retained. */
   connectionPending?: boolean;
   readiness: Readiness | null;
-  /** `/admin/corpus.status` once loaded in live mode; `null` falls back to readiness or the fixture. */
+  /** `/admin/corpus.status` once loaded in live mode; `null` falls back to readiness. */
   corpus: CorpusCounts | null;
   manifests: ManifestSummary[];
   sourceInventory?: NonNullable<CorpusSnapshot["sources"]>;
@@ -191,7 +190,7 @@ export function retrievalReadiness(counts: CorpusCounts | null, strategy: Retrie
   if (counts.database_connected === false || ["empty", "drifted", "unavailable"].includes(counts.schema_status ?? "")) {
     return { status: "blocked", blockedBy: "index", hint: "Resolve database setup before continuing." };
   }
-  if (counts.database_connected !== true || !["ok", "compatible"].includes(counts.schema_status ?? "")
+  if (counts.database_connected !== true || counts.schema_status !== "compatible"
     || counts.chunks == null || counts.pending_embeddings == null && strategy !== "lexical") {
     return { status: "unknown", blockedBy: null, hint: "Readiness not confirmed" };
   }
@@ -228,11 +227,9 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   const readinessCorpus = input.readiness && input.readiness.corpus.availability !== "not_applicable"
     ? input.readiness.corpus
     : null;
-  // A live build never derives real state from the portfolio fixture; it waits.
-  const fixtureAllowed = !input.live && !input.publicScope;
-  const source: Pipeline["source"] = input.corpus ? "admin" : readinessCorpus ? "readiness" : fixtureAllowed ? "fixture" : "pending";
-  const counts: CorpusCounts = input.corpus ?? readinessCorpus ?? (fixtureAllowed ? CANNED_CORPUS.status : PENDING_COUNTS);
-  const manifests = source === "admin" ? input.manifests.filter((item) => item.valid) : source === "fixture" ? CANNED_CORPUS.manifests : [];
+  const source: Pipeline["source"] = input.corpus ? "admin" : readinessCorpus ? "readiness" : "pending";
+  const counts: CorpusCounts = input.corpus ?? readinessCorpus ?? PENDING_COUNTS;
+  const manifests = source === "admin" ? input.manifests.filter((item) => item.valid) : [];
   const documents = count(counts.documents);
   const chunks = count(counts.chunks);
   const embedded = count(counts.embedded_chunks);
@@ -330,9 +327,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       drafts.ask = { ...readiness, statusDetail: readiness.status === "done" ? `${strategy} ready` : readiness.hint, numbers: readiness.status === "done" ? ["Live retrieval on the published corpus"] : [] };
     } else if (chunks > 0) {
       const strategy = input.profile?.strategy ?? "hybrid";
-      const readiness = source === "fixture"
-        ? { status: "done" as const, blockedBy: null, hint: "" }
-        : retrievalReadiness(counts, strategy, readOnly ? [] : input.jobs);
+      const readiness = retrievalReadiness(counts, strategy, readOnly ? [] : input.jobs);
       drafts.ask = { ...readiness, statusDetail: readiness.status === "done" ? `${strategy} ready` : readiness.hint, numbers: readiness.status === "done" ? [`${n(chunks)} chunks searchable`] : [] };
     } else {
       drafts.ask = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Nothing to search yet."], hint: "Finish steps 1–2 to enable retrieval.", blockedBy: "index" };
@@ -371,7 +366,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     if (readOnly && READ_ONLY_STAGES.has(id)) {
       // Keep the action so the card can render it disabled with the read-only note.
       status = "readonly";
-      statusDetail = source === "fixture" ? "Portfolio fixture" : "stored";
+      statusDetail = "stored";
       hint = "";
     }
 
@@ -512,12 +507,12 @@ function answerModelDraft(readiness: Readiness | null): Draft {
 }
 
 /** A settings destination that would let the reader change the limit they just hit. */
-export interface FailureFix {
+interface FailureFix {
   label: string;
   category: "limits" | "runtime" | "documents" | "jobs";
 }
 
-export interface FailureReport {
+interface FailureReport {
   text: string;
   /** Absent when no reachable setting would change the outcome. */
   fix?: FailureFix;
@@ -526,15 +521,37 @@ export interface FailureReport {
 /** Where the workflow Budget fields are edited; the label matches the Settings nav. */
 const RUN_LIMITS: FailureFix = { label: "Open run limits", category: "limits" };
 
+/** Kinds `failure_kind` in app/llm/local_diagnostics.py gives a host the app could not reach. */
+const UNREACHABLE_KINDS = new Set(["refused", "dns", "connection"]);
+
+/**
+ * Whether a provider failure is a local model timeout or an unreachable local model host.
+ *
+ * The backend reports a local transport failure as `local model server request failed: <kind>`.
+ * Runs stored before that change carry the httpx exception names instead, so those still count.
+ */
+function localTransportFailure(detail: string): "timeout" | "unreachable" | null {
+  const kind = /local model server request failed: (\w+)/.exec(detail)?.[1];
+  if (kind !== undefined) {
+    if (kind === "timeout") return "timeout";
+    if (UNREACHABLE_KINDS.has(kind)) return "unreachable";
+    return null;
+  }
+  if (/ReadTimeout|ConnectTimeout|TimeoutException/i.test(detail)) return "timeout";
+  if (/ConnectError|Connection refused|ConnectionError/i.test(detail)) return "unreachable";
+  return null;
+}
+
 /**
  * Explain one run failure and, where one exists, name the setting that would change it.
  *
  * Budget failures carry `resource`, which says which ceiling stopped the run; a
  * wall-clock stop is not a token budget and pointing at the wrong field wastes the
  * reader's time. Provider failures are matched on `status`, whose four values are a
- * closed contract. Only the exception class at the head of `details[0]` is read, because
- * the provider text after it is not one. Advice an operator alone can act on, and the
- * Settings categories a public build does not render, are withheld from that build.
+ * closed contract. Only the exception class at the head of `details[0]`, or the local
+ * transport kind the backend names after it, is read, because the rest of the provider
+ * text is not one. Advice an operator alone can act on, and the Settings categories a
+ * public build does not render, are withheld from that build.
  */
 export function failureReport(failure: Record<string, unknown>, developer = LOCAL_ENGINE_VISIBLE): FailureReport {
   if (failure.code === "query_scope_unavailable") {
@@ -559,12 +576,9 @@ export function failureReport(failure: Record<string, unknown>, developer = LOCA
 
   if (status === "budget_exceeded" && failure.code === "provider_failure") {
     const budget = failure.budget && typeof failure.budget === "object" ? failure.budget as Record<string, unknown> : null;
-    const first = Array.isArray(failure.details) && typeof failure.details[0] === "string" ? failure.details[0] : "";
-    // Older persisted reports carry this exact server-generated budget line.
-    const legacy = /^(input_tokens|output_tokens|estimated_cost_usd): used=([\d.]+) limit=([\d.]+)$/.exec(first);
-    const resource = budget?.which ?? legacy?.[1];
-    const used = budget?.used ?? legacy?.[2];
-    const limit = budget?.limit ?? legacy?.[3];
+    const resource = budget?.which;
+    const used = budget?.used;
+    const limit = budget?.limit;
     const kind = resource === "input_tokens" ? "input token" : resource === "output_tokens" ? "output token" : resource === "estimated_cost_usd" ? "estimated cost" : null;
     const amount = used !== undefined && limit !== undefined ? ` (${used} of ${limit})` : "";
     const projected = typeof budget?.projected_input_tokens === "number" ? budget.projected_input_tokens : null;
@@ -605,13 +619,14 @@ export function failureReport(failure: Record<string, unknown>, developer = LOCA
   }
 
   if (status === "provider_error" && LOCAL_ENGINE_VISIBLE) {
-    if (/ReadTimeout|ConnectTimeout|TimeoutException/i.test(detail)) {
+    const transport = localTransportFailure(detail);
+    if (transport === "timeout") {
       return {
         text: `The model did not answer within the time limit${tried}. Raise LOCAL_LLM_TIMEOUT_S, or choose a smaller model.`,
         fix: { label: "Open System status", category: "runtime" },
       };
     }
-    if (/ConnectError|Connection refused|ConnectionError/i.test(detail)) {
+    if (transport === "unreachable") {
       return {
         text: "The model host is unreachable. Check that the separately installed model server is running and LOCAL_LLM_BASE_URL is reachable from the app.",
         fix: { label: "Open System status", category: "runtime" },

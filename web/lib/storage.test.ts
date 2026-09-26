@@ -92,14 +92,16 @@ describe("conversation storage", () => {
   });
 });
 
-it("restores old conversation profiles without a model and remembers new selections", () => {
+it("ignores unsupported profiles without changing their stored bytes", () => {
   window.localStorage.clear();
   const { local_model: _removed, ...oldProfile } = DEFAULT_SESSION_PROFILE;
-  const conversation = { ...newConversation(), profile: { ...oldProfile, engine: "local" as const } };
-  window.localStorage.setItem("docreview:conversations:v2", JSON.stringify([conversation]));
-  expect(loadConversations()[0].profile?.local_model).toBeNull();
-  saveConversations([{ ...conversation, profile: { ...conversation.profile, local_model: "chosen" } }]);
-  expect(loadConversations()[0].profile?.local_model).toBe("chosen");
+  const raw = JSON.stringify([{ ...newConversation(), profile: oldProfile }]);
+  window.localStorage.setItem("docreview:conversations:v2", raw);
+  expect(loadConversations()).toEqual([]);
+  expect(window.localStorage.getItem("docreview:conversations:v2")).toBe(raw);
+  const current = { ...newConversation(), profile: { ...DEFAULT_SESSION_PROFILE, local_model: "chosen" } };
+  saveConversations([current]);
+  expect(loadConversations()).toEqual([current]);
 });
 
 describe("operations filter storage", () => {
@@ -120,8 +122,7 @@ describe("operations filter storage", () => {
 });
 
 
-it("drops retired snapshot and chat-preset fields from saved evaluation defaults", () => {
+it("ignores retired snapshot and chat-preset fields in saved evaluation defaults", () => {
   window.localStorage.setItem("docreview:experiment-defaults:v1", JSON.stringify({ suite_id: "dart-ko", golden_revision_id: null, mode: "quick", snapshot_id: 12, baseline_snapshot_id: 8, retrieval_preset: "accuracy" }));
   expect(loadExperimentDefaults()).toEqual({ suite_id: "dart-ko", golden_revision_id: null, mode: "quick" });
-  expect(JSON.parse(window.localStorage.getItem("docreview:experiment-defaults:v1")!)).not.toHaveProperty("snapshot_id");
 });

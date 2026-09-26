@@ -92,13 +92,20 @@ def test_chunk_schema_preserves_evidence_context_and_source_coordinates():
 
 
 def test_search_vector_is_computed_per_corpus_language():
-    """Generate the search vector with each corpus language's own configuration."""
+    """Persist a search vector per corpus language whose SQL agrees with the lexical plans."""
     computed = Chunk.__table__.columns.content_tsv.computed
     assert isinstance(computed, Computed)
     expression = str(computed.sqltext)
     assert "to_tsvector('simple', coalesce(lexical_text, index_text))" in expression
     assert "to_tsvector('english', index_text)" in expression
     assert computed.persisted is True
+
+    korean = lexical_plan("ko")
+    english = lexical_plan("en")
+    assert f"to_tsvector('{korean.text_search_config}'" in CONTENT_TSV_SQL
+    assert f"to_tsvector('{english.text_search_config}'" in CONTENT_TSV_SQL
+    assert "language = 'ko'" in CONTENT_TSV_SQL
+    assert LEXICAL_TEXT_CHECK_SQL == "(language = 'ko') = (lexical_text IS NOT NULL)"
 
 
 def test_chunk_identity_and_validation_constraints_are_declared():
@@ -164,6 +171,7 @@ def test_experiment_schema_preserves_golden_snapshot_and_document_identity():
     golden = GoldenRevision.__table__
     snapshot = EvaluationSnapshot.__table__
     membership = SnapshotDocument.__table__
+    assert isinstance(membership, Table)
 
     assert {"suite_id", "version", "status", "payload", "sha256"} <= set(golden.columns.keys())
     assert {
@@ -177,6 +185,7 @@ def test_experiment_schema_preserves_golden_snapshot_and_document_identity():
     assert set(membership.primary_key.columns.keys()) == {"snapshot_id", "doc_id"}
     assert not membership.columns.doc_id.foreign_keys
     assert membership.columns.source_sha256.nullable is False
+    assert isinstance(SnapshotChunk.__table__, Table)
     assert set(SnapshotChunk.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "chunk_id",
@@ -195,19 +204,23 @@ def test_experiment_schema_preserves_golden_snapshot_and_document_identity():
         "content_tsv",
         "embedding",
     } <= set(SnapshotChunk.__table__.columns.keys())
+    assert isinstance(SnapshotChunkTerm.__table__, Table)
     assert set(SnapshotChunkTerm.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "chunk_id",
         "lexeme",
     }
+    assert isinstance(SnapshotChunkLength.__table__, Table)
     assert set(SnapshotChunkLength.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "chunk_id",
     }
+    assert isinstance(SnapshotBM25CorpusStat.__table__, Table)
     assert set(SnapshotBM25CorpusStat.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "language",
     }
+    assert isinstance(SnapshotLexemeStat.__table__, Table)
     assert set(SnapshotLexemeStat.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "language",
@@ -218,6 +231,7 @@ def test_experiment_schema_preserves_golden_snapshot_and_document_identity():
 def test_operator_job_schema_persists_queue_progress_and_result_provenance():
     """Persist corpus and evaluation work across application restarts."""
     table = OperatorJob.__table__
+    assert isinstance(table, Table)
     assert {
         "job_id",
         "domain",
@@ -308,17 +322,6 @@ def test_database_models_match_run_and_trace_mapping_contracts():
     } <= checks
     # The unique constraint on (run_id, step) already carries a btree index.
     assert {index.name for index in trace_table.indexes} == set()
-
-
-def test_index_sql_constants_agree_with_the_lexical_plans():
-    """Pin the shared SQL to the plan table so the two dispatches cannot drift."""
-    korean = lexical_plan("ko")
-    english = lexical_plan("en")
-
-    assert f"to_tsvector('{korean.text_search_config}'" in CONTENT_TSV_SQL
-    assert f"to_tsvector('{english.text_search_config}'" in CONTENT_TSV_SQL
-    assert "language = 'ko'" in CONTENT_TSV_SQL
-    assert LEXICAL_TEXT_CHECK_SQL == "(language = 'ko') = (lexical_text IS NOT NULL)"
 
 
 def test_bm25_statistics_are_partitioned_by_corpus_language():

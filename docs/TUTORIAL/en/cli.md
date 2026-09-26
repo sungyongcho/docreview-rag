@@ -301,7 +301,7 @@ rag-dev doctor --web-url http://localhost:18080
 
 Diagnostics do not install, download/load models, start services, save settings, or generate answers. Read configuration, backend connectivity, and answer-model checks separately. An unavailable inventory is unconfirmed; an installed but unloaded model is normal standby.
 
-For an older API without the shared diagnostic route, the command explicitly reports a legacy read-only fallback. `ollama list` and `ollama ps` independently show installed and currently loaded models. Continue with [server selection](settings.md#local-server), [connection recovery](ollama.md#diagnostics), or [answer configuration](answers.md#engines).
+`ollama list` and `ollama ps` independently show installed and currently loaded models. Continue with [server selection](settings.md#local-server), [connection recovery](ollama.md#diagnostics), or [answer configuration](answers.md#engines).
 
 ## Prepare one NVIDIA filing {#prepare-one-nvidia-filing}
 
@@ -321,9 +321,8 @@ operation after every parse/chunk run. Build step 4 offers **Compute BM25** init
 and **Recompute BM25** when statistics or a successful rebuild record exist; it also
 permits recomputation while ready.
 
-The direct runtime seed API retains its combined ingest-and-BM25 behavior for existing
-API clients; isolated evaluation corpus arms likewise prepare their own statistics.
-These are separate from the Build/CLI ingestion job.
+Isolated evaluation corpus arms prepare their own statistics; they are separate from the
+Build/CLI ingestion job.
 
 ## Python CLI reference {#python-cli-reference}
 
@@ -579,7 +578,7 @@ and inspect completed stages before retrying.
 
 ### Configuration repair within the current step {#configuration-repair-within-the-current-step}
 
-`rag-dev start` and `rag-dev reset data --local` report invalid keys' `.env` lines and effective
+`rag-dev start` reports invalid keys' `.env` lines and effective
 shell/file sources without exposing credentials. Choose `[f]` to ignore failing
 shell exports for this invocation, `[e]` to write the two public embedding settings,
 `[r]` to recheck a local edit, or `[q]` to cancel. Parent-shell exports are unchanged.

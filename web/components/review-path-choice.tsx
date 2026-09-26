@@ -13,7 +13,6 @@ const PATHS = [
 export function ReviewPathChoice({ path }: { path: Record<string, unknown> }) {
   const { t } = useI18n();
   const selected = PATHS.find((item) => item.intent === path.intent);
-  const legacy = path.intent === "casual_chat";
   return <div className="review-path-choice">
     <p className="review-path-intro">{t("Stage 0 chooses the service path. Company, year and filing availability are checked in stage 1.")}</p>
     <ol className="review-path-options" aria-label={t("Service paths")}>
@@ -24,7 +23,7 @@ export function ReviewPathChoice({ path }: { path: Record<string, unknown> }) {
         {selected?.intent === intent && <span className="review-path-selected"><Check size={13} aria-hidden="true" />{t("Selected path")}</span>}
       </li>)}
     </ol>
-    {!selected && <p className="review-path-unrecorded">{t(legacy ? "This historical run used a conversation route. Its recorded classification is preserved." : "No service path was recorded. A later scope or result does not establish this decision.")}</p>}
+    {!selected && <p className="review-path-unrecorded">{t("No service path was recorded. A later scope or result does not establish this decision.")}</p>}
     {typeof path.rationale === "string" && path.rationale.length > 0 && <div className="review-path-explanation"><strong>{t("Decision explanation")}</strong><p>{path.rationale}</p></div>}
   </div>;
 }

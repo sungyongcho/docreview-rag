@@ -41,11 +41,14 @@ from app.retrieval._sql import (
     hit_columns,
     hit_order_by,
     positive_websearch_text,
+    provenance_tie_breakers,
     relaxed_websearch_query,
 )
 from app.retrieval.types import ChunkHit, RetrievalFilters, finite_float
 
 BM25_IDF_VARIANTS: tuple[BM25Idf, ...] = get_args(BM25Idf)
+# Column that carries the corpus-statistics count beside the ranked hits.
+READINESS_COLUMN = "corpus_stats"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,8 +80,9 @@ async def backfill_term_stats(session: AsyncSession) -> TermStatCounts:
 
     Notes
     -----
-    Source and derived-table locks keep the rebuilt rows and singleton corpus metadata
-    on one consistent chunk snapshot.
+    Source and derived-table locks keep the rebuilt rows and the per-language corpus
+    rows (document count and average length for each corpus language) on one
+    consistent chunk snapshot.
     """
     if session.in_transaction():
         raise RuntimeError("backfill_term_stats requires a session without an active transaction")
@@ -169,17 +173,12 @@ def _idf_expression(
     ColumnElement[Any]
         SQL logarithm expression for the selected variant.
 
-    Raises
-    ------
-    ValueError
-        If ``variant`` is unsupported.
-
     Notes
     -----
     Robertson can score corpus-wide terms negatively; Lucene remains nonnegative.
+    ``bm25_statement`` has already rejected unknown variants through
+    ``validate_bm25_parameters`` before it builds this expression.
     """
-    if variant not in BM25_IDF_VARIANTS:
-        raise ValueError("idf must be 'lucene' or 'robertson'")
     size = cast(corpus_size, Float)
     df = cast(document_frequency, Float)
     ratio = (size - df + 0.5) / (df + 0.5)
@@ -188,20 +187,49 @@ def _idf_expression(
     return func.ln(ratio)
 
 
-def _validated_parameters(query: str, k: int, k1: float, b: float) -> tuple[float, float]:
-    """Validate public BM25 inputs and return normalized numeric parameters."""
-    if not isinstance(query, str) or not query.strip():
-        raise ValueError("query must not be blank")
-    if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
-        raise ValueError("k must be a positive integer")
-    k1_message = "k1 must be a finite positive number"
-    b_message = "b must be a finite number between 0 and 1"
+def validate_bm25_parameters(
+    k1: float, b: float, idf: BM25Idf, *, parameter_prefix: str = ""
+) -> tuple[float, float]:
+    """Check BM25 tuning values and return ``k1`` and ``b`` as built-in floats.
+
+    The SQL builder, the retrieval service and experiment arms all validate through
+    this one function, so they accept exactly the same values. Only the parameter
+    names in the messages differ: a caller whose arguments are named ``bm25_k1``,
+    ``bm25_b`` and ``bm25_idf`` passes ``parameter_prefix="bm25_"`` so the error names
+    the argument that caller actually received.
+
+    Parameters
+    ----------
+    k1 : float
+        Term-frequency saturation; must be finite and positive.
+    b : float
+        Length normalization; must be finite and within ``[0, 1]``.
+    idf : BM25Idf
+        Inverse-document-frequency variant; must be ``"lucene"`` or ``"robertson"``.
+    parameter_prefix : str, optional
+        Prefix added to each parameter name in error messages.
+
+    Returns
+    -------
+    tuple[float, float]
+        The validated ``(k1, b)`` pair.
+
+    Raises
+    ------
+    ValueError
+        If a value is a ``bool``, not a real number, not finite, out of range, or an
+        unknown idf variant. ``k1`` is checked first, then ``b``, then ``idf``.
+    """
+    k1_message = f"{parameter_prefix}k1 must be a finite positive number"
     normalized_k1 = finite_float(k1, nonnumeric=k1_message, nonfinite=k1_message)
-    normalized_b = finite_float(b, nonnumeric=b_message, nonfinite=b_message)
     if normalized_k1 <= 0:
         raise ValueError(k1_message)
+    b_message = f"{parameter_prefix}b must be a finite number between 0 and 1"
+    normalized_b = finite_float(b, nonnumeric=b_message, nonfinite=b_message)
     if not 0 <= normalized_b <= 1:
         raise ValueError(b_message)
+    if idf not in BM25_IDF_VARIANTS:
+        raise ValueError(f"{parameter_prefix}idf must be 'lucene' or 'robertson'")
     return normalized_k1, normalized_b
 
 
@@ -244,9 +272,14 @@ def bm25_statement(
 
     Notes
     -----
-    Scores use the atomically rebuilt corpus-size and average-length singleton row.
+    Scores use the atomically rebuilt per-language corpus-size and average-length rows:
+    every chunk is scored against the statistics of its own corpus language.
     """
-    normalized_k1, normalized_b = _validated_parameters(query, k, k1, b)
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must not be blank")
+    if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
+        raise ValueError("k must be a positive integer")
+    normalized_k1, normalized_b = validate_bm25_parameters(k1, b, idf)
     active_filters = filters or RetrievalFilters()
 
     parsed = func.websearch_to_tsquery(
@@ -405,21 +438,52 @@ async def bm25_search(
         If corpus statistics are missing or were invalidated by chunk writes.
     ValueError
         If public BM25 parameters are invalid.
+
+    Notes
+    -----
+    The statistics count is read in the same statement as the search, so both see one
+    snapshot: a rebuild that commits while the search runs can neither turn a search
+    made without statistics into an empty success nor fail a search that had them.
     """
-    result = await session.execute(
+    active_filters = filters or RetrievalFilters()
+    statement = _with_readiness(
         bm25_statement(
             query, k, filters, k1=k1, b=b, idf=idf, text_search_config=text_search_config
-        )
+        ),
+        active_filters,
     )
-    active_filters = filters or RetrievalFilters()
-    stats_statement = select(func.count()).select_from(
-        BM25CorpusStat if active_filters.snapshot_id is None else SnapshotBM25CorpusStat
-    )
-    if active_filters.snapshot_id is not None:
-        stats_statement = stats_statement.where(
-            SnapshotBM25CorpusStat.snapshot_id == active_filters.snapshot_id
-        )
-    stats_ready = await session.scalar(stats_statement)
-    if not stats_ready:
+    rows = (await session.execute(statement)).mappings().all()
+    if not rows or not rows[0][READINESS_COLUMN]:
         raise RuntimeError("BM25 statistics are missing or stale; rebuild them before searching")
-    return [ChunkHit.model_validate(row) for row in result.mappings().all()]
+    return [
+        ChunkHit.model_validate(
+            {name: value for name, value in row.items() if name != READINESS_COLUMN}
+        )
+        for row in rows
+        if row["chunk_id"] is not None
+    ]
+
+
+def _with_readiness(hits_statement: Select[Any], filters: RetrievalFilters) -> Select[Any]:
+    """Attach the corpus-statistics count to the ranked hits in one statement.
+
+    The count is the outer side of a left join, so the statement returns one
+    NULL-extended row carrying the count even when the search finds nothing. The hit
+    order is applied again on the subquery columns with the tie-breakers
+    ``hit_order_by`` uses, because a subquery's order does not survive the join.
+    """
+    hits = hits_statement.subquery("bm25_hits")
+    if filters.snapshot_id is None:
+        readiness = select(func.count().label(READINESS_COLUMN)).select_from(BM25CorpusStat)
+    else:
+        readiness = (
+            select(func.count().label(READINESS_COLUMN))
+            .select_from(SnapshotBM25CorpusStat)
+            .where(SnapshotBM25CorpusStat.snapshot_id == filters.snapshot_id)
+        )
+    counted = readiness.subquery("bm25_readiness")
+    return (
+        select(counted.c[READINESS_COLUMN], *hits.c)
+        .select_from(counted.outerjoin(hits, true()))
+        .order_by(hits.c.score.desc(), *provenance_tie_breakers(hits.c, hits.c.chunk_id))
+    )

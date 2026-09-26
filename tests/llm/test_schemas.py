@@ -19,6 +19,7 @@ from app.llm.schemas import (
     SchemaRejected,
     TokenPricing,
 )
+from app.openai_models import resolve_openai_model
 
 
 def metadata():
@@ -49,26 +50,24 @@ def supported_decision():
     )
 
 
-def test_prompt_is_strict_frozen_and_forbids_unknown_fields():
-    """Freeze a prompt and refuse any field the schema does not declare."""
+def test_prompt_is_strict_frozen_nonblank_and_forbids_unknown_fields():
+    """Freeze a prompt, reject a blank half and refuse any field the schema does not declare."""
     prompt = Prompt(system="Return structured evidence.", user="What changed?")
 
+    # Ill-typed and undeclared fields go through model_validate, pydantic's entry point for
+    # untyped input; the constructor's typed signature does not admit them.
     with pytest.raises(ValidationError):
-        Prompt(system="Return structured evidence.", user=7)
+        Prompt.model_validate({"system": "Return structured evidence.", "user": 7})
     with pytest.raises(ValidationError):
-        Prompt(system="Return structured evidence.", user="What changed?", extra=True)
+        Prompt.model_validate(
+            {"system": "Return structured evidence.", "user": "What changed?", "extra": True}
+        )
     with pytest.raises(ValidationError):
         prompt.user = "mutated"
-
-
-@pytest.mark.parametrize("field", ["system", "user"])
-def test_prompt_rejects_whitespace_only_text(field):
-    """Reject a prompt whose system or user text is only whitespace."""
-    values = {"system": "system", "user": "user"}
-    values[field] = "   "
-
     with pytest.raises(ValidationError):
-        Prompt(**values)
+        Prompt(system="   ", user="user")
+    with pytest.raises(ValidationError):
+        Prompt(system="system", user="   ")
 
 
 def test_token_pricing_uses_exact_decimal_arithmetic():
@@ -81,6 +80,27 @@ def test_token_pricing_uses_exact_decimal_arithmetic():
     assert pricing.estimate(100, 20) == Decimal("0.0004")
     with pytest.raises(ValueError):
         pricing.estimate(-1, 0)
+
+
+def test_token_pricing_charges_cached_and_cache_write_input_at_policy_prices():
+    """Charge cached and cache-write input at their own terra policy prices."""
+    policy = resolve_openai_model("review", "gpt-5.6-terra").pricing
+    pricing = TokenPricing(
+        input_per_million_usd=policy.input_per_million_usd,
+        output_per_million_usd=policy.output_per_million_usd,
+        cached_input_per_million_usd=policy.cached_input_per_million_usd,
+        cache_write_input_per_million_usd=policy.cache_write_input_per_million_usd,
+    )
+    million = 1_000_000
+
+    assert pricing.estimate(million, million) == Decimal("14.00")
+    assert pricing.estimate(
+        million,
+        million,
+        cached_input_tokens=200_000,
+        cache_write_input_tokens=100_000,
+    ) == Decimal("13.69")
+    assert pricing.estimate(0, 0) == Decimal("0")
 
 
 @pytest.mark.parametrize(
@@ -111,8 +131,9 @@ def test_provider_budget_requires_explicit_strict_limits_and_pricing(changes, ex
 
 def test_relevance_judgment_rejects_coercion_and_duplicate_chunks():
     """Reject coerced values and repeated chunk ids in one judgment."""
+    # The ill-typed value goes through model_validate, pydantic's entry point for untyped input.
     with pytest.raises(ValidationError):
-        ChunkRelevance(chunk_id=1, relevant=1, reason="Relevant")
+        ChunkRelevance.model_validate({"chunk_id": 1, "relevant": 1, "reason": "Relevant"})
 
     grade = ChunkRelevance(chunk_id=1, relevant=True, reason="Exact evidence")
     with pytest.raises(ValidationError):
@@ -188,30 +209,19 @@ def test_budget_refusal_rejects_negative_evidence():
         )
 
 
-def test_provider_metadata_keeps_final_raw_output_and_retry_count_consistent():
-    """Keep the final raw output and the retry count consistent with each other."""
-    values = metadata().model_dump()
-    values.update(
-        retries=1,
-        raw_outputs=("invalid", "valid"),
-        llm_output="valid",
-        requests=2,
-    )
-    result = ProviderMetadata.model_validate(values)
-
-    assert result.retries == 1
-    with pytest.raises(ValidationError):
-        ProviderMetadata.model_validate({**values, "llm_output": "invalid"})
-    with pytest.raises(ValidationError):
-        ProviderMetadata.model_validate({**values, "provider": "   "})
-
-
 def test_provider_metadata_counts_sent_requests_and_allows_a_refusal_before_any_request():
-    """Requests default to one per captured output; a refusal before the call carries none."""
+    """Explicit requests distinguish paid repairs and refusals before a call is sent."""
     assert metadata().requests == 1
     repaired = metadata().model_dump()
-    repaired.update(retries=1, raw_outputs=("invalid", "valid"), llm_output="valid", requests=None)
+    repaired.update(retries=1, raw_outputs=("invalid", "valid"), llm_output="valid", requests=2)
     assert ProviderMetadata.model_validate(repaired).requests == 2
+    with pytest.raises(ValidationError, match="final raw output"):
+        ProviderMetadata.model_validate({**repaired, "llm_output": "invalid"})
+    with pytest.raises(ValidationError):
+        ProviderMetadata.model_validate({**repaired, "provider": "   "})
+    del repaired["requests"]
+    with pytest.raises(ValidationError, match="requests"):
+        ProviderMetadata.model_validate(repaired)
     with pytest.raises(ValidationError, match="sent requests"):
         ProviderMetadata.model_validate({**metadata().model_dump(), "requests": 2})
 
@@ -295,5 +305,6 @@ def test_grade_reason_is_bounded_in_schema_and_truncated_instead_of_rejected():
     assert short.reason == "Direct evidence."
     with pytest.raises(ValidationError):
         ChunkRelevance(chunk_id=1, relevant=True, reason="   ")
+    # The ill-typed value goes through model_validate, pydantic's entry point for untyped input.
     with pytest.raises(ValidationError):
-        ChunkRelevance(chunk_id=1, relevant=True, reason=42)
+        ChunkRelevance.model_validate({"chunk_id": 1, "relevant": True, "reason": 42})

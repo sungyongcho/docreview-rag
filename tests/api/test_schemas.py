@@ -6,16 +6,8 @@ from pydantic import ValidationError
 import pytest
 
 from app.api.review_profile import ReviewSessionProfile
-from app.api.schemas import (
-    BudgetLimitFailure,
-    EvidenceHit,
-    IngestRequest,
-    RetrieveRequest,
-    ReviewRequest,
-    RunResponse,
-)
-from app.observability.types import build_run_report
-from app.workflow.types import NodeError, ProviderFailure, WorkflowReport
+from app.api.schemas import EvidenceHit, RetrieveRequest, ReviewRequest, RunResponse
+from app.workflow.types import NodeError, ProviderFailure
 
 
 def test_retrieve_request_is_strict_and_rejects_blank_or_unknown_input():
@@ -34,18 +26,6 @@ def test_retrieve_request_is_strict_and_rejects_blank_or_unknown_input():
         )
     with pytest.raises(ValidationError):
         RetrieveRequest.model_validate({"query": "Revenue?", "unsupported": True})
-
-
-def test_evidence_projection_exposes_complete_source_identity(hit):
-    """Carry chunk, offsets, digest and citation through the evidence projection."""
-    evidence = EvidenceHit.from_chunk_hit(hit)
-
-    assert evidence.chunk_id == 7
-    assert evidence.start_char == 100
-    assert evidence.end_char == 180
-    assert evidence.source_sha256 == "d" * 64
-    assert evidence.citation == "ACME FY2024 - Item 7"
-    assert evidence.section_title == "Management's Discussion and Analysis"
 
 
 def test_evidence_projection_titles_dart_sections_by_registry(hit):
@@ -67,10 +47,8 @@ def test_evidence_projection_leaves_unknown_sections_untitled(hit):
     assert foreign.section_title is None
 
 
-def test_ingest_and_review_requests_reject_empty_bodies():
+def test_review_request_rejects_an_empty_body():
     """Refuse an empty body rather than defaulting the required fields."""
-    with pytest.raises(ValidationError):
-        IngestRequest.model_validate_json("{}")
     with pytest.raises(ValidationError):
         ReviewRequest.model_validate_json("{}")
 
@@ -106,26 +84,6 @@ def test_review_request_accepts_json_arrays_for_strict_tuple_fields():
     assert request.session_profile.issuers == ("NVDA",)
     assert request.session_profile.sections == ("7", None)
     assert request.conversation_history[0].role == "user"
-
-
-def test_successful_run_maps_to_strict_workflow_report(successful_run):
-    """Map a supported run to a report response carrying no failure."""
-    response = RunResponse.from_run_report(successful_run)
-
-    assert response.status == "ok"
-    assert response.failure is None
-    assert isinstance(response.report, WorkflowReport)
-    assert response.report.label == "SUPPORTED"
-    assert response.report.citations[0].chunk_id == 7
-
-
-def test_budget_run_maps_to_discriminated_failure(budget_run):
-    """Map a budget-stopped run to the discriminated failure and no report."""
-    response = RunResponse.from_run_report(budget_run)
-
-    assert response.report is None
-    assert isinstance(response.failure, BudgetLimitFailure)
-    assert response.failure.blocked_node == "retrieve"
 
 
 def test_run_response_rejects_mismatched_success_and_failure_shapes(successful_run):
@@ -164,30 +122,6 @@ def test_run_response_requires_status_to_match_failure_type(budget_run, status, 
 
     with pytest.raises(ValidationError, match="status must match"):
         RunResponse.model_validate_json(json.dumps(payload))
-
-
-def test_run_response_redacts_public_prompt_and_failure_text():
-    """Keep a secret out of both the public prompt and the failure text."""
-    secret = "sk-supersecret123"
-    failure = NodeError(
-        node="grade",
-        error_type="RuntimeError",
-        message=f"api_key={secret}",
-    )
-    report = build_run_report(
-        run_id="run-secret",
-        status="error",
-        total_time_seconds=0.1,
-        system_prompt=f"Bearer {secret}",
-        node_path=("retrieve", "grade"),
-        steps=(),
-        report={"reason": failure.model_dump(mode="json")},
-    )
-
-    response = RunResponse.from_run_report(report)
-
-    assert secret not in response.system_prompt
-    assert secret not in repr(response.failure)
 
 
 @pytest.mark.parametrize("request_type", [RetrieveRequest, ReviewRequest])

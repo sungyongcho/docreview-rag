@@ -168,13 +168,6 @@ class ManifestScopeIndex:
             document for path in paths for document in Manifest.read(path).documents
         )
 
-    def issuer(self, registry: str, issuer: str) -> IssuerMetadata | None:
-        """Return one canonical issuer when it exists in this corpus."""
-        return next(
-            (item for item in self.issuers if item.registry == registry and item.issuer == issuer),
-            None,
-        )
-
     def named_target(self, name: str) -> tuple[IssuerMetadata, ...]:
         """Resolve a complete extracted name, never a substring or a model-supplied ticker guess."""
         normalized = _normalized(name)

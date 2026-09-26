@@ -2,14 +2,12 @@
 
 import asyncio
 import os
-from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from scripts.schema import status
 from scripts.schema.status import schema_status
 
 
@@ -52,16 +50,3 @@ def test_schema_preparation_preserves_incompatible_database():
             await admin.dispose()
 
     asyncio.run(scenario())
-
-
-def test_schema_preparation_uses_shared_startup_contract(monkeypatch):
-    """Schema preparation delegates to the same non-destructive implementation as the container."""
-    from unittest.mock import Mock
-
-    engine = Mock(dispose=AsyncMock())
-    shared = AsyncMock(return_value=False)
-    monkeypatch.setattr(status, "create_async_engine", lambda *a, **k: engine)
-    monkeypatch.setattr(status, "prepare_empty_schema", shared)
-    assert asyncio.run(status.prepare_schema("unused")) is False
-    shared.assert_awaited_once_with(engine)
-    engine.dispose.assert_awaited_once()

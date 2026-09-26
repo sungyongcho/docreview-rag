@@ -18,7 +18,7 @@ export function evidenceHeading(hit: HeadingSource): string {
   return title && !label.includes(title) ? `${label} - (${title})` : label;
 }
 
-export interface EvidencePage<T> {
+interface EvidencePage<T> {
   items: T[];
   /** Zero-based page actually shown after clamping. */
   page: number;

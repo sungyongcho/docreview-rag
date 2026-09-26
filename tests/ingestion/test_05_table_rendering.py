@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup, Tag
 import pytest
 
-from app.ingestion.tables import drop_empty, merge_unit_columns, table_to_markdown, to_grid
+from app.ingestion.tables import structured_table, to_grid
 from tests.ingestion.golden import NVDA_FY2024_INCOME_MD, TABLES
 
 type BlocksByDoc = dict[str, tuple[BeautifulSoup, list[Tag], str]]
@@ -27,8 +27,9 @@ def test_corpus_table_collapse_matches_golden(
     for table in _tables(blocks):
         grid = to_grid(table)
         expanded += sum(len(row) for row in grid)
-        collapsed += sum(len(row) for row in merge_unit_columns(drop_empty(grid)))
-        if not table_to_markdown(table):
+        view = structured_table(table)
+        collapsed += sum(len(row.cells) for row in (*view.headers, *view.rows))
+        if not view.render():
             empty += 1
 
     assert (empty, expanded, collapsed) == TABLES[doc]
@@ -46,4 +47,4 @@ def test_representative_income_statement_matches_golden(
     ]
 
     assert len(matched) == 1, "the income statement phrases must select exactly one table"
-    assert table_to_markdown(matched[0]) == NVDA_FY2024_INCOME_MD
+    assert structured_table(matched[0]).render() == NVDA_FY2024_INCOME_MD

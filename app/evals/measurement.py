@@ -196,7 +196,6 @@ async def measure_query_budget(
     *,
     k: int = 5,
     query_count: int = QUERY_BUDGET_COUNT,
-    budget_seconds: float | None = None,
     clock: Clock = time.perf_counter_ns,
 ) -> QueryBudgetMeasurement:
     """Repeat nonempty queries sequentially and assess a wall-clock budget.
@@ -210,11 +209,9 @@ async def measure_query_budget(
     k : int, optional
         Positive hit count requested for every retrieval.
     query_count : int, optional
-        Positive number of sequential retrievals to measure.
-    budget_seconds : float | None, optional
-        Explicit finite positive upper bound for total elapsed time. When omitted
-        the bound is derived from ``query_count`` by :func:`query_budget_seconds`,
-        so the assessed limit always matches the workload actually measured.
+        Positive number of sequential retrievals to measure. The time bound is
+        derived from it by :func:`query_budget_seconds`, so the assessed limit
+        always matches the workload actually measured.
     clock : Clock, optional
         Monotonic nanosecond clock sampled before and after each retrieval.
 
@@ -226,7 +223,8 @@ async def measure_query_budget(
     Raises
     ------
     ValueError
-        If query input, counts, budget, or measured clock order is invalid.
+        If query input, counts, or measured clock order is invalid, or the
+        derived budget is not finite.
 
     Notes
     -----
@@ -238,10 +236,8 @@ async def measure_query_budget(
         raise ValueError("queries must contain nonblank strings")
     if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
         raise ValueError("k must be a positive integer")
-    resolved_budget = (
-        query_budget_seconds(query_count) if budget_seconds is None else budget_seconds
-    )
-    if not math.isfinite(resolved_budget) or resolved_budget <= 0:
+    resolved_budget = query_budget_seconds(query_count)
+    if not math.isfinite(resolved_budget):
         raise ValueError("budget_seconds must be finite and positive")
 
     previous = clock()
@@ -273,7 +269,6 @@ def assess_indexing_budget(
     embedding_provider: str,
     target_phase_seconds: float,
     shared_preparation_seconds: float = 0.0,
-    budget_seconds: float = INDEXING_BUDGET_SECONDS,
 ) -> IndexingBudgetMeasurement:
     """Assess one indexing arm from shared and target-specific durations.
 
@@ -291,8 +286,6 @@ def assess_indexing_budget(
         Finite nonnegative duration for target-specific preparation and indexing.
     shared_preparation_seconds : float, optional
         Finite nonnegative manifest-load and parse duration shared across arms.
-    budget_seconds : float, optional
-        Finite positive standalone indexing limit.
 
     Returns
     -------
@@ -302,7 +295,7 @@ def assess_indexing_budget(
     Raises
     ------
     ValueError
-        If counts, provider identity, durations, or budget are outside their contracts.
+        If counts, provider identity, or durations are outside their contracts.
 
     Notes
     -----
@@ -317,8 +310,6 @@ def assess_indexing_budget(
         raise ValueError("target_phase_seconds must be finite and nonnegative")
     if not math.isfinite(shared_preparation_seconds) or shared_preparation_seconds < 0:
         raise ValueError("shared_preparation_seconds must be finite and nonnegative")
-    if not math.isfinite(budget_seconds) or budget_seconds <= 0:
-        raise ValueError("budget_seconds must be finite and positive")
     derived_standalone_seconds = shared_preparation_seconds + target_phase_seconds
     return IndexingBudgetMeasurement(
         target_tokens=target_tokens,
@@ -327,8 +318,8 @@ def assess_indexing_budget(
         embedding_provider=embedding_provider,
         target_phase_seconds=target_phase_seconds,
         derived_standalone_seconds=derived_standalone_seconds,
-        budget_seconds=budget_seconds,
-        passed=derived_standalone_seconds <= budget_seconds,
+        budget_seconds=INDEXING_BUDGET_SECONDS,
+        passed=derived_standalone_seconds <= INDEXING_BUDGET_SECONDS,
     )
 
 

@@ -5,22 +5,12 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 import pytest
 
-from app.api.review_profile import PromptPolicy
 from app.api.runtime import RuntimeApiServices
 from app.llm.openai_limits import OpenAILimitsManager
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
-
-
-def test_limits_expose_public_policy_without_consuming_allowance() -> None:
-    """The public workflow contract comes from the same model required by the guard."""
-    with TestClient(create_release_app()) as client:
-        first = client.get("/limits").json()
-        second = client.get("/limits").json()
-    assert first["prompt_policy"] == PromptPolicy().model_dump(mode="json")
-    assert first["per_call"]["editable"] is False
-    assert first["remaining_minute"] == second["remaining_minute"]
+from tests.support import load_settings
 
 
 def test_limits_expose_effective_runtime_call_caps(tmp_path) -> None:
@@ -50,20 +40,19 @@ def test_limits_expose_effective_runtime_call_caps(tmp_path) -> None:
 @pytest.mark.parametrize("public_header", [False, True])
 def test_production_blocks_admin_even_with_retained_live_configuration(tmp_path, public_header):
     """Production cannot regain administrator execution through SSH or a missing header."""
-    settings = ReleaseSettings(
-        _env_file=None,
-        DOCREVIEW_ENVIRONMENT="prod",
-        mode="runtime",
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
+        environment="prod",
+        service_mode="runtime",
         admin_mode="live",
         host="127.0.0.1",
-        allow_ingest=True,
         public_allowance_path=tmp_path / "limits.sqlite3",
     )
     services = RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
     with TestClient(create_release_app(settings, services=services)) as client:
         headers = {"x-docreview-public": "true"} if public_header else {}
         assert client.get("/admin/corpus", headers=headers).status_code == 403
-        assert client.post("/ingest", json={}, headers=headers).status_code == 403
         capabilities = client.get("/capabilities", headers=headers).json()
         assert capabilities["can_change_custom_retrieval"] is True
         assert not any(

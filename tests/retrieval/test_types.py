@@ -5,8 +5,7 @@ import math
 from pydantic import ValidationError
 import pytest
 
-from app.db.models import Chunk, Document
-from app.retrieval import types as retrieval_types
+from app.retrieval import lexical, types as retrieval_types
 from tests.retrieval.support import SOURCE_SHA256, hit_values
 
 
@@ -25,27 +24,11 @@ def test_chunk_hit_preserves_the_database_and_citation_surface():
         hit.score = 1.0
 
 
-def test_chunk_hit_fields_match_the_current_sqlalchemy_models():
-    """Keep the hit contract aligned with persisted chunk columns."""
-    assert set(retrieval_types.ChunkHit.model_fields) == {
-        "chunk_id",
-        "doc_id",
-        "item",
-        "kind",
-        "citation",
-        "start_char",
-        "end_char",
-        "source_sha256",
-        "body",
-        "context_header",
-        "index_text",
-        "score",
-    }
+def test_searched_rows_carry_exactly_the_chunk_hit_fields():
+    """Select every field the hit contract validates and nothing it would reject."""
+    statement = lexical.lexical_statement("research expense", 1)
 
-    chunk_columns = set(Chunk.__table__.columns.keys())
-    assert set(retrieval_types.ChunkHit.model_fields) - {"chunk_id", "score"} <= chunk_columns
-    assert "id" in chunk_columns
-    assert "doc_id" in Document.__table__.columns
+    assert set(statement.selected_columns.keys()) == set(retrieval_types.ChunkHit.model_fields)
 
 
 def test_chunk_hit_accepts_body_as_index_text_when_context_is_empty():
@@ -60,51 +43,30 @@ def test_chunk_hit_accepts_body_as_index_text_when_context_is_empty():
     assert hit.index_text == "Research evidence."
 
 
-def test_chunk_hit_uses_the_canonical_index_text_composer(monkeypatch):
-    """Delegate the persistence-boundary invariant to the ingestion helper."""
-    calls: list[tuple[str, str]] = []
-
-    def compose(context_header: str, body: str) -> str:
-        calls.append((context_header, body))
-        return "canonical index text"
-
-    monkeypatch.setattr(retrieval_types, "compose_index_text", compose)
-    values = hit_values(index_text="canonical index text")
-
-    retrieval_types.ChunkHit(**values)
-
-    assert calls == [(values["context_header"], values["body"])]
-
-
 @pytest.mark.parametrize(
     "changes",
     [
-        {"chunk_id": 0},
-        {"chunk_id": "10"},
-        {"doc_id": ""},
-        {"item": "123456789"},
-        {"kind": "image"},
-        {"citation": ""},
-        {"start_char": -1},
-        {"end_char": 100},
-        {"source_sha256": "A" * 64},
-        {"body": ""},
-        {"index_text": "stale indexed text"},
-        {"score": math.nan},
-        {"score": math.inf},
-        {"score": "0.75"},
+        pytest.param({"chunk_id": 0}, id="non-positive-chunk-id"),
+        pytest.param({"chunk_id": "10"}, id="coercible-string-chunk-id"),
+        pytest.param({"doc_id": ""}, id="blank-doc-id"),
+        pytest.param({"item": "123456789"}, id="overlong-item"),
+        pytest.param({"kind": "image"}, id="unknown-kind"),
+        pytest.param({"citation": ""}, id="blank-citation"),
+        pytest.param({"start_char": -1}, id="negative-start"),
+        pytest.param({"end_char": 100}, id="end-not-after-start"),
+        pytest.param({"source_sha256": "A" * 64}, id="uppercase-source-digest"),
+        pytest.param({"body": ""}, id="blank-body"),
+        pytest.param({"index_text": "stale indexed text"}, id="index-text-detached-from-body"),
+        pytest.param({"score": math.nan}, id="nan-score"),
+        pytest.param({"score": math.inf}, id="infinite-score"),
+        pytest.param({"score": "0.75"}, id="string-score"),
+        pytest.param({"distance": 0.25}, id="unknown-field"),
     ],
 )
-def test_chunk_hit_rejects_invalid_database_or_runtime_values(changes):
-    """Reject invalid database identities, spans, content, and scores."""
+def test_chunk_hit_rejects_values_outside_its_contract(changes):
+    """Reject invalid identities, spans, content, scores, and fields the contract lacks."""
     with pytest.raises(ValidationError):
         retrieval_types.ChunkHit(**hit_values(**changes))
-
-
-def test_chunk_hit_forbids_unknown_fields():
-    """Reject fields outside the strict retrieval hit contract."""
-    with pytest.raises(ValidationError):
-        retrieval_types.ChunkHit(**hit_values(distance=0.25))
 
 
 def test_filters_are_frozen_and_canonical():
@@ -117,6 +79,7 @@ def test_filters_are_frozen_and_canonical():
             "forms": ["10-K", "10-K"],
             "items": ["7", None, "7"],
             "kinds": ["table", "text", "table"],
+            "languages": ["ko", "en", "ko"],
         }
     )
 
@@ -126,6 +89,7 @@ def test_filters_are_frozen_and_canonical():
     assert filters.forms == ("10-K",)
     assert filters.items == (None, "7")
     assert filters.kinds == ("text", "table")
+    assert filters.languages == ("en", "ko")
     assert filters == retrieval_types.RetrievalFilters.model_validate(
         {
             "doc_ids": ["AMD-FY2023", "NVDA-FY2024"],
@@ -134,6 +98,7 @@ def test_filters_are_frozen_and_canonical():
             "forms": ["10-K"],
             "items": [None, "7"],
             "kinds": ["text", "table"],
+            "languages": ["en", "ko"],
         }
     )
 
@@ -144,17 +109,18 @@ def test_filters_are_frozen_and_canonical():
 @pytest.mark.parametrize(
     "changes",
     [
-        {"doc_ids": [""]},
-        {"issuers": [""]},
-        {"fiscal_years": [0]},
-        {"forms": [""]},
-        {"items": [""]},
-        {"kinds": ["image"]},
-        {"unknown": ["value"]},
+        pytest.param({"doc_ids": [""]}, id="blank-doc-id"),
+        pytest.param({"issuers": [""]}, id="blank-issuer"),
+        pytest.param({"fiscal_years": [0]}, id="non-positive-year"),
+        pytest.param({"forms": [""]}, id="blank-form"),
+        pytest.param({"items": [""]}, id="blank-item"),
+        pytest.param({"kinds": ["image"]}, id="unknown-kind"),
+        pytest.param({"languages": ["KOR"]}, id="non-two-letter-language"),
+        pytest.param({"unknown": ["value"]}, id="unknown-dimension"),
     ],
 )
 def test_filters_reject_invalid_dimensions(changes):
-    """Reject invalid document, issuer, year, form, item, and kind filters."""
+    """Reject invalid document, issuer, year, form, item, kind, and language filters."""
     with pytest.raises(ValidationError):
         retrieval_types.RetrievalFilters(**changes)
 
@@ -189,12 +155,3 @@ def test_sort_hits_uses_c_collation_compatible_codepoint_order_for_text_ties():
     ordered = retrieval_types.sort_hits(hits)
 
     assert [hit.chunk_id for hit in ordered] == [1, 2, 3, 4]
-
-
-def test_language_filters_canonicalize_and_reject_non_tags():
-    """Accept two-letter language tags, deduplicated and ordered; refuse others."""
-    filters = retrieval_types.RetrievalFilters.model_validate({"languages": ["ko", "en", "ko"]})
-
-    assert filters.languages == ("en", "ko")
-    with pytest.raises(ValidationError):
-        retrieval_types.RetrievalFilters.model_validate({"languages": ["KOR"]})

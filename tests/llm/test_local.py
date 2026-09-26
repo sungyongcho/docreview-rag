@@ -1,14 +1,16 @@
 """Local structured-output provider protocol tests."""
 
 import asyncio
+from collections.abc import Callable
 from decimal import Decimal
 import json
 
 import httpx
+import pytest
 
-from app.llm.local import LocalLLMProvider
-from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
-from app.workflow.gate import ChatReply
+from app.llm.local import LocalLlmProtocol, LocalLLMProvider
+from app.llm.schemas import Prompt, ProviderBudget, ProviderRefusal, ProviderResult, TokenPricing
+from tests.llm.support import ChatReply
 
 
 def budget() -> ProviderBudget:
@@ -24,10 +26,54 @@ def budget() -> ProviderBudget:
     )
 
 
-def test_ollama_native_normalizes_structured_output_and_usage() -> None:
-    """Map native message and token counters onto the shared provider contract."""
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(
+def complete_locally(
+    respond: Callable[[httpx.Request], httpx.Response],
+    *,
+    protocol: LocalLlmProtocol,
+    base_url: str,
+) -> ProviderResult[ChatReply]:
+    """Run one completion over an offline transport that answers with ``respond``."""
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    provider = LocalLLMProvider(
+        base_url=base_url, model_name="local-model", protocol=protocol, client=client
+    )
+    result = asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
+    asyncio.run(client.aclose())
+    return result
+
+
+def responses_payload(*content: dict[str, object]) -> dict[str, object]:
+    """Build one Responses wire object whose single assistant message carries ``content``."""
+    return {
+        "id": "resp_1",
+        "object": "response",
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "id": "msg_1",
+                "role": "assistant",
+                "status": "completed",
+                "content": list(content),
+            }
+        ],
+        "usage": {"input_tokens": 8, "output_tokens": 3, "total_tokens": 11},
+    }
+
+
+@pytest.mark.parametrize(("context_window", "expected_num_ctx"), [(None, 150), (12_600, 12_600)])
+def test_ollama_request_states_its_window_and_maps_the_native_reply(
+    context_window, expected_num_ctx
+) -> None:
+    """Ask Ollama for the budget's window, or the configured run-wide one, and map its reply.
+    Ollama drops overflow past its default window and reloads the model when the window changes.
+    """
+    sent: list[dict[str, object]] = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        """Record the request body and answer with a structured reply and token counters."""
+        sent.append(json.loads(request.content))
+        return httpx.Response(
             200,
             json={
                 "message": {"content": '{"answer":"hello"}'},
@@ -35,18 +81,25 @@ def test_ollama_native_normalizes_structured_output_and_usage() -> None:
                 "eval_count": 3,
             },
         )
-    )
-    client = httpx.AsyncClient(transport=transport)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
     provider = LocalLLMProvider(
         base_url="http://127.0.0.1:11434",
         model_name="test",
         protocol="ollama",
         client=client,
+        context_window=context_window,
     )
 
     result = asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
     asyncio.run(client.aclose())
 
+    options = sent[0]["options"]
+    assert isinstance(options, dict)
+    # The window must cover both halves of the budget, or be the configured run-wide window.
+    assert options["num_ctx"] == expected_num_ctx
+    assert options["num_predict"] == 50
+    assert sent[0]["think"] is False, "hidden reasoning would consume the output allowance"
     assert result.status == "ok"
     assert result.parsed == ChatReply(answer="hello")
     assert result.metadata.api_url == "local://ollama"
@@ -71,42 +124,6 @@ def test_local_provider_fails_closed_when_usage_is_missing() -> None:
 
     assert result.status == "provider_error"
     assert result.metadata.input_tokens == 0
-
-
-def test_ollama_request_asks_for_a_window_that_fits_the_budget() -> None:
-    """Ollama defaults to a small context and silently drops the overflow.
-
-    Notes
-    -----
-    A truncated evidence prompt would yield an answer about filings the model never read,
-    so the request states the window the caller's budget already assumes.
-    """
-    sent: list[dict[str, object]] = []
-
-    def capture(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content))
-        return httpx.Response(
-            200,
-            json={
-                "message": {"content": '{"answer":"hello"}'},
-                "prompt_eval_count": 8,
-                "eval_count": 3,
-            },
-        )
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
-    provider = LocalLLMProvider(
-        base_url="http://127.0.0.1:11434", model_name="test", protocol="ollama", client=client
-    )
-
-    asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
-    asyncio.run(client.aclose())
-
-    options = sent[0]["options"]
-    assert isinstance(options, dict)
-    assert options["num_ctx"] == 150, "the window must cover both halves of the budget"
-    assert options["num_predict"] == 50
-    assert sent[0]["think"] is False, "hidden reasoning would consume the output allowance"
 
 
 def test_ollama_timing_preserves_attempts_and_omits_unreceived_fields() -> None:
@@ -149,6 +166,11 @@ def test_ollama_timing_preserves_attempts_and_omits_unreceived_fields() -> None:
         assert result.metadata.local_timings[1].eval_duration_ms == 3.0
         assert result.metadata.local_timings[0].prompt_eval_duration_ms is None
         assert result.metadata.local_timings[0].total_duration_ms is None
+        # stage_metadata() is typed as generic JSON; narrow the recorded call read below.
+        assert isinstance(recorded["model_calls"], list)
+        assert isinstance(recorded["model_calls"][0], dict)
+        assert isinstance(recorded["model_calls"][0]["local_timings"], list)
+        assert isinstance(recorded["model_calls"][0]["local_timings"][0], dict)
         assert recorded["model_calls"][0]["attempts"] == 2
         assert recorded["model_calls"][0]["node"] == "grade"
         assert "prompt_eval_duration_ms" not in recorded["model_calls"][0]["local_timings"][0]
@@ -189,34 +211,184 @@ def test_local_provider_refuses_an_oversized_prompt_before_contacting_ollama() -
     assert result.metadata.input_tokens == 0
 
 
-def test_ollama_keeps_the_configured_window_when_the_remaining_budget_shrinks() -> None:
-    """A configured window is requested unchanged so later calls of a run never reload the model."""
-    sent: list[dict[str, object]] = []
+@pytest.mark.parametrize(
+    ("setting", "positive", "message"),
+    [
+        pytest.param("timeout_s", 45.0, "timeout must be positive", id="timeout"),
+        pytest.param(
+            "context_window", 12_600, "context window must be positive", id="context-window"
+        ),
+    ],
+)
+def test_provider_accepts_a_positive_timeout_or_window_and_refuses_zero(
+    setting, positive, message
+) -> None:
+    """A CPU-hosted model needs a real deadline, and a window must be able to hold a prompt."""
 
-    def capture(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content))
+    def build(value):
+        """Build an Ollama provider that owns its HTTP client, with one setting replaced."""
+        return LocalLLMProvider(
+            base_url="http://ollama:11434",
+            model_name="gemma4:e4b",
+            protocol="ollama",
+            api_key=None,
+            **{setting: value},
+        )
+
+    asyncio.run(build(positive).aclose())
+    with pytest.raises(ValueError, match=message):
+        build(0)
+
+
+def test_responses_wire_payload_is_read_from_its_output_items() -> None:
+    """The Responses wire format carries text only inside ``output[].content[]``, so a
+    spec-shaped local server answers with status ``ok`` and its reported usage."""
+    sent: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Record the request and answer with the documented Responses object."""
+        sent.append(request)
+        return httpx.Response(
+            200,
+            json=responses_payload(
+                {"type": "output_text", "text": '{"answer":"hello"}', "annotations": []}
+            ),
+        )
+
+    result = complete_locally(
+        respond, protocol="openai_responses", base_url="http://127.0.0.1:8000/v1"
+    )
+
+    assert sent[0].url.path == "/v1/responses"
+    assert result.status == "ok", result.refusal
+    assert result.parsed == ChatReply(answer="hello")
+    assert result.metadata.api_url == "local://openai-compatible"
+    assert result.metadata.request_ids == ("resp_1",)
+    assert (result.metadata.input_tokens, result.metadata.output_tokens) == (8, 3)
+
+
+def test_responses_refusal_item_becomes_a_typed_provider_refusal() -> None:
+    """A ``refusal`` content part is the model declining, not a malformed payload."""
+    result = complete_locally(
+        lambda request: httpx.Response(
+            200, json=responses_payload({"type": "refusal", "refusal": "I cannot help with that."})
+        ),
+        protocol="openai_responses",
+        base_url="http://127.0.0.1:8000/v1",
+    )
+
+    assert result.status == "provider_refused", result.refusal
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert result.refusal.message == "I cannot help with that."
+    assert result.refusal.attempts == 1
+    assert result.metadata.requests == 1
+
+
+def test_responses_top_level_output_text_is_still_accepted() -> None:
+    """A server that adds the SDK's convenience field, and nothing else, is still read."""
+    result = complete_locally(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "id": "resp_2",
+                "output_text": '{"answer":"hello"}',
+                "usage": {"input_tokens": 8, "output_tokens": 3},
+            },
+        ),
+        protocol="openai_responses",
+        base_url="http://127.0.0.1:8000/v1",
+    )
+
+    assert result.status == "ok", result.refusal
+    assert result.parsed == ChatReply(answer="hello")
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        [{"type": "reasoning", "id": "rs_1", "summary": []}],
+        [{"type": "message", "content": [None]}],
+    ],
+    ids=["reasoning-only", "invalid-content-part"],
+)
+def test_responses_payload_without_text_or_refusal_fails_closed(output) -> None:
+    """An answer carrying neither text nor a refusal is a provider error, not a repair."""
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Count attempts while returning a response with no usable answer content."""
+        requests.append(request)
         return httpx.Response(
             200,
             json={
-                "message": {"content": '{"answer":"hello"}'},
-                "prompt_eval_count": 8,
-                "eval_count": 3,
+                "id": "resp_3",
+                "status": "incomplete",
+                "output": output,
+                "usage": {"input_tokens": 8, "output_tokens": 3},
             },
         )
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
-    provider = LocalLLMProvider(
-        base_url="http://127.0.0.1:11434",
-        model_name="test",
-        protocol="ollama",
-        client=client,
-        context_window=12_600,
+    result = complete_locally(
+        respond,
+        protocol="openai_responses",
+        base_url="http://127.0.0.1:8000/v1",
     )
 
-    asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
-    asyncio.run(client.aclose())
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert "output text" in result.refusal.message
+    assert len(requests) == 1
 
-    options = sent[0]["options"]
-    assert isinstance(options, dict)
-    assert options["num_ctx"] == 12_600
-    assert options["num_predict"] == 50
+
+@pytest.mark.parametrize("protocol", ["ollama", "openai_responses"])
+def test_non_object_local_response_fails_without_answer_repair(protocol: LocalLlmProtocol) -> None:
+    """A malformed protocol envelope cannot become an answer or trigger a paid repair."""
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Count actual transport calls and return a JSON value outside either protocol."""
+        requests.append(request)
+        return httpx.Response(200, json=["unexpected response"])
+
+    result = complete_locally(respond, protocol=protocol, base_url="http://127.0.0.1:11434")
+
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert "JSON object" in result.refusal.message
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("protocol", ["ollama", "openai_responses"])
+def test_http_status_failure_names_its_kind_and_never_the_private_endpoint(
+    protocol: LocalLlmProtocol,
+) -> None:
+    """The server address is an admin-only setting and the refusal message reaches the
+    public failure details and the persisted trace, so a 503 is reported by its kind."""
+    base = "http://192.168.50.7:11434"
+
+    result = complete_locally(
+        lambda request: httpx.Response(503, json={"error": "model is loading"}),
+        protocol=protocol,
+        base_url=base,
+    )
+
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert base not in result.refusal.message
+    assert "192.168.50.7" not in result.refusal.message
+    assert "http_503" in result.refusal.message
+    assert result.metadata.api_url.startswith("local://")
+
+
+def test_transport_failure_is_reported_by_its_kind_only() -> None:
+    """A timeout on the way to the server is described as a timeout and nothing more."""
+
+    def time_out(request: httpx.Request) -> httpx.Response:
+        """Fail the connection attempt the way httpx reports a connect timeout."""
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    result = complete_locally(time_out, protocol="ollama", base_url="http://192.168.50.7:11434")
+
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert result.refusal.message == "ValueError: local model server request failed: timeout"

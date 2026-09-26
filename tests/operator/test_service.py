@@ -9,7 +9,8 @@ import pytest
 
 from app.operator.commands import COMMANDS, OperatorCommand
 from app.operator.service import OperatorJobManager, create_operator_app
-from app.operator.wipe import WipeError, WipeService
+from app.operator.wipe import WipeService
+from app.operator.wipe_errors import WipeError
 
 TOKEN = "local-test-token"
 ORIGIN = "http://127.0.0.1:8000"
@@ -19,7 +20,7 @@ HEADERS = {"origin": ORIGIN, "authorization": f"Bearer {TOKEN}"}
 def test_reset_preview_preserves_detail_and_returns_diagnosis(tmp_path, monkeypatch):
     """Keep existing clients compatible while returning the exact preview blocking evidence."""
 
-    async def preview(_service, *, extreme=False):
+    async def preview(_service):
         """Reject only the preview without creating reset state or modifying files."""
         raise WipeError(
             "Runtime file cannot be removed by this operator: data/local-settings/local-llm.json",
@@ -185,16 +186,6 @@ def test_running_job_can_be_cancelled_as_a_process_group(tmp_path):
     assert cancelled.json()["status"] == "cancelled"
 
 
-def test_browser_ack_requires_auth_and_matching_reset(tmp_path):
-    """No unauthenticated or stale browser can authorize subsequent local deletion."""
-    application = create_operator_app(token=TOKEN, allowed_origin=ORIGIN, root=tmp_path)
-    with TestClient(application) as client:
-        assert client.post("/wipe/browser-cleared", json={"operation_id": "old"}).status_code == 403
-        result = client.post("/wipe/browser-cleared", headers=HEADERS, json={"operation_id": "old"})
-        assert result.status_code == 409
-        assert client.get("/wipe", headers=HEADERS).json()["status"] == "idle"
-
-
 def test_command_targets_match_the_registry_and_live_schema(tmp_path):
     """Expose declared targets through the authenticated API without exposing command argv."""
     application = create_operator_app(token=TOKEN, allowed_origin=ORIGIN, root=tmp_path)
@@ -211,5 +202,3 @@ def test_command_targets_match_the_registry_and_live_schema(tmp_path):
     if "$ref" in target:
         target = schema["components"]["schemas"][target["$ref"].rsplit("/", 1)[-1]]
     assert set(target["enum"]) == {command.target for command in COMMANDS.values()}
-    assert COMMANDS["python-tests-postgres"].target == "database"
-    assert COMMANDS["web-build"].target == "web"

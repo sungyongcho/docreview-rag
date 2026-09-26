@@ -21,7 +21,7 @@ from app.api.admin_schemas import (
     DocumentSort,
 )
 from app.api.errors import unavailable
-from app.corpus_admin import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
+from app.corpus_admin.types import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
 from app.db.bootstrap import SchemaDriftError, ensure_complete_schema
 from app.db.models import (
     Chunk,
@@ -32,6 +32,7 @@ from app.db.models import (
     SnapshotDocument,
 )
 from app.db.queries import current_source_matches, join_current_parse
+from app.db.session_factory import SessionFactory
 from app.ingestion.company_names import CompanyNames
 from app.observability.persistence import redact_sensitive_text
 from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
@@ -58,7 +59,7 @@ class DocumentCatalog:
 
     def __init__(
         self,
-        session_factory: Callable[[], AsyncSession],
+        session_factory: SessionFactory,
         *,
         public_only: bool,
         embedding_identity: EmbeddingIdentity,
@@ -76,11 +77,6 @@ class DocumentCatalog:
             await ensure_complete_schema(await session.connection())
         except SchemaDriftError as error:
             raise unavailable("schema_not_ready", str(error)) from None
-
-    async def ensure_ready(self) -> None:
-        """Expose the same gate to adapters that use a separate document-detail serializer."""
-        async with self._session_factory() as session:
-            await self._require_schema(session)
 
     def _snapshot_filters(self) -> tuple[ColumnElement[bool], ...]:
         """Restrict the public surface to explicitly published ready snapshots."""
@@ -441,7 +437,7 @@ class DocumentCatalog:
         )
 
     async def document_detail(self, doc_id: str) -> DocumentDetailResponse | None:
-        """Load a bounded published document preview without reading private corpus state."""
+        """Load a bounded preview under this catalog's exact source visibility policy."""
         async with self._session_factory() as session:
             await self._require_schema(session)
             document = await session.scalar(
@@ -531,7 +527,9 @@ class DocumentCatalog:
             source_length=document.current_parse.structure.source_length,
             source_sha256=document.current_parse.structure.source_sha256,
             issuer_name=self._company_names().get((document.registry, document.issuer)),
-            source_url=public_source_url(document.source_url),
+            source_url=public_source_url(document.source_url)
+            if self._public_only
+            else document.source_url,
             chunk_count=sum(int(row[6]) for row in rows),
         )
         return DocumentDetailResponse.model_validate(

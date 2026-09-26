@@ -2,13 +2,21 @@
 
 import asyncio
 import json
+from typing import Any, cast
 
+from mcp.server import Server
+from mcp.server.context import ServerRequestContext
+from mcp.server.lowlevel.server import RequestHandler
 import mcp.types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.mcp_server import build_mcp_server
 from app.agent.registry import ToolRegistry
 from app.agent.tools import Tool, ToolError
+
+# The bridge handlers discard their request context, so the tests hand them None in its
+# place instead of building a live MCP session.
+NO_CONTEXT = cast(ServerRequestContext[Any], None)
 
 
 class EchoParams(BaseModel):
@@ -39,10 +47,11 @@ def registry_with_echo():
     return registry
 
 
-def handler_for(server, method):
+def handler_for(server: Server, method: str) -> RequestHandler:
     """Return the server handler registered for one method."""
     entry = server.get_request_handler(method)
-    return entry.handler if hasattr(entry, "handler") else entry
+    assert entry is not None
+    return entry.handler
 
 
 def test_mcp_list_tools_mirrors_the_registry_schema():
@@ -51,9 +60,10 @@ def test_mcp_list_tools_mirrors_the_registry_schema():
     server = build_mcp_server(registry)
 
     result = asyncio.run(
-        handler_for(server, "tools/list")(None, mcp_types.PaginatedRequestParams())
+        handler_for(server, "tools/list")(NO_CONTEXT, mcp_types.PaginatedRequestParams())
     )
 
+    assert isinstance(result, mcp_types.ListToolsResult)
     (tool,) = result.tools
     (published,) = registry.input_schemas()
     assert tool.name == "echo_text"
@@ -67,9 +77,13 @@ def test_mcp_call_tool_accepts_omitted_optional_arguments():
     call = handler_for(build_mcp_server(registry_with_echo()), "tools/call")
 
     ok = asyncio.run(
-        call(None, mcp_types.CallToolRequestParams(name="echo_text", arguments={"text": "hi"}))
+        call(
+            NO_CONTEXT, mcp_types.CallToolRequestParams(name="echo_text", arguments={"text": "hi"})
+        )
     )
 
+    assert isinstance(ok, mcp_types.CallToolResult)
+    assert isinstance(ok.content[0], mcp_types.TextContent)
     assert ok.is_error is False
     assert json.loads(ok.content[0].text) == {"text": "hi"}
 
@@ -93,18 +107,28 @@ def test_mcp_call_tool_reports_errors_the_way_the_loop_does():
     call = handler_for(build_mcp_server(registry), "tools/call")
 
     invalid = asyncio.run(
-        call(None, mcp_types.CallToolRequestParams(name="echo_text", arguments={"nope": 1}))
+        call(NO_CONTEXT, mcp_types.CallToolRequestParams(name="echo_text", arguments={"nope": 1}))
     )
+    assert isinstance(invalid, mcp_types.CallToolResult)
+    assert isinstance(invalid.content[0], mcp_types.TextContent)
     assert invalid.is_error is True
     assert invalid.content[0].text.startswith("invalid arguments for echo_text:")
     assert "input_value" not in invalid.content[0].text
 
-    unknown = asyncio.run(call(None, mcp_types.CallToolRequestParams(name="missing", arguments={})))
+    unknown = asyncio.run(
+        call(NO_CONTEXT, mcp_types.CallToolRequestParams(name="missing", arguments={}))
+    )
+    assert isinstance(unknown, mcp_types.CallToolResult)
+    assert isinstance(unknown.content[0], mcp_types.TextContent)
     assert unknown.is_error is True and "unknown tool" in unknown.content[0].text
 
     actionable = asyncio.run(
-        call(None, mcp_types.CallToolRequestParams(name="fetch_probe", arguments={"text": "x"}))
+        call(
+            NO_CONTEXT, mcp_types.CallToolRequestParams(name="fetch_probe", arguments={"text": "x"})
+        )
     )
+    assert isinstance(actionable, mcp_types.CallToolResult)
+    assert isinstance(actionable.content[0], mcp_types.TextContent)
     assert actionable.is_error is True
     assert actionable.content[0].text == "chunk for 'x' does not exist"
 
@@ -135,13 +159,17 @@ def test_mcp_call_tool_converts_execution_and_serialization_failures():
     call = handler_for(build_mcp_server(registry), "tools/call")
 
     failed = asyncio.run(
-        call(None, mcp_types.CallToolRequestParams(name="fail_tool", arguments={"text": "x"}))
+        call(NO_CONTEXT, mcp_types.CallToolRequestParams(name="fail_tool", arguments={"text": "x"}))
     )
     invalid = asyncio.run(
-        call(None, mcp_types.CallToolRequestParams(name="non_json", arguments={"text": "x"}))
+        call(NO_CONTEXT, mcp_types.CallToolRequestParams(name="non_json", arguments={"text": "x"}))
     )
 
+    assert isinstance(failed, mcp_types.CallToolResult)
+    assert isinstance(failed.content[0], mcp_types.TextContent)
     assert failed.is_error is True
     assert "sk-super-secret" not in failed.content[0].text
+    assert isinstance(invalid, mcp_types.CallToolResult)
+    assert isinstance(invalid.content[0], mcp_types.TextContent)
     assert invalid.is_error is True
     assert "serialization failed" in invalid.content[0].text

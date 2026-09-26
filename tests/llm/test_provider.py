@@ -2,15 +2,14 @@
 
 import asyncio
 from decimal import Decimal
-from inspect import isabstract, iscoroutinefunction
 from types import SimpleNamespace
 
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
+import app.llm.provider as provider_module
 from app.llm.provider import (
-    DeterministicLLMProvider,
-    LLMProvider,
+    BilledAttemptAllowanceError,
     OpenAILLMProvider,
     strict_response_format,
 )
@@ -19,23 +18,14 @@ from app.llm.schemas import (
     BudgetExceeded,
     Prompt,
     ProviderBudget,
+    ProviderMetadata,
     ProviderRefusal,
-    RawProviderResponse,
     RelevanceJudgment,
     SchemaRejected,
     TokenPricing,
 )
-
-
-class TickClock:
-    """Deterministic monotonic nanosecond clock with one millisecond ticks."""
-
-    def __init__(self):
-        self.value = -1_000_000
-
-    def __call__(self):
-        self.value += 1_000_000
-        return self.value
+from app.release.ai_allowance import AIAllowanceError, SharedAIAllowance, active_allowance
+from tests.llm.support import DeterministicLLMProvider, TickClock, raw
 
 
 def prompt():
@@ -66,24 +56,6 @@ def valid_output():
     )
 
 
-def raw(output_text, *, input_tokens=10, output_tokens=5, request_id="req-1", refusal=None):
-    """Build one raw provider response with optional usage and refusal."""
-    return RawProviderResponse(
-        output_text=output_text,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        request_id=request_id,
-        refusal=refusal,
-    )
-
-
-def test_provider_boundary_is_abstract_and_async():
-    """Keep the provider boundary abstract with an awaitable generate method."""
-
-    assert isabstract(LLMProvider)
-    assert iscoroutinefunction(LLMProvider.complete)
-
-
 def test_deterministic_provider_returns_typed_output_and_trace_metadata():
     """Return a typed output together with the metadata a trace needs."""
     provider = DeterministicLLMProvider(
@@ -94,6 +66,7 @@ def test_deterministic_provider_returns_typed_output_and_trace_metadata():
     result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
 
     assert result.status == "ok"
+    assert result.parsed is not None
     assert result.parsed.label == "SUPPORTED"
     assert result.refusal is None
     assert result.metadata.provider == "deterministic"
@@ -200,35 +173,6 @@ def test_repair_does_not_start_after_the_first_attempt_exhausts_budget():
     assert len(provider.prompts) == 1
 
 
-def test_budget_refusal_before_any_validation_carries_no_schema_errors():
-    """Leave the schema evidence empty when nothing failed validation."""
-    provider = DeterministicLLMProvider(
-        [raw(valid_output(), input_tokens=10, output_tokens=5)],
-        clock=TickClock(),
-    )
-
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=9)))
-
-    assert isinstance(result.refusal, BudgetExceeded)
-    assert result.refusal.schema_errors == ()
-
-
-def test_explicit_model_refusal_is_typed_and_not_repaired():
-    """Report a model refusal as typed evidence without repairing it."""
-    provider = DeterministicLLMProvider(
-        [raw("", refusal="I cannot provide that output.")],
-        clock=TickClock(),
-    )
-
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
-
-    assert result.status == "provider_refused"
-    assert isinstance(result.refusal, ProviderRefusal)
-    assert result.refusal.attempts == 1
-    assert result.metadata.retries == 0
-    assert len(provider.prompts) == 1
-
-
 @pytest.mark.parametrize(
     ("budget_changes", "response_changes", "which"),
     [
@@ -254,33 +198,9 @@ def test_explicit_usage_and_cost_budgets_fail_closed(budget_changes, response_ch
     assert result.status == "budget_exceeded"
     assert isinstance(result.refusal, BudgetExceeded)
     assert result.refusal.which == which
+    # Nothing failed validation before the refusal, so the schema evidence stays empty.
+    assert result.refusal.schema_errors == ()
     assert result.parsed is None
-
-
-def test_provider_exception_becomes_typed_error_without_fake_usage():
-    """Turn a transport exception into a typed error without inventing usage."""
-    provider = DeterministicLLMProvider([], clock=TickClock())
-
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
-
-    assert result.status == "provider_error"
-    assert isinstance(result.refusal, ProviderRefusal)
-    assert "response queue is empty" in result.refusal.message
-    assert result.metadata.input_tokens == 0
-    assert result.metadata.output_tokens == 0
-    assert result.metadata.raw_outputs == ("",)
-
-
-def test_provider_boundary_rejects_untyped_prompt_budget_and_mock_responses():
-    """Reject untyped prompts, budgets, and responses at the boundary."""
-    with pytest.raises(TypeError):
-        DeterministicLLMProvider([valid_output()])
-
-    provider = DeterministicLLMProvider([raw(valid_output())])
-    with pytest.raises(TypeError):
-        asyncio.run(provider.complete({"system": "s", "user": "u"}, AnswerDecision, budget()))
-    with pytest.raises(TypeError):
-        asyncio.run(provider.complete(prompt(), AnswerDecision, {"max_output_tokens": 10}))
 
 
 class FakeResponses:
@@ -295,11 +215,6 @@ class FakeResponses:
         self.calls.append(kwargs)
         return self.response
 
-    async def parse(self, **kwargs):
-        """Record the arguments and return the staged response."""
-        self.calls.append(kwargs)
-        return self.response
-
 
 class FakeClient:
     """Expose the responses surface the OpenAI adapter calls."""
@@ -308,12 +223,22 @@ class FakeClient:
         self.responses = FakeResponses(response)
 
 
+class UnreachableResponses:
+    """Fail the test if the adapter sends anything after refusing the call."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def create(self, **kwargs):
+        """Record the arguments and fail: a refused request must never be sent."""
+        self.calls.append(kwargs)
+        raise AssertionError("a refused request must not be sent")
+
+
 def test_openai_adapter_sends_one_schema_bound_request_with_injected_offline_client():
     """Send exactly one schema-bound request through an injected client."""
-    parsed = AnswerDecision.model_validate_json(valid_output(), strict=True)
     response = SimpleNamespace(
         id="resp-123",
-        output_parsed=parsed,
         output_text=valid_output(),
         output=(),
         usage=SimpleNamespace(input_tokens=30, output_tokens=12),
@@ -332,11 +257,9 @@ def test_openai_adapter_sends_one_schema_bound_request_with_injected_offline_cli
     assert result.metadata.request_ids == ("resp-123",)
     assert len(client.responses.calls) == 1
     call = dict(client.responses.calls[0])
-    # The schema may be bound as the M4.1 SDK-parsed text_format or as the M4.4
-    # strict text.format payload; either stage must bind exactly one mechanism.
-    mechanisms = [key for key in ("text_format", "text") if key in call]
-    assert len(mechanisms) == 1
-    call.pop(mechanisms[0])
+    # The schema is bound only as the strict text.format payload.
+    assert call.pop("text") == {"format": strict_response_format(AnswerDecision)}
+    assert "text_format" not in call
     assert call == {
         "model": "gpt-5.6-terra",
         "instructions": "Return one strict evidence decision.",
@@ -352,7 +275,6 @@ def test_openai_adapter_maps_structured_refusal_without_network_or_retry():
     refusal = SimpleNamespace(type="refusal", refusal="Request refused by the model.")
     response = SimpleNamespace(
         id="resp-refused",
-        output_parsed=None,
         output_text="",
         output=(SimpleNamespace(content=(refusal,)),),
         usage=SimpleNamespace(input_tokens=8, output_tokens=0),
@@ -369,6 +291,8 @@ def test_openai_adapter_maps_structured_refusal_without_network_or_retry():
     assert result.status == "provider_refused"
     assert isinstance(result.refusal, ProviderRefusal)
     assert result.refusal.message == "Request refused by the model."
+    assert result.refusal.attempts == 1
+    assert result.metadata.retries == 0
     assert len(client.responses.calls) == 1
 
 
@@ -376,7 +300,6 @@ def test_openai_adapter_rejects_missing_usage_as_typed_provider_error():
     """Reject a response carrying no usage as a typed provider error."""
     response = SimpleNamespace(
         id="resp-no-usage",
-        output_parsed=None,
         output_text=valid_output(),
         output=(),
         usage=None,
@@ -395,6 +318,8 @@ def test_openai_adapter_rejects_missing_usage_as_typed_provider_error():
     assert "token usage" in result.refusal.message
     assert result.metadata.input_tokens == 0
     assert result.metadata.output_tokens == 0
+    # The failed attempt is recorded as one empty raw output, never as invented usage.
+    assert result.metadata.raw_outputs == ("",)
 
 
 def test_provider_closes_only_the_client_it_opened_itself():
@@ -419,15 +344,22 @@ def test_strict_format_closes_every_object_and_requires_every_key():
 
     assert payload["type"] == "json_schema"
     assert payload["name"] == "AnswerDecision"
+    # The OpenAI payload type leaves "strict" optional and types the schema as
+    # dict[str, object]; narrow the parts read below.
+    assert "strict" in payload
     assert payload["strict"] is True
     schema = payload["schema"]
     assert schema["additionalProperties"] is False
+    assert isinstance(schema["properties"], dict)
     assert schema["required"] == list(schema["properties"])
 
     nested = strict_response_format(RelevanceJudgment)["schema"]
+    assert isinstance(nested["$defs"], dict)
     grade = nested["$defs"]["ChunkRelevance"]
     assert grade["additionalProperties"] is False
     assert grade["required"] == list(grade["properties"])
+    # The rationale length bound survives the strict rewrite and reaches the provider.
+    assert grade["properties"]["reason"]["maxLength"] == 160
 
 
 def test_strict_format_strips_defaults_and_requires_every_field():
@@ -442,39 +374,10 @@ def test_strict_format_strips_defaults_and_requires_every_field():
 
     schema = strict_response_format(Defaulted)["schema"]
 
+    # The OpenAI payload types the schema as dict[str, object]; narrow the part read below.
+    assert isinstance(schema["properties"], dict)
     assert "default" not in schema["properties"]["label"]
     assert schema["required"] == ["label"]
-
-
-def test_strict_format_is_deterministic_between_calls():
-    """Produce the same strict format on every call."""
-    assert strict_response_format(AnswerDecision) == strict_response_format(AnswerDecision)
-
-
-def test_legacy_flag_keeps_the_sdk_parsed_path():
-    """Keep the SDK parsed path reachable behind the legacy flag."""
-    parsed = AnswerDecision.model_validate_json(valid_output(), strict=True)
-    response = SimpleNamespace(
-        id="resp-legacy",
-        output_parsed=parsed,
-        output_text=valid_output(),
-        output=(),
-        usage=SimpleNamespace(input_tokens=30, output_tokens=12),
-    )
-    client = FakeClient(response)
-    provider = OpenAILLMProvider(
-        model_name="gpt-5.6-terra",
-        client=client,
-        structured_output=False,
-        clock=TickClock(),
-    )
-
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
-
-    assert result.status == "ok"
-    call = client.responses.calls[0]
-    assert call["text_format"] is AnswerDecision
-    assert "text" not in call
 
 
 def test_repair_loop_still_guards_the_strict_path():
@@ -624,25 +527,120 @@ def test_post_hoc_accounting_is_unchanged_when_the_projection_undershoots():
     assert result.refusal.projected_input_tokens is None
 
 
-def test_deterministic_provider_projects_nothing_by_default():
-    """Fixtures without an injected projection keep today's usage-only accounting."""
-    provider = DeterministicLLMProvider(
-        [raw(valid_output(), input_tokens=100, output_tokens=20)], clock=TickClock()
+def test_openai_preflight_refusal_records_its_projection_in_metadata():
+    """The adapter's schema-inclusive preflight reports one projection in the refusal and
+    the metadata alike, so model_calls and the failure details tell the same story."""
+    responses = UnreachableResponses()
+    provider = OpenAILLMProvider(
+        model_name="gpt-5.6-terra",
+        client=SimpleNamespace(responses=responses),
+        clock=TickClock(),
     )
 
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=5)))
+    # The prompt alone fits 100 tokens; the prompt plus the serialized strict schema does not.
+    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=100)))
 
-    assert len(provider.prompts) == 1
+    assert responses.calls == []
     assert result.status == "budget_exceeded"
     assert isinstance(result.refusal, BudgetExceeded)
-    assert result.refusal.projected_input_tokens is None
+    assert result.refusal.which == "input_tokens"
+    assert result.refusal.attempts == 0
+    assert result.refusal.projected_input_tokens is not None
+    assert result.refusal.projected_input_tokens > 100
+    assert result.metadata.requests == 0
+    assert result.metadata.projected_input_tokens == result.refusal.projected_input_tokens
 
 
-def test_strict_format_keeps_the_reason_bound():
-    """The strict decoding schema carries the rationale length bound to the provider."""
-    schema = strict_response_format(RelevanceJudgment)["schema"]
-    assert isinstance(schema, dict)
-    definitions = schema["$defs"]
-    assert isinstance(definitions, dict)
-    reason = definitions["ChunkRelevance"]["properties"]["reason"]
-    assert reason["maxLength"] == 160
+def test_missing_tokenizer_is_a_pre_call_refusal_that_sent_nothing(monkeypatch, tmp_path):
+    """Under the shared allowance the cost preflight needs the tokenizer; without it the
+    call is refused before dispatch, sending nothing and naming the local cause."""
+    monkeypatch.setattr(
+        provider_module, "estimate_prompt_tokens", lambda prompt, *, model_name: None
+    )
+    responses = UnreachableResponses()
+    provider = OpenAILLMProvider(
+        model_name="gpt-5.6-terra",
+        client=SimpleNamespace(responses=responses),
+        clock=TickClock(),
+    )
+    ledger = SharedAIAllowance(tmp_path / "limits.sqlite3", Decimal("1"), 5, 25)
+    token = active_allowance.set(ledger)
+    try:
+        result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
+    finally:
+        active_allowance.reset(token)
+
+    assert responses.calls == []
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert result.metadata.requests == 0
+    assert result.refusal.attempts == 0
+    assert "tokenizer" in result.refusal.message
+    assert result.metadata.raw_outputs == ()
+    assert result.metadata.llm_output == ""
+    assert result.metadata.request_time_ms == 0
+
+
+class AllowanceCappedProvider(DeterministicLLMProvider):
+    """Meter like the shared allowance: deny the request sent after ``deny_after`` others."""
+
+    def __init__(self, responses, *, deny_after):
+        super().__init__(responses, clock=TickClock())
+        self.deny_after = deny_after
+        self.denial = AIAllowanceError("public_daily_limit", "Daily AI allowance reached.", 60)
+
+    async def _request(self, prompt, schema, budget):
+        """Deny before the request is sent, as the allowance reservation does."""
+        if len(self.prompts) == self.deny_after:
+            raise self.denial
+        return await super()._request(prompt, schema, budget)
+
+
+def test_denied_repair_surfaces_the_billed_first_attempt_as_provider_metadata():
+    """Raise a denied repair with the metadata of the first attempt, which was billed.
+
+    The error stays an ``AIAllowanceError`` with the original code, message and retry
+    delay, so the 429 mapping is unchanged, and its metadata is what a typed failure
+    after that attempt would carry, so the caller can trace what was paid for.
+    """
+    label_only_decision = '{"label":"SUPPORTED"}'
+    provider = AllowanceCappedProvider(
+        [raw(label_only_decision, input_tokens=10, output_tokens=5)], deny_after=1
+    )
+
+    with pytest.raises(AIAllowanceError) as raised:
+        asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
+
+    denial = raised.value
+    assert isinstance(denial, BilledAttemptAllowanceError)
+    assert (denial.code, str(denial), denial.retry_after) == (
+        "public_daily_limit",
+        "Daily AI allowance reached.",
+        60,
+    )
+    assert len(provider.prompts) == 1
+    assert denial.metadata == ProviderMetadata(
+        provider="deterministic",
+        model_name="deterministic-mock",
+        api_url="deterministic://local",
+        input_tokens=10,
+        output_tokens=5,
+        estimated_cost_usd=Decimal("0.00007"),
+        request_time_ms=1.0,
+        retries=0,
+        request_ids=("req-1",),
+        llm_output=label_only_decision,
+        raw_outputs=(label_only_decision,),
+        requests=1,
+    )
+
+
+def test_denied_first_attempt_is_re_raised_unchanged():
+    """Re-raise a denial of the first attempt as is: nothing was sent, so nothing was billed."""
+    provider = AllowanceCappedProvider([], deny_after=0)
+
+    with pytest.raises(AIAllowanceError) as raised:
+        asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
+
+    assert raised.value is provider.denial
+    assert provider.prompts == ()

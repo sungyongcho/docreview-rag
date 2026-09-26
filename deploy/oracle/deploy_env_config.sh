@@ -68,7 +68,7 @@ export DOCREVIEW_IMAGE="${DEPLOY_ORACLE_IMAGE:-docreview-rag:${git_sha}}"
 export ORACLE_BUILD_DIR="${DEPLOY_ORACLE_BUILD_DIR:-/home/${ORACLE_SSH_USER}/build/docreview-rag}"
 
 # ===== Secrets and artifacts (same names as deploy/gcp) =====
-export POSTGRES_PASSWORD="${DEPLOY_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD:-}}"
+export POSTGRES_PASSWORD="${DEPLOY_POSTGRES_PASSWORD:-}"
 export ARTIFACT_DIR="${DEPLOY_ARTIFACT_DIR:-${HOME}/.local/share/docreview/prod-artifacts/20260909-portfolio18}"
 
 _mask_len() {

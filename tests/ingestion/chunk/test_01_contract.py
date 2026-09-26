@@ -4,13 +4,16 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from app.ingestion.tokens import InputBudget
 
-def test_config_defaults_are_positive(C):
-    """Use a positive complete-input token target by default."""
-    config = C.ChunkConfig()
-    assert config.target_tokens == 2048
-    assert config.max_tokens == 8192
-    assert config.max_chars == 12000
+
+def test_default_config_plans_with_the_shared_input_budget(C):
+    """Chunk by default within the complete-input budget the whole pipeline shares.
+
+    Seeding chunks with the default config while evaluations report the shared token
+    target, so a default that drifted from the shared budget would misdescribe the corpus.
+    """
+    assert C.ChunkConfig().budget == InputBudget()
 
 
 @pytest.mark.parametrize(

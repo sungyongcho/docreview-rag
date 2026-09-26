@@ -1,18 +1,23 @@
 """Builders and constants shared by evaluation tests."""
 
 from datetime import UTC, datetime
+import json
+from pathlib import Path
 
 from app.evals.types import GoldenCase, GoldenSpan
+from app.ingestion.manifest import CorpusIdentity, Manifest
+from app.ingestion.parser import source_digest
 from app.retrieval.types import ChunkHit
+from tests.ingestion.support import acquired_filing, filing_document
 
 SOURCE_SHA256 = "a" * 64
 EVALUATION_RECORDED_AT = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def positive_case(case_id: str = "m3c-01") -> GoldenCase:
+def positive_case() -> GoldenCase:
     """Build a source-bearing case that :func:`relevant_hit` answers."""
     return GoldenCase(
-        id=case_id,
+        id="m3c-01",
         question="What evidence is supported?",
         category="simple_lookup",
         facet="factual",
@@ -34,10 +39,10 @@ def positive_case(case_id: str = "m3c-01") -> GoldenCase:
     )
 
 
-def absent_case(case_id: str = "m3c-02") -> GoldenCase:
+def absent_case() -> GoldenCase:
     """Build an absent case that carries no answer span."""
     return GoldenCase(
-        id=case_id,
+        id="m3c-02",
         question="What evidence is absent?",
         category="absent",
         facet="risk",
@@ -68,3 +73,57 @@ def relevant_hit() -> ChunkHit:
         index_text="NVDA FY2024 · Item 7\n\nSupported evidence.",
         score=1.0,
     )
+
+
+def source_bound_golden(tmp_path: Path):
+    """Create one current original and an explicit historical evidence identity."""
+    document = filing_document(issuer="NVDA", document_id="sec-current")
+    body = b"<p>Verified revenue evidence.</p>"
+    acquired = acquired_filing(tmp_path, document=document, payload=body)
+    path = tmp_path / acquired.primary.path
+    path.parent.mkdir(parents=True)
+    path.write_bytes(body)
+    manifest_path = tmp_path / "manifest.json"
+    manifest = Manifest(
+        corpus=CorpusIdentity(corpus_id="test", name="test"),
+        documents=(document,),
+        artifacts=acquired.artifacts,
+    )
+    manifest_path.write_text(manifest.model_dump_json())
+    requirement_path = tmp_path / "requirements.json"
+    requirement_path.write_text(
+        json.dumps(
+            {
+                "NVDA-FY2024": {
+                    "registry": "sec",
+                    "issuer": "NVDA",
+                    "fiscal_year": document.fiscal_year,
+                    "filing_id": document.filing_id,
+                }
+            }
+        )
+    )
+    payload = [
+        {
+            "id": "case-1",
+            "question": "What is the evidence?",
+            "category": "simple_lookup",
+            "facet": "factual",
+            "tags": [],
+            "answers": [
+                {
+                    "doc_id": "NVDA-FY2024",
+                    "source_sha256": source_digest(body.decode()),
+                    "start_char": 3,
+                    "end_char": 29,
+                }
+            ],
+            "expected_label": "SUPPORTED",
+            "reference_answer": "Verified revenue evidence.",
+            "note": "Fixture only.",
+            "curation_status": "agent-curated",
+            "approval_status": "pending-author-approval",
+            "human_verified": False,
+        }
+    ]
+    return payload, manifest_path, requirement_path

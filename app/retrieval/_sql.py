@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from sqlalchemy import Select, SQLColumnExpression, or_, select
-from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy import ColumnCollection, Select, SQLColumnExpression, or_, select
+from sqlalchemy.sql.elements import ColumnElement, SQLCoreOperations
 
 from app.db.models import Chunk, Document, SnapshotChunk
 from app.retrieval.types import RetrievalFilters
@@ -213,6 +213,38 @@ def hit_columns(
     )
 
 
+def provenance_tie_breakers(
+    columns: ChunkSource | ColumnCollection[str, ColumnElement[Any]],
+    chunk_id: SQLCoreOperations[int],
+) -> tuple[ColumnElement[Any], ...]:
+    """Order equal scores by source provenance, then by chunk id.
+
+    Parameters
+    ----------
+    columns : ChunkSource | ColumnCollection[str, ColumnElement[Any]]
+        A chunk model, or the columns of a subquery that projects ranked hits.
+    chunk_id : SQLCoreOperations[int]
+        The chunk id column, passed apart because ``Chunk`` names it ``id``.
+
+    Returns
+    -------
+    tuple[ColumnElement[Any], ...]
+        Ascending tie-breakers from document to chunk identity.
+
+    Notes
+    -----
+    PostgreSQL's ``C`` collation keeps text tie-breakers compatible with Python's
+    deterministic ordering.
+    """
+    return (
+        columns.doc_id.collate(TIE_BREAK_COLLATION).asc(),
+        columns.source_sha256.collate(TIE_BREAK_COLLATION).asc(),
+        columns.start_char.asc(),
+        columns.end_char.asc(),
+        chunk_id.asc(),
+    )
+
+
 def hit_order_by(
     score_ordering: ColumnElement[Any], source: ChunkSource = Chunk
 ) -> tuple[ColumnElement[Any], ...]:
@@ -227,17 +259,6 @@ def hit_order_by(
     -------
     tuple[ColumnElement[Any], ...]
         Ordering expressions with source-provenance tie-breakers.
-
-    Notes
-    -----
-    PostgreSQL's ``C`` collation keeps text tie-breakers compatible with Python's
-    deterministic ordering.
     """
-    return (
-        score_ordering,
-        source.doc_id.collate(TIE_BREAK_COLLATION).asc(),
-        source.source_sha256.collate(TIE_BREAK_COLLATION).asc(),
-        source.start_char.asc(),
-        source.end_char.asc(),
-        (Chunk.id if source is Chunk else SnapshotChunk.chunk_id).asc(),
-    )
+    chunk_id = Chunk.id if source is Chunk else SnapshotChunk.chunk_id
+    return (score_ordering, *provenance_tie_breakers(source, chunk_id))

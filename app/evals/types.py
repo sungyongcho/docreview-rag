@@ -1,5 +1,6 @@
 """Strict, source-stable value objects for retrieval evaluation data."""
 
+from dataclasses import dataclass
 from typing import Annotated, Literal, Self
 
 from pydantic import (
@@ -13,7 +14,24 @@ from pydantic import (
     model_validator,
 )
 
-from app.retrieval.types import SourceSha256
+from app.retrieval.types import ChunkHit, SourceSha256
+
+
+@dataclass(frozen=True, slots=True)
+class Decomposition:
+    """Actual sub-questions and any provider failure that caused single-query degradation."""
+
+    sub_questions: tuple[str, ...]
+    fallback_status: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationRetrieval:
+    """Hits and optional measured decomposition from the same evaluation request."""
+
+    hits: tuple[ChunkHit, ...]
+    decomposition: Decomposition | None = None
+
 
 GoldenCategory = Literal["simple_lookup", "exact_number", "multi_hop", "absent"]
 GoldenFacet = Literal["factual", "comparison", "risk", "policy", "numeric"]

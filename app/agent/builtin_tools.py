@@ -1,27 +1,24 @@
 """Built-in filing tools: typed wrappers over the M2 retrieval surface."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import field_validator
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.registry import ToolRegistry
 from app.agent.tools import Tool, ToolError
 from app.agent.types import AgentCitation
 from app.db.models import Chunk
+from app.db.session_factory import SessionFactory
+from app.llm.schemas import NonBlank
 from app.retrieval.embeddings import EmbeddingIdentity, EmbeddingProvider, get_embedding_provider
-from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.service import retrieve
-from app.retrieval.types import ChunkHit, RetrievalFilters
-
-type SessionFactory = Callable[[], AsyncSession]
+from app.retrieval.types import ChunkHit, FiscalYear, Form, Issuer, RetrievalFilters
 
 DEFAULT_SEARCH_K = 5
 MAX_SEARCH_K = 20
 SNIPPET_CHARS = 320
-BODY_CHARS = 4_000
 
 
 class _QueryEmbeddingCache(EmbeddingProvider):
@@ -76,14 +73,17 @@ class SearchFilingsParams(ToolParams):
 
     Optional fields default to ``None`` so tolerant surfaces (MCP clients) may
     omit them; the strict provider schema still requires every field because
-    strict decoding strips defaults and marks all properties required.
+    strict decoding strips defaults and marks all properties required. The field
+    types are the retrieval contract's own, so a value retrieval would reject is
+    reported as an invalid argument naming the field instead of surfacing later
+    as a redacted runtime failure.
     """
 
-    query: Annotated[str, Field(min_length=1)]
+    query: NonBlank
     k: Annotated[int, Field(gt=0, le=MAX_SEARCH_K)] | None = None
-    issuers: tuple[str, ...] | None = None
-    fiscal_years: tuple[int, ...] | None = None
-    forms: tuple[str, ...] | None = None
+    issuers: tuple[Issuer, ...] | None = None
+    fiscal_years: tuple[FiscalYear, ...] | None = None
+    forms: tuple[Form, ...] | None = None
 
 
 class FetchChunkParams(ToolParams):
@@ -95,9 +95,9 @@ class FetchChunkParams(ToolParams):
 class CompareYearsParams(ToolParams):
     """Arguments for retrieving the same question across fiscal years."""
 
-    query: Annotated[str, Field(min_length=1)]
-    issuer: Annotated[str, Field(min_length=1, max_length=32)]
-    fiscal_years: tuple[int, ...]
+    query: NonBlank
+    issuer: Issuer
+    fiscal_years: tuple[FiscalYear, ...]
     k: Annotated[int, Field(gt=0, le=10)] | None = None
 
     @field_validator("fiscal_years", mode="after")
@@ -156,8 +156,6 @@ def build_default_registry(
     session_factory: SessionFactory,
     *,
     embedding_provider: EmbeddingProvider | None = None,
-    candidate_k: int | None = None,
-    rrf_k: int = DEFAULT_RRF_K,
     search_k: int = DEFAULT_SEARCH_K,
 ) -> ToolRegistry:
     """Register the built-in filing tools over a per-call session factory.
@@ -171,10 +169,6 @@ def build_default_registry(
         in its own task) cannot interleave reads on shared state.
     embedding_provider : EmbeddingProvider | None
         Optional explicit query embedding provider.
-    candidate_k : int | None
-        Optional shared candidate depth for retrieval tools.
-    rrf_k : int
-        Positive reciprocal-rank-fusion constant.
     search_k : int
         Hit count ``search_filings`` uses when the caller omits ``k``.
 
@@ -205,13 +199,11 @@ def build_default_registry(
                 params.query,
                 provider=embedding_provider,
                 k=params.k or search_k,
-                candidate_k=candidate_k,
                 filters=RetrievalFilters(
                     issuers=params.issuers or (),
                     fiscal_years=params.fiscal_years or (),
                     forms=params.forms or (),
                 ),
-                rrf_k=rrf_k,
             )
             return {"hits": [_hit_payload(hit) for hit in result.hits]}
 
@@ -229,7 +221,7 @@ def build_default_registry(
                 "end_char": chunk.end_char,
                 "source_sha256": chunk.source_sha256,
                 "context_header": chunk.context_header,
-                "body": chunk.body[:BODY_CHARS],
+                "body": chunk.body,
             }
 
     async def compare_years(params: CompareYearsParams) -> dict[str, Any]:
@@ -245,12 +237,10 @@ def build_default_registry(
                     params.query,
                     provider=provider,
                     k=params.k or 3,
-                    candidate_k=candidate_k,
                     filters=RetrievalFilters(
                         issuers=(params.issuer,),
                         fiscal_years=(fiscal_year,),
                     ),
-                    rrf_k=rrf_k,
                 )
                 years.append(
                     {

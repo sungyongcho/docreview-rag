@@ -3,7 +3,6 @@
 import asyncio
 from decimal import Decimal
 import json
-import threading
 from typing import cast
 
 from fastapi.testclient import TestClient
@@ -11,23 +10,19 @@ from openai import OpenAIError
 import pytest
 
 from app import cli
-from app.api.errors import ApiProblemError
+from app.api.app import create_api_app
 from app.api.review_profile import ReviewSessionProfile
-import app.api.runtime as runtime_module
-from app.api.runtime import RuntimeApiServices, SessionFactory, build_runtime_services
-from app.api.schemas import IngestRequest, ReviewRequest
-from app.config import Settings, get_settings
-from app.ingestion.seed import SeedResult
-from app.llm.provider import DeterministicLLMProvider, OpenAILLMProvider
+from app.api.runtime import RuntimeApiServices
+from app.api.schemas import ReviewRequest
+from app.db.session_factory import SessionFactory
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
-from app.main import create_app
 from app.observability.types import build_run_report
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.scope import ManifestScopeIndex
 from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.workflow.types import NodeError, initial_state
-from tests.ingestion.seed.support import sample_batch
 from tests.ingestion.support import filing_document
+from tests.llm.support import DeterministicLLMProvider
 
 
 class FakeTransaction:
@@ -137,14 +132,12 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, session_factory),
-        llm_provider=llm_provider,
-        provider_budget=provider_budget(),
+        llm_providers={"openai": llm_provider},
+        provider_budgets={"openai": provider_budget()},
         retrieval_service=retrieval_service,
         workflow_service=workflow_service,
         run_persister=run_persister,
         run_id_factory=lambda: "run-integration",
-        lexical_ranker="bm25",
-        route_by_language=True,
         scope_index=ManifestScopeIndex.from_entries(
             (filing_document(issuer="ACME", document_id=hit.doc_id),)
         ),
@@ -158,7 +151,7 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
         "prompt_policy": {"max_context_chars": 10000, "workflow_budget": {"max_iterations": 4}},
     }
 
-    with TestClient(create_app(services)) as client:
+    with TestClient(create_api_app(services)) as client:
         retrieved = client.post(
             "/retrieve",
             json={"query": "Revenue?", "session_profile": explicit_profile},
@@ -217,14 +210,17 @@ def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(hi
         query_routing_enabled=True,
     )
 
-    with TestClient(create_app(services)) as client:
-        response = client.post("/retrieve", json={"query": "Revenue?"})
+    with TestClient(create_api_app(services)) as client:
+        response = client.post(
+            "/retrieve",
+            json={"query": "Revenue?", "session_profile": {"issuers": ["ACME"]}},
+        )
 
     assert response.status_code == 200
     assert response.json()["results"][0]["chunk_id"] == hit.chunk_id
 
 
-@pytest.mark.parametrize("scope,languages", [("auto", []), ("sec", []), ("sec", ["en"])])
+@pytest.mark.parametrize("scope,languages", [("auto", []), ("sec", ["en"])])
 def test_korean_preset_retrieval_uses_the_issuer_language_without_translation(
     hit, scope, languages
 ):
@@ -250,7 +246,7 @@ def test_korean_preset_retrieval_uses_the_issuer_language_without_translation(
             [filing_document(issuer="NVDA", aliases=("NVDA", "NVIDIA"))]
         ),
     )
-    with TestClient(create_app(services)) as client:
+    with TestClient(create_api_app(services)) as client:
         response = client.post(
             "/retrieve",
             json={
@@ -316,8 +312,8 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
-        llm_provider=provider,
-        provider_budget=provider_budget(),
+        llm_providers={"openai": provider},
+        provider_budgets={"openai": provider_budget()},
         workflow_service=workflow_service,
         run_persister=run_persister,
         query_routing_enabled=True,
@@ -355,50 +351,19 @@ def test_cli_and_http_use_the_same_public_evidence_shape(
 
 
 def test_default_runtime_is_live_but_review_is_fail_closed_without_provider():
-    """Serve the surface by default while refusing review until a provider is injected."""
-    with TestClient(create_app(), raise_server_exceptions=False) as client:
-        health = client.get("/health")
+    """Serve the surface while refusing review until a provider is injected."""
+    services = RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
+    with TestClient(create_api_app(services), raise_server_exceptions=False) as client:
         review = client.post("/review", json={"query": "Revenue?"})
         openapi = client.get("/openapi.json")
 
-    assert health.status_code == 200
-    assert health.json() == {"status": "ok"}
     assert review.status_code == 503
     assert review.json()["error"] == {
         "code": "provider_unavailable",
         "message": "Review engine 'openai' is not configured.",
         "details": [],
     }
-    assert "/health" in openapi.json()["paths"]
     assert "/retrieve" in openapi.json()["paths"]
-
-
-def test_build_runtime_services_composes_from_settings():
-    """Wire the embedder, lexical plan, review provider, and secrets from Settings."""
-    settings = Settings.model_validate(
-        {
-            **get_settings().model_dump(),
-            "embedding_provider": "deterministic",
-            "lexical_ranker": "bm25",
-            "query_language_routing": True,
-            "bm25_k1": 1.4,
-            "openai_api_key_dev": "sk-review-test-key",
-            "review_model": "gpt-5.6-terra",
-        }
-    )
-
-    services = build_runtime_services(settings)
-
-    assert isinstance(services._embedding_provider, DeterministicEmbeddingProvider)
-    assert services._lexical_ranker == "bm25"
-    assert services._route_by_language is True
-    assert services._bm25_k1 == 1.4
-    assert isinstance(services._llm_provider, OpenAILLMProvider)
-    assert services._llm_provider.model_name == "gpt-5.6-terra"
-    assert services._provider_budget is not None
-    assert services._provider_budget.pricing.output_per_million_usd == Decimal("12.0")
-    assert "sk-review-test-key" in services._secret_values
-    assert services._corpus_root == settings.corpus_dir
 
 
 def test_semantically_invalid_filters_are_a_typed_400():
@@ -414,10 +379,13 @@ def test_semantically_invalid_filters_are_a_typed_400():
         retrieval_service=rejecting_retrieval,
     )
 
-    with TestClient(create_app(services), raise_server_exceptions=False) as client:
+    with TestClient(create_api_app(services), raise_server_exceptions=False) as client:
         response = client.post(
             "/retrieve",
-            json={"query": "revenue", "session_profile": {"languages": ["en", "ko"]}},
+            json={
+                "query": "revenue",
+                "session_profile": {"issuers": ["NVDA"], "languages": ["en", "ko"]},
+            },
         )
 
     assert response.status_code == 400
@@ -445,13 +413,15 @@ def test_runtime_maps_provider_exceptions_to_nonsecret_503():
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, session_factory),
-        llm_provider=DeterministicLLMProvider(()),
-        provider_budget=provider_budget(),
+        llm_providers={"openai": DeterministicLLMProvider(())},
+        provider_budgets={"openai": provider_budget()},
         workflow_service=unavailable_workflow,
     )
 
-    with TestClient(create_app(services), raise_server_exceptions=False) as client:
-        response = client.post("/review", json={"query": "Revenue?"})
+    with TestClient(create_api_app(services), raise_server_exceptions=False) as client:
+        response = client.post(
+            "/review", json={"query": "Revenue?", "session_profile": {"issuers": ["NVDA"]}}
+        )
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "provider_unavailable"
@@ -489,14 +459,17 @@ def test_runtime_redacts_explicit_secrets_before_persisting_and_returning():
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
-        llm_provider=DeterministicLLMProvider(()),
-        provider_budget=provider_budget(),
+        llm_providers={"openai": DeterministicLLMProvider(())},
+        provider_budgets={"openai": provider_budget()},
         workflow_service=workflow_service,
         run_persister=run_persister,
         secret_values=(secret,),
     )
 
-    result = asyncio.run(services.review(ReviewRequest(query="Revenue?")))
+    request = ReviewRequest.model_validate(
+        {"query": "Revenue?", "session_profile": {"issuers": ["NVDA"]}}
+    )
+    result = asyncio.run(services.review(request))
 
     persisted_run = persisted[0][0]
     assert secret not in repr(result)
@@ -504,84 +477,64 @@ def test_runtime_redacts_explicit_secrets_before_persisting_and_returning():
     assert secret not in json.dumps(persisted_run.report)
 
 
-def test_runtime_prepares_ingestion_off_the_event_loop(monkeypatch, tmp_path):
-    """Prepare the corpus on another thread, leaving the event loop free."""
-    manifest = tmp_path / "manifest.json"
-    caller_thread = threading.get_ident()
-    preparation_threads = []
-    bootstraps = []
+def test_allowance_denial_after_a_billed_call_keeps_the_run_on_record(hit):
+    """A check call the shared allowance denies after the grade call was billed still
+    persists the billed run, and the caller still receives the denial for its 429."""
+    from app.release.ai_allowance import AIAllowanceError
+    from tests.llm.support import raw
 
-    def prepare(path, *, expected_documents, selection_id, embedding_provider):
-        """Record which thread prepared the batch."""
-        assert path == manifest and selection_id == "selected"
-        preparation_threads.append(threading.get_ident())
-        return sample_batch()
+    grade = json.dumps(
+        {"grades": [{"chunk_id": hit.chunk_id, "relevant": True, "reason": "Direct evidence."}]}
+    )
 
-    async def bootstrap(engine):
-        """Record that schema bootstrap ran."""
-        bootstraps.append(engine)
+    class CappedProvider(DeterministicLLMProvider):
+        """Deny the second request before it is sent, as the allowance reservation does."""
 
-    async def persist(session, batch, *, chunk_batch_size):
-        """Stand in for persistence, returning an empty seed result."""
-        return SeedResult(documents=len(batch.documents), chunks=len(batch.chunks))
+        async def _request(self, prompt, schema, budget):
+            """Serve the grade call, then refuse the check call."""
+            if self.prompts:
+                raise AIAllowanceError("public_daily_limit", "Daily AI allowance reached.", 60)
+            return await super()._request(prompt, schema, budget)
 
-    monkeypatch.setattr(runtime_module, "load_seed_batch", prepare)
-    monkeypatch.setattr(runtime_module, "bootstrap_schema", bootstrap)
-    monkeypatch.setattr(runtime_module, "persist_seed_batch_with_stats", persist)
+    async def retrieval_service(session, query, *, provider, k, filters, **plan):
+        """Return the one staged hit."""
+        del session, query, provider, k, filters, plan
+        return RetrievalResult(
+            candidates=(hit,),
+            hits=(hit,),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(hit.chunk_id,), lexical=()),
+        )
+
+    persisted = []
+
+    async def run_persister(session, run, traces):
+        """Record the sanitized records that reached persistence."""
+        persisted.append((run, tuple(traces)))
+        return run
+
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
-        database_engine=object(),  # pyright: ignore[reportArgumentType]
-        corpus_root=tmp_path,
+        llm_providers={"openai": CappedProvider([raw(grade, input_tokens=900, output_tokens=40)])},
+        provider_budgets={"openai": provider_budget()},
+        retrieval_service=retrieval_service,
+        run_persister=run_persister,
+        run_id_factory=lambda: "run-denied",
+        scope_index=ManifestScopeIndex.from_entries(
+            (filing_document(issuer="ACME", document_id=hit.doc_id),)
+        ),
+    )
+    request = ReviewRequest.model_validate(
+        {"query": "Revenue?", "session_profile": {"issuers": ["ACME"]}}
     )
 
-    result = asyncio.run(
-        services.ingest(
-            IngestRequest(
-                manifest_path="manifest.json",
-                selection_id="selected",
-                expected_documents=1,
-            )
-        )
-    )
+    with pytest.raises(AIAllowanceError) as raised:
+        asyncio.run(services.review(request))
 
-    assert result == SeedResult(documents=1, chunks=2)
-    assert len(preparation_threads) == 1
-    assert preparation_threads[0] != caller_thread
-    # Schema DDL is opt-in: without create_schema no bootstrap runs; with it, one does.
-    assert bootstraps == []
-    asyncio.run(
-        services.ingest(
-            IngestRequest(
-                manifest_path="manifest.json",
-                selection_id="selected",
-                expected_documents=1,
-                create_schema=True,
-            )
-        )
-    )
-    assert len(bootstraps) == 1
-
-
-def test_ingest_confines_manifests_to_the_corpus_directory(tmp_path):
-    """Reject absolute and relative escapes from the configured corpus root."""
-    services = RuntimeApiServices(
-        embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, FakeSession),
-        corpus_root=tmp_path,
-    )
-
-    for escape in ("/etc/passwd", "../outside.json"):
-        try:
-            asyncio.run(
-                services.ingest(
-                    IngestRequest(
-                        manifest_path=escape, selection_id="selected", expected_documents=1
-                    )
-                )
-            )
-        except ApiProblemError as error:
-            assert error.status_code == 400
-            assert error.error.code == "manifest_outside_corpus"
-        else:
-            raise AssertionError(f"escape was accepted: {escape}")
+    assert (raised.value.code, raised.value.retry_after) == ("public_daily_limit", 60)
+    ((run, traces),) = persisted
+    assert run.run_id == "run-denied"
+    assert run.status == "budget_exceeded"
+    assert [trace.node for trace in traces] == ["grade"]
+    assert run.report["reason"]["details"][0] == "public_daily_limit"

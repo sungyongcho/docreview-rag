@@ -14,7 +14,7 @@ from openai import AsyncOpenAI
 from openai.types.responses import ResponseFormatTextJSONSchemaConfigParam
 from pydantic import BaseModel, ValidationError
 
-from app.llm.estimate import estimate_prompt_tokens, exceeds_allowance
+from app.llm.estimate import estimate_prompt_tokens
 from app.llm.schemas import (
     BudgetExceeded,
     CompletionFailure,
@@ -34,6 +34,20 @@ from app.release.ai_allowance import AIAllowanceError, active_allowance, reserve
 type Clock = Callable[[], int]
 
 
+class BilledAttemptAllowanceError(AIAllowanceError):
+    """A shared-allowance denial of a repair after the call's first attempt was billed.
+
+    It is an ``AIAllowanceError`` with the original code, message, retry delay and reset,
+    so every caller keeps its retry mapping. ``metadata`` describes the attempt already
+    sent exactly as a typed failure after that attempt would, so a caller can trace what
+    was billed.
+    """
+
+    def __init__(self, error: AIAllowanceError, metadata: ProviderMetadata) -> None:
+        super().__init__(error.code, str(error), error.retry_after, error.reset)
+        self.metadata = metadata
+
+
 class _OpenAIPreflightError(ValueError):
     """Return a structured budget refusal without counting an unsent provider call."""
 
@@ -43,15 +57,19 @@ class _OpenAIPreflightError(ValueError):
         self.failure = failure
 
 
+class _OpenAIPreflightUnavailableError(ValueError):
+    """Refuse before dispatch because a local precondition of the preflight is missing.
+
+    Nothing was sent, so the refusal counts no request and carries no raw output; the
+    message names the precondition rather than a provider fault.
+    """
+
+
 class _ResponsesAPI(Protocol):
     """Injected Responses surface used by the OpenAI adapter and offline fakes."""
 
     def create(self, **kwargs: object) -> Awaitable[object]:
         """Send one request to the Responses API."""
-        ...
-
-    def parse(self, **kwargs: object) -> Awaitable[object]:
-        """Send one request whose output the SDK parses into a schema."""
         ...
 
 
@@ -174,12 +192,12 @@ class LLMProvider(ABC):
     def _projected_input_tokens(self, prompt: Prompt) -> int | None:
         """Estimate the input tokens ``prompt`` would cost, or ``None`` to skip the pre-flight.
 
-        Providers with a tokenizer project every attempt so a request that cannot fit the
-        remaining allowance is refused before it is paid for; the base class projects
-        nothing, which keeps deterministic fixtures on their reported usage alone.
+        Providers project every attempt with the shared estimator and the model's own
+        encoding, so a request that cannot fit the remaining allowance is refused before
+        it is paid for. The deterministic test double overrides this to project nothing
+        unless a projection is injected, keeping fixtures on their reported usage alone.
         """
-        del prompt
-        return None
+        return estimate_prompt_tokens(prompt, model_name=self.model_name)
 
     async def complete[OutputT: BaseModel](
         self,
@@ -205,23 +223,18 @@ class LLMProvider(ABC):
 
         Raises
         ------
-        TypeError
-            If the boundary values do not use the declared strict types.
         ValueError
             If the injected clock moves backwards.
+        AIAllowanceError
+            If the shared OpenAI allowance denies the call before dispatch; propagated so
+            the API can answer 429. A denied repair raises ``BilledAttemptAllowanceError``,
+            which carries the metadata of the first attempt that was already billed.
 
         Notes
         -----
-        Provider exceptions become typed results. Only invalid caller contracts and a
-        non-monotonic clock escape this boundary.
+        Provider exceptions become typed results. Only a non-monotonic clock and a
+        denied shared allowance escape this boundary.
         """
-        if not isinstance(prompt, Prompt):
-            raise TypeError("prompt must be a Prompt value")
-        if not isinstance(schema, type) or not issubclass(schema, BaseModel):
-            raise TypeError("schema must be a Pydantic model class")
-        if not isinstance(budget, ProviderBudget):
-            raise TypeError("budget must be a ProviderBudget value")
-
         current_prompt = prompt
         raw_outputs: list[str] = []
         local_timings: list[LocalModelTiming] = []
@@ -233,6 +246,22 @@ class LLMProvider(ABC):
         total_reasoning_tokens = 0
         total_request_time_ms = 0.0
 
+        def sent_metadata(projected: int | None = None) -> ProviderMetadata:
+            """Describe the attempts sent so far as this completion's trace metadata."""
+            return self._metadata(
+                raw_outputs=raw_outputs,
+                local_timings=local_timings,
+                request_ids=request_ids,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                cached_input_tokens=total_cached_input_tokens,
+                cache_write_input_tokens=total_cache_write_input_tokens,
+                reasoning_tokens=total_reasoning_tokens,
+                request_time_ms=total_request_time_ms,
+                budget=budget,
+                projected_input_tokens=projected,
+            )
+
         def failed(
             failure: CompletionFailure, *, projected: int | None = None
         ) -> ProviderResult[OutputT]:
@@ -241,19 +270,7 @@ class LLMProvider(ABC):
                 status=failure.status,
                 parsed=None,
                 refusal=failure,
-                metadata=self._metadata(
-                    raw_outputs=raw_outputs,
-                    local_timings=local_timings,
-                    request_ids=request_ids,
-                    input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens,
-                    cached_input_tokens=total_cached_input_tokens,
-                    cache_write_input_tokens=total_cache_write_input_tokens,
-                    reasoning_tokens=total_reasoning_tokens,
-                    request_time_ms=total_request_time_ms,
-                    budget=budget,
-                    projected_input_tokens=projected,
-                ),
+                metadata=sent_metadata(projected),
             )
 
         repair_errors: tuple[str, ...] = ()
@@ -271,9 +288,12 @@ class LLMProvider(ABC):
                 pricing=budget.pricing,
             )
             # Fail before paying: a prompt that cannot fit the remaining input allowance is
-            # refused here, including the larger repair prompt of a second attempt.
+            # refused here, including the larger repair prompt of a second attempt. Only a
+            # projection strictly over the allowance is refused: estimation uncertainty is
+            # not turned into extra budget, and because the fallback encoding undercounts,
+            # a projection that slips through is still caught by the post-hoc usage check.
             projected = self._projected_input_tokens(current_prompt)
-            if projected is not None and exceeds_allowance(projected, remaining.max_input_tokens):
+            if projected is not None and projected > remaining.max_input_tokens:
                 # Nothing is sent, so nothing is fabricated: the refusal reports how many
                 # requests actually went out (none on the first attempt, one before a repair).
                 return failed(
@@ -290,9 +310,16 @@ class LLMProvider(ABC):
             started = self._clock()
             try:
                 raw = await self._request(current_prompt, schema, remaining)
-            except AIAllowanceError:
-                raise
+            except AIAllowanceError as error:
+                if not raw_outputs:
+                    # Nothing of this completion was sent, so nothing was billed.
+                    raise
+                # Only the repair was denied: the first attempt was sent and billed, so it
+                # leaves with the denial and the caller can trace it like any paid attempt.
+                raise BilledAttemptAllowanceError(error, sent_metadata()) from error
             except _OpenAIPreflightError as error:
+                # The adapter's stricter projection refused the call; the metadata carries
+                # the same projection so model_calls and the failure details agree.
                 return failed(
                     error.failure.model_copy(
                         update={
@@ -310,6 +337,17 @@ class LLMProvider(ABC):
                             if error.failure.which == "input_tokens"
                             else budget.max_cost_usd,
                         }
+                    ),
+                    projected=error.failure.projected_input_tokens,
+                )
+            except _OpenAIPreflightUnavailableError as error:
+                # A local precondition failed before dispatch: no request went out, so no
+                # empty raw output and no request time are recorded against the provider.
+                return failed(
+                    ProviderRefusal(
+                        status="provider_error",
+                        message=str(error),
+                        attempts=len(raw_outputs),
                     )
                 )
             except Exception as error:
@@ -436,60 +474,6 @@ class LLMProvider(ABC):
         return metadata
 
 
-class DeterministicLLMProvider(LLMProvider):
-    """Queue-backed offline provider for deterministic tests and canned runs."""
-
-    provider_name = "deterministic"
-    api_url = "deterministic://local"
-
-    def __init__(
-        self,
-        responses: Sequence[RawProviderResponse],
-        *,
-        model_name: str = "deterministic-mock",
-        clock: Clock = time.perf_counter_ns,
-        projected_input_tokens: Callable[[Prompt], int] | None = None,
-    ) -> None:
-        if not model_name.strip():
-            raise ValueError("model_name must not be blank")
-        if any(not isinstance(response, RawProviderResponse) for response in responses):
-            raise TypeError("responses must contain RawProviderResponse values")
-        super().__init__(clock=clock)
-        self.model_name = model_name
-        self._responses = list(responses)
-        self._prompts: list[Prompt] = []
-        self._budgets: list[ProviderBudget] = []
-        self._projection = projected_input_tokens
-
-    def _projected_input_tokens(self, prompt: Prompt) -> int | None:
-        """Project only when a test injected a projection; fixtures otherwise report usage alone."""
-        return None if self._projection is None else self._projection(prompt)
-
-    @property
-    def prompts(self) -> tuple[Prompt, ...]:
-        """Return prompts in request order for deterministic assertions."""
-        return tuple(self._prompts)
-
-    @property
-    def budgets(self) -> tuple[ProviderBudget, ...]:
-        """Return remaining budgets supplied to each deterministic request."""
-        return tuple(self._budgets)
-
-    async def _request[OutputT: BaseModel](
-        self,
-        prompt: Prompt,
-        schema: type[OutputT],
-        budget: ProviderBudget,
-    ) -> RawProviderResponse:
-        """Record the request boundary and return the next queued response."""
-        del schema
-        self._prompts.append(prompt)
-        self._budgets.append(budget)
-        if not self._responses:
-            raise RuntimeError("deterministic provider response queue is empty")
-        return self._responses.pop(0)
-
-
 def _strict_schema(node: object, path: str) -> None:
     """Rewrite one JSON-schema node in place to satisfy strict decoding rules."""
     if isinstance(node, list):
@@ -573,17 +557,64 @@ def _openai_refusal(response: object) -> str | None:
     return None
 
 
+def openai_usage(response: object) -> tuple[int, int, int, int, int]:
+    """Read the authoritative token usage an OpenAI Responses reply carries.
+
+    Shared by the review adapter here and the agent tool adapter, so both budget
+    boundaries account for the same usage fields under the same rules.
+
+    Parameters
+    ----------
+    response : object
+        Response returned by ``responses.create``.
+
+    Returns
+    -------
+    tuple[int, int, int, int, int]
+        Input, output, cached input, cache-write input and reasoning tokens, in
+        that order; absent detail counters read as zero.
+
+    Raises
+    ------
+    ValueError
+        If the response did not include integer input and output token usage, or
+        if a cached, cache-write or reasoning detail counter is not an integer.
+    """
+    usage = getattr(response, "usage", None)
+    input_tokens = getattr(usage, "input_tokens", None)
+    output_tokens = getattr(usage, "output_tokens", None)
+    if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
+        raise ValueError("OpenAI response did not include token usage")
+    input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "output_tokens_details", None)
+    cached_input_tokens = getattr(input_details, "cached_tokens", 0)
+    cache_write_input_tokens = getattr(input_details, "cache_write_tokens", 0)
+    reasoning_tokens = getattr(output_details, "reasoning_tokens", 0)
+    if not all(
+        isinstance(value, int)
+        for value in (cached_input_tokens, cache_write_input_tokens, reasoning_tokens)
+    ):
+        raise ValueError("OpenAI response included invalid token usage details")
+    return (
+        input_tokens,
+        output_tokens,
+        cached_input_tokens,
+        cache_write_input_tokens,
+        reasoning_tokens,
+    )
+
+
 class OpenAILLMProvider(LLMProvider):
     """OpenAI Responses API adapter with injected-client offline testability.
 
-    By default every request carries a strict ``text.format`` built by
+    Every request carries a strict ``text.format`` built by
     :func:`strict_response_format`, so schema conformance is enforced at decoding
-    time. ``structured_output=False`` keeps the legacy SDK-parsed path for models
-    or gateways that do not support strict mode; either way the shared
-    validate-repair loop in :meth:`LLMProvider.complete` remains the outer guard.
+    time; the shared validate-repair loop in :meth:`LLMProvider.complete` remains
+    the outer guard.
     """
 
     provider_name = "openai"
+    api_url = "https://api.openai.com/v1/responses"
 
     def __init__(
         self,
@@ -592,25 +623,15 @@ class OpenAILLMProvider(LLMProvider):
         role: OpenAIModelRole = "review",
         client: object | None = None,
         api_key: str | None = None,
-        api_url: str = "https://api.openai.com/v1/responses",
-        structured_output: bool = True,
         clock: Clock = time.perf_counter_ns,
     ) -> None:
         selection = resolve_openai_model(role, model_name)
-        if not api_url.strip():
-            raise ValueError("api_url must not be blank")
         super().__init__(clock=clock)
         self.model_name = selection.model
         self.reasoning_effort = selection.reasoning_effort
-        self.api_url = api_url
-        self._structured_output = structured_output
         self._owned_client = AsyncOpenAI(api_key=api_key, max_retries=0) if client is None else None
         client_value: object = client if client is not None else self._owned_client
         self._client = cast(_OpenAIClient, client_value)
-
-    def _projected_input_tokens(self, prompt: Prompt) -> int | None:
-        """Project the prompt with the model's own encoding before any token is paid for."""
-        return estimate_prompt_tokens(prompt, model_name=self.model_name)
 
     async def aclose(self) -> None:
         """Close the HTTP client this provider opened for itself.
@@ -635,7 +656,7 @@ class OpenAILLMProvider(LLMProvider):
         prompt : Prompt
             Strict prompt sent to the configured endpoint.
         schema : type[OutputT]
-            Pydantic output schema bound through strict or legacy SDK decoding.
+            Pydantic output schema bound through strict decoding.
         budget : ProviderBudget
             Remaining output-token allowance for this request.
 
@@ -658,7 +679,10 @@ class OpenAILLMProvider(LLMProvider):
         )
         if projected is None:
             if active_allowance.get() is not None:
-                raise ValueError("OpenAI cost preflight requires the model tokenizer")
+                raise _OpenAIPreflightUnavailableError(
+                    "OpenAI cost preflight requires the model tokenizer, which is unavailable; "
+                    "the request was not sent"
+                )
             reservation = budget.max_cost_usd
         else:
             projected += 128  # Conservative extra room for provider framing around the schema.
@@ -691,51 +715,25 @@ class OpenAILLMProvider(LLMProvider):
                     )
                 )
         await reserve_openai(reservation)
-        if self._structured_output:
-            response = await self._client.responses.create(
-                model=self.model_name,
-                instructions=prompt.system,
-                input=prompt.user,
-                text={"format": strict_response_format(schema)},
-                reasoning={"effort": self.reasoning_effort},
-                max_output_tokens=budget.max_output_tokens,
-                store=False,
-            )
-        else:
-            response = await self._client.responses.parse(
-                model=self.model_name,
-                instructions=prompt.system,
-                input=prompt.user,
-                text_format=schema,
-                reasoning={"effort": self.reasoning_effort},
-                max_output_tokens=budget.max_output_tokens,
-                store=False,
-            )
-        parsed = getattr(response, "output_parsed", None)
-        response_output_text = getattr(response, "output_text", "")
-        if isinstance(response_output_text, str) and response_output_text:
-            output_text = response_output_text
-        elif isinstance(parsed, BaseModel):
-            output_text = parsed.model_dump_json()
-        elif parsed is not None:
-            output_text = json.dumps(parsed, allow_nan=False, separators=(",", ":"))
-        else:
+        response = await self._client.responses.create(
+            model=self.model_name,
+            instructions=prompt.system,
+            input=prompt.user,
+            text={"format": strict_response_format(schema)},
+            reasoning={"effort": self.reasoning_effort},
+            max_output_tokens=budget.max_output_tokens,
+            store=False,
+        )
+        output_text = getattr(response, "output_text", "")
+        if not isinstance(output_text, str):
             output_text = ""
-        usage = getattr(response, "usage", None)
-        input_tokens = getattr(usage, "input_tokens", None)
-        output_tokens = getattr(usage, "output_tokens", None)
-        if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
-            raise ValueError("OpenAI response did not include token usage")
-        input_details = getattr(usage, "input_tokens_details", None)
-        output_details = getattr(usage, "output_tokens_details", None)
-        cached_input_tokens = getattr(input_details, "cached_tokens", 0)
-        cache_write_input_tokens = getattr(input_details, "cache_write_tokens", 0)
-        reasoning_tokens = getattr(output_details, "reasoning_tokens", 0)
-        if not all(
-            isinstance(value, int)
-            for value in (cached_input_tokens, cache_write_input_tokens, reasoning_tokens)
-        ):
-            raise ValueError("OpenAI response included invalid token usage details")
+        (
+            input_tokens,
+            output_tokens,
+            cached_input_tokens,
+            cache_write_input_tokens,
+            reasoning_tokens,
+        ) = openai_usage(response)
         return RawProviderResponse(
             output_text=output_text,
             input_tokens=input_tokens,

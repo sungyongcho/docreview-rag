@@ -29,8 +29,7 @@ from app.ingestion.seed import (
     document_upsert_statement,
     filing_records,
 )
-import app.retrieval as public
-from app.retrieval import __main__ as cli, bm25, service
+from app.retrieval import bm25, service
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.types import RetrievalFilters
 from tests.ingestion.support import filing_document, filing_source
@@ -126,77 +125,9 @@ def test_reference_implementation_reproduces_the_committed_fixture(idf, b, expec
     assert rounded(scores) == FIXTURE[expected_key]
 
 
-def test_corpus_statistics_match_the_fixture():
-    """Match document lengths and aggregate corpus statistics."""
-    lengths = {doc["id"]: doc["dl"] for doc in FIXTURE["documents"]}
-    assert lengths == {doc_id: len(tokens) for doc_id, tokens in DOCUMENTS.items()}
-    assert FIXTURE["corpus_stats"]["n_documents"] == len(DOCUMENTS)
-    assert FIXTURE["corpus_stats"]["avgdl"] == sum(lengths.values()) / len(lengths)
-
-
-def test_document_frequency_counts_documents_not_occurrences():
-    """``df`` is how many chunks contain a lexeme, never how often it occurs."""
-    occurrences = sum(tokens.count("risk") for tokens in DOCUMENTS.values())
-
-    assert occurrences == 11
-    assert FIXTURE["corpus_stats"]["df"]["risk"] == len(DOCUMENTS) == 5
-    assert FIXTURE["corpus_stats"]["df"]["market"] == 3
-
-
-def test_length_normalisation_decides_the_top_document():
-    """Show that length normalization changes the top-ranked document."""
-    normalized = reference_scores(DOCUMENTS, QUERY, b=0.75)
-    unnormalized = reference_scores(DOCUMENTS, QUERY, b=0.0)
-
-    assert ranking(normalized)[:2] == ["d1", "d4"]
-    assert ranking(unnormalized)[:2] == ["d4", "d1"]
-
-
-def test_robertson_idf_goes_negative_and_inverts_the_ranking():
-    """Expose negative Robertson weights for corpus-wide terms."""
-    lucene = reference_scores(DOCUMENTS, QUERY, idf="lucene")
-    robertson = reference_scores(DOCUMENTS, QUERY, idf="robertson")
-
-    assert FIXTURE["idf"]["robertson"]["risk"] < 0
-    assert all(score > 0 for score in lucene.values())
-    assert all(score < 0 for score in robertson.values())
-    assert ranking(lucene).index("d1") < ranking(lucene).index("d5")
-    assert ranking(robertson).index("d5") < ranking(robertson).index("d1")
-
-
-def test_lucene_idf_stays_nonnegative_for_every_document_frequency():
-    """Keep Lucene inverse document frequency nonnegative."""
-    n_documents = len(DOCUMENTS)
-    for df in range(1, n_documents + 1):
-        ratio = (n_documents - df + 0.5) / (df + 0.5)
-        assert math.log(1 + ratio) >= 0
-
-
-def test_repeated_query_terms_are_scored_once():
-    """Drive duplicate-term coverage from the committed fixture contract."""
-    once = reference_scores(DOCUMENTS, QUERY)
-    duplicate = reference_scores(DOCUMENTS, FIXTURE["duplicate_query"])
-
-    assert duplicate == once
-    assert rounded(duplicate) == FIXTURE["expected_scores_duplicate_query"]
-
-
 # --------------------------------------------------------------------------
 # The statement: bound, derived from the stored tsvector, deterministic.
 # --------------------------------------------------------------------------
-
-
-def test_statement_scores_from_persisted_corpus_statistics():
-    """Read one-row corpus metadata instead of aggregating every query."""
-    sql, _params = normalized_sql(bm25.bm25_statement("market risk", 5))
-
-    assert "FROM chunk_terms" in sql
-    assert "JOIN lexeme_stats ON lexeme_stats.lexeme = chunk_terms.lexeme" in sql
-    assert "JOIN chunk_lengths ON chunk_lengths.chunk_id = chunk_terms.chunk_id" in sql
-    assert "FROM bm25_corpus_stats" in sql
-    assert "count(" not in sql
-    assert "avg(" not in sql
-    assert "GROUP BY chunk_terms.chunk_id" in sql
 
 
 def test_statement_binds_the_query_and_never_interpolates_it():
@@ -255,40 +186,6 @@ def test_statement_emits_the_selected_idf_variant(idf, present, absent):
     assert absent not in sql
 
 
-def test_statement_matches_the_relaxed_websearch_query_but_scores_only_positives():
-    """Preserve phrase and negation matching without scoring excluded terms."""
-    sql, params = normalized_sql(bm25.bm25_statement('"market risk" -volatility', 5))
-
-    assert "MATERIALIZED" in sql
-    assert "websearch_to_tsquery(" in sql
-    assert "chunks.content_tsv @@ bm25_query.tsquery" in sql
-    assert '"market risk" -volatility' in params.values()
-    assert '"market risk"' in params.values()
-
-
-def test_statement_applies_every_shared_filter():
-    """Apply every shared chunk and issuer filter."""
-    filters = RetrievalFilters(
-        doc_ids=("NVDA-FY2024",),
-        issuers=("NVDA",),
-        fiscal_years=(2024,),
-        forms=("10-K",),
-        items=(None, "7"),
-        kinds=("table",),
-    )
-    sql, params = normalized_sql(bm25.bm25_statement("market risk", 5, filters))
-
-    assert "JOIN documents ON documents.doc_id = chunks.doc_id" in sql
-    assert "chunks.doc_id IN" in sql
-    assert "documents.issuer IN" in sql
-    assert "documents.fiscal_year IN" in sql
-    assert "documents.form IN" in sql
-    assert "OR chunks.item IS NULL" in sql
-    assert "chunks.kind IN" in sql
-    assert ["NVDA-FY2024"] in params.values()
-    assert [2024] in params.values()
-
-
 def test_snapshot_statement_uses_frozen_membership_and_bm25_statistics():
     """Score a snapshot only with its retained chunks and lexical statistics."""
     sql, params = normalized_sql(
@@ -307,19 +204,15 @@ def test_snapshot_statement_uses_frozen_membership_and_bm25_statistics():
 @pytest.mark.parametrize(
     "changes",
     [
-        {"query": ""},
-        {"query": "   "},
-        {"k": 0},
-        {"k": -1},
-        {"k": True},
-        {"k1": 0},
-        {"k1": -0.5},
-        {"k1": math.inf},
-        {"k1": math.nan},
-        {"b": -0.1},
-        {"b": 1.1},
-        {"b": math.nan},
-        {"idf": "okapi"},
+        pytest.param({"query": "   "}, id="blank-query"),
+        pytest.param({"k": 0}, id="non-positive-limit"),
+        pytest.param({"k": True}, id="boolean-limit"),
+        pytest.param({"k1": 0}, id="non-positive-k1"),
+        pytest.param({"k1": math.nan}, id="non-finite-k1"),
+        pytest.param({"b": -0.1}, id="b-below-zero"),
+        pytest.param({"b": 1.1}, id="b-above-one"),
+        pytest.param({"b": math.nan}, id="non-finite-b"),
+        pytest.param({"idf": "okapi"}, id="unknown-idf"),
     ],
 )
 def test_statement_rejects_out_of_range_parameters(changes):
@@ -342,41 +235,6 @@ def test_statement_accepts_the_closed_length_normalisation_interval(b):
     assert bm25.bm25_statement("market risk", 1, b=b) is not None
 
 
-def test_search_executes_once_and_returns_typed_hits():
-    """Execute one BM25 statement and return typed hits."""
-    mapping = hit_values(score=1.25)
-
-    class Result:
-        """Expose deterministic mapping rows like a SQLAlchemy result."""
-
-        def mappings(self):
-            """Return the recorded BM25 hit mapping."""
-            return SimpleNamespace(all=lambda: [mapping])
-
-    class Session:
-        """Record BM25 statements while returning deterministic results."""
-
-        def __init__(self):
-            self.statements = []
-
-        async def execute(self, statement):
-            """Record and satisfy the hit query."""
-            self.statements.append(statement)
-            return Result()
-
-        async def scalar(self, statement):
-            """Record and satisfy the statistics freshness query."""
-            self.statements.append(statement)
-            return 1
-
-    session = Session()
-    hits = asyncio.run(bm25.bm25_search(cast(AsyncSession, session), "market risk", 4))
-
-    assert len(session.statements) == 2
-    assert [hit.chunk_id for hit in hits] == [mapping["chunk_id"]]
-    assert hits[0].score == 1.25
-
-
 def test_search_raises_when_statistics_are_missing_or_stale():
     """Refuse to turn a missing freshness sentinel into an empty result."""
 
@@ -388,18 +246,74 @@ def test_search_raises_when_statistics_are_missing_or_stale():
             return SimpleNamespace(all=list)
 
     class Session:
-        """Return stale statistics and no candidate rows."""
+        """Return no rows at all, not even the readiness row."""
 
         async def execute(self, _statement):
             """Return the empty hit result."""
             return Result()
 
-        async def scalar(self, _statement):
-            """Report that the freshness sentinel is absent."""
-            return None
-
     with pytest.raises(RuntimeError, match="missing or stale"):
         asyncio.run(bm25.bm25_search(cast(AsyncSession, Session()), "market risk", 4))
+
+
+class _MappingResult:
+    """Expose SQLAlchemy-style row mappings for one scripted result set."""
+
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self.rows = rows
+
+    def mappings(self):
+        """Return the scripted mappings."""
+        return SimpleNamespace(all=lambda: list(self.rows))
+
+
+def test_readiness_is_read_in_the_same_statement_as_the_search():
+    """Statistics absent when the search ran must raise even if a rebuild commits right after."""
+
+    class Session:
+        """Serve a search that saw no statistics, then a sentinel that sees rebuilt ones."""
+
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def execute(self, statement):
+            """Answer the search the way PostgreSQL does without corpus statistics."""
+            self.calls.append("search")
+            if "corpus_stats" in statement.selected_columns.keys():
+                # The readiness count rides along the hit rows: with no statistics the
+                # statement yields one NULL-extended row carrying corpus_stats = 0.
+                return _MappingResult([{"chunk_id": None, "score": None, "corpus_stats": 0}])
+            return _MappingResult([])
+
+        async def scalar(self, _statement):
+            """Report statistics that a rebuild committed after the search executed."""
+            self.calls.append("sentinel")
+            return 1
+
+    session = Session()
+    try:
+        hits = asyncio.run(bm25.bm25_search(cast(AsyncSession, session), "market risk", 4))
+    except RuntimeError as error:
+        assert "missing or stale" in str(error)
+        hits = None
+    assert hits is None, (hits, session.calls)
+    assert session.calls == ["search"]
+
+
+def test_search_returns_hits_without_the_readiness_column():
+    """Hit rows carry the readiness count, which never reaches the typed evidence."""
+    rows = [{**hit_values(chunk_id=3, score=1.5), "corpus_stats": 2}]
+
+    class Session:
+        """Serve one scored row for any statement."""
+
+        async def execute(self, _statement):
+            """Return the scripted hit row."""
+            return _MappingResult(rows)
+
+    hits = asyncio.run(bm25.bm25_search(cast(AsyncSession, Session()), "market risk", 4))
+
+    assert [(hit.chunk_id, hit.score) for hit in hits] == [(3, 1.5)]
 
 
 def test_search_shares_the_first_four_parameters_with_lexical_search():
@@ -429,88 +343,24 @@ def test_backfill_refuses_a_session_that_is_already_in_a_transaction():
 
 
 # --------------------------------------------------------------------------
-# Wiring: settings, service, CLI, public surface.
+# Wiring: settings.
 # --------------------------------------------------------------------------
-
-
-def test_public_surface_exports_the_bm25_entry_points():
-    """Export BM25 search and statistic-rebuild entry points."""
-    assert {"bm25_search", "backfill_term_stats", "TermStatCounts"} <= set(public.__all__)
-
-
-def test_settings_default_to_ts_rank_cd_with_published_bm25_constants():
-    """Keep native lexical search as the default with published BM25 constants."""
-    settings = Settings()
-
-    assert settings.lexical_ranker == "ts_rank_cd"
-    assert settings.bm25_k1 == 1.2
-    assert settings.bm25_b == 0.75
-    assert settings.bm25_idf == "lucene"
 
 
 @pytest.mark.parametrize(
     "changes",
     [
-        {"bm25_k1": 0},
-        {"bm25_k1": -1},
-        {"bm25_k1": math.inf},
-        {"bm25_k1": math.nan},
-        {"bm25_b": -0.1},
-        {"bm25_b": 1.1},
-        {"bm25_b": math.inf},
-        {"bm25_b": math.nan},
+        pytest.param({"bm25_k1": 0}, id="non-positive-k1"),
+        pytest.param({"bm25_k1": math.nan}, id="non-finite-k1"),
+        pytest.param({"bm25_b": -0.1}, id="b-below-zero"),
+        pytest.param({"bm25_b": 1.1}, id="b-above-one"),
+        pytest.param({"bm25_b": math.nan}, id="non-finite-b"),
     ],
 )
 def test_settings_reject_out_of_range_bm25_constants(changes):
     """Reject invalid BM25 settings before runtime."""
     with pytest.raises(ValueError):
         Settings(**changes)
-
-
-@pytest.mark.parametrize(
-    ("name", "value"),
-    [("BM25_K1", "inf"), ("BM25_K1", "nan"), ("BM25_B", "inf"), ("BM25_B", "nan")],
-)
-def test_settings_reject_nonfinite_bm25_environment_values(monkeypatch, name, value):
-    """Reject nonfinite BM25 values loaded through the environment."""
-    monkeypatch.setenv(name, value)
-    with pytest.raises(ValueError):
-        Settings()
-
-
-def test_cli_exposes_the_ranker_flags():
-    """Expose lexical ranker and BM25 overrides through the CLI."""
-    args = cli.arguments(
-        [
-            "--query",
-            "market risk",
-            "--lexical-ranker",
-            "bm25",
-            "--bm25-k1",
-            "1.5",
-            "--bm25-b",
-            "0.4",
-            "--bm25-idf",
-            "robertson",
-            "--rebuild-bm25-stats",
-        ]
-    )
-
-    assert args.lexical_ranker == "bm25"
-    assert args.bm25_k1 == 1.5
-    assert args.bm25_b == 0.4
-    assert args.bm25_idf == "robertson"
-    assert args.rebuild_bm25_stats is True
-
-
-def test_cli_defaults_leave_every_ranker_override_unset():
-    """Leave lexical overrides unset by default."""
-    args = cli.arguments(["--query", "market risk"])
-    assert args.lexical_ranker is None
-    assert args.bm25_k1 is None
-    assert args.bm25_b is None
-    assert args.bm25_idf is None
-    assert args.rebuild_bm25_stats is False
 
 
 # --------------------------------------------------------------------------

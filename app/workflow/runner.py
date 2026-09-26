@@ -2,29 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 import time
 
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import (
-    DEFAULT_BM25_B,
-    DEFAULT_BM25_IDF,
-    DEFAULT_BM25_K1,
-    BM25Idf,
-    LexicalRanker,
-)
-from app.llm.provider import LLMProvider
+from app.llm.provider import BilledAttemptAllowanceError, LLMProvider
 from app.llm.schemas import (
     AnswerDecision,
     ProviderBudget,
+    ProviderMetadata,
     ProviderResult,
     RelevanceJudgment,
 )
 from app.observability.budget import pre_node_budget_guard
 from app.observability.stages import stage
-from app.observability.trace import step_trace_from_provider_result
+from app.observability.trace import (
+    step_trace_from_provider_metadata,
+    step_trace_from_provider_result,
+)
 from app.observability.types import (
     JsonObject,
     JsonValue,
@@ -35,10 +31,7 @@ from app.observability.types import (
     validate_elapsed_seconds,
 )
 from app.release.ai_allowance import AIAllowanceError
-from app.retrieval.embeddings import EmbeddingProvider as RetrievalEmbeddingProvider
-from app.retrieval.hybrid import DEFAULT_RRF_K
-from app.retrieval.rerank import RerankProvider
-from app.retrieval.service import RetrievalResult, retrieve
+from app.retrieval.service import RetrievalResult
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
 from app.workflow.prompts import build_check_prompt, build_grade_prompt
@@ -55,91 +48,7 @@ from app.workflow.types import (
 
 type Clock = Callable[[], float]
 type NodeObserver = Callable[[WorkflowNode, WorkflowState], Awaitable[None]]
-type Retriever = Callable[
-    [str, int, RetrievalFilters],
-    Awaitable[RetrievalResult | Sequence[ChunkHit]],
-]
-
-
-def make_session_retriever(
-    session: AsyncSession,
-    *,
-    provider: RetrievalEmbeddingProvider | None = None,
-    candidate_k: int | None = None,
-    rrf_k: int = DEFAULT_RRF_K,
-    reranker: RerankProvider | None = None,
-    route_by_language: bool = False,
-    lexical_ranker: LexicalRanker = "ts_rank_cd",
-    bm25_k1: float = DEFAULT_BM25_K1,
-    bm25_b: float = DEFAULT_BM25_B,
-    bm25_idf: BM25Idf = DEFAULT_BM25_IDF,
-) -> Retriever:
-    """Close the retrieval service over one caller-owned database session.
-
-    Parameters
-    ----------
-    session : AsyncSession
-        Session reused for every retrieval in the workflow run.
-    provider : RetrievalEmbeddingProvider | None
-        Optional vector embedding provider.
-    candidate_k : int | None
-        Optional candidate-pool override, widened to the over-fetched ``k`` when it is
-        smaller. The workflow asks for ``k * evidence_overfetch`` hits, so a pool sized
-        for the request's own ``k`` would otherwise be rejected outright.
-    rrf_k : int
-        Reciprocal-rank-fusion constant.
-    reranker : RerankProvider | None
-        Optional second-stage scorer for the fused candidate list.
-    route_by_language : bool
-        Skip the English lexical component for a Korean query, matching the configured
-        retrieval settings. Passed explicitly so a run cannot pick up a query path its
-        recorded configuration does not name.
-    lexical_ranker : LexicalRanker
-        Explicit lexical algorithm, matching the configured retrieval settings.
-    bm25_k1 : float
-        BM25 term-frequency saturation, used only by the BM25 lexical ranker.
-    bm25_b : float
-        BM25 length normalization, used only by the BM25 lexical ranker.
-    bm25_idf : BM25Idf
-        BM25 inverse-document-frequency variant.
-
-    Returns
-    -------
-    Retriever
-        Async callable matching the workflow retrieval boundary.
-
-    Notes
-    -----
-    Session and provider ownership remain with the caller. The retrieval service uses
-    the bound session sequentially and concurrent use of it is unsafe, so one retriever
-    serves one run at a time; concurrent runs need one retriever and session each.
-    Every ranking parameter is forwarded, so a run retrieves with the same
-    configuration the evaluation arms measured.
-    """
-
-    async def retrieve_for_workflow(
-        query: str,
-        k: int,
-        filters: RetrievalFilters,
-    ) -> RetrievalResult:
-        """Retrieve through the bound session for one workflow node."""
-        return await retrieve(
-            session,
-            query,
-            provider=provider,
-            k=k,
-            candidate_k=None if candidate_k is None else max(candidate_k, k),
-            filters=filters,
-            rrf_k=rrf_k,
-            reranker=reranker,
-            route_by_language=route_by_language,
-            lexical_ranker=lexical_ranker,
-            bm25_k1=bm25_k1,
-            bm25_b=bm25_b,
-            bm25_idf=bm25_idf,
-        )
-
-    return retrieve_for_workflow
+type Retriever = Callable[[str, int, RetrievalFilters], Awaitable[RetrievalResult]]
 
 
 def _elapsed(clock: Clock, started: float) -> float:
@@ -215,8 +124,13 @@ def _provider_allowance(
 
     Notes
     -----
-    ``ProviderBudget.exhausted_by`` is the single definition of exhaustion, so the
-    refusal this returns and the one the provider raises mid-call cannot disagree.
+    ``ProviderBudget.exhausted_by`` is the single definition of exhaustion, so this gate
+    and the provider's own boundary read the same limits; they differ only in what they
+    judge. This gate asks inclusively whether another request may start on the usage
+    already traced, while the provider judges each completed attempt exclusively and
+    projects a prompt's size before sending it. The refusal returned here has the shape
+    of the provider's own pre-request refusal: zero attempts and the ``BudgetExceeded``
+    evidence from which ``failed`` derives the budget source.
     """
     used_input, used_output, used_cached, used_cache_write = _used_tokens(state)
     effective = _effective_provider_budget(request)
@@ -225,14 +139,15 @@ def _provider_allowance(
         output_tokens=used_output,
         cached_input_tokens=used_cached,
         cache_write_input_tokens=used_cache_write,
-        attempts=1,
+        attempts=0,
         inclusive=True,
     ):
         return ProviderFailure(
             node=node,
             status="budget_exceeded",
-            attempts=1,
+            attempts=0,
             details=(f"{exceeded.which}: used={exceeded.used} limit={exceeded.limit}",),
+            budget=exceeded,
         )
     spent = effective.pricing.estimate(
         used_input,
@@ -258,16 +173,32 @@ def _traced[OutputT: BaseModel](
     return state.model_copy(update={"steps": (*state.steps, trace)})
 
 
-def _committed_failure(
+def _traced_denial(
+    state: WorkflowState,
+    metadata: ProviderMetadata,
+    failure: ProviderFailure,
+) -> WorkflowState:
+    """Append the trace of the billed attempt whose repair the shared allowance denied.
+
+    The denial leaves no provider result for the node to interpret, so the attempt is
+    traced from the metadata the provider raised with it, and the node's typed failure
+    becomes the step's error.
+    """
+    trace = step_trace_from_provider_metadata(
+        metadata,
+        step=len(state.steps) + 1,
+        node=failure.node,
+        error=failure.model_dump_json(),
+    )
+    return state.model_copy(update={"steps": (*state.steps, trace)})
+
+
+def _commit_failure(
     state: WorkflowState,
     node: WorkflowNode,
-    error: Exception,
+    failure: ProviderFailure | NodeError,
 ) -> WorkflowState:
-    """Record one node exception without losing its type or an empty message."""
-    message = str(error)
-    if not message.strip():
-        message = f"{node} failed without an error message"
-    failure = NodeError(node=node, error_type=type(error).__name__, message=message)
+    """Commit one typed failure as the node's outcome and keep it in the history."""
     return state.model_copy(
         update={
             "failure": failure,
@@ -277,13 +208,61 @@ def _committed_failure(
     )
 
 
-def _result_hits(result: RetrievalResult | Sequence[ChunkHit]) -> tuple[ChunkHit, ...]:
-    """Accept either a retrieval result or a plain hit sequence from a retriever."""
-    if isinstance(result, RetrievalResult):
-        return result.hits
-    if isinstance(result, str | bytes | bytearray) or not isinstance(result, Sequence):
-        raise TypeError("retriever must return RetrievalResult or a sequence of ChunkHit")
-    return tuple(result)
+def _commit_node_error(
+    state: WorkflowState,
+    node: WorkflowNode,
+    error: Exception,
+) -> WorkflowState:
+    """Record one node exception without losing its type or an empty message."""
+    message = str(error)
+    if not message.strip():
+        message = f"{node} failed without an error message"
+    failure = NodeError(node=node, error_type=type(error).__name__, message=message)
+    return _commit_failure(state, node, failure)
+
+
+class BilledRunAllowanceError(AIAllowanceError):
+    """A shared-allowance denial that stopped a run after an earlier attempt was billed.
+
+    It is an ``AIAllowanceError`` with the original code, message and retry delay, so
+    every caller keeps its retry mapping. ``report`` is the committed failure report,
+    so a caller that records runs can keep the billed trace before answering.
+    """
+
+    def __init__(self, error: AIAllowanceError, report: RunReport) -> None:
+        super().__init__(error.code, str(error), error.retry_after, error.reset)
+        self.report = report
+
+
+def _allowance_failure(
+    node: GradeOrCheckNode,
+    error: AIAllowanceError,
+    *,
+    attempts: int,
+) -> ProviderFailure:
+    """Type a shared-allowance denial that arrived after an earlier attempt was billed.
+
+    The denial precedes the request it refuses, so ``attempts`` counts only what the
+    node sent before it: none when its first request was denied, one when only its
+    repair was. The code, message and retry delay are kept as details so the committed
+    run says why it stopped.
+    """
+    return ProviderFailure(
+        node=node,
+        status="budget_exceeded",
+        attempts=attempts,
+        details=(
+            *(part for part in (error.code, str(error)) if part.strip()),
+            f"retry_after={error.retry_after}",
+        ),
+    )
+
+
+def _result_hits(result: RetrievalResult) -> tuple[ChunkHit, ...]:
+    """Return the hits of the retrieval result a retriever must produce."""
+    if not isinstance(result, RetrievalResult):
+        raise TypeError("retriever must return RetrievalResult")
+    return result.hits
 
 
 async def run_workflow(
@@ -318,22 +297,23 @@ async def run_workflow(
     Raises
     ------
     TypeError
-        If the request or provider violate the caller contract.
+        If the retriever returns something other than a ``RetrievalResult`` of
+        ``ChunkHit`` values.
     ValueError
         If the clock is non-finite or moves backwards.
+    AIAllowanceError
+        If the shared allowance denies a provider call. A denial after an earlier call
+        or attempt was billed is first committed to the observer as a typed failure and
+        raised as ``BilledRunAllowanceError``, which carries the committed report.
 
     Notes
     -----
     Every terminating report carries the degradation history under ``reasons``, so a
     failed run is as auditable as a successful one. A failure whose cause the workflow
-    can describe is reported rather than raised; only a broken caller contract escapes.
-    Observer exceptions propagate instead of becoming node failures.
+    can describe is reported rather than raised; only a broken caller contract and an
+    allowance denial escape. Observer exceptions propagate instead of becoming node
+    failures.
     """
-    if not isinstance(request, WorkflowRequest):
-        raise TypeError("request must be a WorkflowRequest")
-    if not isinstance(provider, LLMProvider):
-        raise TypeError("provider must implement LLMProvider")
-
     state = initial_state(request)
     started = validate_elapsed_seconds(clock())
 
@@ -409,7 +389,7 @@ async def run_workflow(
                 current = report_node(current)
             except Exception as error:
                 measurement.failed = True
-                current = _committed_failure(current, "report", error)
+                current = _commit_node_error(current, "report", error)
                 await notify("report", current)
                 return failed(current)
         await notify("report", current)
@@ -427,18 +407,27 @@ async def run_workflow(
         current: WorkflowState,
         node: GradeOrCheckNode,
     ) -> WorkflowState | RunReport:
-        """Guard, call the provider, trace the call, and commit one graded node."""
+        """Guard, call the provider, trace the call, and commit one graded node.
+
+        A refusal the runner makes before the call is committed exactly like one the
+        provider returns: the node joins the path, its stage ends failed, and the
+        observer sees the failure. A shared-allowance denial that arrives after an
+        earlier call was billed is committed the same way and then re-raised, so the
+        billed trace reaches the observer while the caller keeps its retry mapping; a
+        denial before anything was sent propagates without committing a node. A denied
+        repair always follows a billed first attempt of this node, so that attempt is
+        traced before the denial is committed, even when it is the run's first call.
+        """
         if refusal := blocked_by_budget(current, node):
             return refusal
         allowance = _provider_allowance(request, current, node)
         if isinstance(allowance, ProviderFailure):
-            current = current.model_copy(
-                update={
-                    "failure": allowance,
-                    "reasons": (*current.reasons, allowance),
-                }
-            )
+            async with stage(node) as measurement:
+                measurement.failed = True
+                current = _commit_failure(current, node, allowance)
+            await notify(node, current)
             return failed(current)
+        denied: AIAllowanceError | None = None
         async with stage(node) as measurement:
             try:
                 if node == "grade":
@@ -451,12 +440,23 @@ async def run_workflow(
                         build_check_prompt(current), AnswerDecision, allowance
                     )
                     current = check_node(_traced(current, decided, node), decided)
-            except AIAllowanceError:
-                raise
+            except BilledAttemptAllowanceError as error:
+                denied = error
+                failure = _allowance_failure(node, error, attempts=error.metadata.requests)
+                current = _traced_denial(current, error.metadata, failure)
+                current = _commit_failure(current, node, failure)
+            except AIAllowanceError as error:
+                if not current.steps:
+                    raise
+                denied = error
+                failure = _allowance_failure(node, error, attempts=0)
+                current = _commit_failure(current, node, failure)
             except Exception as error:
-                current = _committed_failure(current, node, error)
+                current = _commit_node_error(current, node, error)
             measurement.failed = current.failure is not None
         await notify(node, current)
+        if denied is not None:
+            raise BilledRunAllowanceError(denied, failed(current)) from denied
         return failed(current) if current.failure is not None else current
 
     if refusal := blocked_by_budget(state, "retrieve"):
@@ -467,7 +467,7 @@ async def run_workflow(
         except AIAllowanceError:
             raise
         except Exception as error:
-            state = _committed_failure(state, "retrieve", error)
+            state = _commit_node_error(state, "retrieve", error)
             await notify("retrieve", state)
             measurement.failed = True
             return failed(state)

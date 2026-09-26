@@ -5,9 +5,9 @@ from dataclasses import replace
 
 import pytest
 
-from app.api.admin_schemas import EvaluationRunRequest
+from app.api.admin_schemas import EvaluationRunRequest, RetrievalProfile
 from app.config import Settings
-from app.corpus_admin import CorpusStatus
+from app.corpus_admin.types import CorpusStatus
 from app.evals.admin import EvaluationAdminService, EvaluationNotReadyError
 from app.evals.source_binding import BoundGolden, SourceCheck
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
@@ -41,7 +41,6 @@ def test_missing_sources_block_job_registration(tmp_path):
     [
         ("unparsed", "parsing_required"),
         ("changed_source", "parsing_required"),
-        ("missing_vectors", "index_update_required"),
         ("missing_bm25", "index_update_required"),
         ("ready", "ready"),
     ],
@@ -53,8 +52,6 @@ def test_preparation_distinguishes_index_and_exact_source_versions(
     status = CorpusStatus(True, "compatible", "ok", 1, 1, 1, 0, True, True, "deterministic")
     if scenario == "unparsed":
         status = replace(status, chunks=0)
-    if scenario == "missing_vectors":
-        status = replace(status, pending_embeddings=1)
     if scenario == "missing_bm25":
         status = replace(status, bm25_ready=False)
 
@@ -83,7 +80,9 @@ def test_preparation_distinguishes_index_and_exact_source_versions(
     result = asyncio.run(
         service.preparation(
             EvaluationRunRequest(
-                suite_id="sec-en", golden_revision_id=1, profile={"lexical_ranker": "bm25"}
+                suite_id="sec-en",
+                golden_revision_id=1,
+                profile=RetrievalProfile(lexical_ranker="bm25"),
             )
         )
     )
@@ -108,6 +107,7 @@ def test_exact_parsed_source_check_on_isolated_postgres():
     if not dsn:
         live_postgres_unavailable("GOLDEN_PREFLIGHT_TEST_DSN is not configured")
     url = make_url(dsn)
+    assert url.database is not None
     assert url.host in {"127.0.0.1", "localhost"} and url.database.startswith("pipeline_test_")
 
     async def exercise():

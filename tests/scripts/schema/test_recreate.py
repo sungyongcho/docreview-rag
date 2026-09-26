@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from scripts.schema import recreate as command
 
 
-@pytest.mark.parametrize("answer", ["", "yes", "confirm"])
+@pytest.mark.parametrize("answer", ["", "yes"])
 def test_wrong_confirmation_never_stops_or_deletes(tmp_path, monkeypatch, answer):
     """Only the single uppercase Y can progress beyond the read-only preview."""
     target = {"port": "12345", "apps": ["app"], "volume": "fixture", "docker": ["docker"]}
@@ -26,6 +26,7 @@ def test_wrong_confirmation_never_stops_or_deletes(tmp_path, monkeypatch, answer
     monkeypatch.setattr("builtins.input", lambda prompt: answer)
     assert command.run(tmp_path) == "cancelled"
     assert operation.await_count == 1
+    assert operation.await_args is not None
     assert operation.await_args.args == (
         "postgresql+asyncpg://filing:filing@127.0.0.1:12345/filing",
     )
@@ -135,43 +136,8 @@ def test_stale_preview_never_stops_or_deletes(tmp_path, monkeypatch, boundary):
     stop.assert_not_called()
 
 
-@pytest.mark.parametrize("retry", [False, True])
-def test_permission_preview_offers_exact_owner_fix_before_one_retry(
-    tmp_path, monkeypatch, capsys, retry
-):
-    """Source permission recovery never applies ACLs or enters a destructive operation."""
-    import errno
-
-    source = tmp_path / "data/raw source.html"
-    source.parent.mkdir()
-    source.write_text("preserve")
-    clean_preview = command.source_preview(tmp_path)
-    preview = Mock(
-        side_effect=[PermissionError(errno.EACCES, "denied", str(source)), clean_preview]
-    )
-    apply = Mock()
-    monkeypatch.setattr(command, "source_preview", preview)
-    monkeypatch.setattr(command, "confirm", lambda _: retry)
-    monkeypatch.setattr(command.subprocess, "run", apply)
-    if retry:
-        assert command.preview_sources(tmp_path) == clean_preview
-        assert preview.call_count == 2
-    else:
-        with pytest.raises(ValueError, match="no deletion was submitted"):
-            command.preview_sources(tmp_path)
-        assert preview.call_count == 1
-    output = capsys.readouterr().out
-    assert "sudo setfacl -R -m" in output
-    assert str(source) in output
-    assert source.read_text() == "preserve"
-    apply.assert_not_called()
-
-
-@pytest.mark.parametrize("restart_planned", [False, True])
-def test_successful_reset_reports_the_callers_restart_intent(
-    tmp_path, monkeypatch, capsys, restart_planned
-):
-    """The host caller may plan a later restart, but recreation itself only stops the API."""
+def test_successful_reset_leaves_the_api_stopped(tmp_path, monkeypatch, capsys):
+    """Recreation only stops the API and points to an explicit restart."""
     target = {"port": "12345", "apps": ["fixture-app"], "volume": "fixture", "docker": ["docker"]}
     operation = AsyncMock(side_effect=[{"documents": 1}, {"documents": 0}])
     stop = Mock()
@@ -180,18 +146,14 @@ def test_successful_reset_reports_the_callers_restart_intent(
     monkeypatch.setattr(command, "recreate", operation)
     monkeypatch.setattr(command.subprocess, "run", stop)
     monkeypatch.setattr("builtins.input", lambda _: "Y")
-    assert command.run(tmp_path, keep_sources=True, restart_planned=restart_planned) == "succeeded"
+    assert command.run(tmp_path, keep_sources=True) == "succeeded"
     assert operation.await_count == 2
     stop.assert_called_once_with(
         ["docker", "stop", "fixture-app"], env={}, check=True, stdout=command.subprocess.DEVNULL
     )
     output = capsys.readouterr().out
-    if restart_planned:
-        assert "Guided setup will now rebuild/start DEV and verify readiness" in output
-        assert "not restarted automatically" not in output
-    else:
-        assert "not restarted automatically" in output
-        assert "Run rag-dev start" in output
+    assert "not restarted automatically" in output
+    assert "Run rag-dev start" in output
 
 
 @pytest.mark.parametrize("owner_repairs", [False, True])
@@ -225,6 +187,7 @@ def test_real_unreadable_source_offers_quoted_owner_paths_and_one_retry(
             source.read_bytes()
         if owner_repairs:
             result = command.preview_sources(tmp_path)
+            assert result is not None
             assert set(result["files"]) == {str(source.relative_to(tmp_path / "data/corpus"))}
             assert source.read_text() == "preserve these real bytes"
         else:
@@ -414,7 +377,7 @@ def test_permission_failure_after_stop_restores_sources_and_explains_recovery(
     monkeypatch.setattr(command.SourceReset, "stage", fail_after_staging)
     monkeypatch.setattr("builtins.input", lambda _: "Y")
     with pytest.raises(ValueError, match="filesystem permissions") as caught:
-        command.run(tmp_path, restart_planned=True)
+        command.run(tmp_path)
     assert "[Errno" not in str(caught.value)
     assert source.read_text() == "preserve original bytes"
     assert not (tmp_path / "data/.schema-recreate-journal").exists()
@@ -424,7 +387,7 @@ def test_permission_failure_after_stop_restores_sources_and_explains_recovery(
     )
     output = capsys.readouterr().err
     assert "database and sources are unchanged" in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
 
 
 def test_api_stop_failure_also_explains_the_unchanged_data_and_recovery(
@@ -447,7 +410,7 @@ def test_api_stop_failure_also_explains_the_unchanged_data_and_recovery(
     assert operation.await_count == 1
     output = capsys.readouterr().err
     assert "database and sources are unchanged" in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
 
 
 def test_keep_sources_does_not_require_source_directory_write_access(tmp_path):

@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { KO } from "./messages-ko";
-import { localizedDocumentationRoute } from "./documentation-registry.mjs";
 import { browserStorage, subscribeStorageRestored, storageEventValue } from "./storage";
 
 export type Locale = "ko" | "en";
@@ -15,11 +14,6 @@ export function preferredLocale(pathname: string, saved: string | null, browserL
   if (route === "ko" || route === "en") return route;
   if (saved === "ko" || saved === "en") return saved;
   return /^ko(?:-|$)/i.test(browserLanguage ?? "") ? "ko" : "en";
-}
-
-/** Keep the current document and deployment prefix when switching languages. */
-export function localizedDocumentationPath(pathname: string, locale: Locale, hash = ""): string | null {
-  return localizedDocumentationRoute(pathname, locale, hash);
 }
 
 /** Language remains usable when the browser blocks optional preference storage. */

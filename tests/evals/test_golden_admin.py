@@ -86,9 +86,7 @@ def test_empty_file_can_receive_a_new_question(service):
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize(
-    "filename", ["../escape.json", "retrieval.json", "bad/path.json", "wrong.txt"]
-)
+@pytest.mark.parametrize("filename", ["../escape.json", "retrieval.json", "wrong.txt"])
 def test_invalid_or_builtin_filenames_cannot_be_written(service, filename):
     """Reject traversal, built-in replacement, and non-JSON names."""
     with pytest.raises(ValueError):

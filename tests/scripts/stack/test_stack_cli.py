@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from scripts.stack import __main__ as command
-from scripts.stack.__main__ import compose_command, compose_environment, run
+from scripts.stack.__main__ import compose_command, compose_environment, parse_compose_ps, run
 from scripts.stack.environment import LocalEnvironmentError
 
 
@@ -86,3 +86,29 @@ def test_default_stack_root_is_the_registered_checkout(monkeypatch):
     assert execute.call_args.kwargs["cwd"] == root
     operator.start.assert_not_called()
     operator.stop.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        pytest.param(
+            '{"Service":"db","State":"running"}\n\n{"Service":"app","State":"exited"}\n',
+            id="one-object-per-line",
+        ),
+        pytest.param(
+            '[{"Service":"db","State":"running"},\n {"Service":"app","State":"exited"}]',
+            id="one-array",
+        ),
+    ],
+)
+def test_parse_compose_ps_reads_both_output_shapes(output):
+    """Newer Compose prints one object per line and older releases one array; both read alike."""
+    rows = parse_compose_ps(output)
+
+    assert [(row["Service"], row["State"]) for row in rows] == [
+        ("db", "running"),
+        ("app", "exited"),
+    ]
+    assert parse_compose_ps("  \n") == []
+    with pytest.raises(ValueError, match="service objects"):
+        parse_compose_ps('{"Service": "db"}\n[1, 2]')

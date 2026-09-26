@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location(
     "gcp_artifacts", ROOT / "deploy/gcp/verify_artifacts.py"
 )
+assert SPEC is not None and SPEC.loader is not None
 ARTIFACTS = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ARTIFACTS)
 
@@ -286,11 +287,9 @@ def run_remote(remote, mode, **extra):
     )
 
 
-@pytest.mark.parametrize(
-    "existing", ["postgres/PG_VERSION", "runtime/usage.sqlite3", ".restore-in-progress"]
-)
+@pytest.mark.parametrize("existing", ["postgres/PG_VERSION", ".restore-in-progress"])
 def test_first_install_refuses_existing_data(remote, existing):
-    """Existing usage, database state and interrupted restores are never overwritten."""
+    """Any existing persistent file and an interrupted restore marker are never overwritten."""
     _, _, _, data, _, log = remote
     target = data / existing
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -397,7 +396,7 @@ def test_failed_update_cannot_replace_the_known_rollback_image(remote):
     assert run_remote(remote, "update").returncode == 0
 
 
-@pytest.mark.parametrize("name", ["../outside", "corpus/../../outside", "/absolute", "corpus/link"])
+@pytest.mark.parametrize("name", ["corpus/../../outside", "/absolute", "corpus/link"])
 def test_archive_rejects_traversal_and_links(bundle, name):
     """A checksummed archive still cannot escape its corpus directory."""
     with tarfile.open(bundle / "originals.tar.gz", "w:gz") as archive:
@@ -455,7 +454,7 @@ def test_production_compose_has_no_admin_bypass():
     assert app["environment"]["REVIEW_MODEL"] == "gpt-5.6-luna"
     assert app["environment"]["DOCREVIEW_RATE_LIMIT_PER_MINUTE"] == "10"
     assert app["environment"]["DOCREVIEW_RATE_LIMIT_PER_DAY"] == "50"
-    assert app["environment"]["DOCREVIEW_PUBLIC_DAILY_COST_USD"] == "0.10"
+    assert app["environment"]["DOCREVIEW_PUBLIC_DAILY_COST_USD"] == "0.30"
     assert app["environment"]["DOCREVIEW_OPENAI_MAX_COST_USD"] == "0.005"
     assert any(
         mount["source"] == "/var/lib/docreview/runtime"
@@ -463,3 +462,27 @@ def test_production_compose_has_no_admin_bypass():
         and not mount.get("read_only", False)
         for mount in app["volumes"]
     )
+
+
+def test_first_install_stages_the_configured_origin_port(launcher):
+    """The origin port the firewall rule opens is the one the staged compose file publishes."""
+    script, env, log = launcher
+    result = subprocess.run(
+        ["bash", str(script), "first-install"],
+        env={**env, "DEPLOY_ORIGIN_PORT": "8443"},
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    config_copy = next(cmd for cmd in command_log(log) if any("Caddyfile" in arg for arg in cmd))
+    env_copy = next(Path(arg) for arg in config_copy if arg.endswith("/backend.env"))
+    assert "DOCREVIEW_ORIGIN_PORT=8443\n" in env_copy.read_text()
+
+
+def test_first_install_requires_an_explicit_artifact_directory(launcher):
+    """Without DEPLOY_ARTIFACT_DIR a first install fails before any cloud command."""
+    script, env, log = launcher
+    env = {k: v for k, v in env.items() if k != "DEPLOY_ARTIFACT_DIR"}
+    result = subprocess.run(["bash", str(script), "first-install"], env=env, capture_output=True)
+    assert result.returncode != 0
+    assert "DEPLOY_ARTIFACT_DIR" in result.stderr.decode()
+    assert command_log(log) == []

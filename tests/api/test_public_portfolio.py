@@ -2,6 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
@@ -9,8 +10,10 @@ import pytest
 
 from app.api.app import create_api_app
 from app.api.deps import get_api_services
+from app.api.document_catalog import DocumentCatalog
 from app.api.errors import ApiProblemError
 from app.api.public_portfolio import PublicPortfolioReader
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
 
 
 def _source(issuer="NVDA", year=2024, ready=True):
@@ -58,7 +61,10 @@ def _reader(*, schema="compatible", valid=True):
             )
         )
     )
-    return PublicPortfolioReader(corpus, catalog), corpus, catalog
+    reader = PublicPortfolioReader(
+        cast(RuntimeCorpusAdminService, corpus), cast(DocumentCatalog, catalog)
+    )
+    return reader, corpus, catalog
 
 
 def test_fixed_pairs_project_only_counts_and_cache_reads():
@@ -89,9 +95,7 @@ def test_fixed_pairs_project_only_counts_and_cache_reads():
     assert corpus.snapshot.await_count == catalog.documents.await_count == 1
 
 
-@pytest.mark.parametrize(
-    "schema,valid", [("unavailable", True), ("incompatible", True), ("compatible", False)]
-)
+@pytest.mark.parametrize("schema,valid", [("unavailable", True), ("compatible", False)])
 def test_unknown_preparation_is_not_zero(schema, valid):
     """Schema or manifest problems return unavailable before projection."""
     reader, _, catalog = _reader(schema=schema, valid=valid)

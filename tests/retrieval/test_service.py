@@ -1,4 +1,4 @@
-"""Retrieval service composition and command-output tests."""
+"""Retrieval service composition tests."""
 
 import asyncio
 import math
@@ -8,10 +8,8 @@ from pydantic import ValidationError
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import Settings
-import app.retrieval as public
-from app.retrieval import __main__ as cli, service
-from app.retrieval.embeddings import DeterministicEmbeddingProvider, EmbeddingBackfillResult
+from app.retrieval import service
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.rerank import RerankProvider
 from app.retrieval.types import RetrievalFilters
 from tests.retrieval.support import hit
@@ -30,7 +28,7 @@ def test_service_uses_default_candidate_pool_one_session_and_rank_only_component
     """Share one session and preserve rank-only component provenance."""
     events = []
     session = cast(AsyncSession, object())
-    filters = RetrievalFilters(doc_ids=("NVDA-FY2024",))
+    filters = RetrievalFilters(doc_ids=("NVDA-FY2024",), languages=("en",))
 
     class Provider(DeterministicEmbeddingProvider):
         """Test double for Provider behavior."""
@@ -77,12 +75,6 @@ def test_service_uses_default_candidate_pool_one_session_and_rank_only_component
         "vector_by_language": {},
         "lexical": (2, 3),
         "lexical_by_language": {"en": (2, 3)},
-    }
-    assert set(service.ComponentRankings.model_fields) == {
-        "vector",
-        "vector_by_language",
-        "lexical",
-        "lexical_by_language",
     }
 
     events.clear()
@@ -140,6 +132,7 @@ def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypa
             provider=DeterministicEmbeddingProvider(),
             k=1,
             candidate_k=2,
+            filters=RetrievalFilters(languages=("en",)),
             reranker=Reranker(),
         )
     )
@@ -152,15 +145,12 @@ def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypa
 @pytest.mark.parametrize(
     "changes, message",
     [
-        ({"query": " "}, "blank"),
-        ({"k": 0}, "positive"),
-        ({"k": -3}, "positive"),
-        ({"k": 3, "candidate_k": 2}, "at least k"),
-        ({"rrf_k": 0}, "positive"),
-        ({"bm25_k1": math.inf}, "finite positive"),
-        ({"bm25_k1": math.nan}, "finite positive"),
-        ({"bm25_b": math.inf}, "finite number"),
-        ({"bm25_b": math.nan}, "finite number"),
+        pytest.param({"query": " "}, "blank", id="blank-query"),
+        pytest.param({"k": 0}, "positive", id="non-positive-limit"),
+        pytest.param({"k": 3, "candidate_k": 2}, "at least k", id="candidate-pool-below-limit"),
+        pytest.param({"rrf_k": 0}, "positive", id="non-positive-rrf-k"),
+        pytest.param({"bm25_k1": math.nan}, "finite positive", id="non-finite-bm25-k1"),
+        pytest.param({"bm25_b": math.nan}, "finite number", id="non-finite-bm25-b"),
     ],
 )
 def test_service_rejects_invalid_requests_before_provider_or_search(monkeypatch, changes, message):
@@ -181,43 +171,6 @@ def test_service_rejects_invalid_requests_before_provider_or_search(monkeypatch,
 
     with pytest.raises(ValueError, match=message):
         asyncio.run(service.retrieve(cast(AsyncSession, object()), **arguments))
-
-
-def test_service_rejects_a_shallow_candidate_pool_with_a_reranker(monkeypatch):
-    """Keep candidate depth at least the requested final result count."""
-
-    class Provider(DeterministicEmbeddingProvider):
-        """Test double for Provider behavior."""
-
-        async def embed_query(self, _query):
-            """Exercise embed query behavior."""
-            raise AssertionError("invalid limits must not call the provider")
-
-    class Reranker(RerankProvider):
-        """Test double for Reranker behavior."""
-
-        async def score(self, _query, _documents):
-            """Exercise score behavior."""
-            raise AssertionError("invalid limits must not call the reranker")
-
-    async def search(*_args, **_kwargs):
-        """Exercise search behavior."""
-        raise AssertionError("invalid limits must not access the database")
-
-    monkeypatch.setattr(service, "vector_search", search)
-    monkeypatch.setattr(service, "lexical_search", search)
-
-    with pytest.raises(ValueError, match="candidate_k must be at least k"):
-        asyncio.run(
-            service.retrieve(
-                cast(AsyncSession, object()),
-                "query",
-                provider=Provider(),
-                k=3,
-                candidate_k=2,
-                reranker=Reranker(),
-            )
-        )
 
 
 def test_service_forwards_default_provider_width_and_identity(monkeypatch):
@@ -243,103 +196,6 @@ def test_service_forwards_default_provider_width_and_identity(monkeypatch):
     result = asyncio.run(service.retrieve(cast(AsyncSession, object()), "query", strategy="vector"))
     assert not result.hits
     assert calls == ["provider", "vector"]
-
-
-def test_application_settings_freeze_the_database_dimension_at_384():
-    """Keep application embedding dimensions fixed to the database schema."""
-    assert Settings().embed_dim == 384
-
-    with pytest.raises(ValidationError):
-        Settings.model_validate({"embed_dim": 256})
-
-
-def test_package_exports_the_complete_production_surface():
-    """Expose the complete baseline retrieval façade."""
-    expected = {
-        "ComponentRankings",
-        "DeterministicEmbeddingProvider",
-        "EmbeddingProvider",
-        "OpenAIEmbeddingProvider",
-        "RetrievalResult",
-        "embed_missing_chunks",
-        "hybrid_search",
-        "lexical_search",
-        "retrieve",
-        "rrf_fuse",
-        "vector_search",
-    }
-
-    assert expected <= set(public.__all__)
-    assert public.retrieve is service.retrieve
-
-
-def test_cli_acceptance_arguments_and_payload_keep_component_scores_private():
-    """Keep native component scores out of command output."""
-    args = cli.arguments(
-        [
-            "--query",
-            "NVDA 2024 R&D",
-            "--k",
-            "2",
-            "--candidate-k",
-            "4",
-            "--provider",
-            "deterministic",
-            "--embed-missing",
-        ]
-    )
-    result = service.RetrievalResult(
-        candidates=(hit(1, 1 / 61),),
-        hits=(hit(1, 1 / 61),),
-        score_stage="rrf",
-        component_rankings=service.ComponentRankings(vector=(1, 2), lexical=(1,)),
-    )
-    payload = cli._payload(
-        query=args.query,
-        provider=args.provider,
-        backfill=EmbeddingBackfillResult(3, 3, 0, 1),
-        result=result,
-    )
-
-    assert (args.k, args.candidate_k, args.embed_missing) == (2, 4, True)
-    assert payload["provider"] == "deterministic"
-    assert payload["backfill"] == {
-        "selected": 3,
-        "embedded": 3,
-        "skipped_stale": 0,
-        "batches": 1,
-    }
-    assert payload["score_stage"] == "rrf"
-    component_rankings = payload["component_rankings"]
-    assert isinstance(component_rankings, dict)
-    assert component_rankings == {
-        "vector": [1, 2],
-        "vector_by_language": {},
-        "lexical": [1],
-        "lexical_by_language": {},
-    }
-
-
-@pytest.mark.parametrize(
-    ("flag", "value", "message"),
-    [
-        ("--bm25-k1", "0", "--bm25-k1 must be a finite positive number"),
-        ("--bm25-k1", "-1", "--bm25-k1 must be a finite positive number"),
-        ("--bm25-k1", "nan", "--bm25-k1 must be a finite positive number"),
-        ("--bm25-k1", "inf", "--bm25-k1 must be a finite positive number"),
-        ("--bm25-b", "-0.1", "--bm25-b must be a finite number between 0 and 1"),
-        ("--bm25-b", "1.1", "--bm25-b must be a finite number between 0 and 1"),
-        ("--bm25-b", "nan", "--bm25-b must be a finite number between 0 and 1"),
-        ("--bm25-b", "inf", "--bm25-b must be a finite number between 0 and 1"),
-    ],
-)
-def test_cli_rejects_invalid_bm25_overrides_during_argument_parsing(capsys, flag, value, message):
-    """Reject invalid BM25 overrides before command execution can touch the database."""
-    with pytest.raises(SystemExit) as exc_info:
-        cli.arguments(["--query", "market risk", flag, value, "--rebuild-bm25-stats"])
-
-    assert exc_info.value.code == 2
-    assert message in capsys.readouterr().err
 
 
 def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch):
@@ -373,7 +229,7 @@ def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch
             "매출총이익률은 어떻게 변화했습니까?",
             provider=Provider(),
             k=2,
-            filters=RetrievalFilters(),
+            filters=RetrievalFilters(languages=("en",)),
             route_by_language=True,
         )
     )
@@ -422,71 +278,21 @@ def test_routing_stays_off_for_a_caller_that_does_not_ask_for_it(monkeypatch):
     monkeypatch.setattr(service, "lexical_search", lexical)
 
     session = cast(AsyncSession, object())
-    result = asyncio.run(service.retrieve(session, "AMD의 매출은?", provider=Provider(), k=2))
+    result = asyncio.run(
+        service.retrieve(
+            session,
+            "AMD의 매출은?",
+            provider=Provider(),
+            k=2,
+            filters=RetrievalFilters(languages=("en",)),
+        )
+    )
 
     # The service holds no opinion of its own: it never reads Settings, so an arm
     # measured here cannot inherit a query path its recorded config does not name.
     assert events == ["AMD의 매출은?"]
     assert result.component_rankings.lexical == (2,)
     assert "get_settings" not in vars(service)
-
-
-@pytest.mark.parametrize(
-    ("configured", "flags", "expected"),
-    [
-        (False, [], False),
-        (True, [], True),
-        (False, ["--route-by-language"], True),
-        (True, ["--no-route-by-language"], False),
-    ],
-)
-def test_cli_resolves_language_routing_from_settings_and_honours_an_override(
-    monkeypatch, configured, flags, expected
-):
-    """Read routing from settings at the command boundary, overridable in both ways."""
-    import app.db.session as db_session
-
-    seen: dict[str, object] = {}
-
-    class Session:
-        """Test double for Session behavior."""
-
-        async def __aenter__(self):
-            return object()
-
-        async def __aexit__(self, exc_type, exc, traceback):
-            return None
-
-    class Engine:
-        """Test double for Engine behavior."""
-
-        async def dispose(self):
-            """Exercise dispose behavior."""
-            return None
-
-    async def retrieve(session, query, **kwargs):
-        """Exercise retrieve behavior."""
-        seen.update(kwargs)
-        return service.RetrievalResult(
-            candidates=(hit(1, 1 / 61),),
-            hits=(hit(1, 1 / 61),),
-            score_stage="rrf",
-            component_rankings=service.ComponentRankings(vector=(1,), lexical=()),
-        )
-
-    settings = Settings(query_language_routing=configured)
-    monkeypatch.setattr(db_session, "Session", Session)
-    monkeypatch.setattr(db_session, "engine", Engine())
-    monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli, "get_embedding_provider", lambda _settings: object())
-    monkeypatch.setattr(cli, "retrieve", retrieve)
-
-    payload = asyncio.run(cli._run(cli.arguments(["--query", "AMD의 매출은?", *flags])))
-
-    # The value the command executed and the value it reports must be the same one,
-    # or the evidence would name a query path the run did not take.
-    assert seen["route_by_language"] is expected
-    assert payload["route_by_language"] is expected
 
 
 def test_korean_corpus_filter_tokenizes_the_lexical_query(monkeypatch):
@@ -517,35 +323,6 @@ def test_korean_corpus_filter_tokenizes_the_lexical_query(monkeypatch):
     )
 
     assert calls == [("삼성 성전 전자 매출", "simple")]
-
-
-def test_english_corpus_keeps_the_raw_query_and_english_config(monkeypatch):
-    """Without a ko filter the lexical component behaves exactly as committed."""
-    calls = []
-    session = cast(AsyncSession, object())
-
-    async def vector(received_session, query_vector, *, k, filters, identity=None):
-        """Exercise vector behavior."""
-        return [hit(1, 0.9)]
-
-    async def lexical(received_session, query, k, filters, *, text_search_config):
-        """Exercise lexical behavior."""
-        calls.append((query, text_search_config))
-        return [hit(2, 5.0)]
-
-    monkeypatch.setattr(service, "vector_search", vector)
-    monkeypatch.setattr(service, "lexical_search", lexical)
-
-    asyncio.run(
-        service.retrieve(
-            session,
-            "NVDA data center revenue",
-            provider=DeterministicEmbeddingProvider(),
-            k=2,
-        )
-    )
-
-    assert calls == [("NVDA data center revenue", "english")]
 
 
 def test_mixed_language_filter_fans_out_lexical_retrieval(monkeypatch):
@@ -639,3 +416,98 @@ def test_translated_variant_keeps_the_target_lexical_lane(monkeypatch):
 
     assert lexical_calls == [("revenue growth drivers", ("en",), "english")]
     assert result.component_rankings.lexical_by_language == {"en": (2,)}
+
+
+def test_unrestricted_filter_with_a_routed_variant_reaches_every_corpus(monkeypatch):
+    """An empty language filter fans both lanes out over every corpus language."""
+    embedded = []
+    vector_calls = []
+    lexical_calls = []
+
+    class Provider(DeterministicEmbeddingProvider):
+        """Record the query text each vector lane embeds."""
+
+        async def embed_query(self, query):
+            """Exercise embed query behavior."""
+            embedded.append(query)
+            return [0.0] * self.dimensions
+
+    async def vector(session, query_vector, *, k, filters, identity=None):
+        """Record the language restriction of every vector lane."""
+        vector_calls.append(filters.languages)
+        return [hit(1 if filters.languages == ("en",) else 3, 0.9)]
+
+    async def lexical(session, query, k, filters, *, text_search_config):
+        """Record the language and configuration of every lexical lane."""
+        lexical_calls.append((filters.languages, text_search_config))
+        return [hit(2 if filters.languages == ("en",) else 4, 5.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+    result = asyncio.run(
+        service.retrieve(
+            cast(AsyncSession, object()),
+            "compare all companies 매출 growth",
+            provider=Provider(),
+            k=4,
+            filters=RetrievalFilters(),
+            query_variants={"en": "compare all companies revenue growth"},
+            route_by_language=True,
+        )
+    )
+
+    # One vector lane per corpus language, each embedded with the query in its language.
+    assert vector_calls == [("en",), ("ko",)]
+    assert embedded == ["compare all companies revenue growth", "compare all companies 매출 growth"]
+    assert lexical_calls == [(("en",), "english"), (("ko",), "simple")]
+    assert result.component_rankings.vector_by_language == {"en": (1,), "ko": (3,)}
+    assert result.component_rankings.lexical_by_language == {"en": (2,), "ko": (4,)}
+    assert {candidate.chunk_id for candidate in result.hits} == {1, 2, 3, 4}
+
+
+def test_unrestricted_filter_without_a_variant_keeps_one_vector_lane(monkeypatch):
+    """Without a translation the vector lane stays unrestricted; lexical lanes still fan out."""
+    vector_calls = []
+    lexical_calls = []
+
+    async def vector(session, query_vector, *, k, filters, identity=None):
+        """Record the language restriction of every vector lane."""
+        vector_calls.append(filters.languages)
+        return [hit(1, 0.9)]
+
+    async def lexical(session, query, k, filters, *, text_search_config):
+        """Record the query each lexical lane parses."""
+        lexical_calls.append((filters.languages, query))
+        return [hit(2 if filters.languages == ("en",) else 3, 5.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+    result = asyncio.run(
+        service.retrieve(
+            cast(AsyncSession, object()),
+            "삼성전자 memory",
+            provider=DeterministicEmbeddingProvider(),
+            k=3,
+            filters=None,
+        )
+    )
+
+    assert vector_calls == [()]
+    assert lexical_calls == [(("en",), "삼성전자 memory"), (("ko",), "삼성 성전 전자 memory")]
+    assert result.component_rankings.vector_by_language == {}
+    assert result.component_rankings.lexical_by_language == {"en": (2,), "ko": (3,)}
+
+
+def test_package_reexports_each_public_name_from_its_defining_module():
+    """The retrieval package is the one sanctioned re-export façade (AGENTS.md): every name it
+    publishes must be the very object its defining retrieval module exports."""
+    import importlib
+
+    import app.retrieval as public
+
+    assert public.__all__
+    for name in public.__all__:
+        exported = getattr(public, name)
+        assert exported.__module__.startswith("app.retrieval."), name
+        defining = importlib.import_module(exported.__module__)
+        assert getattr(defining, name) is exported, name

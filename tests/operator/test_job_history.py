@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import Table, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -37,8 +37,11 @@ async def isolated_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     try:
         async with admin.begin() as connection:
             await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+        # Declarative models type `__table__` as a FromClause; only a Table can be created.
+        operator_jobs = OperatorJob.__table__
+        assert isinstance(operator_jobs, Table)
         async with engine.begin() as connection:
-            await connection.run_sync(OperatorJob.__table__.create)
+            await connection.run_sync(operator_jobs.create)
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:
         await engine.dispose()
@@ -142,11 +145,16 @@ def test_backup_failure_preserves_records(tmp_path: Path, monkeypatch: pytest.Mo
     asyncio.run(scenario())
 
 
+def unused_session_factory() -> AsyncSession:
+    """Stand in for the session factory where only backup paths are validated."""
+    raise AssertionError("backup path validation must not open a database session")
+
+
 def test_backup_paths_reject_traversal_symlinks_and_public_files(tmp_path: Path) -> None:
     """Allow canonical private UUID files only, including directory ownership checks."""
     directory = tmp_path / "backups"
     directory.mkdir(mode=0o700)
-    service = JobHistoryService(lambda: None, directory)  # type: ignore[arg-type, return-value]
+    service = JobHistoryService(unused_session_factory, directory)
     backup_id = str(uuid4())
     target = directory / f"{backup_id}.json"
     target.write_text("{}")
@@ -164,4 +172,4 @@ def test_backup_paths_reject_traversal_symlinks_and_public_files(tmp_path: Path)
     linked_directory = tmp_path / "linked"
     linked_directory.symlink_to(directory, target_is_directory=True)
     with pytest.raises(ValueError, match="symlinks"):
-        JobHistoryService(lambda: None, linked_directory).backup_path(backup_id)  # type: ignore[arg-type, return-value]
+        JobHistoryService(unused_session_factory, linked_directory).backup_path(backup_id)

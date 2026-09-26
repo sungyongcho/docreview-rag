@@ -144,14 +144,6 @@ it("disconnects and restores Default without dropping registered choices", async
   expect(fetchMock.mock.calls.at(-1)?.[1]?.body).toBe('{"server_id":"default"}');
 });
 
-it("loads a legacy saved custom connection without switching it to Default", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => response({ ...INITIAL, servers: undefined, selected_server_id: undefined, base_url: "http://old:11434", source: "saved" })));
-  render(<LocalConnectionSettings />);
-  await waitFor(() => expect(screen.getByLabelText("Model server")).toHaveValue("legacy"));
-  expect(screen.getByRole("option", { name: "Saved connection" })).toBeInTheDocument();
-  expect(screen.queryByLabelText("Server URL")).not.toBeInTheDocument();
-});
-
 it("keeps a working custom connection when the Default replacement check fails", async () => {
   const changed = vi.fn();
   const current = { ...INITIAL, selected_server_id: "studio", base_url: "http://studio:11434" };

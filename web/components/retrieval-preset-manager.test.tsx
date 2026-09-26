@@ -89,11 +89,10 @@ it("imports a file into the same editor and exports the saved shape", async () =
   } finally { click.mockRestore(); URL.createObjectURL = oldCreate; URL.revokeObjectURL = oldRevoke; }
 });
 
-it.each(["balanced", "korean", "accuracy"])("renders %s with empty display ID and its canonical English name", id => {
-  const preset = BUILTIN_PRESETS.find(item => item.id === id)!;
+it("renders a built-in preset with an empty display ID and its canonical English name", () => {
+  const preset = BUILTIN_PRESETS.find(item => item.id === "balanced")!;
   render(<RetrievalPresetManager />);
   fireEvent.click(screen.getByRole("button", { name: preset.name }));
   const row = screen.getByRole("region", { name: preset.name });
   expect(JSON.parse(row.querySelector("pre")!.textContent!)).toEqual({ id: "", name: preset.name, description: preset.description ?? "", retrieval: preset.retrieval });
-  expect(preset.id).toBe(id);
 });

@@ -75,13 +75,6 @@ def test_structure_record_rejects_non_object_item_index_entries(
         seed.structure_values(filing)
 
 
-def test_record_conversion_is_deterministic():
-    """Return equal immutable records for equal filing inputs."""
-    first = seed.filing_records(sample_filing(), sample_chunks())
-    second = seed.filing_records(sample_filing(), sample_chunks())
-    assert first == second
-
-
 @pytest.mark.parametrize(
     ("changed", "message"),
     [

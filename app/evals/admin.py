@@ -1,18 +1,19 @@
-"""Local-only golden-suite execution, persistence, and comparison services."""
+"""Local-only golden-suite evaluation service: queue, preparation, and job history.
+
+The suite catalog lives in :mod:`app.evals.suites`, stored-result reading in
+:mod:`app.evals.admin_results`, and the per-run helpers in :mod:`app.evals.admin_runs`.
+"""
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import UTC, datetime
-import hashlib
 import logging
 from pathlib import Path
-import tempfile
-from typing import Any, Final, Literal, Protocol, cast
+from typing import Any, Final, cast
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -20,156 +21,58 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_schemas import (
-    EvaluationCaseDelta,
-    EvaluationCaseSummary,
     EvaluationComparisonResponse,
     EvaluationJobResource,
     EvaluationJobsResponse,
-    EvaluationMetricDelta,
     EvaluationPreparationResource,
     EvaluationResultDetailResponse,
     EvaluationRunRequest,
     GoldenSuiteId,
     GoldenSuiteResource,
-    RetrievalProfile,
 )
+from app.api.review_profile import ServerBM25, with_server_bm25
 from app.config import Settings, get_settings
-from app.corpus_admin import CorpusStatus
-from app.db.models import Chunk, EvalResult
-from app.evals.arms import Retriever, make_retriever
+from app.corpus_admin.types import CorpusStatus
+from app.db.models import Chunk
+from app.db.session_factory import SessionFactory
+from app.evals.admin_results import (
+    compare_stored_results,
+    compatible_baseline,
+    stored_result_detail,
+)
+from app.evals.admin_runs import dataset_provenance, quick_retriever, run_isolated_matrix
 from app.evals.artifacts import read_strict_json
 from app.evals.drafts import DraftInputError, executable_cases
+from app.evals.golden_admin import GoldenAdminService
 from app.evals.identity import artifact_filename
 from app.evals.index_identity import index_fingerprint
-from app.evals.loader import (
-    GOLDEN_CASES,
-    GoldenDataError,
-    encode_golden_payload,
-)
+from app.evals.loader import GoldenDataError
 from app.evals.retrieval_eval import (
     evaluate_retriever,
     persist_evaluation,
     write_evaluation_artifact,
 )
-from app.evals.run import _run_cli, arguments
 from app.evals.source_binding import BoundGolden, bind_golden, matrix_scope
+from app.evals.suites import (
+    SUITES,
+    GoldenSuiteDefinition,
+    golden_file_sha256,
+    suite_paths,
+    suite_resources,
+)
 from app.evals.types import GoldenCase
 from app.operator.jobs import (
     JobExecutionCoordinator,
     JobStore,
     JobTurnCancelledError,
     ProgressPersister,
+    _default_session_factory,
 )
-from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
-from app.retrieval.service import retrieve
 from app.retrieval.types import RetrievalFilters
 
 MAX_EVALUATION_JOBS: Final[int] = 20
 MAX_QUEUED_EVALUATIONS: Final[int] = 8
-
-
-def _default_session_factory() -> AsyncSession:
-    """Create one process-configured session for an evaluation operation."""
-    from app.db.session import Session
-
-    return Session()
-
-
-class SessionFactory(Protocol):
-    """Build one caller-owned asynchronous database session."""
-
-    def __call__(self) -> AsyncSession:
-        """Return one asynchronous session context manager."""
-        ...
-
-
-@dataclass(frozen=True, slots=True)
-class GoldenSuiteDefinition:
-    """Filesystem and corpus-language binding for one public suite identity."""
-
-    suite_id: GoldenSuiteId
-    label: str
-    title: str
-    registry: Literal["sec", "dart"]
-    question_language: Literal["en", "ko", "mixed"]
-    corpus_language: Literal["en", "ko"]
-    golden_name: str
-    manifest_name: str
-
-
-SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
-    "sec-en_v2_astra": GoldenSuiteDefinition(
-        "sec-en_v2_astra",
-        "SEC 10-K · English _v2_astra",
-        "SEC · English v2",
-        "sec",
-        "en",
-        "en",
-        "sec_en_v2_astra.json",
-        "manifest.json",
-    ),
-    "sec-ko_v2_astra": GoldenSuiteDefinition(
-        "sec-ko_v2_astra",
-        "SEC 10-K · Korean _v2_astra",
-        "SEC · Korean v2",
-        "sec",
-        "ko",
-        "en",
-        "sec_ko_v2_astra.json",
-        "manifest.json",
-    ),
-    "sec-mixed_v2_astra": GoldenSuiteDefinition(
-        "sec-mixed_v2_astra",
-        "SEC 10-K · Mixed EN/KO _v2_astra",
-        "SEC · Mixed v2",
-        "sec",
-        "mixed",
-        "en",
-        "sec_mixed_v2_astra.json",
-        "manifest.json",
-    ),
-    "sec-en": GoldenSuiteDefinition(
-        "sec-en",
-        "SEC 10-K · English",
-        "SEC retrieval",
-        "sec",
-        "en",
-        "en",
-        "retrieval.json",
-        "manifest.json",
-    ),
-    "sec-ko": GoldenSuiteDefinition(
-        "sec-ko",
-        "SEC 10-K · Korean questions",
-        "SEC retrieval · Korean",
-        "sec",
-        "ko",
-        "en",
-        "retrieval_ko.json",
-        "manifest.json",
-    ),
-    "dart-en": GoldenSuiteDefinition(
-        "dart-en",
-        "DART · English questions",
-        "DART retrieval",
-        "dart",
-        "en",
-        "ko",
-        "dart_retrieval.json",
-        "manifest.json",
-    ),
-    "dart-ko": GoldenSuiteDefinition(
-        "dart-ko",
-        "DART · Korean",
-        "DART retrieval · Korean",
-        "dart",
-        "ko",
-        "ko",
-        "dart_retrieval_ko.json",
-        "manifest.json",
-    ),
-}
 
 
 class EvaluationAlreadyQueuedError(ValueError):
@@ -229,79 +132,20 @@ class EvaluationAdminService:
 
     def _suite_paths(self, suite_id: GoldenSuiteId) -> tuple[Path, Path]:
         """Return golden and corpus manifest paths for one suite."""
-        definition = self._definition(suite_id)
-        return (
-            self._golden_dir / definition.golden_name,
-            self._settings.corpus_dir / definition.manifest_name,
+        return suite_paths(
+            suite_id, golden_dir=self._golden_dir, corpus_dir=self._settings.corpus_dir
         )
-
-    def _golden_sha256(self, path: Path) -> str:
-        """Hash the exact golden JSON bytes used by a run."""
-        return hashlib.sha256(path.read_bytes()).hexdigest()
 
     async def suites(self) -> tuple[GoldenSuiteResource, ...]:
         """Inspect all suite contracts while reporting missing source readiness safely."""
-        resources: list[GoldenSuiteResource] = []
-        for definition in SUITES.values():
-            golden_path, manifest_path = self._suite_paths(definition.suite_id)
-            payload = read_strict_json(golden_path, error=GoldenDataError)
-            cases = GOLDEN_CASES.validate_python(payload)
-            source_ready = True
-            source_error = None
-            source_error_code = None
-            checks = ()
-            try:
-                bound = await asyncio.to_thread(
-                    bind_golden, payload, manifest_path, definition.registry
-                )
-                checks = bound.sources
-                source_ready = bound.ready
-                failed = [source for source in checks if source.state != "ready"]
-                if failed:
-                    source_error_code = (
-                        "source_invalid"
-                        if any(source.state == "source_invalid" for source in failed)
-                        else "source_missing"
-                    )
-                    source_error = "; ".join(
-                        f"{source.issuer} FY{source.fiscal_year}: {source.detail}"
-                        for source in failed
-                    )
-            except (GoldenDataError, OSError, ValueError) as error:
-                source_ready = False
-                source_error = str(error)
-                source_error_code = "source_invalid"
-            positive = sum(bool(case.answers) for case in cases)
-            resources.append(
-                GoldenSuiteResource(
-                    filename=golden_path.name,
-                    suite_id=definition.suite_id,
-                    label=definition.label,
-                    title=definition.title,
-                    registry=definition.registry,
-                    question_language=definition.question_language,
-                    corpus_language=definition.corpus_language,
-                    case_count=len(cases),
-                    scored_positive_cases=positive,
-                    absent_cases=len(cases) - positive,
-                    curation_status="agent-curated",
-                    approval_status="pending-author-approval",
-                    human_verified=False,
-                    golden_sha256=self._golden_sha256(golden_path),
-                    source_ready=source_ready,
-                    source_checks=checks,
-                    source_error=source_error,
-                    source_error_code=source_error_code,
-                )
-            )
-        return tuple(resources)
+        return await suite_resources(self._golden_dir, self._settings.corpus_dir)
 
     async def _bound_golden(self, request: EvaluationRunRequest) -> tuple[BoundGolden, str]:
         """Bind the exact canonical file or selected user revision to current official sources."""
         golden_path, manifest_path = self._suite_paths(request.suite_id)
         if request.golden_revision_id is None:
             payload = read_strict_json(golden_path, error=GoldenDataError)
-            digest = self._golden_sha256(golden_path)
+            digest = golden_file_sha256(golden_path)
         else:
             payload, digest = await self._golden_revision_payload(request)
         if not payload:
@@ -470,6 +314,8 @@ class EvaluationAdminService:
         self, request: EvaluationRunRequest, *, retry_of: str | None = None
     ) -> EvaluationJobResource:
         """Atomically deduplicate and queue a request, including concurrent callers."""
+        server = ServerBM25(self._settings.bm25_k1, self._settings.bm25_b, self._settings.bm25_idf)
+        request = request.model_copy(update={"profile": with_server_bm25(request.profile, server)})
         async with self._enqueue_lock:
             return await self._enqueue(request, retry_of=retry_of)
 
@@ -757,111 +603,11 @@ class EvaluationAdminService:
         """Bind evaluation to exact current inputs and the configured vector space."""
         return await index_fingerprint(session, self._provider.identity)
 
-    def _quick_retriever(
-        self,
-        session: AsyncSession,
-        profile: RetrievalProfile,
-        filters: RetrievalFilters,
-    ) -> Retriever:
-        """Bind one explicit live-index retrieval profile to the active session."""
-        bm25 = profile.lexical_ranker == "bm25"
-        if profile.reranker is None:
-            return make_retriever(
-                session,
-                strategy=profile.strategy,
-                provider=self._provider,
-                lexical_ranker=profile.lexical_ranker,
-                bm25_k1=profile.bm25_k1 if bm25 else None,
-                bm25_b=profile.bm25_b if bm25 else None,
-                bm25_idf=profile.bm25_idf if bm25 else None,
-                candidate_k=profile.candidate_k,
-                rrf_k=profile.rrf_k,
-                route_by_language=profile.route_by_language,
-                filters=filters,
-            )
-        reranker = CrossEncoderReranker()
-
-        async def run(query: str, k: int) -> list[Any]:
-            """Retrieve and rerank one query with the bound profile."""
-            result = await retrieve(
-                session,
-                query,
-                provider=self._provider,
-                k=k,
-                candidate_k=profile.candidate_k,
-                filters=filters,
-                rrf_k=profile.rrf_k,
-                reranker=reranker,
-                route_by_language=profile.route_by_language,
-                lexical_ranker=profile.lexical_ranker or "ts_rank_cd",
-                bm25_k1=profile.bm25_k1,
-                bm25_b=profile.bm25_b,
-                bm25_idf=profile.bm25_idf,
-            )
-            return list(result.hits)
-
-        return run
-
-    async def _compatible_baseline(
-        self,
-        session: AsyncSession,
-        *,
-        suite: str,
-        golden_sha256: str,
-        corpus_fingerprint: str,
-        k: int,
-    ) -> EvalResult | None:
-        """Return the newest run sharing suite, source corpus, golden bytes, and cutoff."""
-        rows = tuple(
-            await session.scalars(
-                select(EvalResult)
-                .where(EvalResult.suite == suite)
-                .order_by(EvalResult.created_at.desc(), EvalResult.id.desc())
-                .limit(100)
-            )
-        )
-        for row in rows:
-            identity = row.config.get("admin_identity", {})
-            scoring = row.config.get("_scoring", {})
-            if (
-                isinstance(identity, dict)
-                and identity.get("golden_sha256") == golden_sha256
-                and identity.get("corpus_fingerprint") == corpus_fingerprint
-                and isinstance(scoring, dict)
-                and scoring.get("k") == k
-            ):
-                return row
-        return None
-
-    def _dataset_provenance(self, request: EvaluationRunRequest, digest: str) -> dict[str, Any]:
-        """Freeze the filename and content identity used by this evaluation."""
-        from app.evals.golden_admin import GoldenAdminService
-
-        filename = (
-            self._definition(request.suite_id).golden_name
-            if request.golden_revision_id is None
-            else GoldenAdminService(golden_dir=self._golden_dir)
-            .get(request.golden_revision_id)
-            .filename
-        )
-        return {
-            "filename": filename,
-            "dataset_id": f"builtin:{request.suite_id}"
-            if request.golden_revision_id is None
-            else f"file:{request.golden_revision_id}",
-            "kind": "builtin" if request.golden_revision_id is None else "user",
-            "verification_status": "pending_review",
-            "golden_sha256": digest,
-            "golden_revision_id": request.golden_revision_id,
-        }
-
     async def _golden_revision_payload(
         self, request: EvaluationRunRequest
     ) -> tuple[list[dict[str, object]], str]:
         """Load one exact user dataset file bound to the requested suite."""
         assert request.golden_revision_id is not None
-        from app.evals.golden_admin import GoldenAdminService
-
         revision = GoldenAdminService(golden_dir=self._golden_dir).get(request.golden_revision_id)
         if revision.suite_id != request.suite_id:
             raise ValueError("golden revision does not belong to the requested suite")
@@ -898,7 +644,7 @@ class EvaluationAdminService:
         recorded_at = datetime.now(UTC)
         async with self._session_factory() as session:
             corpus_fingerprint = await self._corpus_fingerprint(session)
-            baseline = await self._compatible_baseline(
+            baseline = await compatible_baseline(
                 session,
                 suite=request.suite_id,
                 golden_sha256=golden_sha256,
@@ -908,7 +654,7 @@ class EvaluationAdminService:
             self._publish(
                 job_id, stage="evaluate", message="Running golden queries", current=1, total=4
             )
-            retriever = self._quick_retriever(session, request.profile, filters)
+            retriever = quick_retriever(session, request.profile, filters, provider=self._provider)
             evaluation = await evaluate_retriever(
                 cases,
                 retriever,
@@ -919,7 +665,9 @@ class EvaluationAdminService:
                         "golden_revision_id": request.golden_revision_id,
                         "corpus_fingerprint": corpus_fingerprint,
                     },
-                    "golden_provenance": self._dataset_provenance(request, golden_sha256),
+                    "golden_provenance": dataset_provenance(
+                        request, golden_sha256, golden_dir=self._golden_dir
+                    ),
                     "search_scope": {
                         "registry": definition.registry,
                         "language": definition.corpus_language,
@@ -955,69 +703,17 @@ class EvaluationAdminService:
 
     async def _matrix(self, request: EvaluationRunRequest) -> dict[str, Any]:
         """Run the existing isolated corpus matrix through its in-process boundary."""
-        definition = self._definition(request.suite_id)
         _golden_path, manifest_path = self._suite_paths(request.suite_id)
-        cases, _golden_sha = await self._evaluation_cases(request)
-        scope = await asyncio.to_thread(matrix_scope, manifest_path, definition.registry)
-        self._artifact_dir.mkdir(parents=True, exist_ok=True)
-        with (
-            tempfile.NamedTemporaryFile(
-                mode="w", prefix=".evaluation-scope-", suffix=".json", dir=manifest_path.parent
-            ) as scope_file,
-            tempfile.NamedTemporaryFile(
-                mode="wb", prefix=".golden-bound-", suffix=".json", dir=self._artifact_dir
-            ) as golden_file,
-        ):
-            scope_file.write(scope.model_dump_json())
-            scope_file.flush()
-            golden_file.write(
-                encode_golden_payload([case.model_dump(mode="json") for case in cases])
-            )
-            golden_file.flush()
-            golden_path = Path(golden_file.name)
-            argv = [
-                "--suite",
-                request.suite_id,
-                "--golden",
-                str(golden_path),
-                "--manifest-name",
-                scope_file.name,
-                "--selection-id",
-                "evaluation-scope",
-                "--artifact-dir",
-                str(self._artifact_dir),
-                "--provider",
-                self._settings.embedding_provider,
-                "--target-tokens",
-                *(str(value) for value in request.target_tokens),
-                "--strategies",
-                *request.strategies,
-                "--lexical-rankers",
-                *request.lexical_rankers,
-                "-k",
-                str(request.profile.k),
-                "--candidate-k",
-                str(request.profile.candidate_k),
-                "--rrf-k",
-                str(request.profile.rrf_k),
-                "--bm25-k1",
-                str(request.profile.bm25_k1),
-                "--bm25-b",
-                str(request.profile.bm25_b),
-                "--bm25-idf",
-                request.profile.bm25_idf,
-                "--persist-results",
-            ]
-            parsed: argparse.Namespace = arguments(argv)
-            parsed.admin_metadata = {
-                "golden_provenance": self._dataset_provenance(request, _golden_sha),
-                "search_scope": {
-                    "registry": definition.registry,
-                    "document_ids": sorted(document.document_id for document in scope.documents),
-                    "manifest_sha256": hashlib.sha256(scope.model_dump_json().encode()).hexdigest(),
-                },
-            }
-            return await _run_cli(parsed)
+        cases, digest = await self._evaluation_cases(request)
+        return await run_isolated_matrix(
+            request,
+            cases,
+            digest,
+            manifest_path=manifest_path,
+            golden_dir=self._golden_dir,
+            artifact_dir=self._artifact_dir,
+            embedding_provider=self._settings.embedding_provider,
+        )
 
     async def _execute_job(self, job_id: str) -> None:
         """Execute one evaluation while the shared operator lock is held."""
@@ -1127,142 +823,12 @@ class EvaluationAdminService:
             finally:
                 self._queue.task_done()
 
-    def _artifact_path(self, raw: str) -> Path:
-        """Confine persisted artifact reads to the configured evaluation directory."""
-        path = Path(raw).resolve()
-        if path.parent != self._artifact_dir:
-            raise ValueError("evaluation artifact is outside the configured directory")
-        return path
-
     async def compare(self, candidate_id: int, baseline_id: int) -> EvaluationComparisonResponse:
         """Compare compatible stored artifacts at metric and golden-case level."""
-        async with self._session_factory() as session:
-            candidate = await session.get(EvalResult, candidate_id)
-            baseline = await session.get(EvalResult, baseline_id)
-        if candidate is None or baseline is None:
-            raise ValueError("evaluation result was not found")
-        if candidate.suite != baseline.suite:
-            raise ValueError("evaluation suites are not compatible")
-        if candidate.config.get("admin_identity") != baseline.config.get("admin_identity"):
-            raise ValueError("evaluation corpus or golden identity is not compatible")
-        candidate_scoring = candidate.config.get("_scoring", {})
-        baseline_scoring = baseline.config.get("_scoring", {})
-        if not isinstance(candidate_scoring, dict) or not isinstance(baseline_scoring, dict):
-            raise ValueError("evaluation scoring metadata must be an object")
-        if candidate_scoring.get("k") != baseline_scoring.get("k"):
-            raise ValueError("evaluation cutoffs are not compatible")
-        candidate_payload = read_strict_json(
-            self._artifact_path(candidate.raw_artifact_path), error=ValueError
-        )
-        baseline_payload = read_strict_json(
-            self._artifact_path(baseline.raw_artifact_path), error=ValueError
-        )
-        if not isinstance(candidate_payload, dict) or not isinstance(baseline_payload, dict):
-            raise ValueError("evaluation artifact root must be an object")
-        metric_names = ("recall_at_k", "hit_rate_at_k", "mrr", "mean_latency_ms")
-        candidate_metrics = candidate_payload.get("metrics", {})
-        baseline_metrics = baseline_payload.get("metrics", {})
-        metrics = tuple(
-            EvaluationMetricDelta(
-                name=name,
-                baseline=float(baseline_metrics[name]),
-                candidate=float(candidate_metrics[name]),
-                delta=float(candidate_metrics[name]) - float(baseline_metrics[name]),
-            )
-            for name in metric_names
-        )
-
-        def cases_by_id(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-            """Index artifact case objects by their strict golden identity."""
-            return {
-                str(item["golden"]["id"]): item
-                for item in payload.get("cases", [])
-                if isinstance(item, dict) and isinstance(item.get("golden"), dict)
-            }
-
-        baseline_cases = cases_by_id(baseline_payload)
-        candidate_cases = cases_by_id(candidate_payload)
-        case_deltas: list[EvaluationCaseDelta] = []
-        for case_id in sorted(set(baseline_cases) & set(candidate_cases)):
-            before = baseline_cases[case_id]
-            after = candidate_cases[case_id]
-            before_score = before.get("score") or {}
-            after_score = after.get("score") or {}
-            before_rank = before_score.get("first_relevant_rank")
-            after_rank = after_score.get("first_relevant_rank")
-            if before_rank is None and after_rank is None:
-                transition = "stable_miss"
-            elif before_rank is None:
-                transition = "miss_to_hit"
-            elif after_rank is None:
-                transition = "hit_to_miss"
-            else:
-                transition = "stable_hit"
-            rank_delta = (
-                int(after_rank) - int(before_rank)
-                if before_rank is not None and after_rank is not None
-                else None
-            )
-            case_deltas.append(
-                EvaluationCaseDelta(
-                    case_id=case_id,
-                    question=str(after["golden"]["question"]),
-                    baseline_rank=before_rank,
-                    candidate_rank=after_rank,
-                    transition=transition,
-                    rank_delta=rank_delta,
-                    baseline_citations=tuple(
-                        str(hit["citation"]) for hit in before.get("hits", [])[:5]
-                    ),
-                    candidate_citations=tuple(
-                        str(hit["citation"]) for hit in after.get("hits", [])[:5]
-                    ),
-                )
-            )
-        return EvaluationComparisonResponse(
-            baseline_id=baseline_id,
-            candidate_id=candidate_id,
-            suite=candidate.suite,
-            metrics=metrics,
-            cases=tuple(case_deltas),
+        return await compare_stored_results(
+            self._session_factory, self._artifact_dir, candidate_id, baseline_id
         )
 
     async def result_detail(self, result_id: int) -> EvaluationResultDetailResponse | None:
         """Return absolute metrics and bounded case summaries for one result."""
-        async with self._session_factory() as session:
-            result = await session.get(EvalResult, result_id)
-        if result is None:
-            return None
-        payload = read_strict_json(self._artifact_path(result.raw_artifact_path), error=ValueError)
-        if not isinstance(payload, dict):
-            raise ValueError("evaluation artifact root must be an object")
-        raw_metrics = payload.get("metrics")
-        if not isinstance(raw_metrics, dict):
-            raise ValueError("evaluation artifact metrics must be an object")
-        cases: list[EvaluationCaseSummary] = []
-        for item in payload.get("cases", [])[:50]:
-            if not isinstance(item, dict) or not isinstance(item.get("golden"), dict):
-                continue
-            raw_score = item.get("score")
-            score = raw_score if isinstance(raw_score, dict) else {}
-            cases.append(
-                EvaluationCaseSummary(
-                    case_id=str(item["golden"].get("id", "unknown")),
-                    question=str(item["golden"].get("question", "")),
-                    first_relevant_rank=score.get("first_relevant_rank"),
-                    citations=tuple(
-                        str(hit.get("citation", ""))
-                        for hit in item.get("hits", [])[:5]
-                        if isinstance(hit, dict)
-                    ),
-                )
-            )
-        return EvaluationResultDetailResponse(
-            result_id=result.id,
-            suite=result.suite,
-            config=dict(result.config),
-            metrics={name: float(value) for name, value in raw_metrics.items()},
-            cases=tuple(cases),
-            raw_artifact_path=result.raw_artifact_path,
-            created_at=result.created_at,
-        )
+        return await stored_result_detail(self._session_factory, self._artifact_dir, result_id)

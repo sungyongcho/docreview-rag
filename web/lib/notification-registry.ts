@@ -4,7 +4,7 @@ import type { NavigationTarget } from "./navigation";
 export type NotificationKind = "info" | "success" | "warning" | "error" | "job";
 export type NotificationTarget = NavigationTarget | { view: "build"; tab: "jobs"; jobId: string } | { view: "settings"; category: "prompt" | "local" | "data" | "about" | "limits" | "runtime" };
 export interface NotificationDetail { text?: string; cause?: string; path?: string; fix?: NotificationTarget; }
-export interface NotificationSpec { classification: "persistent" | "transient" | "inline-replaced"; title: string; target: NotificationTarget | null; surface: string | null; }
+interface NotificationSpec { classification: "persistent" | "transient" | "inline-replaced"; title: string; target: NotificationTarget | null; surface: string | null; }
 
 /** Every production call declares a registered delivery class and its owning surface. */
 export const NOTIFICATION_EVENTS = {
@@ -146,15 +146,6 @@ export const NOTIFICATION_EVENTS = {
     "surface": "measure-golden"
   },
   "golden-draft-error": {
-    "classification": "persistent",
-    "title": "Golden dataset",
-    "target": {
-      "view": "measure",
-      "tab": "golden"
-    },
-    "surface": "measure-golden"
-  },
-  "golden-save-notice": {
     "classification": "persistent",
     "title": "Golden dataset",
     "target": {
@@ -354,55 +345,6 @@ export const NOTIFICATION_EVENTS = {
       "tab": "operations"
     },
     "surface": "operations"
-  },
-  "defaults-suites-error": {
-    "classification": "persistent",
-    "title": "Experiment defaults",
-    "target": {
-      "view": "measure",
-      "tab": "runs",
-      "resultId": null
-    },
-    "surface": "measure-runs"
-  },
-  "defaults-snapshots-error": {
-    "classification": "persistent",
-    "title": "Experiment defaults",
-    "target": {
-      "view": "measure",
-      "tab": "runs",
-      "resultId": null
-    },
-    "surface": "measure-runs"
-  },
-  "defaults-revisions-error": {
-    "classification": "persistent",
-    "title": "Experiment defaults",
-    "target": {
-      "view": "measure",
-      "tab": "runs",
-      "resultId": null
-    },
-    "surface": "measure-runs"
-  },
-  "experiment-defaults-notice": {
-    "classification": "transient",
-    "title": "Experiment defaults",
-    "target": {
-      "view": "measure",
-      "tab": "runs",
-      "resultId": null
-    },
-    "surface": "measure-runs"
-  },
-  "profile-defaults-notice": {
-    "classification": "transient",
-    "title": "Settings",
-    "target": {
-      "view": "settings",
-      "category": "prompt"
-    },
-    "surface": "settings"
   },
   "limits-error": {
     "classification": "persistent",
@@ -640,7 +582,7 @@ export const NOTIFICATION_EVENTS = {
     "surface": "settings"
   }
 } as const satisfies Record<string, NotificationSpec>;
-export type NotificationEvent = keyof typeof NOTIFICATION_EVENTS;
+type NotificationEvent = keyof typeof NOTIFICATION_EVENTS;
 export interface NotifyOptions {
   /** Optional recovery navigation shown directly inside the live banner. */
   actionLabel?: string;

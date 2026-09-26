@@ -12,6 +12,7 @@ from app.evals.retrieval_eval import (
     evaluate_retriever,
     write_evaluation_artifact,
 )
+from app.evals.types import EvaluationRetrieval
 from tests.evals.support import SOURCE_SHA256, absent_case, positive_case, relevant_hit
 
 
@@ -20,7 +21,7 @@ def _evaluation():
 
     async def retriever(_query, _k):
         """Return one relevant hit for the deterministic evaluation."""
-        return [relevant_hit()]
+        return EvaluationRetrieval(hits=(relevant_hit(),))
 
     clock_values = iter((0, 1_000_000, 2_000_000, 5_000_000))
     return asyncio.run(
@@ -55,6 +56,11 @@ def test_runner_records_all_cases_but_scores_only_source_bearing_positives():
     assert evaluation.latency.total_ms == 4.0
     assert evaluation.latency.mean_ms == 2.0
     assert evaluation.latency.p95_ms == 3.0
+    assert {key: evaluation.config[key] for key in ("provider", "k", "scoring")} == {
+        "provider": "deterministic",
+        "k": 5,
+        "scoring": {"k": 5, "coverage_threshold": 0.5},
+    }
 
 
 def test_runner_reports_each_completed_case_in_canonical_order():
@@ -62,7 +68,7 @@ def test_runner_reports_each_completed_case_in_canonical_order():
 
     async def retriever(_query, _k):
         """Return one relevant hit while case progress is recorded."""
-        return [relevant_hit()]
+        return EvaluationRetrieval(hits=(relevant_hit(),))
 
     updates = []
     asyncio.run(
@@ -94,6 +100,26 @@ def test_raw_artifact_preserves_hits_spans_latency_and_review_provenance(tmp_pat
     assert payload["cases"][0]["hits"][0]["start_char"] == 90
     assert payload["cases"][0]["latency_ms"] == 1.0
     assert payload["cases"][1]["score"] is None
+    assert payload["config"]["scoring"] == {"k": 5, "coverage_threshold": 0.5}
+    assert all("decomposition" not in case for case in payload["cases"])
+
+
+def test_evaluation_rejects_a_caller_scoring_override_before_retrieval():
+    """Only actual scoring can stamp the config; reject caller claims without provider work."""
+
+    async def retriever(_query, _k):
+        """Fail if invalid configuration reaches the provider boundary."""
+        raise AssertionError("retrieval must not start")
+
+    with pytest.raises(ValueError, match="reserved 'scoring' key"):
+        asyncio.run(
+            evaluate_retriever(
+                [positive_case()],
+                retriever,
+                suite="scoring-provenance",
+                config={"scoring": {"k": 99}},
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -105,7 +131,7 @@ def test_runner_rejects_empty_or_absent_only_scoring_suites(cases):
 
     async def retriever(_query, _k):
         """Return no hits for an invalid scoring suite."""
-        return []
+        return EvaluationRetrieval(hits=())
 
     with pytest.raises(ValueError):
         asyncio.run(

@@ -14,7 +14,7 @@ export function LocalEngineSettings({ profile, readiness, onChange }: {
   readiness: Readiness | null;
   onChange: (update: Partial<ReviewSessionDraft>) => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   if (!LOCAL_ENGINE_VISIBLE) return null;
   const local = readiness?.review_engines?.local;
   const available = local?.enabled === true;

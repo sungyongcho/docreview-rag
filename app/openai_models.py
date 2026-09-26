@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-import json
 from types import MappingProxyType
 from typing import Literal
+
+from app.llm.schemas import TokenPricing
 
 type OpenAIModelRole = Literal[
     "agent",
@@ -21,23 +22,13 @@ POLICY_REVISION = "2026-09-10"
 
 
 @dataclass(frozen=True, slots=True)
-class OpenAIModelPricing:
-    """USD prices per million tokens for one exact model identifier."""
-
-    input_per_million_usd: Decimal
-    cached_input_per_million_usd: Decimal
-    cache_write_input_per_million_usd: Decimal
-    output_per_million_usd: Decimal
-
-
-@dataclass(frozen=True, slots=True)
 class OpenAIModelSelection:
     """Validated model, role, pricing, and request settings."""
 
     role: OpenAIModelRole
     model: str
     reasoning_effort: ReasoningEffort | None
-    pricing: OpenAIModelPricing
+    pricing: TokenPricing
     dimensions: int | None = None
 
 
@@ -45,19 +36,19 @@ class OpenAIModelPolicyError(ValueError):
     """Raised before client construction for a model outside its role policy."""
 
 
-_TERRA = OpenAIModelPricing(
+_TERRA = TokenPricing(
     input_per_million_usd=Decimal("2.00"),
     cached_input_per_million_usd=Decimal("0.20"),
     cache_write_input_per_million_usd=Decimal("2.50"),
     output_per_million_usd=Decimal("12.00"),
 )
-_LUNA = OpenAIModelPricing(
+_LUNA = TokenPricing(
     input_per_million_usd=Decimal("0.20"),
     cached_input_per_million_usd=Decimal("0.02"),
     cache_write_input_per_million_usd=Decimal("0.25"),
     output_per_million_usd=Decimal("1.20"),
 )
-_EMBEDDING_LARGE = OpenAIModelPricing(
+_EMBEDDING_LARGE = TokenPricing(
     input_per_million_usd=Decimal("0.13"),
     cached_input_per_million_usd=Decimal("0.13"),
     cache_write_input_per_million_usd=Decimal("0.13"),
@@ -91,16 +82,6 @@ _REASONING: MappingProxyType[OpenAIModelRole, ReasoningEffort | None] = MappingP
         "embedding": None,
     }
 )
-
-
-def default_openai_model(role: OpenAIModelRole) -> str:
-    """Return the policy default for one role."""
-    return _DEFAULTS[role]
-
-
-def allowed_openai_models(role: OpenAIModelRole) -> tuple[str, ...]:
-    """Return exact model identifiers admitted for one role."""
-    return _ALLOWED[role]
 
 
 def resolve_openai_model(
@@ -141,12 +122,3 @@ def openai_policy_snapshot() -> dict[str, object]:
             "dimensions": selection.dimensions,
         }
     return {"revision": POLICY_REVISION, "roles": roles}
-
-
-def main() -> None:
-    """Print the public policy snapshot without loading settings or clients."""
-    print(json.dumps(openai_policy_snapshot(), ensure_ascii=False, sort_keys=True))
-
-
-if __name__ == "__main__":
-    main()

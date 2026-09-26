@@ -176,7 +176,7 @@ def _source_span(blocks: list[Block], source_length: int | None = None) -> tuple
 def section_units(
     section: Section,
     config: ChunkConfig,
-    context_header: Callable[[str | None], str] | None = None,
+    context_header: Callable[[str | None], str],
 ) -> list[Unit]:
     """Group blocks without crossing source groups, headings, or tables.
 
@@ -291,9 +291,7 @@ def section_units(
 
         if pending and not budget.accepts(
             compose_index_text(
-                context_header(" · ".join(narrative_headings) or None)
-                if context_header
-                else " · ".join(narrative_headings),
+                context_header(" · ".join(narrative_headings) or None),
                 "\n\n".join([*(item.text for item in pending), text]),
             ),
             target=True,
@@ -578,33 +576,3 @@ def chunk_filing(filing: ParsedFiling, config: ChunkConfig | None = None) -> lis
     # A stable span sort restores document order before ordinals are materialized.
     chunks.sort(key=lambda chunk: (chunk.start_char, chunk.end_char))
     return [replace(chunk, ordinal=ordinal) for ordinal, chunk in enumerate(chunks)]
-
-
-if __name__ == "__main__":  # pragma: no cover - manual inspection helper
-    import argparse
-    from pathlib import Path
-    from unittest.mock import patch
-
-    from app.ingestion.manifest import Manifest
-    from app.ingestion.registry import resolve_registry
-
-    parser = argparse.ArgumentParser(description="Inspect structure-aware filing chunks.")
-    parser.add_argument("--doc", default="NVDA-FY2024", help="doc_id, e.g. NVDA-FY2024")
-    parser.add_argument("--manifest", type=Path, default=Path("data/corpus/manifest.json"))
-    parser.add_argument("--kind", choices=("text", "table"))
-    parser.add_argument("--limit", type=int, default=3)
-    parser.add_argument("--selection", required=True)
-    args = parser.parse_args()
-
-    manifest = Manifest.read(args.manifest)
-    sources = manifest.selected_sources(args.selection, args.manifest.parent)
-    entry = next((source for source in sources if source.document.document_id == args.doc), None)
-    if entry is None:
-        known = ", ".join(source.document.document_id for source in sources)
-        raise SystemExit(f"unknown doc {args.doc!r}; selected documents: {known}")
-    with patch("app.ingestion.edgar.save_profile"):
-        parsed, _ = resolve_registry(entry).parse(entry)
-    selected = [chunk for chunk in chunk_filing(parsed) if not args.kind or chunk.kind == args.kind]
-    for chunk in selected[: args.limit]:
-        print(f"\n{'─' * 80}\n#{chunk.ordinal} {chunk.kind} [{chunk.start_char}, {chunk.end_char})")
-        print(chunk.content)

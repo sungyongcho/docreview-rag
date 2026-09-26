@@ -9,7 +9,7 @@ import { PrepareLocalModel } from "./prepare-local-model";
 import { CodeBlock } from "@/components/code-block";
 import { useI18n } from "@/lib/i18n";
 import { addLocalLLMServer, diagnoseLocalLLM, disconnectLocalLLM, getLocalLLMConnection, selectLocalLLMServer } from "@/lib/api";
-import type { LocalLLMConnection, LocalLLMDiagnostics, LocalLLMServer, Readiness, ReviewEngineState } from "@/lib/types";
+import type { LocalLLMConnection, LocalLLMDiagnostics, Readiness, ReviewEngineState } from "@/lib/types";
 import { answerEngineStates } from "@/lib/answer-engine-state";
 import { localEngineStatus } from "@/lib/local-models";
 import "./local-connection-settings.css";
@@ -40,15 +40,6 @@ const RECOVERY: Record<string, string> = {
   review_tls: "Use the correct HTTPS address and a trusted certificate; do not disable certificate checks.",
   run_connection_diagnostics: "Run rag-dev doctor in the repository terminal for host and Docker checks.",
 };
-
-/** Preserve older connection responses while newer servers provide a named catalog. */
-function serverOptions(connection: LocalLLMConnection): LocalLLMServer[] {
-  if (connection.servers?.length) return connection.servers;
-  const defaults: LocalLLMServer = { id: "default", name: "Default", base_url: connection.initial_base_url, protocol: "auto", is_default: true };
-  return connection.base_url && connection.base_url !== connection.initial_base_url
-    ? [defaults, { id: "legacy", name: "Saved connection", base_url: connection.base_url, protocol: connection.protocol, is_default: false }]
-    : [defaults];
-}
 
 /** Reject a malformed draft before either connection or diagnostic requests leave the form. */
 function validServerUrl(value: string): boolean {
@@ -85,7 +76,7 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
   const mounted = useRef(true);
   const diagnosticRequest = useRef<AbortController | null>(null);
   const adding = selected === ADD_SERVER;
-  const servers = connection ? serverOptions(connection) : [];
+  const servers = connection?.servers ?? [];
   const draftValid = !!name.trim() && name.trim().length <= 80 && name.trim().toLowerCase() !== "default"
     && !servers.some((server) => server.name.toLowerCase() === name.trim().toLowerCase()) && validServerUrl(url);
   const targetValid = !!connection && (!adding || draftValid);
@@ -94,8 +85,7 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
   function accept(value: LocalLLMConnection) {
     setModelPreparation({ loading: false, error: "" });
     setConnection(value);
-    const options = serverOptions(value);
-    setSelected(value.selected_server_id ?? options.find((item) => item.base_url === value.base_url)?.id ?? "default");
+    setSelected(value.selected_server_id ?? value.servers?.find((item) => item.base_url === value.base_url)?.id ?? "default");
     setDiagnostics(null);
   }
 

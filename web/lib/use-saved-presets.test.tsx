@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { configurePresetStorage } from "./preset-storage";
 import { BUILTIN_PRESETS, DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "./types";
 import { RetrievalPresetManager } from "../components/retrieval-preset-manager";
+import { RequestPreviewContent } from "../components/request-preview";
 import { RetrievalPresetSelect } from "../components/retrieval-preset-select";
 
 afterEach(() => { cleanup(); configurePresetStorage(null); vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
@@ -12,14 +13,15 @@ it("shares one refresh between the page and composer and displays added files an
   vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
   let changed = false;
   const fetch = vi.fn(async () => new Response(JSON.stringify({
-    presets_version: changed ? "two" : "one", presets: [...BUILTIN_PRESETS.toReversed(), ...(changed ? [{ id: "dropped", name: "Dropped file", retrieval: DEFAULT_PROFILE }] : [])], errors: changed ? [{ file: "broken.json", error: "Invalid JSON" }] : [],
+    presets_version: changed ? "two" : "one", presets: [...BUILTIN_PRESETS.toReversed().map(preset => ({ ...preset, retrieval: { ...preset.retrieval, k: 7 } })), ...(changed ? [{ id: "dropped", name: "Dropped file", retrieval: DEFAULT_PROFILE }] : [])], errors: changed ? [{ file: "broken.json", error: "Invalid JSON" }] : [],
   })));
   vi.stubGlobal("fetch", fetch);
-  await act(async () => { render(<><RetrievalPresetManager /><RetrievalPresetSelect profile={DEFAULT_SESSION_PROFILE} editable onChange={vi.fn()} /></>); });
+  await act(async () => { render(<><RequestPreviewContent profile={DEFAULT_SESSION_PROFILE} query="Revenue growth" /><RetrievalPresetManager /><RetrievalPresetSelect profile={DEFAULT_SESSION_PROFILE} editable onChange={vi.fn()} /></>); });
   expect(fetch).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Register new preset" })).toBeDisabled();
   await act(async () => { configurePresetStorage({ environment: "dev", can_change_custom_retrieval: true }); });
   expect(fetch).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("Results", { selector: "dt" }).nextElementSibling).toHaveTextContent("7");
   expect(screen.getByRole("button", { name: "Register new preset" })).toBeEnabled();
   expect([...document.querySelectorAll(".preset-list-row")].map(row => row.getAttribute("aria-label"))).toEqual(["Balanced", "Korean", "Accuracy"]);
   changed = true;
@@ -29,6 +31,7 @@ it("shares one refresh between the page and composer and displays added files an
   expect(screen.getByRole("button", { name: "Dropped file" })).toBeVisible();
   expect(screen.getByRole("alert")).toHaveTextContent("broken.json");
   await act(async () => { configurePresetStorage({ environment: "prod", can_change_custom_retrieval: false }); });
+  expect(screen.getByText("Results", { selector: "dt" }).nextElementSibling).toHaveTextContent(String(DEFAULT_PROFILE.k));
   expect(screen.queryByRole("option", { name: "Dropped file" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Dropped file" })).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(6000); });

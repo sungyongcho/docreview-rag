@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PathDecisionBadge, REVIEW_STEPS, ReviewProgressSteps, candidateProgress, currentStepIndex, finishReviewProgress, initialReviewProgress, phaseStatus, progressCountsLabel, reviewProgressFromEvent } from "./review-progress";
+import { PathDecisionBadge, REVIEW_STEPS, ReviewProgressSteps, candidateProgress, currentStepIndex, finishReviewProgress, initialReviewProgress, phaseStatus, reviewProgressFromEvent } from "./review-progress";
 import type { ReviewProgress } from "@/lib/api";
 
 afterEach(cleanup);
@@ -73,15 +73,7 @@ describe("Five real-event review phases", () => {
     expect(screen.getAllByText("Not performed in this request")).toHaveLength(2);
   });
 
-  it("does not fabricate RAG phases for a conversation reply", () => {
-    const state = finishReviewProgress(reviewProgressFromEvent(event("chat"), initialReviewProgress()), "completed", 200);
-    render(<ReviewProgressSteps state={state} />);
-    expect(screen.getAllByRole("listitem")).toHaveLength(6);
-    expect(screen.getAllByText("Skipped: conversation reply without retrieval")).toHaveLength(3);
-    expect(screen.getByText("Execution complete")).toBeVisible();
-  });
-
-  it("waits after a legacy completion and spins only between actual start and end events", () => {
+  it("waits after a committed-node event and spins only between stage start and end events", () => {
     let state = reviewProgressFromEvent(event("gate"), initialReviewProgress());
     expect(REVIEW_STEPS.map((_, i) => phaseStatus(state, i))).not.toContain("current");
     state = reviewProgressFromEvent({ ...event("retrieve"), phase: "start" }, state);
@@ -90,10 +82,6 @@ describe("Five real-event review phases", () => {
     expect(phaseStatus(state, 1)).toBe("done");
     expect(state.stageTimings).toEqual([{ node: "retrieve", elapsed_ms: 125, status: "completed" }]);
     expect(REVIEW_STEPS.map((_, i) => phaseStatus(state, i))).not.toContain("current");
-  });
-
-  it("keeps the three real count segments", () => {
-    expect(progressCountsLabel({ node: "check", evidence: 20, relevant: 6, steps: 3 })).toBe("20 candidates · 6 relevant · 3 model steps");
   });
 
   it("waits for server routing and displays actual scope independently of the selected mode", () => {
@@ -191,7 +179,7 @@ it("keeps warning text readable in both actual themes and visible in the compact
 
 
 describe("recorded path decisions", () => {
-  const chatDecision = { intent: "casual_chat" as const, source: "classifier" as const, matched_rule: "classifier_chat", rationale: "Greeting", history_turns: 2, selected_scope: "auto" as const, resolved_scope: null, routing_queries: {}, retrieval_query: "Hi", scope_outcome: "not_applicable" as const, stopping_reason: null, suggested_scope: null };
+  const reviewDecision = { intent: "document_review" as const, source: "classifier" as const, matched_rule: "classifier_document_review", rationale: "Filing question", history_turns: 2, selected_scope: "auto" as const, resolved_scope: null, routing_queries: {}, retrieval_query: "Revenue growth", scope_outcome: "resolved" as const, stopping_reason: null, suggested_scope: null };
   it("overrides compact hidden labels only for a limited result", () => {
     const style = document.createElement("style");
     const css = readFileSync("app/v2.css", "utf8").split("/* Expected early stops")[1];
@@ -199,7 +187,7 @@ describe("recorded path decisions", () => {
     style.textContent = ".review-progress-steps small { display: none; } .review-progress-steps strong { font-size: 0; }\n" + css.split("*/")[1].split("@container")[0];
     document.head.append(style);
     try {
-      const limited = finishReviewProgress({ ...initialReviewProgress(), pathDecision: { ...chatDecision, stopping_stage: "path", stopping_reason: "unsupported_request" } }, "failed", 10);
+      const limited = finishReviewProgress({ ...initialReviewProgress(), pathDecision: { ...reviewDecision, stopping_stage: "path", stopping_reason: "unsupported_request" } }, "failed", 10);
       const { container } = render(<><ReviewProgressSteps state={limited} /><ReviewProgressSteps state={initialReviewProgress()} /></>);
       const stopped = container.querySelector(".review-progress.limited")!;
       const running = container.querySelector(".review-progress.running")!;
@@ -216,7 +204,7 @@ describe("recorded path decisions", () => {
     { stage: "path" as const, reason: "service_guidance", count: 1, calls: [], expected: 0 },
     { stage: "gate" as const, reason: "unknown_issuer", count: undefined, calls: undefined, expected: 3 },
   ])("uses recorded terminal call counts for $reason (expected $expected)", ({ stage, reason, count, calls, expected }) => {
-    const decision = { ...chatDecision, stopping_stage: stage, stopping_reason: reason, model_call_count: count };
+    const decision = { ...reviewDecision, stopping_stage: stage, stopping_reason: reason, model_call_count: count };
     const state = finishReviewProgress({ ...initialReviewProgress(), pathDecision: decision, steps: 3 }, reason === "service_guidance" ? "completed" : "failed", 10, calls === undefined ? undefined : { model_calls: calls });
     expect(state.steps).toBe(expected);
     expect(state.outcome).toBe("limited");
@@ -224,7 +212,7 @@ describe("recorded path decisions", () => {
     expect(screen.getByText("Model steps").nextElementSibling).toHaveTextContent(String(expected));
   });
   it.each(["path", "gate"] as const)("renders an expected stop at %s without failed or verified stages", (stage) => {
-    const decision = { ...chatDecision, intent: "out_of_scope" as const, stopping_stage: stage, stopping_reason: stage === "path" ? "unsupported_request" : "unknown_issuer", missing_issuers: ["SanDisk"] };
+    const decision = { ...reviewDecision, intent: "out_of_scope" as const, stopping_stage: stage, stopping_reason: stage === "path" ? "unsupported_request" : "unknown_issuer", missing_issuers: ["SanDisk"] };
     const state = finishReviewProgress({ ...initialReviewProgress(), pathDecision: decision }, "failed", 10);
     render(<ReviewProgressSteps state={state} />);
     const rows = screen.getAllByRole("listitem");
@@ -256,19 +244,18 @@ describe("recorded path decisions", () => {
       expect(row.querySelector("svg")).toHaveClass("lucide-circle");
     }
   });
-  it("shows the first decision and counts recorded classifier and chat calls", () => {
-    const state = finishReviewProgress(initialReviewProgress(), "completed", 200, { path_decision: chatDecision, model_calls: [{ node: "gate" }, { node: "chat" }], stages: ["gate", "chat", "report"].map((node) => ({ node, phase: "end", status: "completed" })) });
+  it("shows the first decision and counts recorded classifier and verification calls", () => {
+    const state = finishReviewProgress(initialReviewProgress(), "completed", 200, { path_decision: reviewDecision, model_calls: [{ node: "gate" }, { node: "check" }], stages: ["gate", "check", "report"].map((node) => ({ node, phase: "end", status: "completed" })) });
     render(<ReviewProgressSteps state={state} />);
     expect(screen.getByText("0. Path decision")).toBeVisible();
-    expect(screen.getByText("classifier_chat")).toBeVisible();
+    expect(screen.getByText("classifier_document_review")).toBeVisible();
     expect(screen.getByText("Candidates").nextElementSibling).toHaveTextContent("0");
     expect(screen.getByText("Relevant evidence").nextElementSibling).toHaveTextContent("0");
     expect(screen.getByText("Model steps").nextElementSibling).toHaveTextContent("2");
-    expect(screen.getAllByText("Skipped: conversation reply without retrieval")).toHaveLength(3);
     expect(state.pathDecision?.history_turns).toBe(2);
   });
   it("preserves scope stops and their corrective action from stream events", () => {
-    const decision = { ...chatDecision, intent: "document_review" as const, selected_scope: "dart" as const, scope_outcome: "conflict" as const, stopping_reason: "NVDA is outside DART", suggested_scope: "auto" as const };
+    const decision = { ...reviewDecision, intent: "document_review" as const, selected_scope: "dart" as const, scope_outcome: "conflict" as const, stopping_reason: "NVDA is outside DART", suggested_scope: "auto" as const };
     const selected = reviewProgressFromEvent({ ...event("gate"), display_stage: "path", phase: "end", status: "completed", path_decision: { ...decision, stopping_reason: null, scope_outcome: "resolved" } }, initialReviewProgress());
     const state = finishReviewProgress(reviewProgressFromEvent({ ...event("route"), phase: "end", status: "failed", path_decision: decision }, selected), "failed", 200);
     const restore = vi.fn();
@@ -286,7 +273,7 @@ describe("recorded path decisions", () => {
     expect(phaseStatus(state, 1)).toBe("not-run");
   });
   it("keeps narrative detail and scope facts in separate routing columns", () => {
-    const decision = { ...chatDecision, intent: "document_review" as const, scope_outcome: "resolved" as const, rationale: "Company filing analysis", retrieval_query: "NVDA FY2024 revenue", resolved_scope: { source: "explicit" as const, filters: { registries: ["sec"], issuers: ["NVDA"], fiscal_years: [2024] } } };
+    const decision = { ...reviewDecision, intent: "document_review" as const, scope_outcome: "resolved" as const, rationale: "Company filing analysis", retrieval_query: "NVDA FY2024 revenue", resolved_scope: { source: "explicit" as const, filters: { registries: ["sec"], issuers: ["NVDA"], fiscal_years: [2024] } } };
     const state = finishReviewProgress({ ...initialReviewProgress(), pathDecision: decision }, "completed", 100);
     const { container } = render(<ReviewProgressSteps state={state} />);
     const main = container.querySelector(".review-routing .review-routing-main")!;
@@ -301,23 +288,23 @@ describe("recorded path decisions", () => {
     expect(facts).toHaveTextContent("Routing reason");
   });
   it("keeps the stop reason in the narrative column of a stopped run", () => {
-    const decision = { ...chatDecision, intent: "out_of_scope" as const, stopping_stage: "path" as const, stopping_reason: "unsupported_request" };
+    const decision = { ...reviewDecision, intent: "out_of_scope" as const, stopping_stage: "path" as const, stopping_reason: "unsupported_request" };
     const state = finishReviewProgress({ ...initialReviewProgress(), pathDecision: decision }, "failed", 10);
     const { container } = render(<ReviewProgressSteps state={state} />);
     expect(container.querySelector(".review-routing-main")).toHaveTextContent("Stopping reason");
-    expect(container.querySelector(".review-routing-main")).toHaveTextContent("Greeting");
+    expect(container.querySelector(".review-routing-main")).toHaveTextContent("Filing question");
     expect(container.querySelector(".review-routing-facts")).toHaveTextContent("Unsupported request");
     expect(container.querySelector(".review-routing-facts")).toHaveTextContent("Scope outcome");
   });
   it("does not repeat the unsupported label in the badge the verdict pill already carries", () => {
-    const decision = { ...chatDecision, intent: "out_of_scope" as const, scope_outcome: "unsupported" as const, stopping_stage: "path" as const, stopping_reason: "unsupported_request" };
+    const decision = { ...reviewDecision, intent: "out_of_scope" as const, scope_outcome: "unsupported" as const, stopping_stage: "path" as const, stopping_reason: "unsupported_request" };
     const { container } = render(<PathDecisionBadge decision={decision} />);
     expect(container.querySelector(".review-scope-badge")).toBeNull();
-    const ordinary = render(<PathDecisionBadge decision={chatDecision} />);
+    const ordinary = render(<PathDecisionBadge decision={{ ...reviewDecision, intent: "service_help", scope_outcome: "not_applicable", stopping_reason: "service_guidance" }} />);
     expect(ordinary.container.querySelector(".review-scope-badge")).toHaveTextContent("No retrieval");
   });
   it("renders empty scope as a distinct verdict pill", () => {
-    const { container } = render(<PathDecisionBadge decision={{ ...chatDecision, scope_outcome: "empty" }} />);
+    const { container } = render(<PathDecisionBadge decision={{ ...reviewDecision, scope_outcome: "empty" }} />);
     expect(container.querySelector(".verdict.empty-scope")).toHaveTextContent("Empty scope");
     expect(container.querySelector(".verdict.not-in-docs")).toBeNull();
   });
@@ -326,7 +313,7 @@ describe("recorded path decisions", () => {
 
 describe("stage disclosures", () => {
   it("keeps recorded panels collapsed and marks only the currently expanded native button", () => {
-    render(<ReviewProgressSteps state={{ node: "report", evidence: 0, relevant: 0, steps: 0, outcome: "completed", observed: ["gate", "retrieve", "grade", "check", "report"], pathDecision: { intent: "document_review", source: "deterministic", matched_rule: "filing", rationale: "Filing question", selected_scope: "auto", history_turns: 0, routing_queries: {}, retrieval_query: "Question", scope_outcome: "resolved", stopping_reason: null, resolved_scope: null, suggested_scope: null } }} />);
+    render(<ReviewProgressSteps state={{ node: "report", evidence: 0, relevant: 0, steps: 0, outcome: "completed", completedNodes: ["gate", "retrieve", "grade", "check", "report"], observed: ["gate", "retrieve", "grade", "check", "report"], pathDecision: { intent: "document_review", source: "deterministic", matched_rule: "filing", rationale: "Filing question", selected_scope: "auto", history_turns: 0, routing_queries: {}, retrieval_query: "Question", scope_outcome: "resolved", stopping_reason: null, resolved_scope: null, suggested_scope: null } }} />);
     const labels = ["Path decision", ...REVIEW_STEPS.map((step) => step.label)];
     expect(screen.queryByRole("region")).toBeNull();
     for (const label of labels) {
@@ -375,12 +362,12 @@ it("keeps waiting/pending and unreached failed-run stages inert while preserving
 });
 
 it("closes an open panel if a new pass makes that stage unreached", () => {
-  const completed = { node: "report" as const, evidence: 1, relevant: 1, steps: 1, outcome: "completed" as const, observed: ["gate", "retrieve", "grade", "check", "report"] as const };
-  const { rerender } = render(<ReviewProgressSteps state={{ ...completed, observed: [...completed.observed] }} />);
+  const completed = { node: "report" as const, evidence: 1, relevant: 1, steps: 1, outcome: "completed" as const, completedNodes: ["gate", "retrieve", "grade", "check", "report"] as const, observed: ["gate", "retrieve", "grade", "check", "report"] as const };
+  const { rerender } = render(<ReviewProgressSteps state={{ ...completed, observed: [...completed.observed], completedNodes: [...completed.completedNodes] }} />);
   fireEvent.click(screen.getByRole("button", { name: "Verify answer and citations" }));
   rerender(<ReviewProgressSteps state={initialReviewProgress()} />);
   expect(screen.queryByRole("region")).toBeNull();
-  rerender(<ReviewProgressSteps state={{ ...completed, observed: [...completed.observed] }} />);
+  rerender(<ReviewProgressSteps state={{ ...completed, observed: [...completed.observed], completedNodes: [...completed.completedNodes] }} />);
   expect(screen.queryByRole("region")).toBeNull();
 });
 

@@ -1,4 +1,4 @@
-"""Deterministic command-line entrypoints for retrieval, ingestion, and serving."""
+"""Deterministic command-line entrypoints for retrieval and ingestion."""
 
 import argparse
 import asyncio
@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from openai import OpenAIError
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings, get_settings
@@ -28,7 +28,6 @@ class ExitCode(IntEnum):
 
     OK = 0
     INVALID_INPUT = 2
-    INVALID_FILE = 3
     UNAVAILABLE = 4
 
 
@@ -112,20 +111,6 @@ def _add_ingest_parser(subparsers: Subparsers) -> None:
     )
 
 
-def _add_serve_parser(subparsers: Subparsers) -> None:
-    """Declare the serve command and the bind options it hands to the server."""
-    parser = subparsers.add_parser("serve", help="Run the FastAPI application with Uvicorn.")
-    parser.add_argument("--host", default="127.0.0.1", help="Interface address to bind.")
-    parser.add_argument("--port", type=int, default=8000, help="TCP port to bind.")
-    parser.add_argument("--workers", type=int, default=1, help="Number of Uvicorn workers.")
-    parser.add_argument(
-        "--log-level",
-        choices=("critical", "error", "warning", "info", "debug", "trace"),
-        default="info",
-        help="Uvicorn log level.",
-    )
-
-
 def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse one command without opening files or external services.
 
@@ -137,13 +122,12 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     Returns
     -------
     argparse.Namespace
-        Parsed retrieve, ingest, or serve command.
+        Parsed retrieve or ingest command.
     """
     parser = CliArgumentParser(prog="docreview", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     _add_retrieve_parser(subparsers)
     _add_ingest_parser(subparsers)
-    _add_serve_parser(subparsers)
     return parser.parse_args(argv)
 
 
@@ -288,9 +272,10 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
 
 async def _ingest(args: argparse.Namespace) -> dict[str, object]:
     """Submit the same typed ingestion job used by the development web client."""
-    from app.api.admin_schemas import CorpusJobResource, CorpusOperationRequest
+    from app.api.admin_schemas import CorpusJobResource
+    from app.corpus_admin.types import AdminCommand
 
-    request = CorpusOperationRequest(
+    request = AdminCommand(
         kind="ingest_manifest",
         manifest=args.manifest,
         selection_id=args.selection,
@@ -302,7 +287,7 @@ async def _ingest(args: argparse.Namespace) -> dict[str, object]:
         async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
             response = await client.post(
                 args.api_url.rstrip("/") + "/corpus/jobs/",
-                json=request.model_dump(mode="json"),
+                json=TypeAdapter(AdminCommand).dump_python(request, mode="json"),
                 headers={"Origin": origin},
             )
             response.raise_for_status()
@@ -328,19 +313,6 @@ async def _run_data_command(args: argparse.Namespace) -> dict[str, object]:
         raise AssertionError(f"unsupported data command: {args.command}")
     finally:
         await engine.dispose()
-
-
-def _serve(args: argparse.Namespace) -> None:
-    """Hand the bind options to the server; this call does not return."""
-    import uvicorn
-
-    uvicorn.run(
-        "app.main:app",
-        host=args.host,
-        port=args.port,
-        workers=args.workers,
-        log_level=args.log_level,
-    )
 
 
 def _failure_payload(error: CliError) -> dict[str, object]:
@@ -371,7 +343,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     Returns
     -------
     int
-        Stable success, invalid-input, invalid-file, or unavailable exit code.
+        Stable success, invalid-input, or unavailable exit code.
 
     Notes
     -----
@@ -381,9 +353,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         args = arguments(argv)
         _validate_arguments(args)
-        if args.command == "serve":
-            _serve(args)
-            return ExitCode.OK
         payload = asyncio.run(_run_data_command(args))
     except CliError as error:
         _write_json(_failure_payload(error), sys.stderr)
@@ -424,10 +393,5 @@ def main(argv: Sequence[str] | None = None) -> int:
     return ExitCode.OK
 
 
-def entrypoint() -> None:
-    """Run the installed console script without printing a Python traceback."""
-    raise SystemExit(main())
-
-
 if __name__ == "__main__":
-    entrypoint()
+    raise SystemExit(main())

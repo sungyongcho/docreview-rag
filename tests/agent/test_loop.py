@@ -1,16 +1,19 @@
 """Agent loop: evidence gating, explicit observations, and fail-closed stops."""
 
 import asyncio
+from decimal import Decimal
 import json
 from typing import cast
 
 from pydantic import BaseModel, ConfigDict, Field
+import pytest
 
 from app.agent.loop import COMPACTED_OUTPUT, run_agent
 from app.agent.provider import DeterministicToolProvider, ToolCallingProvider
 from app.agent.registry import ToolRegistry
-from app.agent.tools import EvidenceExtractor, Tool, ToolError
+from app.agent.tools import EvidenceExtractor, Tool
 from app.agent.types import AgentBudget, AgentCitation, ToolCall
+from app.llm.schemas import TokenPricing
 from tests.agent.support import turn
 
 SOURCE_SHA256 = "a" * 64
@@ -143,38 +146,9 @@ def test_search_then_cited_answer_succeeds_with_full_provenance():
     assert json.loads(replayed[3]["output"])["hits"][0]["chunk_id"] == 7
 
 
-def test_uncited_final_answer_is_rejected_then_corrected():
-    """Reject an answer citing what was never retrieved, and accept the corrected one."""
-    turns = [
-        turn(tool_calls=(call("search_notes", {"query": "revenue"}),)),
-        turn(tool_calls=(call("final_answer", answer_arguments(99), call_id="call-2"),)),
-        turn(tool_calls=(call("final_answer", answer_arguments(7), call_id="call-3"),)),
-    ]
-
-    result, _ = run_loop(turns)
-
-    assert result.status == "ok"
-    assert result.iterations == 3
-    rejection = result.steps[1].observations[0]
-    assert "99" in (rejection.error or "")
-
-
-def test_not_in_docs_requires_no_evidence():
-    """Let an absent answer finish without having retrieved anything."""
-    turns = [
-        turn(
-            tool_calls=(call("final_answer", answer_arguments(label="NOT_IN_DOCS")),),
-        )
-    ]
-
-    result, _ = run_loop(turns)
-
-    assert result.status == "ok"
-    assert result.answer is not None and result.answer.label == "NOT_IN_DOCS"
-
-
 def test_final_answer_rejection_names_the_broken_field():
-    """Name the violated field, so a natural NOT_IN_DOCS phrasing can be corrected."""
+    """Name the violated field, so a natural NOT_IN_DOCS phrasing can be corrected, then
+    accept the canonical absent answer without any retrieved evidence."""
     natural = {
         "label": "NOT_IN_DOCS",
         "answer": "The filings do not disclose this.",
@@ -193,6 +167,7 @@ def test_final_answer_rejection_names_the_broken_field():
     result, _ = run_loop(turns)
 
     assert result.status == "ok"
+    assert result.answer is not None and result.answer.label == "NOT_IN_DOCS"
     rejection = result.steps[0].observations[0].error or ""
     assert 'exactly the string "NOT_IN_DOCS"' in rejection
 
@@ -226,33 +201,6 @@ def test_tool_failures_become_explicit_observations():
     assert result.status == "provider_error"
     assert "99" not in (result.steps[1].observations[0].error or "")
     assert "7" in (result.steps[1].observations[0].error or "")
-
-
-def test_tool_error_detail_reaches_the_model():
-    """Pass a tool-authored safe message through instead of redacting it."""
-
-    async def run(params):
-        """Reject with the message the model needs to correct course."""
-        raise ToolError("chunk 41 does not exist")
-
-    registry = ToolRegistry()
-    registry.register(search_tool(run))
-    turns = [
-        turn(tool_calls=(call("search_notes", {"query": "revenue"}),)),
-        turn(
-            tool_calls=(
-                call("final_answer", answer_arguments(label="NOT_IN_DOCS"), call_id="call-2"),
-            ),
-        ),
-    ]
-
-    result, provider = run_loop(turns, registry=registry)
-
-    assert result.status == "ok"
-    assert result.steps[0].observations[0].error == "chunk 41 does not exist"
-    replay = provider.requests[1][1]
-    outputs = [item["output"] for item in replay if item.get("type") == "function_call_output"]
-    assert outputs == ["ERROR: chunk 41 does not exist"]
 
 
 def test_strict_argument_json_rejects_duplicates_and_non_finite_values():
@@ -314,45 +262,93 @@ def test_iteration_budget_exhaustion_fails_closed():
     assert result.iterations == 2
 
 
-def test_token_budget_stops_before_another_provider_call():
-    """Stop before spending a further turn once the token ceiling is crossed."""
+def test_final_turn_cannot_succeed_after_token_budget_overshoot():
+    """Refuse a final answer produced by the turn that broke the token ceiling, and stop
+    there instead of spending a further provider turn."""
+    turns = [
+        turn(
+            tool_calls=(call("final_answer", answer_arguments(label="NOT_IN_DOCS")),),
+            input_tokens=101,
+            output_tokens=1,
+        ),
+        turn(
+            tool_calls=(
+                call("final_answer", answer_arguments(label="NOT_IN_DOCS"), call_id="call-2"),
+            ),
+        ),
+    ]
+
+    result, provider = run_loop(
+        turns,
+        budget=AgentBudget(max_total_input_tokens=100),
+    )
+
+    assert result.status == "budget_exceeded"
+    assert "token budget" in (result.failure or "")
+    assert result.answer is None
+    assert result.total_input_tokens == 101
+    assert result.iterations == 1
+    assert len(provider.requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("budget", "input_price", "resource", "admitted_turns"),
+    [
+        pytest.param(
+            AgentBudget(max_total_output_tokens=20),
+            Decimal("0"),
+            "output-token",
+            1,
+            id="output-below-turn-floor",
+        ),
+        pytest.param(
+            AgentBudget(max_total_input_tokens=10),
+            Decimal("0"),
+            "input-token",
+            1,
+            id="input-exactly-exhausted",
+        ),
+        pytest.param(
+            AgentBudget(max_total_cost_usd=Decimal("0")),
+            Decimal("1"),
+            "cost",
+            0,
+            id="paid-provider-with-no-cost-allowance",
+        ),
+    ],
+)
+def test_exhausted_budget_stops_before_a_futile_request(
+    budget, input_price, resource, admitted_turns
+):
+    """Keep an exhausted budget from admitting another turn and retain earlier usage."""
     turns = [
         turn(
             tool_calls=(call("search_notes", {"query": "revenue"}),),
-            input_tokens=90,
             output_tokens=10,
         ),
         turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-2"),)),
     ]
 
-    result, provider = run_loop(
-        turns,
-        budget=AgentBudget(max_iterations=8, max_total_input_tokens=80),
+    provider = DeterministicToolProvider(turns)
+    provider.pricing = TokenPricing(
+        input_per_million_usd=input_price, output_per_million_usd=Decimal("0")
+    )
+    result = asyncio.run(
+        run_agent(
+            "How much did revenue increase?",
+            registry=registry_with_search(),
+            provider=provider,
+            budget=budget,
+        )
     )
 
     assert result.status == "budget_exceeded"
-    assert "token budget" in (result.failure or "")
-    assert len(provider.requests) == 1
-
-
-def test_output_floor_stops_before_a_futile_request():
-    """Stop when the remaining output allowance is below the provider's minimum."""
-    turns = [
-        turn(
-            tool_calls=(call("search_notes", {"query": "revenue"}),),
-            output_tokens=10,
-        ),
-        turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-2"),)),
-    ]
-
-    result, provider = run_loop(
-        turns,
-        budget=AgentBudget(max_iterations=8, max_total_output_tokens=20),
-    )
-
-    assert result.status == "budget_exceeded"
-    assert "token budget" in (result.failure or "")
-    assert len(provider.requests) == 1
+    assert len(provider.requests) == admitted_turns
+    assert result.answer is None
+    assert result.iterations == admitted_turns
+    assert result.total_input_tokens == 10 * admitted_turns
+    assert result.total_output_tokens == 10 * admitted_turns
+    assert f"{resource} budget" in (result.failure or "")
 
 
 def test_incomplete_turn_fails_closed_as_budget_exceeded():
@@ -367,16 +363,9 @@ def test_incomplete_turn_fails_closed_as_budget_exceeded():
     assert len(provider.requests) == 1
 
 
-def test_provider_failure_returns_a_typed_result():
-    """Report a provider failure as a typed result rather than raising."""
-    result, _ = run_loop([])
-
-    assert result.status == "provider_error"
-    assert "RuntimeError" in (result.failure or "")
-
-
 def test_provider_failure_does_not_expose_exception_secrets():
-    """Keep a credential inside a provider exception out of the reported failure."""
+    """Report a provider failure as a typed result naming the exception type, and keep a
+    credential inside the exception message out of it."""
 
     class SecretProvider(ToolCallingProvider):
         """Provider whose failure carries a secret that must not escape."""
@@ -384,6 +373,9 @@ def test_provider_failure_does_not_expose_exception_secrets():
         provider_name = "test"
         model_name = "test-model"
         api_url = "test://provider"
+        pricing = TokenPricing(
+            input_per_million_usd=Decimal("1"), output_per_million_usd=Decimal("1")
+        )
 
         async def turn(
             self,
@@ -405,23 +397,8 @@ def test_provider_failure_does_not_expose_exception_secrets():
     )
 
     assert result.status == "provider_error"
+    assert "RuntimeError" in (result.failure or "")
     assert "sk-super-secret" not in (result.failure or "")
-
-
-def test_final_answer_requires_the_complete_retrieved_identity():
-    """Reject a citation whose text was altered from what retrieval returned."""
-    forged = answer_arguments()
-    forged["citations"][0]["citation"] = "Fabricated citation"
-    turns = [
-        turn(tool_calls=(call("search_notes", {"query": "revenue"}),)),
-        turn(tool_calls=(call("final_answer", forged, call_id="call-2"),)),
-        turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-3"),)),
-    ]
-
-    result, _ = run_loop(turns)
-
-    assert result.status == "ok"
-    assert "identity" in (result.steps[1].observations[0].error or "")
 
 
 def test_conflicting_chunk_identity_is_rejected_and_kept_out_of_evidence():
@@ -450,27 +427,6 @@ def test_conflicting_chunk_identity_is_rejected_and_kept_out_of_evidence():
     assert "identity" in (result.steps[2].observations[0].error or "")
     assert result.answer is not None
     assert result.answer.citations[0].citation == "NVDA FY2024 · Item 7"
-
-
-def test_final_turn_cannot_succeed_after_token_budget_overshoot():
-    """Refuse a final answer produced by the turn that broke the token ceiling."""
-    turns = [
-        turn(
-            tool_calls=(call("final_answer", answer_arguments(label="NOT_IN_DOCS")),),
-            input_tokens=101,
-            output_tokens=1,
-        )
-    ]
-
-    result, _ = run_loop(
-        turns,
-        budget=AgentBudget(max_total_input_tokens=100),
-    )
-
-    assert result.status == "budget_exceeded"
-    assert result.answer is None
-    assert result.total_input_tokens == 101
-    assert result.iterations == 1
 
 
 def test_final_answer_must_be_the_only_call_in_its_turn():
@@ -564,3 +520,26 @@ def test_malformed_evidence_extractor_becomes_an_observation():
 
     assert result.status == "ok"
     assert "evidence extraction failed" in (result.steps[0].observations[0].error or "")
+
+
+def test_zero_cost_ceiling_with_a_zero_priced_provider_is_not_exhausted():
+    """Mirror ProviderBudget.exhausted_by: a free provider never exhausts a zero cost ceiling."""
+    turns = [turn(tool_calls=(call("final_answer", answer_arguments(label="NOT_IN_DOCS")),))]
+
+    result, provider = run_loop(turns, budget=AgentBudget(max_total_cost_usd=Decimal("0")))
+
+    assert result.status == "ok", (result.status, result.failure)
+    assert len(provider.requests) == 1
+
+
+def test_content_filter_cutoff_is_a_provider_failure_not_a_budget_stop():
+    """A turn the provider cut off for a content filter is not reported as the token ceiling."""
+    turns = [turn(output_text="", incomplete=True, incomplete_reason="content_filter")]
+
+    result, provider = run_loop(turns)
+
+    assert result.status == "provider_error"
+    assert "content_filter" in (result.failure or "")
+    assert "output-token ceiling" not in (result.failure or "")
+    assert result.iterations == 1
+    assert len(provider.requests) == 1

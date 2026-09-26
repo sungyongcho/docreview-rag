@@ -7,9 +7,9 @@
 import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 import type { Capabilities } from "./types";
 
-export type HelpCapability = Exclude<keyof Capabilities, "environment">;
+type HelpCapability = Exclude<keyof Capabilities, "environment">;
 export interface HelpAccess { capabilities?: Capabilities | null }
-export interface HelpGuide { summary: string; steps: readonly string[] }
+interface HelpGuide { summary: string; steps: readonly string[] }
 
 export type HelpScreen =
   | "build"
@@ -661,7 +661,7 @@ const SYSTEM: HelpTopic[] = [
     id: "system.local-policy", capability: "can_configure_local_llm",
     title: "Local model policy",
     body: [
-      "What the local engine serves when a session selects it: answers and citation checks, query translation, intent classification and casual replies.",
+      "What the local engine serves when a session selects it: answers and citation checks, query translation and intent classification.",
       "Changing the local answer server does not change the embedding provider. Stored vectors retain the identity of the model that produced them.",
       "The panel refreshes automatically every 30 seconds while visible, showing connection state, installed models and their capabilities. Unavailable selections cannot receive questions.",
     ],
@@ -727,13 +727,4 @@ export function helpScreen(view: "review" | "build" | "measure" | "system", tab:
   if (view === "system") return "system";
   if (view === "build") return tab === "pipeline" ? "build" : tab === "jobs" ? "build.jobs" : tab === "documents" ? "build.documents" : null;
   return MEASURE_SCREENS.has(tab) ? `measure.${tab}` as HelpScreen : null;
-}
-
-/** Find a topic on any screen, for See also links that point across screens. */
-export function findHelpTopic(id: string): HelpTopic | null {
-  for (const topics of Object.values(HELP_TOPICS)) {
-    const topic = topics.find((item) => item.id === id);
-    if (topic) return topic;
-  }
-  return null;
 }

@@ -3,8 +3,6 @@
 import hashlib
 from types import ModuleType
 
-import pytest
-
 from tests.ingestion.chunk.support import source_text, tokens
 
 
@@ -24,28 +22,6 @@ def test_leaf_blocks_returns_expected_block_counts(parser_module: ModuleType) ->
     assert len(blocks) == 3
     assert sum(block.name == "table" for block in blocks) == 1
     assert len(soup.find_all("table")) == 1
-
-
-@pytest.mark.parametrize(
-    "table_html",
-    [
-        "<table><tr><td>Revenue</td><td>100</td></tr></table>",
-        """
-        <table><tr>
-          <td><div>Revenue</div></td><td><div>2024</div></td>
-          <td><div>100</div></td><td><div>2023</div></td>
-          <td><div>90</div></td><td><div>80</div></td>
-        </tr></table>
-        """,
-    ],
-)
-def test_leaf_blocks_never_loses_a_table(parser_module: ModuleType, table_html: str) -> None:
-    """leaf_blocks preserves both simple and legacy nested-div tables."""
-    soup = parser_module.normalize(f"<html><body>{table_html}</body></html>")
-
-    blocks = parser_module.leaf_blocks(soup)
-
-    assert sum(block.name == "table" for block in blocks) == 1
 
 
 def test_normalize_drops_ix_header_instead_of_unwrapping(parser_module: ModuleType) -> None:
@@ -98,7 +74,7 @@ def test_leaf_blocks_groups_a_legacy_table_as_one_block(parser_module: ModuleTyp
     assert "Revenue" in blocks[0].get_text(" ", strip=True)
 
 
-def test_read_source_preserves_crlf_for_source_offsets(
+def test_decoded_source_preserves_crlf_for_source_offsets(
     parser_module: ModuleType,
     tmp_path,
 ) -> None:
@@ -107,7 +83,7 @@ def test_read_source_preserves_crlf_for_source_offsets(
     source_bytes = "<html>\r\n<p>First</p>\r\n<p>café</p>\r\n</html>".encode()
     path.write_bytes(source_bytes)
 
-    raw = parser_module.read_source(path)
+    raw = path.read_bytes().decode("utf-8")
     soup = parser_module.normalize(raw)
     offsets = parser_module.line_offsets(raw)
     second = soup.find_all("p")[1]

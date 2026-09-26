@@ -2,11 +2,24 @@
 
 import json
 from pathlib import Path
+import subprocess
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from scripts.stack.fresh import receipt_path
+
+def receipt_path(root: Path, command: str) -> Path:
+    """Store receipts outside the deletion set in the current worktree's Git directory.
+
+    The lifecycle commands write here and the operator service reads here, so the path
+    rule lives with the reader in ``app`` and the ``scripts`` side imports it.
+    """
+    output = subprocess.check_output(
+        ["git", "-C", str(root), "rev-parse", "--git-path", f"docreview-receipts/{command}.json"],
+        text=True,
+    )
+    path = Path(output.strip())
+    return path if path.is_absolute() else root / path
 
 
 class LifecycleReceipt(BaseModel):

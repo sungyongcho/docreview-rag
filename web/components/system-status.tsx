@@ -94,8 +94,7 @@ export function SystemStatus({ readiness, localModel, localAllowed = false, load
 const LOCAL_ROLES: ReadonlyArray<readonly [string, string]> = [
   ["review", "answers and citation checks"],
   ["routing", "query translation and scope"],
-  ["intent", "review or conversation"],
-  ["chat", "casual replies"],
+  ["intent", "review, service guidance or unsupported request"],
 ];
 
 function LocalModelPolicy({ readiness, selected }: { readiness: Readiness | null; selected?: string | null }) {

@@ -5,13 +5,11 @@ from collections.abc import Sequence
 import sys
 import threading
 import time
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.retrieval as public
 from app.retrieval import cross_encoder
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.rerank import RerankProvider
@@ -45,32 +43,24 @@ def retrieve(monkeypatch, events: list[tuple[str, int]], **kwargs):
             cast(AsyncSession, object()),
             "market risk",
             provider=DeterministicEmbeddingProvider(),
-            filters=RetrievalFilters(),
+            filters=RetrievalFilters(languages=("en",)),
             **kwargs,
         )
     )
 
 
-def test_public_surface_exports_cross_encoder():
-    """Export the cross-encoder reranker from the public façade."""
-    assert public.CrossEncoderReranker is cross_encoder.CrossEncoderReranker
-    assert "CrossEncoderReranker" in public.__all__
-
-
-def test_constructing_reranker_loads_no_model():
-    """Construct the reranker without loading model weights."""
-    reranker = cross_encoder.CrossEncoderReranker()
-    assert reranker._encoder.value is None
-
-
 @pytest.mark.parametrize(
-    ("model", "batch_size"),
-    [("", 32), ("model", 0), ("model", -1)],
+    "settings",
+    [
+        pytest.param({"model": ""}, id="blank-model"),
+        pytest.param({"batch_size": 0}, id="empty-batch"),
+        pytest.param({"max_length": 0}, id="empty-input-window"),
+    ],
 )
-def test_reranker_rejects_invalid_construction(model, batch_size):
-    """Reject invalid reranker model and batch settings."""
+def test_reranker_rejects_invalid_construction(settings):
+    """Reject an empty model, batch or input window before loading the encoder."""
     with pytest.raises(ValueError):
-        cross_encoder.CrossEncoderReranker(model=model, batch_size=batch_size)
+        cross_encoder.CrossEncoderReranker(**settings)
 
 
 def test_missing_extra_raises_an_actionable_runtime_error(monkeypatch):
@@ -79,26 +69,6 @@ def test_missing_extra_raises_an_actionable_runtime_error(monkeypatch):
 
     with pytest.raises(RuntimeError, match=r"uv sync --extra cpu"):
         cross_encoder.CrossEncoderReranker()._load()
-
-
-def test_load_constructs_the_model_once(monkeypatch):
-    """Load and cache one cross-encoder model instance."""
-    calls: list[str] = []
-
-    class Encoder:
-        """Test double for Encoder behavior."""
-
-        def __init__(self, model):
-            calls.append(model)
-
-    fake_sentence_transformers(monkeypatch, CrossEncoder=Encoder)
-    reranker = cross_encoder.CrossEncoderReranker(model="cross-encoder/fake")
-
-    first = reranker._load()
-    second = reranker._load()
-
-    assert first is second
-    assert calls == ["cross-encoder/fake"]
 
 
 def test_empty_candidate_list_does_not_load_a_model():
@@ -117,8 +87,9 @@ def test_score_preserves_pair_order_and_runs_model_off_loop(monkeypatch):
     class Encoder:
         """Test double for Encoder behavior."""
 
-        def __init__(self, model):
+        def __init__(self, model, *, max_length):
             calls["model"] = model
+            calls["max_length"] = max_length
             calls["constructor_thread"] = threading.get_ident()
 
         def predict(self, pairs, *, batch_size):
@@ -135,6 +106,8 @@ def test_score_preserves_pair_order_and_runs_model_off_loop(monkeypatch):
 
     assert scores == [2.0, -0.25]
     assert calls["model"] == "cross-encoder/fake"
+    # The scoring window is explicit rather than the tokenizer's silent default.
+    assert calls["max_length"] == 512
     assert calls["pairs"] == [("query", "first"), ("query", "second")]
     assert calls["batch_size"] == 5
     assert calls["constructor_thread"] != main_thread
@@ -148,7 +121,8 @@ def test_simultaneous_cold_scores_construct_one_model(monkeypatch):
     class Encoder:
         """Test double for Encoder behavior."""
 
-        def __init__(self, model):
+        def __init__(self, model, *, max_length):
+            del max_length
             constructors.append(model)
             time.sleep(0.05)
 
@@ -172,38 +146,35 @@ def test_simultaneous_cold_scores_construct_one_model(monkeypatch):
     assert constructors == ["cross-encoder/fake"]
 
 
-def test_no_reranker_keeps_baseline_retrieval_behavior(monkeypatch):
-    """Keep baseline retrieval unchanged when no reranker is supplied."""
-    baseline_events: list[tuple[str, int]] = []
-    repeat_events: list[tuple[str, int]] = []
+def test_shared_reranker_is_one_instance_per_model_and_batch_size(monkeypatch):
+    """Callers resolving the same (model, batch_size) share one lazily loaded model."""
+    monkeypatch.setattr(cross_encoder, "_SHARED_RERANKERS", {}, raising=False)
+    constructions: list[str] = []
 
-    baseline = retrieve(monkeypatch, baseline_events, k=2, candidate_k=4)
-    repeat = retrieve(monkeypatch, repeat_events, k=2, candidate_k=4, reranker=None)
+    class Encoder:
+        """Test double for Encoder behavior."""
 
-    assert baseline.hits == repeat.hits
-    assert baseline_events == repeat_events == [("vector", 4), ("lexical", 4)]
-    assert len(baseline.hits) == 2
+        def __init__(self, model, *, max_length):
+            del max_length
+            constructions.append(model)
 
+        def predict(self, pairs, *, batch_size):
+            """Exercise predict behavior."""
+            return [1.0] * len(pairs)
 
-def test_reranker_rescores_the_full_candidate_pool_then_truncates(monkeypatch):
-    """Rescore the complete candidate pool before final truncation."""
-    seen: dict[str, Any] = {}
+    fake_sentence_transformers(monkeypatch, CrossEncoder=Encoder)
+    first = cross_encoder.shared_cross_encoder(model="cross-encoder/fake")
+    second = cross_encoder.shared_cross_encoder(model="cross-encoder/fake")
+    smaller_batches = cross_encoder.shared_cross_encoder(model="cross-encoder/fake", batch_size=8)
 
-    class Reranker(RerankProvider):
-        """Test double for Reranker behavior."""
-
-        async def score(self, query: str, documents: Sequence[str]) -> Sequence[float]:
-            """Exercise score behavior."""
-            seen["query"] = query
-            seen["documents"] = list(documents)
-            return [float(index) for index in range(len(documents))]
-
-    result = retrieve(monkeypatch, [], k=2, candidate_k=4, reranker=Reranker())
-
-    assert seen["query"] == "market risk"
-    assert len(seen["documents"]) == 4
-    assert len(result.hits) == 2
-    assert result.hits[0].score > result.hits[1].score
+    assert first is second
+    assert smaller_batches is not first
+    assert smaller_batches.batch_size == 8
+    assert asyncio.run(first.score("first", ["document"])) == [1.0]
+    assert asyncio.run(second.score("second", ["document"])) == [1.0]
+    assert constructions == ["cross-encoder/fake"]
+    # Direct construction stays private to its caller and never touches the shared cache.
+    assert cross_encoder.CrossEncoderReranker(model="cross-encoder/fake") is not first
 
 
 def test_component_rankings_record_proposals_not_rerank_survivors(monkeypatch):
@@ -221,64 +192,3 @@ def test_component_rankings_record_proposals_not_rerank_survivors(monkeypatch):
     assert len(result.hits) == 1
     assert result.component_rankings.vector == (1, 2, 3, 4)
     assert result.component_rankings.lexical == (4, 3, 2, 1)
-
-
-def test_cli_accepts_rerank_flag():
-    """Expose optional cross-encoder reranking through the CLI."""
-    from app.retrieval.__main__ import arguments
-
-    args = arguments(["--query", "market risk", "--rerank"])
-
-    assert args.rerank is True
-
-
-def test_run_passes_cross_encoder_when_rerank_is_enabled(monkeypatch):
-    """Pass a cross-encoder to the service only when requested."""
-    import app.db.session as db_session
-    from app.retrieval import __main__ as cli
-
-    reranker = object()
-    seen: dict[str, Any] = {}
-
-    class Session:
-        """Test double for Session behavior."""
-
-        async def __aenter__(self):
-            return object()
-
-        async def __aexit__(self, exc_type, exc, traceback):
-            return None
-
-    class Engine:
-        """Test double for Engine behavior."""
-
-        async def dispose(self):
-            """Exercise dispose behavior."""
-            return None
-
-    async def retrieve(session, query, **kwargs):
-        """Exercise retrieve behavior."""
-        seen.update(kwargs)
-        return object()
-
-    settings = SimpleNamespace(
-        embedding_provider="deterministic",
-        lexical_ranker="ts_rank_cd",
-        query_language_routing=False,
-        bm25_k1=1.2,
-        bm25_b=0.75,
-        bm25_idf="lucene",
-    )
-    monkeypatch.setattr(db_session, "Session", Session)
-    monkeypatch.setattr(db_session, "engine", Engine())
-    monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli, "get_embedding_provider", lambda _settings: object())
-    monkeypatch.setattr(cli, "CrossEncoderReranker", lambda: reranker)
-    monkeypatch.setattr(cli, "retrieve", retrieve)
-    monkeypatch.setattr(cli, "_payload", lambda **values: values)
-
-    args = cli.arguments(["--query", "market risk", "--rerank"])
-    payload = asyncio.run(cli._run(args))
-
-    assert seen["reranker"] is reranker
-    assert payload["result"] is not None

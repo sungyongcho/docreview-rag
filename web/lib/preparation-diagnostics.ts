@@ -67,7 +67,7 @@ export function diagnosePreparation(stageId: StageId, pipeline: Pipeline, runtim
       if (runtime.schemaStatus === "unavailable") {
         return result("blocked", "Database schema is unavailable", "Inspect the schema status and resolve the reported error before continuing.", "setup", [CHECK_SCHEMA]);
       }
-      if (runtime.schemaStatus !== "ok" && runtime.schemaStatus !== "compatible") {
+      if (runtime.schemaStatus !== "compatible") {
         return result("checking", "Schema state is unknown", "Wait for a current schema status before preparing this step.");
       }
     } else if (runtime.writable !== true) {

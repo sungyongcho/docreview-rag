@@ -69,6 +69,107 @@
         "title": "AcquisitionPairResource",
         "type": "object"
       },
+      "AdminCommand": {
+        "additionalProperties": false,
+        "description": "Validated safe operation submitted through the local administrator UI.",
+        "properties": {
+          "confirm_delete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Delete"
+          },
+          "deletion_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Token"
+          },
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Ids"
+          },
+          "expected_documents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Documents"
+          },
+          "identifiers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Identifiers",
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AdminJobKind"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest"
+          },
+          "selection_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection Id"
+          },
+          "years": {
+            "default": [],
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Years",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "AdminCommand",
+        "type": "object"
+      },
       "AdminDocumentResource": {
         "additionalProperties": false,
         "description": "One filing row with current chunk and embedding coverage.",
@@ -194,6 +295,18 @@
         ],
         "title": "AdminDocumentResource",
         "type": "object"
+      },
+      "AdminJobKind": {
+        "enum": [
+          "acquire_edgar",
+          "acquire_dart",
+          "ingest_manifest",
+          "ingest_selected",
+          "delete_sources",
+          "backfill_embeddings",
+          "rebuild_bm25"
+        ],
+        "type": "string"
       },
       "ApiError": {
         "additionalProperties": false,
@@ -428,7 +541,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -748,7 +860,7 @@
         "description": "The same corpus job snapshot returned to CLI and web clients.",
         "properties": {
           "command": {
-            "$ref": "#/components/schemas/CorpusOperationRequest"
+            "$ref": "#/components/schemas/AdminCommand"
           },
           "created_at": {
             "format": "date-time",
@@ -885,156 +997,6 @@
           "result_refs"
         ],
         "title": "CorpusJobResource",
-        "type": "object"
-      },
-      "CorpusJobsResource": {
-        "additionalProperties": false,
-        "description": "Current and terminal snapshots of the shared corpus job queue.",
-        "properties": {
-          "active": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CorpusJobResource"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "history": {
-            "items": {
-              "$ref": "#/components/schemas/CorpusJobResource"
-            },
-            "title": "History",
-            "type": "array"
-          },
-          "queued": {
-            "items": {
-              "$ref": "#/components/schemas/CorpusJobResource"
-            },
-            "title": "Queued",
-            "type": "array"
-          }
-        },
-        "required": [
-          "active",
-          "queued",
-          "history"
-        ],
-        "title": "CorpusJobsResource",
-        "type": "object"
-      },
-      "CorpusOperationKind": {
-        "enum": [
-          "acquire_edgar",
-          "acquire_dart",
-          "ingest_manifest",
-          "ingest_selected",
-          "delete_sources",
-          "backfill_embeddings",
-          "rebuild_bm25"
-        ],
-        "type": "string"
-      },
-      "CorpusOperationRequest": {
-        "additionalProperties": false,
-        "description": "One safe corpus operation accepted by the local operator API.",
-        "properties": {
-          "confirm_delete": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Confirm Delete"
-          },
-          "deletion_token": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deletion Token"
-          },
-          "document_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Document Ids"
-          },
-          "expected_documents": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Documents"
-          },
-          "identifiers": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Identifiers",
-            "type": "array"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/CorpusOperationKind"
-          },
-          "manifest": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Manifest"
-          },
-          "selection_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selection Id"
-          },
-          "years": {
-            "default": [],
-            "items": {
-              "exclusiveMinimum": 0.0,
-              "type": "integer"
-            },
-            "title": "Years",
-            "type": "array"
-          }
-        },
-        "required": [
-          "kind"
-        ],
-        "title": "CorpusOperationRequest",
         "type": "object"
       },
       "CorpusSnapshotResource": {
@@ -2984,7 +2946,7 @@
       },
       "ExecutionData": {
         "additionalProperties": false,
-        "description": "Versioned execution envelope; absent historical fields remain explicitly null.",
+        "description": "Versioned execution envelope with explicitly optional measurements.",
         "properties": {
           "contract_version": {
             "default": 1,
@@ -3190,13 +3152,6 @@
             ],
             "title": "Local"
           },
-          "local_timings": {
-            "items": {
-              "$ref": "#/components/schemas/LocalModelTiming"
-            },
-            "title": "Local Timings",
-            "type": "array"
-          },
           "model": {
             "title": "Model",
             "type": "string"
@@ -3208,7 +3163,6 @@
                   "gate",
                   "route",
                   "retrieve",
-                  "chat",
                   "grade",
                   "check",
                   "report"
@@ -3387,7 +3341,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -3660,18 +3613,6 @@
             "title": "Filename",
             "type": "string"
           },
-          "parent_id": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Id"
-          },
           "payload": {
             "items": {
               "additionalProperties": true,
@@ -3693,8 +3634,7 @@
           "status": {
             "enum": [
               "draft",
-              "validated",
-              "published"
+              "validated"
             ],
             "title": "Status",
             "type": "string"
@@ -3706,22 +3646,15 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
-          },
-          "version": {
-            "exclusiveMinimum": 0.0,
-            "title": "Version",
-            "type": "integer"
           }
         },
         "required": [
           "revision_id",
           "filename",
           "suite_id",
-          "version",
           "status",
           "payload",
           "sha256",
-          "parent_id",
           "created_at",
           "updated_at"
         ],
@@ -3963,71 +3896,6 @@
         "title": "GradeReferencesFiltered",
         "type": "object"
       },
-      "IngestRequest": {
-        "additionalProperties": false,
-        "description": "One explicit local manifest ingestion request.\n\n``manifest_path`` is resolved inside the configured corpus directory; the API never\nopens an arbitrary server path. ``create_schema`` mirrors the CLI flag: schema DDL\nruns only when a caller asks for it, never as a per-request side effect.",
-        "properties": {
-          "chunk_batch_size": {
-            "default": 500,
-            "exclusiveMinimum": 0.0,
-            "title": "Chunk Batch Size",
-            "type": "integer"
-          },
-          "create_schema": {
-            "default": false,
-            "title": "Create Schema",
-            "type": "boolean"
-          },
-          "expected_documents": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Documents"
-          },
-          "manifest_path": {
-            "title": "Manifest Path",
-            "type": "string"
-          },
-          "selection_id": {
-            "title": "Selection Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "manifest_path",
-          "selection_id"
-        ],
-        "title": "IngestRequest",
-        "type": "object"
-      },
-      "IngestResponse": {
-        "additionalProperties": false,
-        "description": "Committed corpus row counts from synchronous ingestion.",
-        "properties": {
-          "chunks": {
-            "minimum": 0.0,
-            "title": "Chunks",
-            "type": "integer"
-          },
-          "documents": {
-            "minimum": 0.0,
-            "title": "Documents",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "documents",
-          "chunks"
-        ],
-        "title": "IngestResponse",
-        "type": "object"
-      },
       "JobHistoryRequest": {
         "additionalProperties": false,
         "description": "An explicit history operation against a reviewed eligible count.",
@@ -4130,33 +3998,6 @@
         "type": "object"
       },
       "JsonValue": {},
-      "LocalConnectionRequest": {
-        "additionalProperties": false,
-        "description": "A candidate endpoint entered in the developer connection settings.",
-        "properties": {
-          "base_url": {
-            "maxLength": 2048,
-            "minLength": 1,
-            "title": "Base Url",
-            "type": "string"
-          },
-          "protocol": {
-            "default": "auto",
-            "enum": [
-              "auto",
-              "ollama",
-              "openai_responses"
-            ],
-            "title": "Protocol",
-            "type": "string"
-          }
-        },
-        "required": [
-          "base_url"
-        ],
-        "title": "LocalConnectionRequest",
-        "type": "object"
-      },
       "LocalConnectionResponse": {
         "additionalProperties": false,
         "description": "Private settings state and safe model metadata for the developer UI.",
@@ -4797,7 +4638,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -5637,7 +5477,7 @@
         "type": "object"
       },
       "PublicSnapshotDataset": {
-        "description": "One filtered page from the exact published golden version.",
+        "description": "One filtered page from the exact cases evaluated by a published snapshot.",
         "properties": {
           "cases": {
             "items": {
@@ -5658,17 +5498,6 @@
             "title": "Offset",
             "type": "integer"
           },
-          "revision_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revision Id"
-          },
           "snapshot_id": {
             "title": "Snapshot Id",
             "type": "integer"
@@ -5680,25 +5509,12 @@
           "total": {
             "title": "Total",
             "type": "integer"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
           }
         },
         "required": [
           "snapshot_id",
           "suite",
           "golden_sha256",
-          "revision_id",
-          "version",
           "total",
           "offset",
           "limit",
@@ -6728,7 +6544,6 @@
                 "gate",
                 "route",
                 "retrieve",
-                "chat",
                 "grade",
                 "check",
                 "report"
@@ -6976,18 +6791,6 @@
             "title": "Eval Result Id",
             "type": "integer"
           },
-          "golden_revision_id": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Golden Revision Id"
-          },
           "label": {
             "maxLength": 128,
             "minLength": 1,
@@ -7084,18 +6887,6 @@
           "eval_result": {
             "$ref": "#/components/schemas/EvalResultResource"
           },
-          "golden_revision_id": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Golden Revision Id"
-          },
           "label": {
             "title": "Label",
             "type": "string"
@@ -7143,7 +6934,6 @@
           "public",
           "corpus_fingerprint",
           "profile",
-          "golden_revision_id",
           "eval_result",
           "document_count",
           "created_at"
@@ -7499,7 +7289,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -7637,7 +7426,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -8312,46 +8100,6 @@
       }
     },
     "/admin/corpus/jobs": {
-      "get": {
-        "description": "Return current corpus job queue and bounded history.",
-        "operationId": "corpus_jobs_admin_corpus_jobs_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CorpusJobsResource"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Corpus Jobs",
-        "tags": [
-          "admin"
-        ]
-      },
       "post": {
         "description": "Queue one safe corpus acquisition, ingest, or indexing operation.",
         "operationId": "enqueue_corpus_admin_corpus_jobs_post",
@@ -8359,7 +8107,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CorpusOperationRequest"
+                "$ref": "#/components/schemas/AdminCommand"
               }
             }
           },
@@ -8408,69 +8156,6 @@
           }
         },
         "summary": "Enqueue Corpus",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/admin/corpus/jobs/{job_id}/retry": {
-      "post": {
-        "description": "Retry one known failed corpus job.",
-        "operationId": "retry_corpus_admin_corpus_jobs__job_id__retry_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CorpusJobResource"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Retry Corpus",
         "tags": [
           "admin"
         ]
@@ -9000,69 +8685,6 @@
           }
         },
         "summary": "Compare Evaluations",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/admin/evaluations/jobs/{job_id}": {
-      "get": {
-        "description": "Return one evaluation job by its public identifier.",
-        "operationId": "evaluation_job_admin_evaluations_jobs__job_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvaluationJobResource"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Evaluation Job",
         "tags": [
           "admin"
         ]
@@ -10180,56 +9802,6 @@
         "tags": [
           "admin"
         ]
-      },
-      "post": {
-        "description": "Verify and save a replacement endpoint, leaving the old one active on failure.",
-        "operationId": "connect_local_llm_admin_local_llm_connection_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LocalConnectionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LocalConnectionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Connect Local Llm",
-        "tags": [
-          "admin"
-        ]
       }
     },
     "/admin/local-llm/diagnostics": {
@@ -10373,48 +9945,6 @@
           }
         },
         "summary": "Prepare Local Model",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/admin/local-llm/reset": {
-      "post": {
-        "description": "Restore the endpoint selected by environment, dotenv, or startup defaults.",
-        "operationId": "reset_local_llm_admin_local_llm_reset_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LocalConnectionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Reset Local Llm",
         "tags": [
           "admin"
         ]
@@ -11304,78 +10834,6 @@
         "summary": "List Eval Results",
         "tags": [
           "eval"
-        ]
-      }
-    },
-    "/ingest": {
-      "post": {
-        "description": "Parse and persist one explicit local manifest before responding.",
-        "operationId": "ingest_manifest_ingest_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/IngestRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IngestResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "Ingest Manifest",
-        "tags": [
-          "ingest"
         ]
       }
     },

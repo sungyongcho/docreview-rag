@@ -5,11 +5,13 @@ from dataclasses import dataclass
 import math
 from typing import Any, Final
 
+from app.evals.identity import EVALUATED_GOLDEN_KEY
 from app.evals.regression import (
     HIGHER_IS_BETTER_METRICS,
     MetricName,
     RegressionTolerances,
 )
+from app.evals.reporting import markdown_table
 from app.evals.retrieval_eval import RetrievalEvaluation
 
 DEFAULT_MIN_RECALL_RATIO: Final[float] = 0.85
@@ -65,27 +67,19 @@ class ParityAssessment:
         """Return whether the gated ratio cleared its floor."""
         return not self.failures
 
-    def metric(self, name: MetricName) -> ParityMetric:
-        """Return one measured metric pair by name."""
-        for result in self.metrics:
-            if result.metric == name:
-                return result
-        raise KeyError(name)
-
-    @property
-    def recall_ratio(self) -> float | None:
-        """Return the gated foreign-over-native recall ratio, or None when undefined."""
-        return self.metric(GATED_METRIC).ratio
-
 
 def _config_identity(config: Mapping[str, Any], expected_language: str) -> dict[str, Any]:
-    """Strip the arm name and the query language, leaving what both arms must share."""
+    """Compare arm settings while allowing the two language-specific case payloads."""
     query = config.get("query")
     if not isinstance(query, Mapping) or "language" not in query:
         raise ValueError("parity requires an evaluation config carrying query.language")
     if query["language"] != expected_language:
         raise ValueError(f"expected a {expected_language} evaluation, got {query['language']!r}")
-    identity = {key: value for key, value in config.items() if key != "name"}
+    # Translated questions have different evaluated hashes by design; case alignment is
+    # checked separately before comparing these retrieval settings.
+    identity = {
+        key: value for key, value in config.items() if key not in {"name", EVALUATED_GOLDEN_KEY}
+    }
     identity["query"] = {key: value for key, value in query.items() if key != "language"}
     return identity
 
@@ -177,17 +171,21 @@ def parity_markdown(assessment: ParityAssessment) -> str:
     verdict = "PASS" if assessment.passed else "FAIL"
     native = assessment.native_language.upper()
     foreign = "KO" if native == "EN" else "EN"
-    lines = [
-        f"| Metric | EN | KO | Delta ({native}-{foreign}) | Ratio ({foreign}/{native}) |",
-        "|---|---:|---:|---:|---:|",
-    ]
-    for result in assessment.metrics:
-        ratio = "undefined" if result.ratio is None else f"{result.ratio:.6f}"
-        lines.append(
-            f"| {result.metric} | {result.en:.6f} | {result.ko:.6f} | "
-            f"{result.delta:.6f} | {ratio} |"
-        )
-    lines.append("")
+    table = markdown_table(
+        ["Metric", "EN", "KO", f"Delta ({native}-{foreign})", f"Ratio ({foreign}/{native})"],
+        ["left", "right", "right", "right", "right"],
+        [
+            [
+                result.metric,
+                f"{result.en:.6f}",
+                f"{result.ko:.6f}",
+                f"{result.delta:.6f}",
+                "undefined" if result.ratio is None else f"{result.ratio:.6f}",
+            ]
+            for result in assessment.metrics
+        ],
+    )
+    lines = [table, ""]
     lines.append(
         f"{verdict} — {assessment.suite}, k={assessment.k}, "
         f"{assessment.case_count} scored cases, "

@@ -2,7 +2,7 @@
 
 from bs4 import BeautifulSoup
 
-from app.ingestion.tables import table_to_markdown
+from app.ingestion.tables import structured_table
 from tests.ingestion.chunk.support import (
     counter_contains,
     is_subsequence,
@@ -122,7 +122,7 @@ def test_every_source_body_block_retains_source_coverage(corpus, chunks_by_doc):
                 empty_paragraph = block.kind == "paragraph" and not block.text.strip()
                 if block.kind == "heading" or empty_paragraph:
                     continue
-                if block.kind == "table" and not table_to_markdown(block.html):
+                if block.kind == "table" and not structured_table(block.html).render():
                     continue
                 expected_kind = "table" if block.kind == "table" else "text"
                 matches = [
@@ -161,7 +161,7 @@ def test_every_heading_with_following_content_becomes_context(corpus, chunks_by_
                         if block.source_group == heading.source_group
                         and block.kind != "heading"
                         and (block.kind != "paragraph" or bool(block.text.strip()))
-                        and (block.kind != "table" or bool(table_to_markdown(block.html)))
+                        and (block.kind != "table" or bool(structured_table(block.html).render()))
                     ),
                     None,
                 )

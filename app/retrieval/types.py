@@ -3,14 +3,12 @@
 from collections.abc import Iterable
 import math
 from numbers import Real
-from typing import Annotated, Literal, Self
+from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 from pydantic.functional_validators import field_validator, model_validator
 
-from app.ingestion.chunk import compose_index_text
-
-ChunkKind = Literal["text", "table"]
+from app.ingestion.chunk import ChunkKind, compose_index_text
 
 ChunkId = Annotated[StrictInt, Field(gt=0)]
 DocId = Annotated[StrictStr, Field(min_length=1, max_length=32)]

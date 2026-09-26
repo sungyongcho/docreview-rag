@@ -24,10 +24,9 @@ from app.evals.types import GoldenCase, GoldenSpan
 from app.ingestion.chunk import Chunk
 from app.ingestion.seed import SeedBatch, filing_records
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.evals.support import SOURCE_SHA256
 from tests.ingestion.seed.support import sample_filing
 from tests.live_postgres import live_postgres_unavailable
-
-SOURCE_SHA256 = "a" * 64
 
 
 def _batch() -> SeedBatch:

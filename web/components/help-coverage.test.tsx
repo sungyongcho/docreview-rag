@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
+import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
 import { HELP_TOPICS, type HelpScreen } from "@/lib/help-content";
 import { derivePipeline, type PipelineInput } from "@/lib/pipeline";
 import { ONBOARDING_KEY } from "@/lib/storage";
@@ -185,7 +185,7 @@ describe("help topic coverage", () => {
       if (url.endsWith("/admin/evaluations/runs")) return { jobs: [CANNED_JOB] };
       if (url.endsWith("/admin/evaluations/results/16")) return { result_id: 16, suite: "sec-ko", config: {}, metrics: { mrr: 0.8 }, cases: [], raw_artifact_path: "stored.json", created_at: CANNED_JOB.created_at };
       if (url.includes("/snapshots/compare")) return { baseline_id: 1, candidate_id: 2, directly_comparable: true, warning: null, metrics: [], common_case_count: 0, cases: [] };
-      if (url.endsWith("/admin/snapshots")) return [1, 2].map((id) => ({ snapshot_id: id, label: `Snapshot ${id}`, status: "ready", public: false, corpus_fingerprint: "a".repeat(64), profile: {}, golden_revision_id: null, eval_result: { result_id: id, suite: "sec-en", config: {}, metrics: {}, created_at: CANNED_JOB.created_at }, document_count: 29, created_at: CANNED_JOB.created_at }));
+      if (url.endsWith("/admin/snapshots")) return [1, 2].map((id) => ({ snapshot_id: id, label: `Snapshot ${id}`, status: "ready", public: false, corpus_fingerprint: "a".repeat(64), profile: {}, eval_result: { result_id: id, suite: "sec-en", config: {}, metrics: {}, created_at: CANNED_JOB.created_at }, document_count: 29, created_at: CANNED_JOB.created_at }));
       if (url.endsWith("/canonical")) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [] };
       if (url.includes("/admin/golden/")) return [];
       return {};

@@ -21,8 +21,9 @@ if [[ ! "${DOCREVIEW_IMAGE}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$ && "${mode}" != 
   exit 1
 fi
 
-artifact_dir="${DEPLOY_ARTIFACT_DIR:-/home/wwaya/.local/share/docreview/prod-artifacts/20260909-portfolio18}"
+artifact_dir="${DEPLOY_ARTIFACT_DIR:-}"
 if [[ "${mode}" == first-install ]]; then
+  : "${artifact_dir:?DEPLOY_ARTIFACT_DIR is required for first-install (the verified restore bundle directory)}"
   : "${POSTGRES_PASSWORD:?DEPLOY_POSTGRES_PASSWORD is required in .env}"
   # A validated allowlist never includes database.private.dump or local metadata.
   artifact_list="$(python3 "${SCRIPT_DIR}/verify_artifacts.py" "${artifact_dir}" --list-files)"
@@ -41,7 +42,7 @@ gcloud compute scp "${SCRIPT_DIR}/apply_backend.sh" "${VM_NAME}:${remote_stage}/
 if [[ "${mode}" == first-install ]]; then
   local_stage="$(mktemp -d /tmp/docreview-deploy.XXXXXXXX)"
   # Export only the VM configuration, including the key inherited from the root dotenv.
-  python3 - "${local_stage}/backend.env" <<'PY'
+  DOCREVIEW_ORIGIN_PORT="${ORIGIN_PORT}" python3 - "${local_stage}/backend.env" <<'PY'
 import os
 from pathlib import Path
 import shlex
@@ -51,7 +52,7 @@ values = {name: os.environ[name] for name in (
     "DOCREVIEW_IMAGE", "POSTGRES_PASSWORD", "OPENAI_API_KEY_PROD"
 )}
 values["POSTGRES_PASSWORD_FILE"] = "/var/lib/docreview/secrets/postgres_password"
-values["DOCREVIEW_ORIGIN_PORT"] = os.environ.get("DOCREVIEW_ORIGIN_PORT", "8000")
+values["DOCREVIEW_ORIGIN_PORT"] = os.environ["DOCREVIEW_ORIGIN_PORT"]
 target = Path(sys.argv[1])
 target.write_text("".join(f"{name}={shlex.quote(value)}\n" for name, value in values.items()))
 target.chmod(0o600)

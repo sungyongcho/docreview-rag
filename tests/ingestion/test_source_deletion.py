@@ -1,11 +1,13 @@
 """Exact source deletion approvals never delete derived or past job inputs."""
 
 import asyncio
+from typing import Any
 
 import pytest
 
 from app.config import Settings
-from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand
 from app.ingestion.manifest import Manifest
 from app.ingestion.source_deletion import SourceDeletion
 from app.ingestion.source_selection import record_selection, source_inventory
@@ -100,15 +102,22 @@ def test_queue_requires_fresh_confirmation_and_cannot_retry_deletion(tmp_path):
 
     async def scenario():
         """Exercise service queue validation and terminal provenance in a disposable corpus."""
-        service = RuntimeCorpusAdminService(settings=Settings(mode="dev", corpus_dir=tmp_path))
+        from tests.corpus_admin.support import LedgerStore
+
+        store = LedgerStore()
+        # MODE is a settings alias, which the synthesized constructor signature cannot name.
+        dev_mode: dict[str, Any] = {"mode": "dev"}
+        service = RuntimeCorpusAdminService(
+            settings=Settings(corpus_dir=tmp_path, **dev_mode), job_store=store
+        )
         preview = await service.preview_source_deletion((catalog.documents[0].document_id,))
         command = AdminCommand(
             "delete_sources", deletion_token=preview["token"], confirm_delete=True
         )
         (tmp_path / catalog.artifacts[0].path).write_text("changed after preview")
         job = await service.enqueue(command)
-        await service._queue.join()
-        assert (await service.jobs()).history[0].status == "failed"
+        await service._job_queue._queue.join()
+        assert store.rows[job.job_id].status == "failed"
         with pytest.raises(ValueError, match="cannot be retried"):
             await service.retry(job.job_id)
 

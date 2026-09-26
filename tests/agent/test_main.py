@@ -22,20 +22,19 @@ def test_cli_arguments_default_to_the_offline_demo():
 
 
 @pytest.mark.parametrize(
-    "argv",
+    ("option", "out_of_range"),
     [
-        ["--question", "q", "--k", "0"],
-        ["--question", "q", "--k", "21"],
-        ["--question", "q", "--max-iterations", "0"],
-        ["--question", "q", "--max-iterations", "65"],
+        pytest.param("--k", ("0", "21"), id="k"),
+        pytest.param("--max-iterations", ("0", "65"), id="max_iterations"),
     ],
 )
-def test_cli_rejects_out_of_range_limits_at_parse_time(argv):
-    """Fail as a usage error before any runtime module loads."""
+def test_cli_rejects_out_of_range_limits_at_parse_time(option, out_of_range):
+    """Fail as a usage error at both ends of the range before any runtime module loads."""
     from app.agent.__main__ import arguments
 
-    with pytest.raises(SystemExit):
-        arguments(argv)
+    for value in out_of_range:
+        with pytest.raises(SystemExit):
+            arguments(["--question", "q", option, value])
 
 
 def test_main_requires_a_question_before_loading_runtime_modules():
@@ -121,3 +120,123 @@ def test_missing_question_is_a_usage_error_even_under_invalid_settings() -> None
     assert result.returncode != 0
     assert "--question is required unless --mcp is set" in result.stderr
     assert "ValidationError" not in result.stderr
+
+
+def test_cli_model_default_follows_the_agent_policy_default():
+    """The command must not pick a different (and pricier) default model than the policy."""
+    from app.agent.__main__ import arguments
+    from app.openai_models import resolve_openai_model
+
+    args = arguments(["--question", "q", "--provider", "openai"])
+
+    assert args.model in (None, resolve_openai_model("agent").model)
+
+
+def _slot_settings(key):
+    """Build settings that select the dev key slot with the given key (None for no key)."""
+    from app.config import Settings
+
+    values = {
+        "_env_file": None,
+        "MODE": "dev",
+        "DATABASE_URL": "postgresql+asyncpg://filing:filing@127.0.0.1:55439/filing",
+    }
+    if key is not None:
+        values["OPENAI_API_KEY_LOCAL"] = key
+    return Settings(**values)
+
+
+def test_openai_provider_receives_the_mode_selected_key_and_the_engine_is_released(monkeypatch):
+    """The openai path passes the slot key Settings resolved and disposes the pool it opened."""
+    from app.agent import __main__ as entrypoint
+    import app.agent.provider as provider_module
+    import app.db.session as session_module
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("app.config.get_settings", lambda: _slot_settings("sk-local-slot-test"))
+    disposed = []
+
+    class FakeEngine:
+        """Engine stand-in recording the pool release."""
+
+        async def dispose(self):
+            """Record that the pool was released."""
+            disposed.append(True)
+
+    monkeypatch.setattr(session_module, "engine", FakeEngine())
+    captured = {}
+
+    class FakeClient:
+        """SDK stand-in recording its constructor arguments and failing every request."""
+
+        base_url = "https://api.openai.com/v1"
+
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+            async def create(**_):
+                raise RuntimeError("offline")
+
+            self.responses = type("Responses", (), {"create": staticmethod(create)})()
+
+        async def close(self):
+            """Nothing to release."""
+
+    monkeypatch.setattr(provider_module, "AsyncOpenAI", FakeClient)
+
+    args = entrypoint.arguments(["--question", "q", "--provider", "openai"])
+    result = asyncio.run(entrypoint._run(args))
+
+    assert result["status"] == "provider_error"
+    assert captured.get("api_key") == "sk-local-slot-test"
+    assert disposed == [True]
+
+
+@pytest.mark.parametrize("server_fails", [False, True], ids=["closed", "failed"])
+def test_mcp_dispatch_releases_the_engine_when_the_server_exits(monkeypatch, server_fails):
+    """Serve MCP without a question and release its pool on normal and exceptional exits."""
+    from app.agent import __main__ as entrypoint, mcp_server
+    import app.db.session as session_module
+    from app.retrieval.embeddings import DeterministicEmbeddingProvider
+
+    events = []
+
+    class FakeEngine:
+        """Record when the CLI releases its database pool."""
+
+        async def dispose(self):
+            """Record pool release after the server has exited."""
+            events.append("disposed")
+
+    async def serve(registry):
+        """Accept the real filing registry and simulate the MCP transport ending."""
+        assert "search_filings" in {spec["name"] for spec in registry.specs()}
+        events.append("served")
+        if server_fails:
+            raise RuntimeError("MCP transport failed")
+
+    monkeypatch.setattr(session_module, "engine", FakeEngine())
+    monkeypatch.setattr(
+        "app.retrieval.embeddings.get_embedding_provider", DeterministicEmbeddingProvider
+    )
+    monkeypatch.setattr(mcp_server, "serve_stdio", serve)
+
+    if server_fails:
+        with pytest.raises(RuntimeError, match="MCP transport failed"):
+            entrypoint.main(["--mcp"])
+    else:
+        entrypoint.main(["--mcp"])
+
+    assert events == ["served", "disposed"]
+
+
+def test_openai_provider_requires_the_mode_selected_key_slot(monkeypatch):
+    """A missing slot key is a usage error naming the slot, not an SDK message."""
+    from app.agent import __main__ as entrypoint
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("app.config.get_settings", lambda: _slot_settings(None))
+
+    args = entrypoint.arguments(["--question", "q", "--provider", "openai"])
+    with pytest.raises(SystemExit, match="OPENAI_API_KEY_LOCAL"):
+        asyncio.run(entrypoint._run(args))

@@ -6,13 +6,14 @@ from typing import Any
 
 from app.llm.schemas import ProviderBudget, ProviderMetadata, ProviderResult, TokenPricing
 from app.observability.types import RunReport
+from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.retrieval.types import ChunkHit
 
 SOURCE_SHA256 = "a" * 64
 CONTEXT_HEADER = "ACME FY2024 · Item 7"
 
 
-def hit(chunk_id=1, *, body=None, doc_id="ACME-FY2024", score=1.0):
+def hit(chunk_id=1, *, body=None, doc_id="ACME-FY2024"):
     """Build one retrieved chunk hit with optional replacements.
 
     Distinct chunks carry distinct text unless a case asks for a twin, so the default
@@ -31,7 +32,7 @@ def hit(chunk_id=1, *, body=None, doc_id="ACME-FY2024", score=1.0):
         body=body,
         context_header=CONTEXT_HEADER,
         index_text=f"{CONTEXT_HEADER}\n\n{body}",
-        score=score,
+        score=1.0,
     )
 
 
@@ -59,7 +60,7 @@ def provider_budget(
     )
 
 
-def metadata(output="{}"):
+def metadata():
     """Build provider metadata for one completed node call."""
     return ProviderMetadata(
         provider="deterministic",
@@ -70,9 +71,10 @@ def metadata(output="{}"):
         estimated_cost_usd=Decimal("0"),
         request_time_ms=1.0,
         retries=0,
+        requests=1,
         request_ids=("req-1",),
-        llm_output=output,
-        raw_outputs=(output,),
+        llm_output="{}",
+        raw_outputs=("{}",),
     )
 
 
@@ -92,13 +94,23 @@ def report_of(result: RunReport) -> Any:
     return result.report
 
 
-def retriever_returning(hits: Sequence[ChunkHit], *, expect_k: int = 15):
+def retrieval_result(hits: Sequence[ChunkHit]) -> RetrievalResult:
+    """Wrap canned hits in the retrieval envelope the workflow runner requires."""
+    return RetrievalResult(
+        hits=tuple(hits),
+        candidates=tuple(hits),
+        score_stage="rrf",
+        component_rankings=ComponentRankings(vector=(), lexical=()),
+    )
+
+
+def retriever_returning(hits: Sequence[ChunkHit]):
     """Build a retriever that asserts the over-fetched depth and returns the hits."""
 
-    async def retrieve(query: str, k: int, filters) -> Sequence[ChunkHit]:
+    async def retrieve(query: str, k: int, filters) -> RetrievalResult:
         """Return the canned hits for one workflow retrieval."""
-        assert k == expect_k
+        assert k == 15
         assert filters.doc_ids == ()
-        return hits
+        return retrieval_result(hits)
 
     return retrieve

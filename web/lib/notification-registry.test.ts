@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import ts from "typescript";
 import { KO } from "./messages-ko";
 import { describe, expect, it } from "vitest";
@@ -33,6 +33,13 @@ describe("notification classification registry", () => {
     expect(calls.length).toBeGreaterThan(70);
     expect(calls.filter(row => !row.event || !Object.hasOwn(NOTIFICATION_EVENTS, row.event))).toEqual([]);
     for (const spec of Object.values(NOTIFICATION_EVENTS)) expect(["persistent", "transient", "inline-replaced"]).toContain(spec.classification);
+  });
+
+  it("registers only events that some production call emits", () => {
+    // The check above makes every call name a registered event; this one keeps the registry from outliving its calls.
+    const emittedEvents = new Set(notificationCalls().map((call) => call.event));
+    const neverEmitted = Object.keys(NOTIFICATION_EVENTS).filter((event) => !emittedEvents.has(event));
+    expect(neverEmitted).toEqual([]);
   });
 });
 

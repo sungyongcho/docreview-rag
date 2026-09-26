@@ -199,15 +199,14 @@ visitor ──HTTPS──> sungyongcho.com/docreview-rag/*
                                   Caddy :80 → host 8000
                                     allow-list + X-DocReview-Public: true
                                       └─> FastAPI ──> pgvector Postgres
-                                  operator: 127.0.0.1:8001 via SSH tunnel only
+                                  no operator API; administer in local DEV
 ```
 
 TLS는 Cloudflare에서 끝납니다. VM은 `8000` 포트에서 평문 HTTP만 받고, GCP 방화벽은
 Cloudflare가 공개한 IPv4 대역만 허용하므로 다른 곳에서는 직접 닿을 수 없습니다. Caddy는
-공개 경로만 프록시하고 `X-DocReview-Public: true`를 붙입니다. `/admin/*`과 `/ingest`를
-숨기는 것은 이 헤더이므로 외부에서 닿는 모든 포트 앞에는 Caddy가 있어야 합니다. 운영자
-API는 `deploy/gcp/operator_tunnel.sh`로만 닿으며, 이 스크립트는 loopback 전용 포트 `8001`을
-전달합니다.
+공개 경로만 프록시하고 `X-DocReview-Public: true`를 붙입니다. `/admin/*`을
+숨기는 것은 이 헤더이므로 외부에서 닿는 모든 포트 앞에는 Caddy가 있어야 합니다. 프로덕션은
+운영자 API를 노출하지 않으며, 관리는 로컬 DEV 환경에서 실행합니다.
 
 ### 실행 순서 {#production-order}
 

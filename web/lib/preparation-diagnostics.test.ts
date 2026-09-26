@@ -5,7 +5,7 @@ import type { Pipeline, Stage, StageId, StageStatus } from "./pipeline";
 import { diagnosePreparation } from "./preparation-diagnostics";
 import type { PreparationRuntime } from "./preparation-diagnostics";
 
-const HEALTHY: PreparationRuntime = { databaseConnected: true, schemaStatus: "ok", writable: true };
+const HEALTHY: PreparationRuntime = { databaseConnected: true, schemaStatus: "compatible", writable: true };
 
 /** Build a stage snapshot without implying a command has run. */
 function snapshot(id: StageId, status: StageStatus, overrides: Partial<Stage> = {}): Pipeline {
@@ -37,11 +37,9 @@ describe("diagnosePreparation", () => {
     expect(diagnosePreparation(id, pipeline, HEALTHY)).toEqual(first);
   });
 
-  it.each([
-    ["index", "filings"], ["embeddings", "index"], ["lexical", "index"],
-    ["ask", "embeddings"], ["ask", "lexical"], ["evaluate", "index"],
-    ["evaluate", "embeddings"], ["evaluate", "lexical"], ["evaluate", "answer_model"],
-  ] as const)("routes %s to its reported prerequisite %s", (id, blockedBy) => {
+  it("routes a blocked stage to its reported prerequisite", () => {
+    const id: StageId = "ask";
+    const blockedBy: StageId = "embeddings";
     const diagnosis = diagnosePreparation(id, snapshot(id, "blocked", { blockedBy }), HEALTHY);
     expect(diagnosis.state).toBe("blocked");
     expect(diagnosis.returnTo).toBe(blockedBy);

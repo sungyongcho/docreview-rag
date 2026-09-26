@@ -1,6 +1,5 @@
 """DART parser: part detection, section contract, and source identity fail-closed."""
 
-from dataclasses import replace
 import hashlib
 from pathlib import Path
 
@@ -11,7 +10,6 @@ from app.ingestion.dart import (
     DART_PARTS,
     DartParseError,
     dart_section_label,
-    dart_section_title,
     parse_dart_filing,
     part_numeral,
     segment,
@@ -80,12 +78,6 @@ def test_dart_section_label_spells_numeral_and_division_name():
     assert dart_section_label("I") == "I. 회사의 개요"
     assert dart_section_label("III") == "III. 재무에 관한 사항"
     assert dart_section_label("Z") == "Z"
-
-
-def test_dart_section_title_returns_only_the_division_name():
-    assert dart_section_title("II") == "사업의 내용"
-    assert dart_section_title("XII") == "상세표"
-    assert dart_section_title("Z") is None
 
 
 # --- segmentation ---
@@ -208,12 +200,17 @@ def test_segment_excludes_a_trailing_non_part_division():
 
 
 def test_parse_dart_filing_maps_registry_identity_without_derivation(tmp_path):
-    """fiscal_year comes from the manifest, not from the 2025 filing date."""
+    """Take every identity field from the manifest instead of deriving it.
+
+    The opaque document ID is not rebuilt from issuer-year, and fiscal_year is not
+    derived from the 2025 filing date.
+    """
     path = write_source(tmp_path, MINIMAL_SOURCE)
+    document = filing_document(registry="dart", document_id="report-identity")
 
-    filing, profile = parse_dart_filing(entry_for(path, MINIMAL_SOURCE))
+    filing, profile = parse_dart_filing(filing_source(path, document=document))
 
-    assert filing.source.document.document_id == "005930-FY2024"
+    assert filing.source.document.document_id == "report-identity"
     assert filing.source.document.registry == "dart"
     assert filing.source.document.issuer == "005930"
     assert filing.source.document.issuer_id == "00126380"
@@ -228,30 +225,11 @@ def test_parse_dart_filing_maps_registry_identity_without_derivation(tmp_path):
     assert profile["segmentation"]["parts"] == list(DART_PARTS)
 
 
-def test_parse_dart_filing_keeps_sec_vocabulary_out_of_sections(tmp_path):
-    path = write_source(tmp_path, MINIMAL_SOURCE)
-
-    filing, _ = parse_dart_filing(entry_for(path, MINIMAL_SOURCE))
-
-    for section in filing.sections:
-        assert "Item" not in section.canonical_title
-        assert "Item" not in section.reported_title
-
-
 def test_parse_dart_filing_rejects_a_foreign_registry(tmp_path):
     path = write_source(tmp_path, MINIMAL_SOURCE)
     entry = filing_source(path, document=filing_document())
 
     with pytest.raises(DartParseError, match="selected DART source"):
-        parse_dart_filing(entry)
-
-
-def test_parse_dart_filing_rejects_a_source_that_drifted_from_the_manifest(tmp_path):
-    path = write_source(tmp_path, MINIMAL_SOURCE)
-    entry = entry_for(path, MINIMAL_SOURCE)
-    entry = replace(entry, artifact=entry.artifact.model_copy(update={"sha256": "0" * 64}))
-
-    with pytest.raises(DartParseError, match="bytes disagree"):
         parse_dart_filing(entry)
 
 
@@ -270,13 +248,3 @@ def test_parse_dart_filing_rejects_a_non_utf8_archive(tmp_path):
 
     with pytest.raises(DartParseError, match="Invalid DART source"):
         parse_dart_filing(entry_for(path, MINIMAL_SOURCE))
-
-
-def test_document_identity_is_explicit_and_not_rederived(tmp_path):
-    """Preserve the manifest document identity instead of rebuilding it from issuer-year."""
-    path = write_source(tmp_path, MINIMAL_SOURCE)
-    source = filing_source(
-        path, document=filing_document(registry="dart", document_id="report-identity")
-    )
-    filing, _ = parse_dart_filing(source)
-    assert filing.source.document.document_id == "report-identity"

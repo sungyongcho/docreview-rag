@@ -36,3 +36,6 @@ def test_local_runtime_only_provisions_a_budget_in_dev(environment, tmp_path, mo
         assert budget.max_input_tokens == 2048
         assert budget.max_output_tokens == 256
         assert budget.max_cost_usd == Decimal("0")
+        # A zero-priced budget of its own, not the OpenAI budget with its prices cleared.
+        assert budget.pricing.input_per_million_usd == Decimal("0")
+        assert budget.pricing.output_per_million_usd == Decimal("0")

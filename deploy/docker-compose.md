@@ -71,23 +71,6 @@ docker compose --project-directory . -f docker/docker-compose.yml logs -f app
 - `./data`를 `/app/data`에 bind mount해 corpus와 eval artifact 보존
 - loopback live operator는 공개 서비스용 IP rate limit과 일일 비용 상한을 적용하지 않음
 
-## Next 개발 모드
-
-backend container를 실행한 뒤 Next dev server를 별도로 시작합니다.
-
-```bash
-docker compose --project-directory . -f docker/docker-compose.yml up --build -d app
-
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 \
-  scripts/stack/operator_web.sh
-```
-
-Next 개발 URL:
-
-```text
-http://127.0.0.1:3000/docreview-rag/
-```
-
 로컬 Compose는 root `.env`의 `OPENAI_API_KEY_LOCAL`,
 `OPENAI_API_KEY_PROD`, `MODE`, `DART_API_KEY`, `SEC_USER_AGENT`와 선택적
 `EMBEDDING_PROVIDER`를 app에 전달합니다. 로컬 모델 키(`LOCAL_LLM_*`)는 dev overlay
@@ -172,28 +155,21 @@ docker compose --project-directory . -f docker/docker-compose.yml logs app
 `create_all()`은 없는 table만 만들고 기존 table을 ALTER하지 않기 때문에, 이 검사가
 없으면 ingest나 retrieval 중간에 모호한 `UndefinedColumn` 오류가 발생합니다.
 
-Corpus Lab은 drift를 표시하고 모든 쓰기 작업을 차단합니다. 기존 corpus가 재다운로드
-가능하더라도 먼저 등록된 additive migration을 plan/apply합니다. migration은 app startup
-중 자동 실행되지 않으며 배포 전 명시적 운영 단계로 실행합니다.
+Corpus Lab은 drift를 표시하고 모든 쓰기 작업을 차단합니다. 등록된 migration 도구는
+없으므로 drift는 ORM 소유 table을 다시 만드는 것으로만 해소하며, app startup 중에는
+어떤 schema 변경도 자동 실행되지 않습니다.
 
-```bash
-uv run python -m app.db.migrate --plan
-uv run python -m app.db.migrate --apply
-```
-
-등록 migration으로 해결되지 않고 DB를 재구축하기로 명시적으로 결정한 경우에만 다음
-개발 명령을 사용합니다.
+DB를 재구축하기로 명시적으로 결정한 경우에만 다음 개발 명령을 사용합니다. 이 명령은
+로컬 개발 DB를 검증한 뒤 ORM 소유 table만 다시 만듭니다.
 
 > **경고:** 아래 명령은 model table, chunk, embedding, BM25 통계, run/eval 데이터를
 > 삭제합니다. 필요한 결과를 먼저 백업하십시오.
 
 ```bash
-uv run python -m app.ingestion.seed \
-  --manifest data/corpus/manifest.json \
-  --recreate-schema
+rag-dev reset data --local
 ```
 
-재구축 후 DART manifest를 추가 ingest하고 embedding을 다시 채워야 합니다.
+재구축 후 corpus를 다시 ingest하고 embedding을 다시 채워야 합니다.
 
 ## 데이터 volume 삭제
 
@@ -213,7 +189,7 @@ docker compose --project-directory . -f docker/docker-compose.yml down -v
 - PostgreSQL은 Docker network 내부에만 노출
 - FastAPI는 VM loopback `127.0.0.1:8000`에만 publish
 - Caddy만 80/443 공개
-- Caddy가 `/admin/*`와 `/ingest` 차단
+- Caddy가 `/admin/*` 차단
 - corpus, eval artifact, PostgreSQL, Caddy state를 `/var/lib/docreview`에 보존
 - app container는 capability 제거와 `no-new-privileges` 적용
 
@@ -225,9 +201,5 @@ docker compose --project-directory . -f docker/docker-compose.yml down -v
 deploy/gcp/deploy_all.sh all   # setup → vm → image → backend → origin
 ```
 
-프로덕션 실관리 접속은 비활성화되어 있습니다(`deploy/gcp/operator_tunnel.sh`는
-항상 종료). 관리 작업은 로컬 DEV 환경에서 실행합니다:
-
-```bash
-scripts/stack/operator_web.sh
-```
+프로덕션 실관리 접속은 비활성화되어 있습니다. 관리 작업은 로컬 DEV 환경에서
+실행합니다.

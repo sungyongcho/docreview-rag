@@ -10,6 +10,7 @@ from starlette.requests import ClientDisconnect
 
 from app.api.deps import ApiServices
 from app.api.errors import ApiProblemError
+from app.api.evidence import EvidenceSelection
 from app.api.routes import stream as stream_module
 from app.api.schemas import RetrieveResponse, ReviewRequest
 from app.observability.types import build_run_report
@@ -202,7 +203,9 @@ def test_stream_send_failure_cancels_the_review_task():
         """Drive the response through an ASGI send that fails on the first body."""
         services = BlockingServices()
         response = await stream_module.review_stream(
-            ReviewRequest(query="Revenue?"),
+            ReviewRequest(
+                query="Revenue?", evidence_selection=EvidenceSelection(candidate_token="test")
+            ),
             cast(ApiServices, services),
         )
         scope = {
@@ -244,6 +247,7 @@ def test_stream_emits_actual_stage_transitions_without_changing_node_contract(
 
     async def review(request, on_node=None):
         """Exercise the stream's actual recorder using the shared observation boundary."""
+        assert on_node is not None
         async with stage("grade"):
             await on_node("grade", state(steps=1))
         return successful_run.model_copy(update={"request_context": stage_metadata()})
@@ -279,6 +283,7 @@ def test_stream_omits_stage_events_without_explicit_telemetry_header(
 
     async def review(request, on_node=None):
         """Run an observed stage without opting the HTTP client into new event types."""
+        assert on_node is not None
         async with stage("grade"):
             await on_node("grade", state(steps=1))
         return successful_run.model_copy(update={"request_context": stage_metadata()})

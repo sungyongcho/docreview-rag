@@ -3,15 +3,17 @@
 import asyncio
 import hashlib
 import os
+from typing import TypedDict
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.api.admin_schemas import DocumentEmbeddingStatus, DocumentSort
 from app.api.document_catalog import DocumentCatalog, public_source_url
 from app.api.runtime import RuntimeApiServices
-from app.corpus_admin import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
+from app.corpus_admin.types import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
 from app.db.models import (
     Base,
     Chunk,
@@ -28,6 +30,24 @@ from app.db.models import (
 from app.retrieval.embeddings import DeterministicEmbeddingProvider, EmbeddingIdentity
 from tests.ingestion.support import filing_document
 from tests.live_postgres import live_postgres_unavailable
+
+
+class DocumentPageQuery(TypedDict):
+    """The keyword arguments of `DocumentCatalog.documents`, so unpacked calls stay typed."""
+
+    query: str
+    registry: str
+    issuer: str
+    fiscal_year: int | None
+    language: str
+    form: str
+    parse_status: str
+    embedding_status: DocumentEmbeddingStatus | None
+    snapshot_id: int | None
+    sort: DocumentSort
+    descending: bool
+    cursor: str | None
+    limit: int
 
 
 def test_public_source_url_rejects_local_paths_and_credentials() -> None:
@@ -207,7 +227,7 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
                     ("dart", "published"): "Unrelated Registry Company",
                 },
             )
-            parameters = dict(
+            parameters = DocumentPageQuery(
                 query="",
                 registry="",
                 issuer="",
@@ -259,6 +279,25 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
             assert [value.value for value in admin_facets.languages] == ["ko"]
             assert [value.value for value in admin_facets.forms] == ["사업보고서"]
             assert admin_facets.snapshots[0].count == 1
+            admin_catalog = DocumentCatalog(
+                factory,
+                public_only=False,
+                company_names=lambda: {
+                    ("sec", "published"): "Visible Company",
+                    ("dart", "private"): "Hidden Company",
+                },
+                embedding_identity=EmbeddingIdentity("test", "catalog", 384, "cl100k_base"),
+            )
+            private_detail = await admin_catalog.document_detail("private")
+            assert private_detail is not None
+            assert private_detail.document.source_url == "/home/private/source.html"
+            assert private_detail.document.issuer_name == "Hidden Company"
+            assert [item.snapshot_id for item in private_detail.snapshot_memberships] == [
+                private_id
+            ]
+            changed_detail = await admin_catalog.document_detail("changed")
+            assert changed_detail is not None and not changed_detail.snapshot_memberships
+            assert await admin_catalog.document_detail("missing") is None
             detail = await catalog.document_detail("published")
             assert detail is not None and detail.document.source_url == ""
             assert detail.document.issuer_name == "Visible Company"
@@ -271,6 +310,12 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
             assert detail.embedding_identities[0].model == "catalog"
             assert detail.embedding_identities[0].tokenizer == "cl100k_base"
             assert detail.embedding_identities[0].count == 1
+            admin_detail = await admin_catalog.document_detail("published")
+            assert admin_detail is not None
+            assert admin_detail.chunks == detail.chunks
+            assert admin_detail.embedded_chunks == detail.embedded_chunks
+            assert admin_detail.item_counts == detail.item_counts
+            assert admin_detail.embedding_identities == detail.embedding_identities
             assert page.documents[0].embedded_chunks == 1
             assert page.documents[0].embedding_status == "partial"
             assert detail.item_counts[0].count == CHUNK_PREVIEW_LIMIT + 1

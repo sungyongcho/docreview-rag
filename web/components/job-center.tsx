@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import type { OperatorJob, OperatorJobBoard } from "@/lib/types";
 import { overallJobPercent } from "@/lib/pipeline";
 
-export const JOB_COPY: Record<string, { label: string; purpose: string }> = {
+const JOB_COPY: Record<string, { label: string; purpose: string }> = {
   acquire_edgar: { label: "Acquire SEC filings", purpose: "Download missing EDGAR filings into the corpus." },
   acquire_dart: { label: "Acquire DART filings", purpose: "Download missing Korean business reports." },
   ingest_manifest: { label: "Ingest manifest", purpose: "Parse filings and replace the active retrieval corpus." },
@@ -131,14 +131,6 @@ export function JobProgress({ job }: { job: OperatorJob }) {
     <p className="helper job-progress-meta">{!itemIdentity && (["failed", "interrupted"].includes(job.status) ? <code className="job-terminal-output">{message}</code> : <span>{message}</span>)}{job.stage_started_at && <span className="job-progress-metric">{t("Stage elapsed")}: {elapsedLabel({ started_at: job.stage_started_at, finished_at: job.finished_at }, locale)}</span>}{!hasItemTotal && speed}</p>
     {job.detail_current != null && job.detail_total != null && <><div><span className="job-progress-label"><span>{t("Current item")}{itemIdentity ? ` · ${message}` : ""}</span>{speed}</span><strong>{itemLabel(job.detail_current)} / {itemLabel(job.detail_total)}{itemPercent === null ? "" : ` · ${itemPercent}%`}</strong></div><progress aria-label={t("Current item")} max={Math.max(job.detail_total, 1)} value={Math.min(job.detail_current, job.detail_total)} /></>}
   </div>;
-}
-
-export function JobActivityPanel({ board, loading, onOpenJobs }: { board: OperatorJobBoard; loading: boolean; onOpenJobs: () => void }) {
-  const { t, locale } = useI18n();
-  const active = board.jobs.find((job) => job.status === "running") ?? null;
-  const queued = board.jobs.filter((job) => job.status === "queued").toSorted((left, right) => (left.queue_position ?? 0) - (right.queue_position ?? 0));
-  const latest = board.jobs.find((job) => ["succeeded", "failed", "interrupted", "cancelled"].includes(job.status)) ?? null;
-  return <section className="surface job-activity"><div className="surface-heading"><div><h2>{t("Job activity")}</h2><p className="helper">{t("Persistent corpus and evaluation queue")}</p></div><button className="button" type="button" onClick={onOpenJobs}>{t("View all jobs")}</button></div>{loading && !board.jobs.length ? <p className="helper">{t("Loading job activity…")}</p> : active ? <article className="active-job"><div className="job-title"><div><strong>{t(jobCopy(active).label)}</strong><p>{t(jobCopy(active).purpose)}</p></div><span className={`job-status ${active.status}`}>{t(active.status)}</span></div><JobProgress job={active} /><p className="helper">{t("Started")}{" "}{active.started_at ? new Date(active.started_at).toLocaleTimeString(locale === "ko" ? "ko-KR" : "en-US") : "—"}{t("· elapsed")}{" "}{elapsedLabel(active, locale)}</p></article> : <p className="helper">{t("No job is running.")}{latest ? t(" Latest: {p0} · {p1}.", { p0: t(jobCopy(latest).label), p1: t(latest.status) }) : ""}</p>}{queued.length > 0 && <div className="queued-jobs"><strong>{t("Queued ·")}{" "}{queued.length}</strong>{queued.slice(0, 3).map((job) => <span key={job.job_id}>#{job.queue_position} {t(jobCopy(job).label)}</span>)}</div>}</section>;
 }
 
 /** Keep job selection explicit and expose only actions supported by its current state. */

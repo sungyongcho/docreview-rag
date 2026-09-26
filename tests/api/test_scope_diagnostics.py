@@ -27,7 +27,7 @@ def valid_manifest():
 
 
 @pytest.mark.parametrize(
-    "cause", ["missing_file", "invalid_json", "invalid_manifest", "alias_conflict", "permission"]
+    "cause", ["invalid_json", "invalid_manifest", "alias_conflict", "permission"]
 )
 def test_actual_manifest_failure_causes_and_recovery(tmp_path, monkeypatch, cause, caplog):
     """Every failed input retains its cause and the same service can load a repaired file."""
@@ -56,7 +56,7 @@ def test_actual_manifest_failure_causes_and_recovery(tmp_path, monkeypatch, caus
         embedding_provider=DeterministicEmbeddingProvider(), corpus_root=tmp_path
     )
     with pytest.raises(ApiProblemError) as captured:
-        service._manifest_scope_index()
+        service._scope.manifest_index()
     error = captured.value.error
     assert error.code == "query_scope_unavailable" and error.cause == cause
     assert error.path == "manifest.json" and error.detail
@@ -70,11 +70,11 @@ def test_actual_manifest_failure_causes_and_recovery(tmp_path, monkeypatch, caus
         )
         == 1
     )
-    assert service._scope_index is None
+    assert service._scope._scope_index is None
     if cause == "permission":
         monkeypatch.undo()
     manifest.write(path)
-    assert service._manifest_scope_index().match("NVDA revenue")
+    assert service._scope.manifest_index().match("NVDA revenue")
 
 
 def test_production_omits_path_cause_detail_and_secrets(tmp_path):
@@ -93,6 +93,7 @@ def test_detail_is_bounded_redacted_and_uses_a_relative_path(tmp_path):
     """DEV diagnostics preserve the useful error while sanitizing configured secrets."""
     error = ValueError(f"{tmp_path}/manifest.json: fixture-secret " + "broken " * 1000)
     problem = manifest_problem(error, tmp_path, developer=True, secret_values=("fixture-secret",))
+    assert problem.error.detail is not None
     assert str(tmp_path) not in problem.error.detail
     assert "fixture-secret" not in problem.error.detail
     assert len(problem.error.detail) < 1550
@@ -120,7 +121,7 @@ def test_path_failure_records_stage_zero_and_recent_running_job(tmp_path, monkey
         embedding_provider=DeterministicEmbeddingProvider(), corpus_root=tmp_path
     )
     with record_stages() as recorder, pytest.raises(ApiProblemError) as captured:
-        asyncio.run(service._path_decision(RetrieveRequest(query="NVDA revenue")))
+        asyncio.run(service._conversation.decide_path(RetrieveRequest(query="NVDA revenue")))
     assert captured.value.error.failed_stage == "path"
     assert captured.value.error.corpus_job == {
         "job_id": "admin-source",
@@ -132,7 +133,9 @@ def test_path_failure_records_stage_zero_and_recent_running_job(tmp_path, monkey
     ]
     valid_manifest().write(tmp_path / "manifest.json")
     with record_stages() as recovered:
-        decision, _ = asyncio.run(service._path_decision(RetrieveRequest(query="NVDA revenue")))
+        decision, _ = asyncio.run(
+            service._conversation.decide_path(RetrieveRequest(query="NVDA revenue"))
+        )
     assert decision.intent == "document_review"
     assert recovered.events[0].display_stage == "path" and recovered.events[0].status == "completed"
 
@@ -146,7 +149,7 @@ def test_unavailable_job_history_preserves_the_original_manifest_error(tmp_path,
         embedding_provider=DeterministicEmbeddingProvider(), corpus_root=tmp_path
     )
     with pytest.raises(ApiProblemError) as captured:
-        asyncio.run(service._scope_index_for_decision())
+        asyncio.run(service._scope.manifest_index_for_decision())
     assert captured.value.error.cause == "missing_file" and captured.value.error.corpus_job is None
 
 

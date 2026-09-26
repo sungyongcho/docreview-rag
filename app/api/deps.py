@@ -12,20 +12,18 @@ from app.api.errors import ApiProblemError
 from app.api.schemas import (
     DocumentResource,
     EvalResultResource,
-    IngestRequest,
     RetrieveRequest,
     RetrieveResponse,
     ReviewRequest,
     SnapshotComparisonResponse,
     SnapshotResource,
 )
-from app.ingestion.seed import SeedResult
 from app.observability.types import RunReport, StepTrace
 from app.workflow.runner import NodeObserver
 
 
 class ApiServices(Protocol):
-    """All domain operations required by the seven HTTP resources."""
+    """All domain operations required by the six HTTP resources."""
 
     @property
     def published_documents(self) -> DocumentCatalog:
@@ -38,10 +36,6 @@ class ApiServices(Protocol):
 
     async def list_documents(self) -> Sequence[DocumentResource]:
         """Return document resources in deterministic order."""
-        ...
-
-    async def ingest(self, request: IngestRequest) -> SeedResult:
-        """Run one synchronous local-manifest ingestion operation."""
         ...
 
     async def review(

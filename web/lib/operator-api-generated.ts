@@ -132,26 +132,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/wipe/browser-cleared": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Browser Cleared
-         * @description Record a same-operation browser acknowledgement through existing local auth.
-         */
-        post: operations["browser_cleared_wipe_browser_cleared_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/wipe/capability": {
         parameters: {
             query?: never;
@@ -216,14 +196,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * BrowserClearedRequest
-         * @description Identify the exact reset acknowledged by the browser after storage deletion.
-         */
-        BrowserClearedRequest: {
-            /** Operation Id */
-            operation_id: string;
-        };
         /**
          * CommandResource
          * @description Public command metadata without an editable argv surface.
@@ -322,26 +294,10 @@ export interface components {
             type: string;
         };
         /**
-         * WipePreviewRequest
-         * @description Select the explicit reset mode; ordinary browser requests remain unchanged.
-         */
-        WipePreviewRequest: {
-            /**
-             * Extreme
-             * @default false
-             */
-            extreme: boolean;
-        };
-        /**
          * WipeStartRequest
          * @description Bind destructive execution to one verified preview and exact confirmation.
          */
         WipeStartRequest: {
-            /**
-             * Backup Confirmed
-             * @default false
-             */
-            backup_confirmed: boolean;
             /** Confirmation */
             confirmation: string;
             /** Token */
@@ -566,39 +522,6 @@ export interface operations {
             };
         };
     };
-    browser_cleared_wipe_browser_cleared_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BrowserClearedRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     wipe_capability_wipe_capability_get: {
         parameters: {
             query?: never;
@@ -628,11 +551,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["WipePreviewRequest"] | null;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -641,15 +560,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -5,7 +5,6 @@ from collections.abc import Iterable
 import hashlib
 import json
 from pathlib import Path
-import re
 
 from bs4 import BeautifulSoup
 from pydantic import TypeAdapter, ValidationError
@@ -19,7 +18,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_GOLDEN_PATH = REPO_ROOT / "data" / "golden" / "retrieval.json"
 DEFAULT_MANIFEST_PATH = REPO_ROOT / "data" / "corpus" / "manifest.json"
 GOLDEN_CASES = TypeAdapter(list[GoldenCase])
-DOC_ID_PATTERN = re.compile(r"[A-Za-z0-9.]+-FY[0-9]{4}")
 
 
 class GoldenDataError(ValueError):
@@ -45,36 +43,24 @@ def normalized_question(question: str) -> str:
     return " ".join(question.casefold().split())
 
 
-def validate_unique_cases(
-    cases: Iterable[GoldenCase],
-    *,
-    error: type[Exception] = GoldenDataError,
-    label: str = "golden case",
-) -> None:
+def validate_unique_cases(cases: Iterable[GoldenCase]) -> None:
     """Reject id, question, and answer-identity duplicates across one batch.
 
     Parameters
     ----------
     cases : Iterable[GoldenCase]
         Every case in the batch, checked as one unit.
-    error : type[Exception]
-        Exception class raised on a collision, so a batch of unadmitted
-        candidates fails in its own domain rather than the golden one.
-    label : str
-        Noun naming the batch's members in each message.
 
     Raises
     ------
-    error
+    GoldenDataError
         If two cases share an id, a casefolded whitespace-normalized question,
         or one exact answer-span identity.
 
     Notes
     -----
     Span identity is compared across cases; duplicates inside one case are
-    already rejected by ``GoldenCase`` itself. Candidate intake reuses this scan
-    because a candidate that would violate suite uniqueness after promotion has
-    to fail before promotion, not after.
+    already rejected by ``GoldenCase`` itself.
     """
     ids: set[str] = set()
     questions: set[str] = set()
@@ -82,17 +68,17 @@ def validate_unique_cases(
 
     for case in cases:
         if case.id in ids:
-            raise error(f"duplicate {label} id: {case.id}")
+            raise GoldenDataError(f"duplicate golden case id: {case.id}")
         ids.add(case.id)
 
         normalized = normalized_question(case.question)
         if normalized in questions:
-            raise error(f"duplicate normalized {label} question: {case.question}")
+            raise GoldenDataError(f"duplicate normalized golden case question: {case.question}")
         questions.add(normalized)
 
         for answer in case.answers:
             if answer.identity in answer_identities:
-                raise error(f"duplicate answer span identity in {case.id}")
+                raise GoldenDataError(f"duplicate answer span identity in {case.id}")
             answer_identities.add(answer.identity)
 
 
@@ -211,35 +197,21 @@ def load_golden_cases(
     A suite is exactly one file. Translated twins such as ``retrieval_ko.json``
     reuse their English suite's case ids on purpose, so sibling files in one
     directory are separate suites and are never merged into a single load.
+    The file root is either a plain case array or a ``docreview-golden-set``
+    envelope whose ``cases`` member holds that array.
     Validation runs cheapest-first: strict parsing, then cross-case uniqueness,
     then source I/O and hashing.
     """
     golden_path = Path(path)
     payload = read_strict_json(golden_path, error=GoldenDataError)
-    return validate_golden_payload(
-        payload,
-        manifest_path=manifest_path,
-        selection_id=selection_id,
-        label=str(golden_path),
-    )
-
-
-def validate_golden_payload(
-    payload: object,
-    *,
-    manifest_path: str | Path = DEFAULT_MANIFEST_PATH,
-    selection_id: str = "sec-evaluation",
-    label: str = "golden payload",
-) -> list[GoldenCase]:
-    """Validate in-memory revision cases against schema, uniqueness, and source bytes."""
     if isinstance(payload, dict) and payload.get("format") == "docreview-golden-set":
         payload = payload.get("cases")
     if not isinstance(payload, list):
-        raise GoldenDataError(f"golden file root must be a JSON array: {label}")
+        raise GoldenDataError(f"golden file root must be a JSON array: {golden_path}")
     try:
         cases = GOLDEN_CASES.validate_python(payload)
     except ValidationError as exc:
-        raise GoldenDataError(f"invalid golden cases in {label}: {exc}") from exc
+        raise GoldenDataError(f"invalid golden cases in {golden_path}: {exc}") from exc
 
     validate_unique_cases(cases)
     validate_golden_sources(cases, manifest_path, selection_id=selection_id)

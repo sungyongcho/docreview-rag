@@ -13,8 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.evals.arms import Retriever
 from app.evals.artifacts import utc_text, write_json_artifact
+from app.evals.identity import EVALUATED_GOLDEN_KEY, evaluated_golden_sha256
 from app.evals.measurement import Clock, LatencySummary, latency_summary
 from app.evals.regression import (
+    SCORING_CONFIG_KEY,
     BaselineComparison,
     RegressionTolerances,
     canonical_config,
@@ -23,7 +25,7 @@ from app.evals.regression import (
     persist_eval_result,
 )
 from app.evals.scoring import CaseScore, SuiteScore, score_case, score_suite
-from app.evals.types import GoldenCase
+from app.evals.types import Decomposition, GoldenCase
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
 from app.retrieval.types import ChunkHit
 
@@ -58,6 +60,7 @@ class CaseEvaluation:
     latency_ms: float
     hits: tuple[ChunkHit, ...]
     score: CaseScore | None
+    decomposition: Decomposition | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +122,11 @@ class RetrievalEvaluation:
                     "latency_ms": case.latency_ms,
                     "hits": [hit.model_dump(mode="json") for hit in case.hits],
                     "score": asdict(case.score) if case.score is not None else None,
+                    **(
+                        {"decomposition": asdict(case.decomposition)}
+                        if case.decomposition is not None
+                        else {}
+                    ),
                 }
                 for case in self.cases
             ],
@@ -261,13 +269,21 @@ async def evaluate_retriever(
     if len({case.id for case in ordered}) != len(ordered):
         raise ValueError("golden case ids must be unique")
     provenance = _golden_provenance(ordered)
+    for key in (SCORING_CONFIG_KEY, EVALUATED_GOLDEN_KEY):
+        if key in config:
+            raise ValueError(f"config must not define the reserved {key!r} key")
+    recorded_config = canonical_config(config)
+    recorded_config[EVALUATED_GOLDEN_KEY] = evaluated_golden_sha256(
+        [case.model_dump(mode="json") for case in ordered]
+    )
 
     results: list[CaseEvaluation] = []
     scores: list[CaseScore] = []
     latencies: list[float] = []
     for position, case in enumerate(ordered, start=1):
         started = clock()
-        hits = tuple(await retriever(case.question, k))
+        retrieved = await retriever(case.question, k)
+        hits = retrieved.hits
         elapsed_ms = (clock() - started) / 1_000_000
         if elapsed_ms < 0:
             raise ValueError("clock must be monotonic")
@@ -281,17 +297,20 @@ async def evaluate_retriever(
                 latency_ms=elapsed_ms,
                 hits=hits,
                 score=case_score,
+                decomposition=retrieved.decomposition,
             )
         )
         if on_progress is not None:
             on_progress(OperationProgress("evaluate", position, len(ordered), case.id))
 
+    suite_score = score_suite(scores)
+    recorded_config[SCORING_CONFIG_KEY] = suite_score.parameters
     return RetrievalEvaluation(
         suite=suite,
         recorded_at=recorded_at or datetime.now(UTC),
-        config=canonical_config(config),
+        config=recorded_config,
         provenance=provenance,
-        score=score_suite(scores),
+        score=suite_score,
         latency=latency_summary(latencies),
         cases=tuple(results),
     )
@@ -316,7 +335,7 @@ async def persist_evaluation(
     evaluation: RetrievalEvaluation,
     *,
     raw_artifact_path: str | Path,
-    tolerances: RegressionTolerances | Mapping[str, float] | None = None,
+    tolerances: RegressionTolerances | None = None,
 ) -> PersistedEvaluation:
     """Persist one run and compare it with the latest matching baseline.
 
@@ -328,7 +347,7 @@ async def persist_evaluation(
         Completed run whose canonical suite, configuration, and metrics are persisted.
     raw_artifact_path : str | Path
         Path recorded as the reviewable raw evidence for the new row.
-    tolerances : RegressionTolerances | Mapping[str, float] | None, optional
+    tolerances : RegressionTolerances | None, optional
         Accepted absolute drops for quality metrics, or zero tolerance when omitted.
 
     Returns
@@ -339,7 +358,7 @@ async def persist_evaluation(
     Raises
     ------
     ValueError
-        If persisted metadata, metrics, or regression tolerances violate their contracts.
+        If persisted metadata or metrics violate their contracts.
     RuntimeError
         If the inserted result is not assigned a database identity.
 
@@ -347,16 +366,14 @@ async def persist_evaluation(
     -----
     Baseline lookup precedes insertion, and comparability requires the suite, the
     canonical configuration, and the scoring settings behind the metrics to match. The
-    scoring stamp comes from the evaluated suite itself, so a run can never be compared
-    with one measured at another cutoff or relevance threshold. This function does not
-    commit the caller's transaction.
+    evaluated configuration already contains the actual cutoff and relevance threshold,
+    exactly as written to the raw artifact. This function does not commit the caller's
+    transaction.
     """
-    scoring = evaluation.score.parameters
     baseline = await latest_comparable_baseline(
         session,
         suite=evaluation.suite,
         config=evaluation.config,
-        scoring=scoring,
     )
     comparison = (
         compare_against_baseline(
@@ -373,7 +390,6 @@ async def persist_evaluation(
         config=evaluation.config,
         metrics=evaluation.metric_values(),
         raw_artifact_path=raw_artifact_path,
-        scoring=scoring,
         created_at=evaluation.recorded_at,
     )
     if result.id is None:

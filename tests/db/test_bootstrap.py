@@ -35,17 +35,8 @@ class _ConnectionContext:
         return None
 
 
-def test_vector_extension_is_created_idempotently() -> None:
-    """Issue the idempotent pgvector extension statement."""
-    connection = AsyncMock()
-    asyncio.run(ensure_vector_extension(connection))
-
-    statement = connection.execute.await_args.args[0]
-    assert str(statement) == "CREATE EXTENSION IF NOT EXISTS vector"
-
-
 def test_bootstrap_enables_vector_and_checks_drift_before_creating_tables() -> None:
-    """Enable pgvector and check schema compatibility before create_all runs."""
+    """Issue the idempotent pgvector statement and check compatibility before create_all."""
     connection = AsyncMock()
     connection.run_sync.return_value = None
     engine = MagicMock()
@@ -54,6 +45,8 @@ def test_bootstrap_enables_vector_and_checks_drift_before_creating_tables() -> N
     asyncio.run(bootstrap_schema(engine))
 
     assert connection.method_calls[0][0] == "execute"
+    first_statement = connection.execute.await_args_list[0].args[0]
+    assert str(first_statement) == "CREATE EXTENSION IF NOT EXISTS vector"
     run_sync_targets = [call.args[0] for call in connection.run_sync.await_args_list]
     assert run_sync_targets == [bootstrap._collect_schema_drift, Base.metadata.create_all]
 

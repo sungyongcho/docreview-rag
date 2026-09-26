@@ -24,9 +24,8 @@ from app.ingestion.seed import (
     embedding_chunk_config,
     load_manifest,
     parse_seed_filings,
-    persist_seed_batch,
+    persist_seed_batch_with_stats,
 )
-from app.retrieval.bm25 import backfill_term_stats
 from app.retrieval.embeddings import (
     EmbeddingBackfillResult,
     EmbeddingProvider,
@@ -39,7 +38,6 @@ def load_chunking_filings(
     settings: Settings | None = None,
     selection_id: str,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
-    expected_documents: int | None = None,
     on_progress: OperationProgressCallback | None = None,
 ) -> tuple[ParsedFiling, ...]:
     """Parse the fixed evaluation corpus once for reuse by every chunking arm.
@@ -53,8 +51,6 @@ def load_chunking_filings(
     manifest_name : str, optional
         Manifest file under the configured corpus directory. One manifest describes one
         corpus, so a second registry is selected here rather than merged into the first.
-    expected_documents : int | None, optional
-        Document count the named manifest must hold, or ``None`` to accept any count.
 
     Returns
     -------
@@ -68,8 +64,7 @@ def load_chunking_filings(
     json.JSONDecodeError
         If the manifest does not contain valid JSON.
     ValueError
-        If the manifest is invalid, does not hold the expected document count, or a filing
-        cannot satisfy parser contracts.
+        If the manifest is invalid or a filing cannot satisfy parser contracts.
 
     Notes
     -----
@@ -78,11 +73,7 @@ def load_chunking_filings(
     """
     configured = settings or get_settings()
     entries = load_manifest(configured.corpus_dir / manifest_name, selection_id=selection_id)
-    return parse_seed_filings(
-        entries,
-        expected_documents=expected_documents,
-        on_progress=on_progress,
-    )
+    return parse_seed_filings(entries, on_progress=on_progress)
 
 
 def build_chunking_batch(
@@ -93,7 +84,6 @@ def build_chunking_batch(
     settings: Settings | None = None,
     selection_id: str,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
-    expected_documents: int | None = None,
     on_progress: OperationProgressCallback | None = None,
 ) -> SeedBatch:
     """Build one source-stable corpus arm from new or already parsed filings.
@@ -113,8 +103,6 @@ def build_chunking_batch(
         Exact common-manifest processing selection to evaluate.
     manifest_name : str, optional
         Manifest file the independent path reads under the configured corpus directory.
-    expected_documents : int | None, optional
-        Document count that manifest must hold, or ``None`` to accept any count.
 
     Returns
     -------
@@ -151,12 +139,7 @@ def build_chunking_batch(
 
     configured = settings or get_settings()
     entries = load_manifest(configured.corpus_dir / manifest_name, selection_id=selection_id)
-    return build_seed_batch(
-        entries,
-        expected_documents=expected_documents,
-        chunker=chunker,
-        on_progress=on_progress,
-    )
+    return build_seed_batch(entries, chunker=chunker, on_progress=on_progress)
 
 
 def _temporary_metadata(dimensions: int) -> MetaData:
@@ -281,15 +264,10 @@ async def temporary_corpus_session(
         if on_progress is not None:
             on_progress(OperationProgress("temporary_schema", 1, 1, "Isolated tables ready"))
         session = AsyncSession(bind=connection, expire_on_commit=False)
-        await persist_seed_batch(session, batch, on_progress=on_progress)
         # One rebuild per corpus arm. Every BM25 experiment on this chunking shares
         # it, and the next chunk target gets its own corpus and its own statistics,
         # because df, avgdl, and dl are all properties of a particular chunking.
-        if on_progress is not None:
-            on_progress(OperationProgress("bm25", 0, 1, "Rebuilding term statistics"))
-        await backfill_term_stats(session)
-        if on_progress is not None:
-            on_progress(OperationProgress("bm25", 1, 1, "Term statistics rebuilt"))
+        await persist_seed_batch_with_stats(session, batch, on_progress=on_progress)
 
         def on_embedding_batch(result: EmbeddingBackfillResult) -> None:
             """Project cumulative embedding batches onto the operation callback."""

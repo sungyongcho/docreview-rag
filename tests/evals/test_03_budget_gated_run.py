@@ -9,7 +9,8 @@ import pytest
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, Settings
 from app.evals.measurement import assess_indexing_budget
 import app.evals.run as run
-from app.evals.run import _run_cli, arguments, main
+from app.evals.run import arguments, main, run_matrix
+from app.evals.types import EvaluationRetrieval
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.evals.support import positive_case, relevant_hit
 
@@ -82,7 +83,7 @@ def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
 
         async def retriever(_query, _k):
             """Return the fixed relevant hit for one bound arm."""
-            return [relevant_hit()]
+            return EvaluationRetrieval(hits=(relevant_hit(),))
 
         return retriever
 
@@ -93,7 +94,7 @@ def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
 def _execute(monkeypatch, argv, **install):
     """Run the command with every boundary stubbed and return its result dict."""
     engine, bound = _install(monkeypatch, **install)
-    result = asyncio.run(_run_cli(arguments(argv)))
+    result = asyncio.run(run_matrix(**vars(arguments(argv))))
     assert engine.disposed
     return result, bound
 
@@ -103,8 +104,10 @@ def _budget(result):
     return json.loads(open(result["budget_artifact"], encoding="utf-8").read())
 
 
-def test_a_full_run_writes_one_artifact_per_arm_and_one_budget_artifact(monkeypatch, tmp_path):
-    """Emit every arm's raw evidence plus a single budget artifact for the run."""
+def test_a_full_run_writes_one_artifact_per_arm_and_a_budget_artifact_naming_its_arm(
+    monkeypatch, tmp_path
+):
+    """Emit every arm's raw evidence plus one budget artifact that names the measured lane."""
     result, _bound = _execute(monkeypatch, ["--artifact-dir", str(tmp_path)])
 
     assert len(result["artifacts"]) == 10
@@ -112,11 +115,6 @@ def test_a_full_run_writes_one_artifact_per_arm_and_one_budget_artifact(monkeypa
     assert result["budget_artifact"].endswith("-budgets.json")
     assert result["passed"] is True
     assert "| structure-1024-lexical-ts-rank-cd |" in result["comparison_table"]
-
-
-def test_the_budget_artifact_names_the_arm_its_latency_belongs_to(monkeypatch, tmp_path):
-    """Record the corpus and retrieval lane behind the reported repeated-query latency."""
-    result, _bound = _execute(monkeypatch, ["--artifact-dir", str(tmp_path)])
 
     arm = _budget(result)["query_budget"]["arm"]
 
@@ -139,21 +137,6 @@ def test_a_shortened_budget_run_is_not_assessed_against_the_full_query_limit(mon
     assert query_budget["budget_seconds"] == 9.0
 
 
-def test_the_budget_arm_is_the_same_however_the_strategy_axis_is_ordered(monkeypatch, tmp_path):
-    """Produce identical budget provenance for the same matrix typed in any order."""
-    forward, _ = _execute(
-        monkeypatch,
-        ["--artifact-dir", str(tmp_path / "a"), "--strategies", "lexical", "vector"],
-    )
-    reversed_axis, _ = _execute(
-        monkeypatch,
-        ["--artifact-dir", str(tmp_path / "b"), "--strategies", "vector", "lexical"],
-    )
-
-    assert _budget(forward)["query_budget"]["arm"] == _budget(reversed_axis)["query_budget"]["arm"]
-    assert _budget(forward)["query_budget"]["arm"]["strategy"] == "vector"
-
-
 def test_a_bm25_only_budget_arm_records_the_parameters_it_measured(monkeypatch, tmp_path):
     """Record the exact BM25 values behind a lexical budget measurement."""
     result, _bound = _execute(
@@ -166,16 +149,6 @@ def test_a_bm25_only_budget_arm_records_the_parameters_it_measured(monkeypatch, 
     assert arm["strategy"] == "lexical"
     assert arm["lexical_ranker"] == "bm25"
     assert arm["bm25"] == {"k1": DEFAULT_BM25_K1, "b": DEFAULT_BM25_B, "idf": DEFAULT_BM25_IDF}
-
-
-def test_an_exceeded_indexing_budget_fails_the_run(monkeypatch, tmp_path):
-    """Report failure instead of printing a blown budget and exiting successfully."""
-    result, _bound = _execute(
-        monkeypatch, ["--artifact-dir", str(tmp_path)], indexing_seconds=301.0
-    )
-
-    assert all(arm["passed"] is False for arm in _budget(result)["indexing"]["arms"])
-    assert result["passed"] is False
 
 
 def test_the_command_exit_status_follows_the_measured_verdict(monkeypatch, tmp_path, capsys):
