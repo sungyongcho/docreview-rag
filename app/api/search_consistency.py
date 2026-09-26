@@ -12,7 +12,12 @@ from app.db.models import (
     SnapshotBM25CorpusStat,
     SnapshotChunk,
 )
-from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider, matching_embedding
+from app.retrieval.embeddings import (
+    EmbeddingProvider,
+    get_embedding_provider,
+    matching_embedding,
+    matching_snapshot_embedding,
+)
 from app.retrieval.rerank import RerankProvider
 from app.retrieval.service import RetrievalResult, RetrievalStrategy, retrieve
 from app.retrieval.types import RetrievalFilters
@@ -67,18 +72,11 @@ async def _prepare_snapshot_search(
 ) -> None:
     """Reject a snapshot that lacks the vectors or statistics the strategy reads."""
     if strategy != "lexical":
-        identity = provider.identity
         unmatched = (
             select(SnapshotChunk.chunk_id)
             .where(
                 SnapshotChunk.snapshot_id == snapshot_id,
-                ~(
-                    (SnapshotChunk.embedding_provider == identity.provider)
-                    & (SnapshotChunk.embedding_model == identity.model)
-                    & (SnapshotChunk.embedding_dimensions == identity.dimensions)
-                    & (SnapshotChunk.embedding_tokenizer == identity.tokenizer)
-                    & SnapshotChunk.embedding.is_not(None)
-                ),
+                ~matching_snapshot_embedding(provider.identity),
             )
             .exists()
         )

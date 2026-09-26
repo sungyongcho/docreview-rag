@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.config import Settings, get_settings
-from app.db.models import Chunk, ChunkEmbedding
+from app.db.models import Chunk, ChunkEmbedding, SnapshotChunk
 from app.ingestion.tokens import MAX_REQUEST_INPUTS, MAX_REQUEST_TOKENS, tokenizer, validate_request
 from app.observability.usage import (
     UsageSink,
@@ -467,6 +467,20 @@ def matching_embedding(identity: EmbeddingIdentity) -> ColumnElement[bool]:
         ChunkEmbedding.model == identity.model,
         ChunkEmbedding.dimensions == identity.dimensions,
         ChunkEmbedding.tokenizer == identity.tokenizer,
+    )
+
+
+def matching_snapshot_embedding(identity: EmbeddingIdentity) -> ColumnElement[bool]:
+    """Bind a snapshot's frozen vector to the exact configuration that must read it.
+
+    A snapshot row stores its vector inline, so a row frozen without one never matches.
+    """
+    return and_(
+        SnapshotChunk.embedding_provider == identity.provider,
+        SnapshotChunk.embedding_model == identity.model,
+        SnapshotChunk.embedding_dimensions == identity.dimensions,
+        SnapshotChunk.embedding_tokenizer == identity.tokenizer,
+        SnapshotChunk.embedding.is_not(None),
     )
 
 
