@@ -6,7 +6,7 @@ import { newConversation, HELP_KEY, ONBOARDING_KEY, loadConversations, saveConve
 import type { DocumentFacets, Readiness, OperatorJob } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
-import { TOUR_TARGETS } from "./onboarding";
+import { tourTargets } from "./onboarding-test-support";
 import { ServiceShell, terminalAnswer } from "./service-shell";
 
 beforeEach(() => { configureBrowserStorage(undefined); window.history.replaceState(null, "", "/"); });
@@ -128,9 +128,9 @@ async function flushEffects() {
   await act(async () => undefined);
 }
 
-/** Records which tour targets the shell renders right now. */
-function noteTargets(seen: Set<string>) {
-  for (const name of TOUR_TARGETS) if (document.querySelector(`[data-tour="${name}"]`)) seen.add(name);
+/** Records which of the tour's targets the shell renders right now. */
+function noteTargets(targets: readonly string[], seen: Set<string>) {
+  for (const name of targets) if (document.querySelector(`[data-tour="${name}"]`)) seen.add(name);
 }
 
 /** Public-build API stub: runtime endpoints plus the public `/snapshots` list; everything else is `{}`. */
@@ -866,25 +866,27 @@ describe("service shell", () => {
     stubPublicApi();
     window.localStorage.removeItem(ONBOARDING_KEY);
     seedAnsweredConversation();
+    // Read the targets before the shell mounts its own tour, which would otherwise react to the helper's walk.
+    const targets = tourTargets();
     render(<ServiceShell />);
     const seen = new Set<string>();
 
     expect(await screen.findByText("Step 1 of 7")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "From filings to verified answers." })).toBeInTheDocument();
-    noteTargets(seen);
+    noteTargets(targets, seen);
 
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 2 of 7")).toBeInTheDocument();
     expect(document.querySelector(".tour-spotlight")).not.toBeNull();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 3 of 7")).toBeInTheDocument();
-    noteTargets(seen);
+    noteTargets(targets, seen);
 
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 4 of 7")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     // Back to a Build target that is absent at click time: the shell navigates first, then the spotlight lands on it.
     fireEvent.click(screen.getByText("Back"));
     expect(screen.getByText("Step 3 of 7")).toBeInTheDocument();
@@ -894,19 +896,19 @@ describe("service shell", () => {
     fireEvent.click(screen.getByText("Next"));
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 5 of 7")).toBeInTheDocument();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 6 of 7")).toBeInTheDocument();
     expect(document.querySelector(".tour-spotlight")).not.toBeNull();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 7 of 7")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Measure" })).toHaveAttribute("aria-pressed", "true");
-    noteTargets(seen);
+    noteTargets(targets, seen);
 
     // The answered review hides the welcome suggestions; the operator run below covers those and Operations.
-    expect(TOUR_TARGETS.filter((name) => !seen.has(name))).toEqual(["evidence-fallback", "operations"]);
+    expect(targets.filter((name) => !seen.has(name))).toEqual(["evidence-fallback", "operations"]);
 
     fireEvent.click(screen.getByText("Finish"));
     expect(readStoredValue(ONBOARDING_KEY)).toBe("done");
@@ -918,21 +920,22 @@ describe("service shell", () => {
     vi.stubEnv("NEXT_PUBLIC_OPERATOR_TOKEN", "operator-token");
     stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     window.localStorage.removeItem(ONBOARDING_KEY);
+    const targets = tourTargets();
     render(<ServiceShell />);
     const seen = new Set<string>();
 
     expect(await screen.findByText("Step 1 of 8")).toBeInTheDocument();
     for (let step = 1; step <= 7; step += 1) {
-      noteTargets(seen);
+      noteTargets(targets, seen);
       fireEvent.click(screen.getByText("Next"));
     }
     expect(screen.getByText("Step 8 of 8")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Operations" })).toHaveAttribute("aria-pressed", "true");
     expect(document.querySelector('[data-tour="operations"]')).not.toBeNull();
     expect(document.querySelector(".tour-spotlight")).not.toBeNull();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     // A fresh review has no answer yet, so only the evidence toggle is missing here.
-    expect(TOUR_TARGETS.filter((name) => !seen.has(name))).toEqual(["evidence-toggle"]);
+    expect(targets.filter((name) => !seen.has(name))).toEqual(["evidence-toggle"]);
 
     fireEvent.click(screen.getByText("Finish"));
     expect(readStoredValue(ONBOARDING_KEY)).toBe("done");
