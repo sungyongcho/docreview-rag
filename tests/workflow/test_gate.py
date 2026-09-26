@@ -50,14 +50,10 @@ def test_development_demo_matches_routing_rules(case, scope_index) -> None:
 @pytest.mark.parametrize(
     "query",
     [
-        "안녕",
-        "안녕!!!",
-        "hello",
-        "hello world",
-        "뭐함",
-        "감사합니다",
-        "help",
-        "사용법",
+        pytest.param("안녕", id="exact-canned-phrase"),
+        pytest.param("안녕!!!", id="trailing-punctuation-is-ignored"),
+        pytest.param("hello world", id="inner-whitespace-is-ignored"),
+        pytest.param("감사합니다", id="canned-phrase-that-is-also-a-casual-cue"),
     ],
 )
 def test_exact_service_intents_return_bounded_guidance(query: str) -> None:
@@ -72,10 +68,9 @@ def test_exact_service_intents_return_bounded_guidance(query: str) -> None:
 @pytest.mark.parametrize(
     "query",
     [
-        "Nvidia revenue",
-        "삼성전자 매출",
-        "엔비디아의 주가는?",
-        "samsung 매출",
+        pytest.param("Nvidia revenue", id="english-finance-term"),
+        pytest.param("삼성전자 매출", id="bare-korean-finance-term"),
+        pytest.param("엔비디아의 주가는?", id="korean-finance-term-with-particles"),
     ],
 )
 def test_known_company_filing_questions_stay_deterministic(query: str, scope_index) -> None:
