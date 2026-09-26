@@ -34,7 +34,7 @@ from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.types import RetrievalFilters
 from tests.ingestion.support import filing_document, filing_source
 from tests.live_postgres import live_postgres_unavailable
-from tests.retrieval.support import normalized_sql
+from tests.retrieval.support import hit_values, normalized_sql
 
 FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "bm25_sample.json").read_text(encoding="utf-8")
@@ -247,18 +247,74 @@ def test_search_raises_when_statistics_are_missing_or_stale():
             return SimpleNamespace(all=list)
 
     class Session:
-        """Return stale statistics and no candidate rows."""
+        """Return no rows at all, not even the readiness row."""
 
         async def execute(self, _statement):
             """Return the empty hit result."""
             return Result()
 
-        async def scalar(self, _statement):
-            """Report that the freshness sentinel is absent."""
-            return None
-
     with pytest.raises(RuntimeError, match="missing or stale"):
         asyncio.run(bm25.bm25_search(cast(AsyncSession, Session()), "market risk", 4))
+
+
+class _MappingResult:
+    """Expose SQLAlchemy-style row mappings for one scripted result set."""
+
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self.rows = rows
+
+    def mappings(self):
+        """Return the scripted mappings."""
+        return SimpleNamespace(all=lambda: list(self.rows))
+
+
+def test_readiness_is_read_in_the_same_statement_as_the_search():
+    """Statistics absent when the search ran must raise even if a rebuild commits right after."""
+
+    class Session:
+        """Serve a search that saw no statistics, then a sentinel that sees rebuilt ones."""
+
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def execute(self, statement):
+            """Answer the search the way PostgreSQL does without corpus statistics."""
+            self.calls.append("search")
+            if "corpus_stats" in statement.selected_columns.keys():
+                # The readiness count rides along the hit rows: with no statistics the
+                # statement yields one NULL-extended row carrying corpus_stats = 0.
+                return _MappingResult([{"chunk_id": None, "score": None, "corpus_stats": 0}])
+            return _MappingResult([])
+
+        async def scalar(self, _statement):
+            """Report statistics that a rebuild committed after the search executed."""
+            self.calls.append("sentinel")
+            return 1
+
+    session = Session()
+    try:
+        hits = asyncio.run(bm25.bm25_search(cast(AsyncSession, session), "market risk", 4))
+    except RuntimeError as error:
+        assert "missing or stale" in str(error)
+        hits = None
+    assert hits is None, (hits, session.calls)
+    assert session.calls == ["search"]
+
+
+def test_search_returns_hits_without_the_readiness_column():
+    """Hit rows carry the readiness count, which never reaches the typed evidence."""
+    rows = [{**hit_values(chunk_id=3, score=1.5), "corpus_stats": 2}]
+
+    class Session:
+        """Serve one scored row for any statement."""
+
+        async def execute(self, _statement):
+            """Return the scripted hit row."""
+            return _MappingResult(rows)
+
+    hits = asyncio.run(bm25.bm25_search(cast(AsyncSession, Session()), "market risk", 4))
+
+    assert [(hit.chunk_id, hit.score) for hit in hits] == [(3, 1.5)]
 
 
 def test_search_shares_the_first_four_parameters_with_lexical_search():

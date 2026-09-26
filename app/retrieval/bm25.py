@@ -37,6 +37,7 @@ from app.db.models import (
 )
 from app.retrieval._sql import (
     TEXT_SEARCH_CONFIG,
+    TIE_BREAK_COLLATION,
     apply_filters,
     hit_columns,
     hit_order_by,
@@ -405,21 +406,62 @@ async def bm25_search(
         If corpus statistics are missing or were invalidated by chunk writes.
     ValueError
         If public BM25 parameters are invalid.
+
+    Notes
+    -----
+    The statistics count is read in the same statement as the search, so both see one
+    snapshot: a rebuild that commits while the search runs can neither turn a search
+    made without statistics into an empty success nor fail a search that had them.
     """
-    result = await session.execute(
+    active_filters = filters or RetrievalFilters()
+    statement = _with_readiness(
         bm25_statement(
             query, k, filters, k1=k1, b=b, idf=idf, text_search_config=text_search_config
-        )
+        ),
+        active_filters,
     )
-    active_filters = filters or RetrievalFilters()
-    stats_statement = select(func.count()).select_from(
-        BM25CorpusStat if active_filters.snapshot_id is None else SnapshotBM25CorpusStat
-    )
-    if active_filters.snapshot_id is not None:
-        stats_statement = stats_statement.where(
-            SnapshotBM25CorpusStat.snapshot_id == active_filters.snapshot_id
-        )
-    stats_ready = await session.scalar(stats_statement)
-    if not stats_ready:
+    rows = (await session.execute(statement)).mappings().all()
+    if not rows or not rows[0][READINESS_COLUMN]:
         raise RuntimeError("BM25 statistics are missing or stale; rebuild them before searching")
-    return [ChunkHit.model_validate(row) for row in result.mappings().all()]
+    return [
+        ChunkHit.model_validate(
+            {name: value for name, value in row.items() if name != READINESS_COLUMN}
+        )
+        for row in rows
+        if row["chunk_id"] is not None
+    ]
+
+
+READINESS_COLUMN = "corpus_stats"
+
+
+def _with_readiness(hits_statement: Select[Any], filters: RetrievalFilters) -> Select[Any]:
+    """Attach the corpus-statistics count to the ranked hits in one statement.
+
+    The count is the outer side of a left join, so the statement returns one
+    NULL-extended row carrying the count even when the search finds nothing. The hit
+    order is restated on the subquery columns with the same tie-breakers as
+    ``hit_order_by``, because a subquery's order does not survive the join.
+    """
+    hits = hits_statement.subquery("bm25_hits")
+    if filters.snapshot_id is None:
+        readiness = select(func.count().label(READINESS_COLUMN)).select_from(BM25CorpusStat)
+    else:
+        readiness = (
+            select(func.count().label(READINESS_COLUMN))
+            .select_from(SnapshotBM25CorpusStat)
+            .where(SnapshotBM25CorpusStat.snapshot_id == filters.snapshot_id)
+        )
+    counted = readiness.subquery("bm25_readiness")
+    return (
+        select(counted.c[READINESS_COLUMN], *hits.c)
+        .select_from(counted.outerjoin(hits, true()))
+        .order_by(
+            hits.c.score.desc(),
+            hits.c.doc_id.collate(TIE_BREAK_COLLATION).asc(),
+            hits.c.source_sha256.collate(TIE_BREAK_COLLATION).asc(),
+            hits.c.start_char.asc(),
+            hits.c.end_char.asc(),
+            hits.c.chunk_id.asc(),
+        )
+    )
