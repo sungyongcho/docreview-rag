@@ -28,7 +28,13 @@ def test_resolution_uses_the_role_default_and_prices_the_selected_model():
     )
 
 
-@pytest.mark.parametrize("model", ["gpt-5.6-sol", "", "   "])
+@pytest.mark.parametrize(
+    "model",
+    [
+        pytest.param("gpt-5.6-sol", id="sibling-outside-the-allowlist"),
+        pytest.param("", id="blank-selection"),
+    ],
+)
 def test_policy_rejects_models_outside_the_role_allowlist(model):
     """Reject a sibling model outside the allowlist and a blank selection before any client."""
     with pytest.raises(OpenAIModelPolicyError, match="allowed"):

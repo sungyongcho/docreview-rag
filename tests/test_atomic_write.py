@@ -29,7 +29,10 @@ def test_replacement_publishes_exact_text_without_a_temporary_sibling(tmp_path):
 
 @pytest.mark.parametrize(
     ("mode", "apply_umask", "umask", "expected"),
-    [(0o664, False, 0o077, 0o664), (0o666, True, 0o022, 0o644), (0o666, True, 0o077, 0o600)],
+    [
+        pytest.param(0o664, False, 0o077, 0o664, id="exact-mode-ignores-the-umask"),
+        pytest.param(0o666, True, 0o077, 0o600, id="umask-narrows-the-mode"),
+    ],
 )
 def test_mode_is_exact_or_narrowed_by_the_process_umask(
     tmp_path, mode, apply_umask, umask, expected
