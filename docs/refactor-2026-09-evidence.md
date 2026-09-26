@@ -1496,3 +1496,123 @@ The existing terminal-write failure policy is preserved: after bounded persisten
 attempts fail, the last durable state remains authoritative; unfinished records become
 interrupted on restart. The follow-up does not claim storage recovery after an unavailable
 database or alter the user's intentionally different DEV/PROD data-reading policies.
+
+
+## Final state ownership and acceptance verification
+
+Scope starts at main `8833ff46` after #222. Local artifacts are in
+`/tmp/final-three-20260926/`; prior runs remain unchanged. The user approved all three
+remaining items and the PR-to-merge-to-clean-main delivery sequence. This section records
+new evidence and does not rewrite earlier failed or unrun results.
+
+### Profile ownership and test integrity
+
+Only the active conversation supplies mutable session settings. The removed shell state
+was initialized to `DEFAULT_SESSION_PROFILE`, copied whenever a conversation was selected,
+and patched alongside that same conversation. Before capabilities initialize the list,
+there is no active record to edit; those temporary edits were already discarded by the
+old initialization. Current rendering uses the immutable default until the list exists.
+`updateSessionProfile` then patches the active ID in the latest functional state, keeping
+messages appended by an in-flight response.
+
+The Web author changed `service-shell.tsx` and extended two existing tests. New/reopen/delete
+checks retain the original conversation-message assertions. Delayed-capabilities checks
+retain the prohibition on administrator/local calls before capabilities, then assert the
+saved profile survives and later edits preserve messages. Existing submitted-profile,
+streaming, cross-conversation response and PROD projection cases are retained. No test was
+removed or weakened; no failing-before behavior is claimed for this refactor.
+Three non-author reviews (coordinator, final reviewer, LLM/search reviewer) independently
+accepted the removal. These are agent reviews, not independent human approval.
+
+### Actual acceptance and runtime results
+
+| Check | Result and bounded meaning |
+| --- | --- |
+| Focused Web integration | 88 passed in `web-service-shell.log`. |
+| Full Web suite, maximum two workers | 1,263 tests / 121 files passed in `web-full.log`; no additional tests were collected. |
+| Web typecheck | `tsc --noEmit --incremental false` passed; `web-typecheck.log`. |
+| Fresh application image | Actual `docker/Dockerfile` build, canned public Next bundle, passed; `image-build-authorized.log`, image `drr-final-validation:20260926`, config SHA256 `2a359ef180f320a42c167eb69144fc9c500ced783852ac803cc71edae8aff671`. Application/Web source matches the final change; later edits affect only tests and these reports. |
+| Public dump restore | `test_restored_public_portfolio_matches_checked_artifacts` passed against localhost `pipeline_test_restore`, freshly bootstrapped from current ORM and populated from the verified public dump; `public-restore.xml`. |
+| Local PROD preparation | The actual `prod.prepare` restored the saved bundle into a new `drr-final-prod_prod_pg_data` volume and separate corpus/evaluation directories. All five preparation steps completed, including live search readiness; receipt retained in the isolated archive. No embeddings were generated. |
+| Prepared local PROD acceptance | Unmodified `test_prepared_local_prod_has_verified_sources_vectors_and_foreign_keys` passed from the isolated source archive; `local-prod.xml`. Checks include 18 identities, 10,586 matching vectors/chunks, BM25 totals, source hashes and foreign keys. |
+| Disposable Compose reset | `test_disposable_compose_reset_recreates_empty_schema` passed with the new image in 58.58 seconds; `wipe-final.xml`. The fixture owns the only volume/files it resets. |
+| Wipe fixture unit checks | 19 passed, one live case deselected; `wipe-unit.xml`. Scoped Ruff/format and basedpyright passed with zero errors/warnings; `wipe-static-final.log`. |
+| DEV API runtime | Real Compose + deterministic embeddings: 10 documents / 2,567 chunks, `/health`, `/ready`, `/capabilities` pass. `/retrieve` returns HTTP 200 and five actual ranked chunks; `runtime-summary.json` and `dev-retrieve.json`. |
+| PROD API runtime | Real Compose + restored saved OpenAI vectors: 18 documents / 10,586 chunks, `/ready` is ready, authority readonly, local engine disabled. No query embedding or text generation was requested. |
+| Actual browser | PROD: Korean preset survives Build/Back and reload, both English/Korean render, prompt settings remain readonly. DEV: edited instructions survive reload and appear in the prompt preview. Final copied DEV corpus is writable. `browser-verification.md` distinguishes UI observations from provider proof. |
+| Old public evaluation detail | Actual HTTP 409 `snapshot_evidence_unavailable`; `old-snapshot-http.txt`. The saved September 9 artifacts have no current `scoring` / `evaluated_golden_sha256` fields. Restore acceptance checks integrity/counts, not current-format detail eligibility. |
+
+All three acceptance tests use `-m live_postgres --require-live-postgres`; none is mocked or
+skipped. Temporary projects use unique ports and volumes. The public artifact archive and
+user DEV/PROD directories remain untouched. The runtime's selected PROD key is an explicitly
+invalid local test value used only to construct the configured provider; no secret is loaded
+and no provider endpoint is called. Readiness proves stored search/index state, not credential
+validity or successful answer generation. DEV has no provider key or local model configured.
+
+Initial failures are retained: the first schema setup omitted the key required by its
+OpenAI identity configuration; it failed before restore and passed after the isolated
+configuration was corrected. The first Docker build could not update buildx metadata in
+the sandbox; the authorized build passed. The first wipe test failed on `data/runtime`
+permissions: its host-owned 0755 bind mount did not match local Compose's non-root shared
+group. The fixture now grants group-write on only its disposable directories, runs as
+`10001:<host gid>` and uses the actual `umask 0002` command wrapper. No assertion or app
+permission check changed. The initial long YAML command failed Ruff and was formatted as
+a readable YAML sequence before the final checks.
+
+The final DEV browser run uses a writable manifest-bound source copy in the disposable
+archive. An earlier readonly mount correctly reported that original acquisition was not
+writable; the final `/ready` confirms `writable=true`. The full-copy attempt encountered an
+unreadable unrelated scratch file, so only actual manifest-listed originals were copied.
+Neither condition caused an application change. The two local stacks were stopped and their
+owned test volumes removed after verification; archives and logs remain for inspection.
+No full Python rerun, coverage recollection, paid evaluation, real-provider answer smoke or
+deployment was performed. Python application code is unchanged, so prior valid coverage and
+unit evidence are retained. The new checks close the three missing acceptance environments,
+not the missing historical generated text or current-format public evaluation bundle.
+
+### Narrowing the historical decomposition decline
+
+An additional retained run was recovered from the original scratch directory:
+`/tmp/claude-1000/-home-wwaya-Documents-docreview-rag/8d36a64b-8852-4da7-a12b-0afb81f66d45/scratchpad/a2/after/evals`.
+It ran at 12:38 UTC on `ec233bd6`, between baseline `7780a723` at 04:04 and final
+`28f8a152` at 14:31. The intermediate/final inputs, full DB fingerprints and harness
+identity `3ebb695d47d7eb92` match. All three normalized single-query arm artifacts match exactly.
+
+| Run | `m3c-02` relevant rank | Recall / MRR | Output tokens |
+| --- | --- | --- | --- |
+| Baseline | 4 | 0.333333 / 0.141667 | 99 |
+| Recovered intermediate | 4 | 0.333333 / 0.141667 | 70 |
+| Final historical run | No hit | 0.25 / 0.120833 | 137 |
+
+The correct source span is wholly inside chunk 2332. Earlier fused chunks are
+`[2335, 12, 249, 2332, 741]`; final chunks are `[1262, 2335, 12, 1122, 249]`.
+The outer fusion is byte-identical across all captured heads and current code. Its saved
+scores are respectively `[1/61, 1/62, 1/63, 1/64, 1/65]` and
+`[1/61, 1/61, 1/62, 1/62, 1/63]`. A shared hit would score at least `2/65`, above either
+observed maximum, so these component top-fives are disjoint. Every nonempty component has
+a rank-one `1/61`; with at most four subquestions and five output slots, these patterns
+uniquely identify one versus two nonempty searches. The captured unrestricted vector lane
+has 2,567 matching embeddings and no similarity cutoff, so successful queries cannot yield
+an empty component here. This establishes a change in generated decomposition count.
+
+Offline, with socket connections denied, the reviewer recomputed all three case scores
+using `score_case` and replayed the earlier list through current fusion: all fields match.
+A labeled counterfactual, the earlier list plus additional hits `[1262, 1122]`, reproduces
+the final five full hits. This demonstrates the unchanged top-five truncation mechanism;
+it does not reconstruct the unseen later component lists or prove where 2332 ranked in them.
+The aggregate changes are exactly one lost hit among 12 positives and `0.25 / 12` lost MRR.
+
+Between the recovered intermediate and final heads, decomposition/evaluation/scoring/fusion
+are unchanged; the provider change accounts for a billed first attempt followed by a denied
+repair, whereas these calls all completed in one successful request. The `responses.create`
+AST remains identical,
+including explicit model, input, instructions, strict schema, budgets and `store=False`.
+The relevant vector branch is unchanged; BM25/reranker changes do not apply to this arm.
+No code repair is justified by this evidence.
+
+Actual generated text and per-subquestion rankings remain unavailable. The raw case objects
+contain only golden/hits/latency/score; call ledgers contain usage, not output or response IDs.
+The capture wrapper discarded those fields. All three temporary DB fingerprints record zero
+runs/traces/eval-results, and the corresponding tmpfs containers were removed. No user DB
+was searched or changed. No new paid run or provider lookup was attempted. Current per-case
+decomposition recording already prevents this specific evidence gap in future runs.
