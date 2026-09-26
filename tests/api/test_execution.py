@@ -156,7 +156,7 @@ def test_local_execution_publishes_measured_cpu_speed_to_readiness(
                 {"query": "Revenue?", "session_profile": {"engine": "local"}}
             )
             async with service._request_connection(request.session_profile):
-                await service._local_profile(request.session_profile)
+                await service._engines.pin_local_model(request.session_profile)
                 state.update(tag_digest=tag_digest, loaded_digest=loaded_digest)
                 await inventory.snapshot()
                 with record_stages() as recorder:

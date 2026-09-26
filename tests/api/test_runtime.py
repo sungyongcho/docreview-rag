@@ -38,29 +38,29 @@ def local_services(names: list[str]) -> RuntimeApiServices:
 def test_single_model_is_pinned_without_changing_the_requested_engine() -> None:
     """A single model is resolved once and cannot later switch to a replacement."""
     services = local_services(["answer"])
-    profile = asyncio.run(services._local_profile(ReviewSessionProfile(engine="local")))
+    profile = asyncio.run(services._engines.pin_local_model(ReviewSessionProfile(engine="local")))
     assert profile.local_model == "answer"
     assert profile.engine == "local"
     other = local_services(["replacement"])
     with pytest.raises(ApiProblemError) as error:
-        asyncio.run(other._local_profile(profile))
+        asyncio.run(other._engines.pin_local_model(profile))
     assert error.value.error.code == "local_model_unavailable"
     openai = ReviewSessionProfile()
-    assert asyncio.run(services._local_profile(openai)) is openai
+    assert asyncio.run(services._engines.pin_local_model(openai)) is openai
 
 
 def test_multiple_models_require_a_choice_and_isolate_concurrent_requests() -> None:
     """Two conversations get separate providers and never mutate a global active model."""
     services = local_services(["first", "second"])
     with pytest.raises(ApiProblemError) as error:
-        asyncio.run(services._local_profile(ReviewSessionProfile(engine="local")))
+        asyncio.run(services._engines.pin_local_model(ReviewSessionProfile(engine="local")))
     assert error.value.error.code == "local_model_required"
 
     async def resolve() -> list:
         """Resolve independent selections concurrently through the same runtime."""
         return await asyncio.gather(
             *(
-                services._engine(
+                services._engines.resolve_engine(
                     ReviewRequest(
                         query="question",
                         session_profile=ReviewSessionProfile(engine="local", local_model=name),
@@ -79,7 +79,9 @@ def test_multiple_models_require_a_choice_and_isolate_concurrent_requests() -> N
 def test_empty_inventory_blocks_local_execution() -> None:
     """An explicitly chosen local engine never falls back to another provider."""
     with pytest.raises(ApiProblemError) as error:
-        asyncio.run(local_services([])._local_profile(ReviewSessionProfile(engine="local")))
+        asyncio.run(
+            local_services([])._engines.pin_local_model(ReviewSessionProfile(engine="local"))
+        )
     assert error.value.error.code == "local_model_unavailable"
 
 
@@ -105,16 +107,16 @@ def test_request_pins_endpoint_and_provider_across_connection_changes(tmp_path) 
     async def exercise() -> None:
         """Resolve stages before and after a switch, then enter another request boundary."""
         async with services._request_connection(request.session_profile):
-            first, _ = await services._engine(request)
+            first, _ = await services._engines.resolve_engine(request)
             assert first._base_url == "http://first/v1"
             await manager.add_server("Second", "http://second/v1")
-            later, _ = await services._engine(request)
+            later, _ = await services._engines.resolve_engine(request)
             assert later is first
             assert later.model_name == "answer"
             assert not first._client.is_closed
         assert first._client.is_closed
         async with services._request_connection(request.session_profile):
-            next_request, _ = await services._engine(request)
+            next_request, _ = await services._engines.resolve_engine(request)
             assert next_request._base_url == "http://second/v1"
             assert next_request is not first
         assert next_request._client.is_closed
@@ -338,19 +340,22 @@ def test_reranked_requests_share_one_cross_encoder_model_load(monkeypatch):
     assert rerankers[0] is rerankers[1]
 
 
-@pytest.fixture
-def routing_service():
-    """Use a two-registry manifest and stop at the actual retrieval boundary."""
+def routing_runtime(**overrides) -> RuntimeApiServices:
+    """Use a two-registry manifest and stop at the actual retrieval boundary.
+
+    Keyword overrides replace the defaults below, so a test wires its provider,
+    classifier or persistence through the constructor like the release composition does.
+    """
     from app.retrieval.scope import ManifestScopeIndex
 
     def stop_before_database():
         """Prove successful routing enters retrieval without using the user's database."""
         raise LookupError("retrieval boundary reached")
 
-    return RuntimeApiServices(
-        embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=stop_before_database,
-        scope_index=ManifestScopeIndex.from_entries(
+    options = {
+        "embedding_provider": DeterministicEmbeddingProvider(),
+        "session_factory": stop_before_database,
+        "scope_index": ManifestScopeIndex.from_entries(
             (
                 filing_document(
                     registry="sec", issuer="NVDA", fiscal_year=2023, aliases=("NVDA", "Nvidia")
@@ -372,7 +377,15 @@ def routing_service():
                 ),
             )
         ),
-    )
+    }
+    options.update(overrides)
+    return RuntimeApiServices(**options)
+
+
+@pytest.fixture
+def routing_service():
+    """Use a two-registry manifest and stop at the actual retrieval boundary."""
+    return routing_runtime()
 
 
 @pytest.mark.parametrize(
@@ -767,7 +780,7 @@ def test_unknown_selected_document_id_cannot_establish_a_unique_anchor(classifie
     assert len(prompts) <= 1
 
 
-def test_classifier_history_and_service_guidance_are_recorded_once(routing_service):
+def test_classifier_history_and_service_guidance_are_recorded_once():
     """Stream preparation reuses classification and never generates a free-form answer."""
     from contextlib import asynccontextmanager
     import json
@@ -825,13 +838,15 @@ def test_classifier_history_and_service_guidance_are_recorded_once(routing_servi
             provider = LocalLLMProvider(
                 base_url="http://test", model_name="test", protocol="ollama", client=client
             )
-            routing_service._llm_providers = {"openai": provider}
-            routing_service._provider_budgets = {
-                "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
-            }
-            routing_service._intent_classifier_enabled = True
-            routing_service._session_factory = sessions
-            routing_service._run_persister = persist
+            routing_service = routing_runtime(
+                llm_providers={"openai": provider},
+                provider_budgets={
+                    "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
+                },
+                intent_classifier_enabled=True,
+                session_factory=sessions,
+                run_persister=persist,
+            )
             request = ReviewRequest(
                 query="How do I ask questions in DocReview?",
                 conversation_history=(ConversationTurn(role="user", text="NVDA revenue"),),
@@ -855,8 +870,8 @@ def test_classifier_history_and_service_guidance_are_recorded_once(routing_servi
     assert saved[0].request_context["path_decision"]["scope_outcome"] == "not_applicable"
 
 
-def classifier_wiring(service):
-    """Wire a recording single-response classifier transport into the given service."""
+def classifier_wiring():
+    """Build a recording single-response classifier transport and the options that wire it."""
     import json
 
     from app.llm.local import LocalLLMProvider
@@ -880,23 +895,25 @@ def classifier_wiring(service):
         )
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
-    service._llm_providers = {
-        "openai": LocalLLMProvider(
-            base_url="http://test", model_name="test", protocol="ollama", client=client
-        )
+    options = {
+        "llm_providers": {
+            "openai": LocalLLMProvider(
+                base_url="http://test", model_name="test", protocol="ollama", client=client
+            )
+        },
+        "provider_budgets": {
+            "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
+        },
+        "intent_classifier_enabled": True,
     }
-    service._provider_budgets = {
-        "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
-    }
-    service._intent_classifier_enabled = True
-    return responses, prompts, client
+    return options, responses, prompts, client
 
 
 @pytest.fixture
-def classified_service(routing_service):
+def classified_service():
     """Exercise structured provider parsing while forbidding unplanned provider calls."""
-    responses, prompts, client = classifier_wiring(routing_service)
-    yield routing_service, responses, prompts
+    options, responses, prompts, client = classifier_wiring()
+    yield routing_runtime(**options), responses, prompts
     asyncio.run(client.aclose())
 
 
@@ -943,6 +960,7 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
         """Prove successful routing enters retrieval without using the user's database."""
         raise LookupError("retrieval boundary reached")
 
+    options, responses, prompts, client = classifier_wiring()
     service = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=stop_before_database,
@@ -956,8 +974,8 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
                 ),
             )
         ),
+        **options,
     )
-    responses, prompts, client = classifier_wiring(service)
     events = []
 
     async def observe(event):

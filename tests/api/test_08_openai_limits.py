@@ -116,7 +116,7 @@ def test_review_requests_use_the_saved_per_call_cap(tmp_path) -> None:
             max_input_tokens=5_000, max_output_tokens=200, max_cost_usd=Decimal("0.01")
         )
         request = ReviewRequest(query="What is disclosed?", session_profile=ReviewSessionProfile())
-        _, budget = await runtime._engine(request)
+        _, budget = await runtime._engines.resolve_engine(request)
         return budget
 
     budget = asyncio.run(exercise())

@@ -2,8 +2,6 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequence
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
-from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -24,6 +22,7 @@ from app.api.evidence import (
     EvidenceSnapshotError,
     select_evidence,
 )
+from app.api.review_engines import ReviewEngines
 from app.api.review_profile import (
     ResolvedRetrievalProfile,
     ReviewSessionProfile,
@@ -57,9 +56,7 @@ from app.db.models import Chunk, Document, EvalResult, EvaluationSnapshot, Run, 
 from app.db.queries import join_current_parse
 from app.evals.snapshots import SnapshotService
 from app.ingestion.company_names import CompanyNames, read_company_names
-from app.llm.local import LocalLLMProvider
 from app.llm.local_connection import LocalConnectionManager
-from app.llm.local_engine import resolve_local_protocol
 from app.llm.local_inventory import LocalModelInventory
 from app.llm.openai_limits import OpenAILimitsManager
 from app.llm.provider import LLMProvider
@@ -206,16 +203,6 @@ def _document_resource(document: Document, chunk_count: int) -> DocumentResource
     )
 
 
-@dataclass
-class _LocalRequest:
-    """Hold one endpoint and provider for a complete request across asynchronous stages."""
-
-    inventory: LocalModelInventory | None
-    provider: LocalLLMProvider | None = None
-    model: str | None = None
-    model_digest: str | None = None
-
-
 class RuntimeApiServices(ApiServices):
     """Compose API resources over one session per synchronous request.
 
@@ -260,18 +247,21 @@ class RuntimeApiServices(ApiServices):
         self._embedding_provider = embedding_provider
         self._llm_providers = dict(llm_providers or {})
         self._provider_budgets = dict(provider_budgets or {})
-        self._local_inventory = local_inventory
         self.local_connection = local_connection
         self.openai_limits = openai_limits
-        self._allow_local_engine = allow_local_engine
-        self._local_request: ContextVar[_LocalRequest | None] = ContextVar(
-            "local_request", default=None
-        )
-        self._local_timeout_s = local_timeout_s
         if (
             local_inventory is not None or local_connection is not None and local_connection.enabled
         ) and "local" not in self._provider_budgets:
             raise ValueError("local discovery requires an explicit local provider budget")
+        self._engines = ReviewEngines(
+            llm_providers=self._llm_providers,
+            provider_budgets=self._provider_budgets,
+            local_inventory=local_inventory,
+            local_connection=local_connection,
+            openai_limits=openai_limits,
+            allow_local_engine=allow_local_engine,
+            local_timeout_s=local_timeout_s,
+        )
         self._retrieval_service = retrieval_service
         self._workflow_service = workflow_service
         self._run_persister = run_persister
@@ -314,25 +304,18 @@ class RuntimeApiServices(ApiServices):
     @property
     def local_inventory(self) -> LocalModelInventory | None:
         """Expose current discovery for readiness while request work captures its own copy."""
-        if not self._allow_local_engine:
-            return None
-        if self.local_connection is not None:
-            return self.local_connection.current.inventory
-        return self._local_inventory
+        return self._engines.local_inventory
 
     @asynccontextmanager
     async def _request_connection(self, profile: ReviewSessionProfile) -> AsyncIterator[None]:
-        """Pin the endpoint before the first await and close request-owned HTTP resources."""
+        """Pin the endpoint before the first await and close request-owned HTTP resources.
+
+        Session controls are validated first, so a refused request never pins a local
+        endpoint or waits for search admission.
+        """
         self._validate_session_profile(profile)
-        context = _LocalRequest(self.local_inventory)
-        token = self._local_request.set(context)
-        try:
-            async with self.search_access():
-                yield
-        finally:
-            self._local_request.reset(token)
-            if context.provider is not None:
-                await context.provider.aclose()
+        async with self._engines.pin_request(), self.search_access():
+            yield
 
     @asynccontextmanager
     async def search_access(self) -> AsyncIterator[None]:
@@ -345,12 +328,7 @@ class RuntimeApiServices(ApiServices):
 
     def _validate_session_profile(self, profile: ReviewSessionProfile) -> None:
         """Reject developer controls before either retrieval or any model classification."""
-        if profile.engine == "local" and not self._allow_local_engine:
-            raise ApiProblemError(
-                status_code=403,
-                code="disabled_in_prod",
-                message="Local LLM is disabled in production.",
-            )
+        self._engines.reject_disabled_engine(profile)
         if not self._allow_custom_prompt_policy:
             if profile.prompt_policy != type(profile.prompt_policy)():
                 raise ApiProblemError(
@@ -628,9 +606,8 @@ class RuntimeApiServices(ApiServices):
         """
         async with self._request_connection(request.session_profile):
             async with translate_runtime_errors():
-                request = request.model_copy(
-                    update={"session_profile": await self._local_profile(request.session_profile)}
-                )
+                pinned_profile = await self._engines.pin_local_model(request.session_profile)
+                request = request.model_copy(update={"session_profile": pinned_profile})
                 gate, path = await self._path_decision(request)
                 if gate is not None and gate.intent == "service_help":
                     return RetrieveResponse(
@@ -658,7 +635,7 @@ class RuntimeApiServices(ApiServices):
                     for language in scope.filters.languages or ("en",):
                         if language == source_language:
                             continue
-                        provider, budget = await self._engine(request)
+                        provider, budget = await self._engines.resolve_engine(request)
                         try:
                             async with stage("route"):
                                 routed = await route_query(
@@ -766,85 +743,16 @@ class RuntimeApiServices(ApiServices):
         paid a single time per run.
         """
         async with self._request_connection(request.session_profile):
-            request = request.model_copy(
-                update={"session_profile": await self._local_profile(request.session_profile)}
-            )
+            pinned_profile = await self._engines.pin_local_model(request.session_profile)
+            request = request.model_copy(update={"session_profile": pinned_profile})
             decision, path = await self._path_decision(request)
             if decision.intent == "service_help":
                 return await self._casual_report(request, decision, path)
             return await self._review(request, on_node=on_node, retrieval_override=None, path=path)
 
-    async def _local_profile(self, profile: ReviewSessionProfile) -> ReviewSessionProfile:
-        """Pin one discovered model without replacing an explicit unavailable selection."""
-        if profile.engine != "local":
-            return profile
-        self._validate_session_profile(profile)
-        context = self._local_request.get()
-        if context is not None and context.model is not None:
-            return profile.model_copy(update={"local_model": context.model})
-        inventory = context.inventory if context is not None else self.local_inventory
-        if inventory is None:
-            raise unavailable("local_model_unavailable", "The local model server is disconnected.")
-        snapshot = await inventory.snapshot()
-        available = snapshot.available_models
-        if snapshot.reason is not None or not available:
-            raise unavailable(
-                "local_model_unavailable", "No answer model is available on the local server."
-            )
-        selected = profile.local_model
-        if selected is None:
-            if len(available) != 1:
-                raise bad_request(
-                    "local_model_required", "Choose a local answer model before sending a question."
-                )
-            selected = available[0]
-        if selected not in available:
-            raise unavailable(
-                "local_model_unavailable", "The selected local model is no longer available."
-            )
-        if context is not None:
-            context.model = selected
-            context.model_digest = inventory.model_digest(selected)
-        return profile.model_copy(update={"local_model": selected})
-
-    async def _engine(
-        self, request: ReviewRequest | RetrieveRequest
-    ) -> tuple[LLMProvider, ProviderBudget]:
-        """Resolve a request-specific provider without changing any other conversation."""
-        profile = await self._local_profile(request.session_profile)
-        engine = profile.engine
-        budget = self._provider_budgets.get(engine)
-        if engine == "openai" and budget is not None and self.openai_limits is not None:
-            # Dev may lower the per-call cap below the .env ceiling without a restart.
-            budget = self.openai_limits.effective()
-        context = self._local_request.get()
-        inventory = context.inventory if context is not None else self.local_inventory
-        if engine == "local" and inventory is not None and budget is not None:
-            if context is not None and context.provider is not None:
-                return context.provider, budget
-            assert profile.local_model is not None
-            provider = LocalLLMProvider(
-                base_url=inventory.base_url,
-                model_name=profile.local_model,
-                protocol=resolve_local_protocol(inventory.base_url, inventory.protocol),
-                api_key=inventory.api_key,
-                timeout_s=self._local_timeout_s,
-                context_window=budget.max_input_tokens + budget.max_output_tokens,
-            )
-            if context is not None:
-                context.provider = provider
-            return provider, budget
-        provider = self._llm_providers.get(engine)
-        if provider is None or budget is None:
-            raise unavailable(
-                "provider_unavailable",
-                f"Review engine {engine!r} is not configured.",
-            )
-        return provider, budget
-
     async def _classify_intent(self, request: ReviewRequest) -> ConversationDecision:
         """Classify unresolved input; deterministic gate rulings are final."""
-        provider, budget = await self._engine(request)
+        provider, budget = await self._engines.resolve_engine(request)
         result = await provider.complete(
             Prompt(
                 system=(
@@ -909,8 +817,7 @@ class RuntimeApiServices(ApiServices):
             if request.session_profile.engine == "openai"
             else "none",
         )
-        context = self._local_request.get()
-        inventory = context.inventory if context is not None else self.local_inventory
+        inventory = self._engines.pinned_inventory()
         if identity["local"] is True:
             identity["credential_slot"] = (
                 "explicit" if inventory is not None and inventory.api_key else "none"
@@ -948,7 +855,7 @@ class RuntimeApiServices(ApiServices):
                 provider.model_name,
                 placement,
                 calls,
-                model_digest=context.model_digest if context is not None else None,
+                model_digest=self._engines.pinned_model_digest(),
             )
         return {
             **metadata,
@@ -1047,10 +954,9 @@ class RuntimeApiServices(ApiServices):
                 code="capability_disabled",
                 message="Snapshot queries are available only in Dev.",
             )
-        request = request.model_copy(
-            update={"session_profile": await self._local_profile(request.session_profile)}
-        )
-        llm_provider, provider_budget = await self._engine(request)
+        pinned_profile = await self._engines.pin_local_model(request.session_profile)
+        request = request.model_copy(update={"session_profile": pinned_profile})
+        llm_provider, provider_budget = await self._engines.resolve_engine(request)
         engine = request.session_profile.engine
         if request.session_profile.snapshot_id is not None:
             async with self._session_factory() as validation_session:

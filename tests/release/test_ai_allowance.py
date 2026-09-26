@@ -223,7 +223,7 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
         return_value=SimpleNamespace(match=lambda _: ())
     )
     runtime._followup_query = lambda request: (None, request.query)
-    runtime._engine = AsyncMock(
+    runtime._engines.resolve_engine = AsyncMock(
         return_value=(provider, ReleaseSettings(_env_file=None).provider_budget())
     )
     app = FastAPI()
