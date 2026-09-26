@@ -4,7 +4,6 @@ Both database components share one ``AsyncSession`` sequentially, native scores 
 inside their retrieval lanes, and optional reranking changes only the final hit scores.
 """
 
-import math
 import re
 from typing import Annotated, Literal, get_args
 
@@ -18,7 +17,7 @@ from app.config import (
     BM25Idf,
     LexicalRanker,
 )
-from app.retrieval.bm25 import BM25_IDF_VARIANTS, bm25_search
+from app.retrieval.bm25 import bm25_search, validate_bm25_parameters
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K, fuse_ranked_lists
 from app.retrieval.korean import LEXICAL_PLANS, lexical_plan
@@ -170,12 +169,7 @@ async def retrieve(
 
     if lexical_ranker not in LEXICAL_RANKERS:
         raise ValueError("lexical_ranker must be 'ts_rank_cd' or 'bm25'")
-    if not math.isfinite(bm25_k1) or bm25_k1 <= 0:
-        raise ValueError("bm25_k1 must be a finite positive number")
-    if not math.isfinite(bm25_b) or not 0 <= bm25_b <= 1:
-        raise ValueError("bm25_b must be a finite number between 0 and 1")
-    if bm25_idf not in BM25_IDF_VARIANTS:
-        raise ValueError("bm25_idf must be 'lucene' or 'robertson'")
+    validate_bm25_parameters(bm25_k1, bm25_b, bm25_idf, parameter_prefix="bm25_")
 
     normalized_query = normalize_query(query)
     active_filters = filters or RetrievalFilters()

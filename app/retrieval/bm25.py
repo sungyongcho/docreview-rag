@@ -171,17 +171,12 @@ def _idf_expression(
     ColumnElement[Any]
         SQL logarithm expression for the selected variant.
 
-    Raises
-    ------
-    ValueError
-        If ``variant`` is unsupported.
-
     Notes
     -----
     Robertson can score corpus-wide terms negatively; Lucene remains nonnegative.
+    ``bm25_statement`` has already rejected unknown variants through
+    ``validate_bm25_parameters`` before it builds this expression.
     """
-    if variant not in BM25_IDF_VARIANTS:
-        raise ValueError("idf must be 'lucene' or 'robertson'")
     size = cast(corpus_size, Float)
     df = cast(document_frequency, Float)
     ratio = (size - df + 0.5) / (df + 0.5)
@@ -190,20 +185,49 @@ def _idf_expression(
     return func.ln(ratio)
 
 
-def _validated_parameters(query: str, k: int, k1: float, b: float) -> tuple[float, float]:
-    """Validate public BM25 inputs and return normalized numeric parameters."""
-    if not isinstance(query, str) or not query.strip():
-        raise ValueError("query must not be blank")
-    if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
-        raise ValueError("k must be a positive integer")
-    k1_message = "k1 must be a finite positive number"
-    b_message = "b must be a finite number between 0 and 1"
+def validate_bm25_parameters(
+    k1: float, b: float, idf: BM25Idf, *, parameter_prefix: str = ""
+) -> tuple[float, float]:
+    """Check BM25 tuning values and return ``k1`` and ``b`` as built-in floats.
+
+    The SQL builder, the retrieval service and experiment arms all validate through
+    this one function, so they accept exactly the same values. Only the parameter
+    names in the messages differ: a caller whose arguments are named ``bm25_k1``,
+    ``bm25_b`` and ``bm25_idf`` passes ``parameter_prefix="bm25_"`` so the error names
+    the argument that caller actually received.
+
+    Parameters
+    ----------
+    k1 : float
+        Term-frequency saturation; must be finite and positive.
+    b : float
+        Length normalization; must be finite and within ``[0, 1]``.
+    idf : BM25Idf
+        Inverse-document-frequency variant; must be ``"lucene"`` or ``"robertson"``.
+    parameter_prefix : str, optional
+        Prefix added to each parameter name in error messages.
+
+    Returns
+    -------
+    tuple[float, float]
+        The validated ``(k1, b)`` pair.
+
+    Raises
+    ------
+    ValueError
+        If a value is a ``bool``, not a real number, not finite, out of range, or an
+        unknown idf variant. ``k1`` is checked first, then ``b``, then ``idf``.
+    """
+    k1_message = f"{parameter_prefix}k1 must be a finite positive number"
     normalized_k1 = finite_float(k1, nonnumeric=k1_message, nonfinite=k1_message)
-    normalized_b = finite_float(b, nonnumeric=b_message, nonfinite=b_message)
     if normalized_k1 <= 0:
         raise ValueError(k1_message)
+    b_message = f"{parameter_prefix}b must be a finite number between 0 and 1"
+    normalized_b = finite_float(b, nonnumeric=b_message, nonfinite=b_message)
     if not 0 <= normalized_b <= 1:
         raise ValueError(b_message)
+    if idf not in BM25_IDF_VARIANTS:
+        raise ValueError(f"{parameter_prefix}idf must be 'lucene' or 'robertson'")
     return normalized_k1, normalized_b
 
 
@@ -249,7 +273,11 @@ def bm25_statement(
     Scores use the atomically rebuilt per-language corpus-size and average-length rows:
     every chunk is scored against the statistics of its own corpus language.
     """
-    normalized_k1, normalized_b = _validated_parameters(query, k, k1, b)
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must not be blank")
+    if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
+        raise ValueError("k must be a positive integer")
+    normalized_k1, normalized_b = validate_bm25_parameters(k1, b, idf)
     active_filters = filters or RetrievalFilters()
 
     parsed = func.websearch_to_tsquery(

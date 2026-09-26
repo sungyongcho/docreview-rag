@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
-import math
 from typing import Literal, get_args
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import BM25Idf, LexicalRanker
-from app.retrieval.bm25 import bm25_search
+from app.retrieval.bm25 import bm25_search, validate_bm25_parameters
 from app.retrieval.embeddings import EmbeddingProvider
 from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.korean import lexical_corpus_language, lexical_plan
@@ -24,12 +23,6 @@ type BM25Parameters = tuple[float, float, BM25Idf]
 
 RETRIEVAL_STRATEGIES: tuple[RetrievalStrategy, ...] = ("lexical", "vector", "hybrid")
 LEXICAL_RANKERS: tuple[LexicalRanker, ...] = get_args(LexicalRanker)
-BM25_IDF_VARIANTS: tuple[BM25Idf, ...] = get_args(BM25Idf)
-
-
-def _is_finite_number(value: object) -> bool:
-    """Accept only a real finite number, rejecting ``bool`` and non-numeric values."""
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
 def resolve_bm25_parameters(
@@ -70,13 +63,8 @@ def resolve_bm25_parameters(
         return None
     if bm25_k1 is None or bm25_b is None or bm25_idf is None:
         raise ValueError("bm25 arms require explicit k1, b, and idf values")
-    if not _is_finite_number(bm25_k1) or bm25_k1 <= 0:
-        raise ValueError("bm25_k1 must be a finite positive number")
-    if not _is_finite_number(bm25_b) or not 0 <= bm25_b <= 1:
-        raise ValueError("bm25_b must be a finite number between 0 and 1")
-    if bm25_idf not in BM25_IDF_VARIANTS:
-        raise ValueError("bm25_idf must be 'lucene' or 'robertson'")
-    return (float(bm25_k1), float(bm25_b), bm25_idf)
+    k1, b = validate_bm25_parameters(bm25_k1, bm25_b, bm25_idf, parameter_prefix="bm25_")
+    return (k1, b, bm25_idf)
 
 
 def _require_depth(candidate_k: int, k: int) -> None:
