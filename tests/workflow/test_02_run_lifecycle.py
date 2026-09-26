@@ -1,15 +1,16 @@
 """Deterministic end-to-end run lifecycle and its structured failure exits."""
 
 import asyncio
+from typing import Any, cast
 
 import pytest
 
 from app.observability.persistence import report_to_records
 from app.observability.stages import record_stages, stage_metadata
-from app.observability.types import Budget
+from app.observability.types import Budget, RunReport
 from app.release.ai_allowance import AIAllowanceError
 from app.retrieval.service import ComponentRankings, RetrievalResult
-from app.workflow.runner import run_workflow
+from app.workflow.runner import Retriever, run_workflow
 from app.workflow.types import ProviderFailure, WorkflowRequest
 from tests.llm.support import DeterministicLLMProvider, TickClock, raw as _raw
 from tests.workflow.support import (
@@ -551,7 +552,11 @@ def test_a_retriever_breaking_the_hit_contract_raises_instead_of_reporting_an_ou
             component_rankings=ComponentRankings(vector=(), lexical=()),
         )
 
-    for retriever, message in ((bare_hits, "RetrievalResult"), (malformed_hits, "ChunkHit")):
+    # The bare list deliberately breaks the Retriever return type the runner must refuse.
+    for retriever, message in (
+        (cast(Retriever, bare_hits), "RetrievalResult"),
+        (malformed_hits, "ChunkHit"),
+    ):
         with pytest.raises(TypeError, match=message):
             asyncio.run(
                 run_workflow(
@@ -571,8 +576,11 @@ def test_workflow_emits_started_and_completed_stages_around_real_node_work() -> 
         """Retain stream-equivalent observations for boundary assertions."""
         events.append(event)
 
-    async def exercise():
-        """Run the production orchestrator with offline retrieval and provider responses."""
+    async def exercise() -> tuple[RunReport, dict[str, Any]]:
+        """Run the production orchestrator with offline retrieval and provider responses.
+
+        The stage metadata is returned as untyped JSON so the assertions can index its calls.
+        """
         with record_stages(observe):
             result = await run_workflow(
                 _request(),
@@ -613,7 +621,7 @@ def test_grade_output_repair_limit_preserves_its_actual_source():
             provider=provider,
         )
     )
-    failure = result.report["reason"]
+    failure = report_of(result)["reason"]
     assert result.status == "budget_exceeded"
     assert failure["budget"]["which"] == "output_tokens"
     assert failure["budget"]["used"] == failure["budget"]["limit"] == 600

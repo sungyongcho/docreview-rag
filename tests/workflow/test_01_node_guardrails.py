@@ -1,6 +1,7 @@
 """Pure workflow-node transitions and the prompt guardrails they depend on."""
 
 import json
+from typing import cast
 
 from pydantic import ValidationError
 import pytest
@@ -401,6 +402,7 @@ def test_workflow_request_rejects_blank_queries_and_scalar_coercion():
         WorkflowRequest(
             run_id="run-invalid",
             query="Question?",
-            k="5",
+            # Deliberately a numeric string: the strict model must refuse to coerce it to an int.
+            k=cast(int, "5"),
             provider_budget=_provider_budget(),
         )

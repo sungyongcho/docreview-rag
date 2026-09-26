@@ -71,6 +71,7 @@ def metadata():
         estimated_cost_usd=Decimal("0"),
         request_time_ms=1.0,
         retries=0,
+        requests=1,
         request_ids=("req-1",),
         llm_output="{}",
         raw_outputs=("{}",),
