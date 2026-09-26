@@ -30,11 +30,11 @@ def test_selection_command_restores_from_stored_job(tmp_path):
 @pytest.mark.parametrize(
     "kind,payload",
     [
-        ("rebuild_bm25", {"identifiers": "NVDA"}),
-        ("rebuild_bm25", {"years": ["2024"]}),
-        ("rebuild_bm25", {"expected_documents": True}),
-        ("rebuild_bm25", {"manifest": []}),
-        ("unsupported", {}),
+        pytest.param("rebuild_bm25", {"identifiers": "NVDA"}, id="identifiers-as-a-string"),
+        pytest.param("rebuild_bm25", {"years": ["2024"]}, id="year-as-a-string"),
+        pytest.param("rebuild_bm25", {"expected_documents": True}, id="document-count-as-a-bool"),
+        pytest.param("rebuild_bm25", {"manifest": []}, id="manifest-as-a-list"),
+        pytest.param("unsupported", {}, id="unknown-job-kind"),
     ],
 )
 def test_stored_command_rejects_invalid_json_types(kind, payload):
