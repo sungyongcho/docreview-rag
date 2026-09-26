@@ -95,13 +95,26 @@ def test_filters_construct_against_the_real_domain_model():
     assert filters.fiscal_years == (2024,)
 
 
-def test_embed_missing_without_explicit_provider_is_a_typed_exit(capsys):
-    """Refuse a backfill whose provider was not named, before any database access."""
-    exit_code = cli.main(["retrieve", "--query", "risk", "--embed-missing"])
+@pytest.mark.parametrize(
+    ("argv", "code"),
+    [
+        pytest.param(["retrieve", "--query", "   "], "empty_query", id="blank-query"),
+        pytest.param(["retrieve", "--query", "risk", "-k", "0"], "invalid_k", id="non-positive-k"),
+        pytest.param(
+            ["retrieve", "--query", "risk", "--embed-missing"],
+            "embed_missing_requires_provider",
+            id="backfill-without-a-named-provider",
+        ),
+    ],
+)
+def test_invalid_retrieve_arguments_are_typed_invalid_input_exits(capsys, argv, code):
+    """Reject a blank query, a non-positive k and a backfill whose provider was not named
+    as typed invalid-input exits, before any database access."""
+    exit_code = cli.main(argv)
 
     payload = error_payload(capsys)
     assert exit_code == cli.ExitCode.INVALID_INPUT
-    assert payload["error"]["code"] == "embed_missing_requires_provider"
+    assert payload["error"]["code"] == code
 
 
 def test_invalid_settings_are_a_typed_exit_without_values(monkeypatch, capsys):
@@ -140,24 +153,6 @@ def test_provider_override_revalidates_the_openai_key_guard(monkeypatch, tmp_pat
 
     with pytest.raises(ValidationError, match="MODE-selected OpenAI key slot is required"):
         cli._provider_settings(base, "openai")
-
-
-def test_empty_query_is_a_typed_invalid_input_exit(capsys):
-    """Reject a blank query as a typed invalid-input exit."""
-    exit_code = cli.main(["retrieve", "--query", "   "])
-
-    payload = error_payload(capsys)
-    assert exit_code == cli.ExitCode.INVALID_INPUT
-    assert payload["error"]["code"] == "empty_query"
-
-
-def test_zero_k_is_a_typed_invalid_input_exit(capsys):
-    """Reject a non-positive k as a typed invalid-input exit."""
-    exit_code = cli.main(["retrieve", "--query", "risk", "-k", "0"])
-
-    payload = error_payload(capsys)
-    assert exit_code == cli.ExitCode.INVALID_INPUT
-    assert payload["error"]["code"] == "invalid_k"
 
 
 def test_ingest_requires_explicit_selection():
@@ -207,42 +202,45 @@ def test_ingest_submits_the_shared_job_contract(monkeypatch):
     assert calls[0]["selection_id"] == "tutorial"
 
 
-def test_provider_unavailability_has_a_stable_nonsecret_exit(monkeypatch, capsys):
-    """Name the provider failure by type without printing its detail."""
+@pytest.mark.parametrize(
+    ("argv", "failure", "error"),
+    [
+        pytest.param(
+            ["retrieve", "--query", "risk", "--provider", "openai"],
+            OpenAIError("credential and endpoint details must not be printed"),
+            {
+                "code": "provider_unavailable",
+                "message": "embedding provider is unavailable (OpenAIError)",
+            },
+            id="embedding-provider",
+        ),
+        pytest.param(
+            ["retrieve", "--query", "risk"],
+            OperationalError("SELECT 1", {}, RuntimeError("secret database URL")),
+            {
+                "code": "database_unavailable",
+                "message": "database is unavailable (OperationalError)",
+            },
+            id="database",
+        ),
+    ],
+)
+def test_unavailable_dependencies_have_stable_nonsecret_exits(
+    monkeypatch, capsys, argv, failure, error
+):
+    """Name an unavailable provider or database by failure type without printing its detail."""
 
     async def unavailable(args):
-        """Raise the failure this exit code is supposed to describe."""
-        raise OpenAIError("credential and endpoint details must not be printed")
+        """Raise the dependency failure this exit code is supposed to describe."""
+        raise failure
 
     monkeypatch.setattr(cli, "_run_data_command", unavailable)
 
-    exit_code = cli.main(["retrieve", "--query", "risk", "--provider", "openai"])
+    exit_code = cli.main(argv)
 
     payload = error_payload(capsys)
     assert exit_code == cli.ExitCode.UNAVAILABLE
-    assert payload["error"] == {
-        "code": "provider_unavailable",
-        "message": "embedding provider is unavailable (OpenAIError)",
-    }
-
-
-def test_database_unavailability_has_a_stable_nonsecret_exit(monkeypatch, capsys):
-    """Name the database failure by type without printing the URL."""
-
-    async def unavailable(args):
-        """Raise the failure this exit code is supposed to describe."""
-        raise OperationalError("SELECT 1", {}, RuntimeError("secret database URL"))
-
-    monkeypatch.setattr(cli, "_run_data_command", unavailable)
-
-    exit_code = cli.main(["retrieve", "--query", "risk"])
-
-    payload = error_payload(capsys)
-    assert exit_code == cli.ExitCode.UNAVAILABLE
-    assert payload["error"] == {
-        "code": "database_unavailable",
-        "message": "database is unavailable (OperationalError)",
-    }
+    assert payload["error"] == error
 
 
 def test_help_does_not_load_runtime_settings():
