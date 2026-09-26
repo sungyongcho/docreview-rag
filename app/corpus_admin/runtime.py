@@ -6,59 +6,39 @@ import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime
-import os
 from pathlib import Path
-import time
-from typing import Any, Protocol
+from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import func, inspect, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.config import Settings, get_settings
+from app.corpus_admin.context import CorpusAdminContext, SessionFactory
+from app.corpus_admin.inspection import CorpusInspector
 from app.corpus_admin.stored_jobs import command_payload, job_from_stored
 from app.corpus_admin.types import (
-    CHUNK_PREVIEW_CHARS,
-    CHUNK_PREVIEW_LIMIT,
     MAX_JOB_HISTORY,
     MAX_QUEUED_JOBS,
     AdminCommand,
-    AdminDocument,
     AdminJob,
-    ChunkPreview,
     CorpusSnapshot,
     CorpusStatus,
     DocumentDetail,
     JobBoard,
-    ManifestIssuer,
-    ManifestSummary,
     OperationOutcome,
-    ProcessingSelectionSummary,
-    SchemaStatus,
-    SnapshotMembership,
 )
-from app.db.bootstrap import SchemaDriftError, bootstrap_schema, ensure_schema_compatibility
-from app.db.models import (
-    Base,
-    BM25CorpusStat,
-    Chunk,
-    ChunkEmbedding,
-    Document,
-    EvaluationSnapshot,
-    OperatorJob,
-    SnapshotDocument,
-)
-from app.db.queries import join_current_parse
+from app.db.bootstrap import bootstrap_schema
+from app.db.models import Chunk, ChunkEmbedding
 from app.ingestion.dart_api import acquire_dart
 from app.ingestion.edgar_api import DEFAULT_MANIFEST, acquire_edgar
 from app.ingestion.manifest import Manifest
 from app.ingestion.progress import OperationProgress
 from app.ingestion.seed import load_seed_batch, persist_seed_batch
 from app.ingestion.source_deletion import SourceDeletion
-from app.ingestion.source_selection import acquisition_draft, record_selection, source_inventory
-from app.observability.persistence import redact_sensitive_text
+from app.ingestion.source_selection import record_selection
 from app.observability.usage import LEDGER_KIND, USAGE_KEY, UsageSink, merge_usage
 from app.operator.corpus_access import CorpusAccess, JobCancelledError
 from app.operator.jobs import (
@@ -83,21 +63,6 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _default_engine() -> AsyncEngine:
-    """Resolve the process engine only when live administration needs it."""
-    from app.db.session import engine
-
-    return engine
-
-
-class SessionFactory(Protocol):
-    """Build one caller-owned asynchronous database session."""
-
-    def __call__(self) -> AsyncSession:
-        """Return one asynchronous session context manager."""
-        ...
-
-
 async def _embedding_state(
     session: AsyncSession, provider: EmbeddingProvider, document_ids: tuple[str, ...] | None = None
 ) -> tuple[int, int]:
@@ -110,40 +75,6 @@ async def _embedding_state(
         await session.scalar(select(func.count()).select_from(Chunk).where(compatible, *scope)) or 0
     )
     return ready, total - ready
-
-
-@dataclass(frozen=True, slots=True)
-class _StatusProbe:
-    """One schema and count reading with the monotonic time it was taken."""
-
-    schema_status: SchemaStatus
-    schema_message: str
-    tables: frozenset[str]
-    documents: int
-    chunks: int
-    embedded_chunks: int
-    bm25_ready: bool
-    observed_at: float
-    bm25_rebuild_recorded: bool = False
-
-
-def _matches(
-    document: AdminDocument,
-    *,
-    registry: str,
-    issuer: str,
-    fiscal_year: int | None,
-    language: str,
-    parse_status: str,
-) -> bool:
-    """Apply normalized administrator filters to one projected document."""
-    return (
-        (not registry or document.registry == registry)
-        and (not issuer or issuer.lower() in document.issuer.lower())
-        and (fiscal_year is None or document.fiscal_year == fiscal_year)
-        and (not language or document.language == language)
-        and (not parse_status or document.parse_status == parse_status)
-    )
 
 
 OperationRunner = Callable[
@@ -168,20 +99,19 @@ class RuntimeCorpusAdminService:
         execution_lock: asyncio.Lock | None = None,
         execution_coordinator: JobExecutionCoordinator | None = None,
     ) -> None:
-        configured = settings or get_settings()
-        self._settings = configured
-        self._engine = engine
-        self._session_factory = session_factory
-        self._embedding_provider = embedding_provider
+        self._context = CorpusAdminContext(
+            settings or get_settings(),
+            engine=engine,
+            session_factory=session_factory,
+            embedding_provider=embedding_provider,
+        )
+        self._inspector = CorpusInspector(self._context)
         self._operation_runner = operation_runner
         self._job_store = job_store
         self.corpus_access = corpus_access or CorpusAccess()
         self._execution_lock = execution_lock or asyncio.Lock()
         self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
-        self._corpus_root = configured.corpus_dir.resolve()
-        self._source_deletion = SourceDeletion(self._corpus_root)
-        self._status_lock = asyncio.Lock()
-        self._status_cache: _StatusProbe | None = None
+        self._source_deletion = SourceDeletion(self._context.corpus_root)
         self._queue: asyncio.Queue[AdminJob] = asyncio.Queue(maxsize=MAX_QUEUED_JOBS)
         self._jobs: dict[str, AdminJob] = {}
         self._history: deque[str] = deque(maxlen=MAX_JOB_HISTORY)
@@ -190,259 +120,16 @@ class RuntimeCorpusAdminService:
         self._cancel_events: dict[str, asyncio.Event] = {}
         self._persister = ProgressPersister(self._persist_current_job)
 
-    @property
-    def _database_engine(self) -> AsyncEngine:
-        """Resolve an injected or process engine lazily."""
-        return self._engine or _default_engine()
-
-    @property
-    def _provider(self) -> EmbeddingProvider:
-        """Resolve the server-configured embedding provider without accepting UI secrets."""
-        if self._embedding_provider is None:
-            from app.retrieval.embeddings import get_embedding_provider
-
-            self._embedding_provider = get_embedding_provider(self._settings)
-        return self._embedding_provider
-
-    def _redact(self, text: str) -> str:
-        """Remove configured server credentials and recognizable secret syntax."""
-        return redact_sensitive_text(
-            text,
-            secret_values=(
-                secret.get_secret_value()
-                for secret in (self._settings.openai_api_key, self._settings.dart_api_key)
-                if secret is not None and secret.get_secret_value()
-            ),
-        )
-
-    async def _schema_state(self) -> tuple[SchemaStatus, str, set[str]]:
-        """Inspect compatibility and table presence without creating schema objects."""
-        try:
-            async with self._database_engine.connect() as connection:
-                await ensure_schema_compatibility(connection)
-                tables = await connection.run_sync(
-                    lambda sync: set(inspect(sync).get_table_names())
-                )
-        except SchemaDriftError as error:
-            return "drifted", str(error), set()
-        except Exception as error:  # noqa: BLE001 - translated into non-secret status
-            return "unavailable", self._redact(type(error).__name__), set()
-        if not tables:
-            return "empty", "No corpus tables exist yet.", tables
-        missing = sorted(set(Base.metadata.tables) - tables)
-        if missing:
-            return (
-                "drifted",
-                "The schema is incomplete. Missing tables: "
-                + ", ".join(missing)
-                + ". Existing data is preserved; inspect the schema before indexing.",
-                tables,
-            )
-        return "compatible", "Schema matches the current ORM models.", tables
-
-    def _manifest_summaries(self) -> tuple[ManifestSummary, ...]:
-        """Validate root catalogs and expose exact processing selections."""
-        summaries = []
-        for path in sorted(self._corpus_root.glob("*.json")):
-            if path.name.startswith("selected-"):
-                continue
-            if path.name != "manifest.json" and not path.name.endswith("-manifest.json"):
-                continue
-            try:
-                if path.resolve().parent != self._corpus_root:
-                    raise ValueError("manifest resolves outside the corpus root")
-                manifest = Manifest.read(path)
-            except OSError, ValueError:
-                summaries.append(ManifestSummary(path.name, None, False))
-                continue
-            present = {}
-            for artifact in manifest.artifacts:
-                source = (self._corpus_root / artifact.path).resolve()
-                present[artifact.artifact_id] = (
-                    source.is_relative_to(self._corpus_root) and source.is_file()
-                )
-            issuers = {
-                (document.registry, document.issuer): ManifestIssuer(
-                    document.registry,
-                    document.issuer,
-                    next(
-                        (alias for alias in document.aliases if alias != document.issuer),
-                        document.issuer,
-                    ),
-                )
-                for document in manifest.documents
-            }
-            selections = []
-            for selection in manifest.selections:
-                sources = manifest.selected_sources(selection.selection_id, self._corpus_root)
-                selections.append(
-                    ProcessingSelectionSummary(
-                        selection.selection_id,
-                        tuple(source.document.document_id for source in sources),
-                        tuple(source.artifact.artifact_id for source in sources),
-                        sum(present[source.artifact.artifact_id] for source in sources),
-                    )
-                )
-            summaries.append(
-                ManifestSummary(
-                    path.name,
-                    len(manifest.documents),
-                    True,
-                    manifest.corpus.corpus_id,
-                    tuple(sorted({document.registry for document in manifest.documents})),
-                    len(
-                        {
-                            artifact.document_id
-                            for artifact in manifest.artifacts
-                            if artifact.role == "primary" and present[artifact.artifact_id]
-                        }
-                    ),
-                    tuple(selections),
-                    tuple(issuers[key] for key in sorted(issuers)),
-                )
-            )
-        return tuple(summaries)
-
-    async def _counts(self, tables: set[str]) -> tuple[int, int, int, bool]:
-        """Return corpus and index counts only when their tables exist."""
-        if not {"documents", "chunks"}.issubset(tables):
-            return 0, 0, 0, False
-        async with self._session_factory() as session:
-            documents = int(await session.scalar(select(func.count()).select_from(Document)) or 0)
-            chunks = int(await session.scalar(select(func.count()).select_from(Chunk)) or 0)
-            embedded = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(Chunk)
-                    .where(
-                        select(ChunkEmbedding.chunk_id)
-                        .where(matching_embedding(self._provider.identity))
-                        .exists()
-                    )
-                )
-                or 0
-            )
-            bm25_ready = False
-            if "bm25_corpus_stats" in tables:
-                bm25_ready = bool(
-                    await session.scalar(select(func.count()).select_from(BM25CorpusStat))
-                )
-        return documents, chunks, embedded, bm25_ready
-
-    async def _documents(self, tables: set[str]) -> tuple[AdminDocument, ...]:
-        """Return deterministic document rows from a compatible populated schema."""
-        if not {"documents", "chunks"}.issubset(tables):
-            return ()
-        statement = (
-            select(Document, func.count(Chunk.id).label("chunk_count"))
-            .outerjoin(Chunk, Chunk.doc_id == Document.doc_id)
-            .group_by(Document.doc_id)
-            .order_by(Document.registry, Document.issuer, Document.fiscal_year, Document.doc_id)
-        )
-        statement = join_current_parse(statement, load=True, grouped=True)
-        async with self._session_factory() as session:
-            rows = (await session.execute(statement)).all()
-        return tuple(
-            AdminDocument(
-                doc_id=document.doc_id,
-                registry=document.registry,
-                language=document.language,
-                issuer=document.issuer,
-                issuer_id=document.issuer_id,
-                fiscal_year=document.fiscal_year,
-                form=document.form,
-                parse_status=document.current_parse.structure.parse_status,
-                filing_date=document.filing_date,
-                report_period=document.report_period,
-                filing_id=document.filing_id,
-                source_url=document.source_url,
-                source_length=document.current_parse.structure.source_length,
-                source_sha256=document.current_parse.structure.source_sha256,
-                chunk_count=int(chunk_count),
-            )
-            for document, chunk_count in rows
-        )
-
-    async def _bm25_rebuild_recorded(self, tables: set[str]) -> bool:
-        """Remember an explicit completed rebuild even after chunk changes invalidate its rows."""
-        if "operator_jobs" not in tables:
-            return False
-        async with self._session_factory() as session:
-            return bool(
-                await session.scalar(
-                    select(
-                        select(OperatorJob.job_id)
-                        .where(
-                            OperatorJob.domain == "corpus",
-                            OperatorJob.kind == "rebuild_bm25",
-                            OperatorJob.status == "succeeded",
-                        )
-                        .exists()
-                    )
-                )
-            )
-
-    async def _probe_status(self, max_age_s: float) -> _StatusProbe:
-        """Inspect schema state and counts, reusing a reading younger than ``max_age_s``.
-
-        Concurrent callers share one measurement, and every outcome is memoized, so a
-        readiness poll that lands while the database is busy never adds catalog sweeps.
-        """
-        async with self._status_lock:
-            cached = self._status_cache
-            if cached is not None and time.monotonic() - cached.observed_at < max_age_s:
-                return cached
-            schema_status, schema_message, tables = await self._schema_state()
-            documents = chunks = embedded = 0
-            bm25_ready = False
-            rebuild_recorded = False
-            if schema_status == "compatible":
-                try:
-                    documents, chunks, embedded, bm25_ready = await self._counts(tables)
-                    rebuild_recorded = bm25_ready or await self._bm25_rebuild_recorded(tables)
-                except Exception as error:  # noqa: BLE001 - rendered as safe unavailable state
-                    schema_status = "unavailable"
-                    schema_message = self._redact(type(error).__name__)
-            probe = _StatusProbe(
-                schema_status=schema_status,
-                schema_message=schema_message,
-                tables=frozenset(tables),
-                documents=documents,
-                chunks=chunks,
-                embedded_chunks=embedded,
-                bm25_ready=bm25_ready,
-                observed_at=time.monotonic(),
-                bm25_rebuild_recorded=rebuild_recorded,
-            )
-            self._status_cache = probe
-            return probe
-
-    def _status_from(self, probe: _StatusProbe) -> CorpusStatus:
-        """Render one probe as the non-secret status the header and ``/ready`` share."""
-        return CorpusStatus(
-            database_connected=probe.schema_status != "unavailable",
-            schema_status=probe.schema_status,
-            schema_message=probe.schema_message,
-            documents=probe.documents,
-            chunks=probe.chunks,
-            embedded_chunks=probe.embedded_chunks,
-            pending_embeddings=max(probe.chunks - probe.embedded_chunks, 0),
-            bm25_ready=probe.bm25_ready,
-            bm25_rebuild_recorded=probe.bm25_rebuild_recorded,
-            writable=os.access(self._corpus_root, os.W_OK | os.X_OK),
-            provider=self._settings.embedding_provider,
-        )
-
     async def status(self, *, max_age_s: float = 0.0) -> CorpusStatus:
         """Return the operational status alone, without document rows or file scans.
 
         ``max_age_s`` lets ``/ready`` reuse a recent reading; ``0.0`` always measures.
         """
-        return self._status_from(await self._probe_status(max_age_s))
+        return await self._inspector.status(max_age_s=max_age_s)
 
     def invalidate_status(self) -> None:
         """Drop the memoized reading so the next status call measures again."""
-        self._status_cache = None
+        self._inspector.invalidate_status()
 
     async def snapshot(
         self,
@@ -454,161 +141,17 @@ class RuntimeCorpusAdminService:
         parse_status: str = "",
     ) -> CorpusSnapshot:
         """Inspect live state while failing closed on schema drift or database errors."""
-        probe = await self._probe_status(0.0)
-        schema_status, schema_message = probe.schema_status, probe.schema_message
-        documents, chunks, embedded = probe.documents, probe.chunks, probe.embedded_chunks
-        bm25_ready = probe.bm25_ready
-        rows: tuple[AdminDocument, ...] = ()
-        if schema_status == "compatible":
-            try:
-                rows = await self._documents(set(probe.tables))
-            except Exception as error:  # noqa: BLE001 - rendered as safe unavailable state
-                schema_status = "unavailable"
-                schema_message = self._redact(type(error).__name__)
-        filtered = tuple(
-            document
-            for document in rows
-            if _matches(
-                document,
-                registry=registry,
-                issuer=issuer,
-                fiscal_year=fiscal_year,
-                language=language,
-                parse_status=parse_status,
-            )
-        )
-        sources = source_inventory(self._corpus_root)
-        return CorpusSnapshot(
-            mode="live",
-            status=CorpusStatus(
-                database_connected=schema_status != "unavailable",
-                schema_status=schema_status,
-                schema_message=schema_message,
-                documents=documents,
-                chunks=chunks,
-                embedded_chunks=embedded,
-                pending_embeddings=max(chunks - embedded, 0),
-                bm25_ready=bm25_ready,
-                bm25_rebuild_recorded=probe.bm25_rebuild_recorded,
-                writable=os.access(self._corpus_root, os.W_OK | os.X_OK),
-                provider=self._settings.embedding_provider,
-            ),
-            manifests=self._manifest_summaries(),
-            sources=sources,
-            acquisition_draft=acquisition_draft(self._corpus_root),
-            documents=filtered,
+        return await self._inspector.snapshot(
+            registry=registry,
+            issuer=issuer,
+            fiscal_year=fiscal_year,
+            language=language,
+            parse_status=parse_status,
         )
 
     async def document_detail(self, doc_id: str) -> DocumentDetail | None:
         """Load one live document and no more than five bounded chunk bodies."""
-        snapshot = await self.snapshot()
-        if not snapshot.status.database_connected or snapshot.status.schema_status != "compatible":
-            return None
-        document = next((item for item in snapshot.documents if item.doc_id == doc_id), None)
-        if document is None:
-            return None
-        statement = (
-            select(Chunk)
-            .where(Chunk.doc_id == doc_id)
-            .order_by(Chunk.ordinal)
-            .limit(CHUNK_PREVIEW_LIMIT)
-        )
-        async with self._session_factory() as session:
-            chunks = tuple(await session.scalars(statement))
-            aggregate_rows = (
-                await session.execute(
-                    select(
-                        Chunk.kind,
-                        Chunk.item,
-                        ChunkEmbedding.provider,
-                        ChunkEmbedding.model,
-                        ChunkEmbedding.dimensions,
-                        ChunkEmbedding.tokenizer,
-                        func.count(func.distinct(Chunk.id)),
-                    )
-                    .outerjoin(ChunkEmbedding, matching_embedding(self._provider.identity))
-                    .where(Chunk.doc_id == doc_id)
-                    .group_by(
-                        Chunk.kind,
-                        Chunk.item,
-                        ChunkEmbedding.provider,
-                        ChunkEmbedding.model,
-                        ChunkEmbedding.dimensions,
-                        ChunkEmbedding.tokenizer,
-                    )
-                )
-            ).all()
-            snapshot_rows = (
-                await session.execute(
-                    select(EvaluationSnapshot)
-                    .join(
-                        SnapshotDocument,
-                        SnapshotDocument.snapshot_id == EvaluationSnapshot.id,
-                    )
-                    .where(
-                        SnapshotDocument.doc_id == doc_id,
-                        SnapshotDocument.source_sha256 == document.source_sha256,
-                    )
-                    .order_by(EvaluationSnapshot.created_at.desc(), EvaluationSnapshot.id.desc())
-                )
-            ).scalars()
-            memberships = tuple(snapshot_rows)
-        text_chunks = sum(int(row[6]) for row in aggregate_rows if row.kind == "text")
-        table_chunks = sum(int(row[6]) for row in aggregate_rows if row.kind == "table")
-        embedded_chunks = sum(int(row[6]) for row in aggregate_rows if row.provider is not None)
-        item_totals: dict[str, int] = {}
-        embedding_totals: dict[tuple[str, str, int, str], int] = {}
-        for row in aggregate_rows:
-            item = row.item or "unsectioned"
-            item_totals[item] = item_totals.get(item, 0) + int(row[6])
-            if row.provider is not None:
-                identity = (
-                    str(row.provider),
-                    str(row.model),
-                    int(row.dimensions),
-                    str(row.tokenizer),
-                )
-                embedding_totals[identity] = embedding_totals.get(identity, 0) + int(row[6])
-        return DocumentDetail(
-            document,
-            tuple(
-                ChunkPreview(
-                    chunk_id=chunk.id,
-                    ordinal=chunk.ordinal,
-                    citation=chunk.citation,
-                    span=f"chars {chunk.start_char}-{chunk.end_char}",
-                    source_sha256=chunk.source_sha256,
-                    body=chunk.body[:CHUNK_PREVIEW_CHARS],
-                )
-                for chunk in chunks
-            ),
-            text_chunks=text_chunks,
-            table_chunks=table_chunks,
-            embedded_chunks=embedded_chunks,
-            item_counts=tuple(
-                {"item": item, "count": count} for item, count in sorted(item_totals.items())
-            ),
-            embedding_identities=tuple(
-                {
-                    "provider": identity[0],
-                    "model": identity[1],
-                    "dimensions": identity[2],
-                    "tokenizer": identity[3],
-                    "count": count,
-                }
-                for identity, count in sorted(embedding_totals.items())
-            ),
-            snapshot_memberships=tuple(
-                SnapshotMembership(
-                    snapshot_id=snapshot.id,
-                    label=snapshot.label,
-                    status=snapshot.status,
-                    public=snapshot.public,
-                    created_at=snapshot.created_at,
-                )
-                for snapshot in memberships
-            ),
-        )
+        return await self._inspector.document_detail(doc_id)
 
     async def preview_source_deletion(self, document_ids: tuple[str, ...]) -> dict[str, Any]:
         """Read exact deletion targets in a thread without blocking service requests."""
@@ -619,7 +162,7 @@ class RuntimeCorpusAdminService:
         if command.kind == "ingest_selected":
             assert command.document_ids is not None
             manifest, selection_id = record_selection(
-                self._corpus_root, command.identifiers, command.years, command.document_ids
+                self._context.corpus_root, command.identifiers, command.years, command.document_ids
             )
             command = replace(
                 command, kind="ingest_manifest", manifest=manifest, selection_id=selection_id
@@ -754,7 +297,7 @@ class RuntimeCorpusAdminService:
             stage=progress.stage,
             current=progress.current,
             total=progress.total,
-            message=self._redact(progress.message),
+            message=self._context.redact(progress.message),
             detail_current=progress.detail_current,
             detail_total=progress.detail_total,
             result_refs=advance_progress(job.command.kind, job.result_refs, progress, _utc_now()),
@@ -792,14 +335,14 @@ class RuntimeCorpusAdminService:
 
     async def _assert_writable_schema(self) -> None:
         """Block every operation when live schema is unavailable or drifted."""
-        status, message, _tables = await self._schema_state()
+        status, message, _tables = await self._inspector.schema_state()
         if status not in {"compatible", "empty"}:
             raise RuntimeError(f"corpus writes are blocked: {message}")
 
     def _resolve_manifest(self, name: str) -> Path:
         """Resolve one enumerated manifest name inside the configured corpus root."""
-        candidate = (self._corpus_root / name).resolve()
-        if candidate.parent != self._corpus_root:
+        candidate = (self._context.corpus_root / name).resolve()
+        if candidate.parent != self._context.corpus_root:
             raise ValueError("manifest must be selected from the corpus root")
         if name.startswith("selected-") and name.endswith("-manifest.json") and candidate.is_file():
             catalog = Manifest.read(candidate)
@@ -808,7 +351,7 @@ class RuntimeCorpusAdminService:
                 and name == f"{catalog.selections[0].selection_id}-manifest.json"
             ):
                 return candidate
-        allowed = {item.name for item in self._manifest_summaries() if item.valid}
+        allowed = {item.name for item in self._inspector.manifest_summaries() if item.valid}
         if name not in allowed:
             raise ValueError("manifest is not a valid selectable corpus manifest")
         return candidate
@@ -834,10 +377,10 @@ class RuntimeCorpusAdminService:
         if command.kind == "acquire_edgar":
             publish(OperationProgress("prepare", 0, 1, "Preparing EDGAR acquisition"))
             result = await acquire_edgar(
-                self._corpus_root / DEFAULT_MANIFEST.name,
+                self._context.corpus_root / DEFAULT_MANIFEST.name,
                 tickers=command.identifiers,
                 years=command.years,
-                user_agent=self._settings.sec_user_agent or "",
+                user_agent=self._context.settings.sec_user_agent or "",
                 on_progress=publish,
             )
             return OperationOutcome(
@@ -845,13 +388,13 @@ class RuntimeCorpusAdminService:
             )
 
         if command.kind == "acquire_dart":
-            secret = self._settings.dart_api_key
+            secret = self._context.settings.dart_api_key
             if secret is None:
                 raise ValueError("DART_API_KEY is not configured")
             result = await acquire_dart(
                 stock_codes=command.identifiers,
                 fiscal_years=command.years,
-                corpus_dir=self._corpus_root,
+                corpus_dir=self._context.corpus_root,
                 api_key=secret.get_secret_value(),
                 on_progress=publish,
             )
@@ -863,7 +406,9 @@ class RuntimeCorpusAdminService:
             assert command.manifest is not None
             manifest = self._resolve_manifest(command.manifest)
             assert command.selection_id is not None
-            Manifest.read(manifest).selected_sources(command.selection_id, self._corpus_root)
+            Manifest.read(manifest).selected_sources(
+                command.selection_id, self._context.corpus_root
+            )
             loop = asyncio.get_running_loop()
 
             def publish_from_parser(progress: OperationProgress) -> None:
@@ -874,15 +419,15 @@ class RuntimeCorpusAdminService:
                 load_seed_batch,
                 manifest,
                 selection_id=command.selection_id,
-                embedding_provider=self._provider,
+                embedding_provider=self._context.embedding_provider,
                 expected_documents=command.expected_documents,
                 on_progress=publish_from_parser,
             )
             await asyncio.sleep(0)
             publish(OperationProgress("schema", 0, 1, "Checking schema compatibility"))
-            await bootstrap_schema(self._database_engine)
+            await bootstrap_schema(self._context.database_engine)
             publish(OperationProgress("schema", 1, 1, "Schema compatible"))
-            async with self._session_factory() as session:
+            async with self._context.session_factory() as session:
                 result = await persist_seed_batch(
                     session,
                     batch,
@@ -901,13 +446,13 @@ class RuntimeCorpusAdminService:
                     raise ValueError("selected backfill requires manifest and selection_id")
                 manifest_path = self._resolve_manifest(command.manifest)
                 sources = Manifest.read(manifest_path).selected_sources(
-                    command.selection_id, self._corpus_root
+                    command.selection_id, self._context.corpus_root
                 )
                 document_ids = tuple(source.document.document_id for source in sources)
-            await bootstrap_schema(self._database_engine)
-            async with self._session_factory() as session:
+            await bootstrap_schema(self._context.database_engine)
+            async with self._context.session_factory() as session:
                 ready_before, pending = await _embedding_state(
-                    session, self._provider, document_ids
+                    session, self._context.embedding_provider, document_ids
                 )
 
             def on_batch(result: EmbeddingBackfillResult) -> None:
@@ -921,17 +466,17 @@ class RuntimeCorpusAdminService:
                     )
                 )
 
-            async with self._session_factory() as session:
+            async with self._context.session_factory() as session:
                 result = await embed_missing_chunks(
                     session,
-                    self._provider,
+                    self._context.embedding_provider,
                     on_batch=on_batch,
                     document_ids=document_ids,
                     on_usage=on_usage,
                 )
-            async with self._session_factory() as session:
+            async with self._context.session_factory() as session:
                 ready_after, pending_after = await _embedding_state(
-                    session, self._provider, document_ids
+                    session, self._context.embedding_provider, document_ids
                 )
             if ready_after < ready_before + result.embedded:
                 raise RuntimeError(
@@ -944,9 +489,9 @@ class RuntimeCorpusAdminService:
                 f"verified {ready_after} ready"
             )
 
-        await bootstrap_schema(self._database_engine)
+        await bootstrap_schema(self._context.database_engine)
         publish(OperationProgress("bm25", 0, 1, "Rebuilding BM25 statistics"))
-        async with self._session_factory() as session:
+        async with self._context.session_factory() as session:
             result = await backfill_term_stats(session)
         publish(OperationProgress("bm25", 1, 1, "BM25 statistics rebuilt"))
         return OperationOutcome(f"Rebuilt BM25 statistics for {result.chunks} chunk(s)")
@@ -1000,7 +545,7 @@ class RuntimeCorpusAdminService:
                 self._jobs[queued.job_id],
                 status="failed",
                 stage="failed",
-                message=self._redact(f"{type(error).__name__}: {error}"),
+                message=self._context.redact(f"{type(error).__name__}: {error}"),
                 error_code=(
                     "postcondition_failed"
                     if "postcondition failed" in str(error)
@@ -1017,12 +562,12 @@ class RuntimeCorpusAdminService:
                 self._jobs[queued.job_id],
                 status="succeeded",
                 stage="complete",
-                message=self._redact(message),
+                message=self._context.redact(message),
                 finished_at=_utc_now(),
                 result_refs={
                     **finish_progress(self._jobs[queued.job_id].result_refs),
                     **result_refs,
-                    "summary": self._redact(message),
+                    "summary": self._context.redact(message),
                 },
             )
         self._jobs[queued.job_id] = finished
@@ -1039,7 +584,7 @@ class RuntimeCorpusAdminService:
                 current,
                 status="failed",
                 stage="failed",
-                message=self._redact(f"{type(error).__name__}: {error}"),
+                message=self._context.redact(f"{type(error).__name__}: {error}"),
                 error_code="worker_error",
                 finished_at=_utc_now(),
             )

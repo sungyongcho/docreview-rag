@@ -243,7 +243,7 @@ def test_source_snapshot_accepts_the_strict_api_resource(tmp_path):
 
     write_selection_catalog(tmp_path)
     service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
-    service._schema_state = AsyncMock(return_value=("empty", "empty", set()))
+    service._inspector.schema_state = AsyncMock(return_value=("empty", "empty", set()))
     snapshot = asyncio.run(service.snapshot())
     resource = CorpusSnapshotResource.model_validate(asdict(snapshot))
     assert len(resource.sources) == 4
