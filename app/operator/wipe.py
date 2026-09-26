@@ -39,7 +39,6 @@ class WipeService:
         self._preview: dict[str, Any] | None = None
         self.lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
-        self.commands = WipeCommandRunner(self.root)
         self._lease: tuple[str, str] | None = None
         self._lease_instance: str | None = None
         self._lease_daemon: dict[str, Any] | None = None
@@ -62,9 +61,13 @@ class WipeService:
                 self._lease_daemon = recorded["lease_daemon"]
                 if self._lease_daemon is None:
                     raise WipeError("Reset audit daemon identity is missing")
-                self.commands.docker_host = self._lease_daemon["endpoint"]
             if self._result["status"] == "running":
                 self._result.update(status="interrupted", message="Operator restarted during reset")
+        docker_host: str | None = None
+        if self._lease_daemon is not None:
+            # A recorded reset hold pins every Docker command to the daemon it was taken on.
+            docker_host = self._lease_daemon["endpoint"]
+        self.commands = WipeCommandRunner(self.root, docker_host=docker_host)
 
     def _acquire_operation(self) -> None:
         """Serialize reset writers across operator processes for the same checkout."""

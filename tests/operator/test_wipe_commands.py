@@ -7,8 +7,7 @@ from app.operator.wipe_commands import WipeCommandRunner
 
 def test_docker_commands_pin_endpoint_and_remove_context_overrides(tmp_path, monkeypatch):
     """A later context change cannot redirect commands away from the preview's local daemon."""
-    commands = WipeCommandRunner(tmp_path)
-    commands.docker_host = "unix:///tmp/verified-test.sock"
+    commands = WipeCommandRunner(tmp_path, docker_host="unix:///tmp/verified-test.sock")
     monkeypatch.setenv("DOCKER_CONTEXT", "remote")
     monkeypatch.setenv("DOCKER_HOST", "ssh://remote")
     monkeypatch.setenv("DOCKER_TLS_VERIFY", "1")

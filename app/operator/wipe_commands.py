@@ -60,16 +60,19 @@ class WipeCommandRunner:
     to another daemon.
     """
 
-    def __init__(self, root: Path) -> None:
-        """Start unpinned; the first identity check or a recorded reset hold sets the endpoint.
+    def __init__(self, root: Path, *, docker_host: str | None = None) -> None:
+        """Pin to a recorded endpoint, or start unpinned until the first identity check.
 
         Parameters
         ----------
         root : Path
             Resolved checkout root used as the working directory and Compose project.
+        docker_host : str | None, optional
+            Endpoint of the daemon a recorded reset hold was taken on. ``None`` leaves the
+            runner unpinned until ``verify_docker_identity`` resolves the local socket.
         """
         self.root = root
-        self.docker_host: str | None = None
+        self._docker_host = docker_host
 
     async def run(
         self,
@@ -79,8 +82,8 @@ class WipeCommandRunner:
     ) -> str:
         """Run exact arguments with bounded, redacted failure reporting."""
         environment = dict(os.environ if environment is None else environment)
-        if argv[0] == "docker" and argv[1] != "context" and self.docker_host is not None:
-            argv = ("docker", "--host", self.docker_host, *argv[1:])
+        if argv[0] == "docker" and argv[1] != "context" and self._docker_host is not None:
+            argv = ("docker", "--host", self._docker_host, *argv[1:])
             for key in DOCKER_TARGET_VARIABLES:
                 environment.pop(key, None)
         process = await asyncio.create_subprocess_exec(
@@ -108,9 +111,9 @@ class WipeCommandRunner:
 
     async def verify_docker_identity(self) -> dict[str, Any]:
         """Pin all commands to a verified local Unix socket and daemon identity."""
-        if self.docker_host is None:
-            self.docker_host = await self._local_socket_endpoint()
-        socket_path = Path(urlparse(self.docker_host).path)
+        if self._docker_host is None:
+            self._docker_host = await self._local_socket_endpoint()
+        socket_path = Path(urlparse(self._docker_host).path)
         metadata = socket_path.stat()
         if not stat.S_ISSOCK(metadata.st_mode):
             raise WipeError("Docker endpoint is not a local Unix socket")
@@ -118,7 +121,7 @@ class WipeCommandRunner:
         if not daemon_id:
             raise WipeError("Docker daemon identity is unavailable")
         return {
-            "endpoint": self.docker_host,
+            "endpoint": self._docker_host,
             "id": daemon_id,
             "socket_device": metadata.st_dev,
             "socket_inode": metadata.st_ino,
