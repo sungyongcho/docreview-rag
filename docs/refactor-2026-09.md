@@ -1467,3 +1467,41 @@ PROD uses published ready snapshot data, server execution policy and browser-own
 Stored browser values do not grant authority. The earlier mixed-browser-envelope concern
 is deferred pending its intended partial-read policy; it is not treated as a confirmed
 defect or permission to unify the two modes.
+
+
+## 16. Final state ownership and deferred verification
+
+After #222 merged into main at `8833ff464b67957434572a0786533c6da39fb72b`, the user
+approved the three remaining items: simplify conversation-profile state, execute the
+three deferred acceptance checks and local browser/Compose verification, and narrow the
+historical decomposition decline using existing evidence without paid calls.
+
+| Removed implementation | Actual owner and retained behavior | Independent non-author verdicts |
+| --- | --- | --- |
+| `ServiceSession.profile` and six `setProfile` mirror writes | `conversations[*].profile` already owns saved settings. Reads select the active conversation; only the pre-bootstrap render uses the immutable default. Functional updates patch that conversation without replacing streamed messages. | Coordinator, final reviewer, LLM/search reviewer: remove |
+
+The existing conversation and delayed-capabilities integration tests now also verify
+per-conversation presets through creation, reopening and deletion, plus saved instructions
+through bootstrap and editing. Their original assertions remain. Existing in-flight
+response, settings-default and PROD policy tests remain unchanged. No test or file was
+removed. This is state-ownership simplification, not a claim that the prior UI was broken.
+DEV administrator data, PROD published data, server policy projection and preset storage
+ownership remain distinct. No user-flow or tutorial change is required by this internal edit.
+
+All three previously deferred acceptance operations now pass against disposable local
+Docker resources. The wipe fixture initially failed because its bind-mount ownership
+omitted the actual Compose non-root user/shared-group and umask contract; only that fixture
+was corrected. Its original preservation, authorization and empty-schema assertions remain.
+The saved public bundle was restored without changing the original archive or user data.
+The separate runtime check also confirms an explicit limitation: its old evaluation files
+lack current case-identity metadata, so public evaluation detail returns
+`409 snapshot_evidence_unavailable`. A successful restore does not certify those old details.
+No legacy reader, converted historical record or fabricated evaluation was introduced.
+
+The recovered intermediate decomposition run and final run share exact input and DB
+fingerprints. Preserved RRF scores establish one successful subquestion search in the
+intermediate run versus two disjoint searches in the final run. The unchanged fusion can
+therefore explain the answer leaving the top five. Existing local evidence does not retain
+the actual generated questions, so their semantic difference remains unrecoverable. No
+application-code regression was demonstrated and no scoring/prompt change was justified.
+See the final verification appendix for commands, outcomes and remaining limits.

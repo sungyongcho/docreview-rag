@@ -114,6 +114,9 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
         file = root / name
         file.parent.mkdir(parents=True, exist_ok=True)
         file.write_text("disposable data")
+    # Match local Compose: the non-root app shares writable data with the host group.
+    for name in ("data", "data/corpus", "data/eval_runs", "data/local-settings"):
+        (root / name).chmod(0o775)
     preserved = root / "data/corpus/manifest.json"
     Manifest(corpus=CorpusIdentity(corpus_id="reset-test", name="Reset test")).write(preserved)
     preserved_manifest = preserved.read_text()
@@ -147,8 +150,26 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
   app:
     cpuset: 0-1
     cpus: 2
+    user: "10001:{os.getgid()}"
     image: {json.dumps(image)}
     pull_policy: never
+    command:
+      - sh
+      - -c
+      - 'umask 0002; exec "$$@"'
+      - --
+      - /app/.venv/bin/python
+      - -m
+      - uvicorn
+      - app.release.space:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8000'
+      - --workers
+      - '1'
+      - --log-level
+      - warning
     volumes:
       - {repository}/app:/app/app:ro
       - {root}/data:/app/data

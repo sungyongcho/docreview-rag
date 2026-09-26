@@ -242,16 +242,29 @@ it.each(["en", "ko"] as const)("stores a restored interruption by its canonical 
   expect(loadConversations()[0].messages.at(-1)?.text).toBe(INTERRUPTION_EN);
 });
 
-it("opens a new chat from the app logo while preserving the previous conversation", async () => {
+it("keeps each conversation's profile when creating, reopening, and deleting chats", async () => {
   cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
   stubPublicApi();
   seedAnsweredConversation();
+  const saved = loadConversations();
+  saved[0].profile.retrieval_preset = "korean";
+  saveConversations(saved);
   render(<ServiceShell />);
   await screen.findByText("Data center revenue grew on Hopper demand.");
+  expect(screen.getByLabelText("Retrieval preset")).toHaveValue("korean");
   fireEvent.click(screen.getByRole("button", { name: "DocReview RAG · New chat" }));
   await screen.findByRole("region", { name: "Example questions" });
+  expect(screen.getByLabelText("Retrieval preset")).toHaveValue("balanced");
   expect(loadConversations().find((conversation) => conversation.id === "seeded")?.messages).toHaveLength(2);
   expect(screen.queryByText("Data center revenue grew on Hopper demand.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "NVIDIA data center" }));
+  expect(screen.getByLabelText("Retrieval preset")).toHaveValue("korean");
+  fireEvent.change(screen.getByLabelText("Retrieval preset"), { target: { value: "accuracy" } });
+  expect(loadConversations().find((conversation) => conversation.id === "seeded")?.profile.retrieval_preset).toBe("accuracy");
+  expect(loadConversations().find((conversation) => conversation.id !== "seeded")?.profile.retrieval_preset).toBe("balanced");
+  fireEvent.click(screen.getByRole("button", { name: "Delete NVIDIA data center" }));
+  expect(screen.getByLabelText("Retrieval preset")).toHaveValue("balanced");
+  expect(loadConversations()).toHaveLength(1);
 });
 
 it("renders a streamed scope stop as guidance without an answer-failure verdict", async () => {
@@ -461,11 +474,21 @@ it("applies server policy to restored DEV conversations without rewriting saved 
 });
 
 
-it("makes no administrator or local connection calls before capabilities are known", async () => {
+it("waits for capabilities before restoring and editing the saved conversation profile", async () => {
   cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
   const fetchMock = stubLiveApi(READY_RUNTIME.corpus);
+  seedAnsweredConversation();
+  const saved = loadConversations();
+  saved[0].profile.retrieval_preset = "korean";
+  saved[0].profile.prompt_policy.additional_instructions = "Saved DEV instructions";
+  saveConversations(saved);
   const ordinaryFetch = fetchMock.getMockImplementation()!;
-  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/capabilities") ? new Promise<Response>(() => undefined) : ordinaryFetch(input, init));
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/capabilities")) await pending;
+    return ordinaryFetch(input, init);
+  });
   vi.resetModules();
   const { ServiceShell: LiveShell } = await import("./service-shell");
   try {
@@ -476,6 +499,18 @@ it("makes no administrator or local connection calls before capabilities are kno
     expect(screen.getByRole("button", { name: "Local LLM" }).querySelector(".development-badge")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
     expect(fetchMock.mock.calls.every(([url]) => !String(url).replace(/\/?(\?|$)/, "$1").includes("/admin/") && !String(url).replace(/\/?(\?|$)/, "$1").startsWith(OPERATOR_URL))).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+    fireEvent.change(screen.getByLabelText("Retrieval preset"), { target: { value: "accuracy" } });
+    expect(loadConversations()).toEqual(saved);
+    await act(async () => release());
+    await screen.findByText("Data center revenue grew on Hopper demand.");
+    expect(screen.getByLabelText("Retrieval preset")).toHaveValue("korean");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByLabelText("Additional operator instructions")).toHaveValue("Saved DEV instructions");
+    fireEvent.change(screen.getByLabelText("Additional operator instructions"), { target: { value: "Updated DEV instructions" } });
+    expect(loadConversations()[0].profile.prompt_policy.additional_instructions).toBe("Updated DEV instructions");
+    expect(loadConversations()[0].profile.retrieval_preset).toBe("korean");
+    expect(loadConversations()[0].messages).toEqual(saved[0].messages);
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); }
 });
 

@@ -107,7 +107,6 @@ function ServiceSession() {
   const [runDetailsMessageId, setRunDetailsMessageId] = useState<string | null>(null);
   const [runDetailsStage, setRunDetailsStage] = useState<{ stage: DisclosureStage | null } | undefined>();
   const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
-  const [profile, setProfile] = useState<ReviewSessionDraft>(DEFAULT_SESSION_PROFILE);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [conversationTab, setConversationTab] = useState<ConversationSettingsTab | null>(null);
   const [conversationInputsValid, setConversationInputsValid] = useState(true);
@@ -207,7 +206,6 @@ function ServiceSession() {
         const target = parseNavigationUrl(window.location.href, initial.map((item) => item.id), remembered.id);
         const selected = target?.view === "review" ? initial.find((item) => item.id === target.conversationId) ?? remembered : remembered;
         setActiveId(selected.id);
-        setProfile(selected.profile);
         const position = window.history.state?.docreviewNavigation?.position;
         navigationPosition.current = Number.isSafeInteger(position) ? position : 0;
         if (target) {
@@ -247,7 +245,7 @@ function ServiceSession() {
     const loaded = restoreInterruptedConversations(loadConversations());
     const next = loaded.length ? loaded : [newConversation(loadDefaultProfile())];
     const selected = next.find(item => item.id === loadActiveConversation()) ?? next[0];
-    setConversations(next); setActiveId(selected.id); setProfile(selected.profile);
+    setConversations(next); setActiveId(selected.id);
   }), []);
 
   const active = useMemo(
@@ -267,7 +265,7 @@ function ServiceSession() {
 
   const { policy: publicPolicy, failed: publicPolicyFailed, retry: retryPublicPolicy } = usePublicExecutionPolicy(adminLive, permissions);
 
-  const storedSessionProfile = active?.profile ?? profile;
+  const storedSessionProfile = active?.profile ?? DEFAULT_SESSION_PROFILE;
   const publicCorpus = usePublishedCorpus(!adminLive);
   const publicIds = publicTargetIds(publicCorpus.documents, active?.publishedTargets);
   const activeSessionProfile = adminLive ? storedSessionProfile : effectivePublishedProfile(applyProdPolicy(storedSessionProfile, publicPolicy ?? newProdProfile().prompt_policy), publicCorpus.documents, publicIds);
@@ -391,8 +389,6 @@ function ServiceSession() {
     if (normalized.view === "system" && normalized.tab) setSystemTab(normalized.tab);
     if (normalized.view === "review" && normalized.conversationId) {
       setActiveId(normalized.conversationId);
-      const selected = conversations.find((conversation) => conversation.id === normalized.conversationId);
-      if (selected) setProfile(selected.profile);
     }
     setView(normalized.view);
     return true;
@@ -435,7 +431,6 @@ function ServiceSession() {
         const restored = conversations.find((item) => item.id === entry.conversationId);
         if (restored) {
           setActiveId(restored.id);
-          setProfile(restored.profile);
         }
         setConversationTab(entry.conversationTab);
       } else if (nextPosition < origin.position) {
@@ -522,7 +517,6 @@ function ServiceSession() {
     if (reusable && activeId === reusable.id && view === "review") return;
     if (!reusable) persist([conversation, ...conversations]);
     setActiveId(conversation.id);
-    setProfile(conversation.profile);
     navigate({ view: "review", conversationId: conversation.id }, true);
   }
 
@@ -543,10 +537,10 @@ function ServiceSession() {
 
   function applyProfile(nextProfile: RetrievalProfile, source?: string) {
     const [suite] = source?.split(":") ?? [];
-    const corpusScope = suite?.startsWith("dart") ? "dart" : suite?.startsWith("sec") ? "sec" : (active?.profile ?? profile).corpus_scope;
-    const languages = suite?.endsWith("-ko") ? ["ko" as const] : suite?.endsWith("-en") ? ["en" as const] : (active?.profile ?? profile).languages;
+    const corpusScope = suite?.startsWith("dart") ? "dart" : suite?.startsWith("sec") ? "sec" : storedSessionProfile.corpus_scope;
+    const languages = suite?.endsWith("-ko") ? ["ko" as const] : suite?.endsWith("-en") ? ["en" as const] : storedSessionProfile.languages;
     const sessionProfile: ReviewSessionDraft = {
-      ...(active?.profile ?? profile),
+      ...storedSessionProfile,
       corpus_scope: corpusScope,
       languages,
       retrieval_preset: "custom",
@@ -559,11 +553,11 @@ function ServiceSession() {
 
   /** Patch preferences without replacing messages appended by an in-flight response. */
   function updateSessionProfile(update: Partial<ReviewSessionDraft>) {
-    const targetId = active?.id;
+    if (!active) return;
+    const targetId = active.id;
     const dimensionsChanged = !adminLive && ["registries", "issuers", "fiscal_years", "doc_ids"].some((key) => key in update);
     const selection = dimensionsChanged ? effectivePublishedProfile({ ...storedSessionProfile, ...update }, publicCorpus.documents, undefined).doc_ids : undefined;
-    setProfile((current) => ({ ...current, ...update }));
-    if (targetId) setConversations((current) => saveConversations(current.map((conversation) =>
+    setConversations((current) => saveConversations(current.map((conversation) =>
       conversation.id === targetId
         ? { ...conversation, ...(dimensionsChanged ? { publishedTargets: createPublicTargets(publicCorpus.documents, publicCorpus.documents.filter((doc) => selection?.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))) } : {}), updatedAt: new Date().toISOString(), profile: { ...conversation.profile, ...update } }
         : conversation,
@@ -578,9 +572,9 @@ function ServiceSession() {
     const storedProfile = snapshot.profile.retrieval_profile;
     const retrieval = storedProfile && typeof storedProfile === "object"
       ? storedProfile as RetrievalProfile
-      : resolvedRetrievalProfile(active?.profile ?? profile, builtins);
+      : resolvedRetrievalProfile(storedSessionProfile, builtins);
     const next = {
-      ...(active?.profile ?? profile),
+      ...storedSessionProfile,
       snapshot_id: snapshot.snapshot_id,
       applied_from_evaluation: `snapshot:${snapshot.snapshot_id}`,
       retrieval_preset: "custom" as const,
@@ -865,7 +859,7 @@ function ServiceSession() {
         /></RetainedPanel>
       </section>
       <BrowserStorageSupport enabled={environment === "prod" && productionBrowserStorageEnabled()} />
-      <SettingsModal storageImportDisabled={busy} open={settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onOpenModelSelection={() => {
+      <SettingsModal storageImportDisabled={busy} open={settingsOpen} initialCategory={settingsCategory} profile={storedSessionProfile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onOpenModelSelection={() => {
         if (!navigate({ view: "review" })) return;
         setSettingsOpen(false);
         if (window.innerWidth <= 560) setSidebarOpen(false);
