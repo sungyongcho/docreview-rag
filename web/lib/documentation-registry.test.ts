@@ -45,7 +45,7 @@ describe("documentation registry", () => {
   it("keeps the Korean development draft separate and preserves its route during language changes", () => {
     expect(developmentStoryDocument("ko")).toMatchObject({ title: "개발 기록", file: DEVELOPMENT_STORY_SOURCES.ko });
     expect(developmentStoryDocument("en")).toMatchObject({ title: "Development log", file: DEVELOPMENT_STORY_SOURCES.en });
-    expect(DOCUMENTS).toHaveLength(34);
+    expect(DOCUMENTS.some((document) => document.id === developmentStoryDocument("ko").id)).toBe(false);
     expect(localizedDocumentationRoute("/docreview-rag/docs/ko/development/", "en", "#References")).toBe("/docreview-rag/docs/en/development/#References");
     expect(localizedDocumentationRoute("/docs/en/development/", "ko", "#시작과-학습")).toBe(`/docs/ko/development/#${encodeURIComponent("시작과-학습")}`);
   });

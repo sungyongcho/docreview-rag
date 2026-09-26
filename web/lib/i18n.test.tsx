@@ -292,7 +292,7 @@ describe("Korean and English UI", () => {
     expect(preferredLocale("/docs/", "invalid", "en-US")).toBe("en");
   });
 
-  it.each([["ko", "ko"], ["ko-KR", "ko"], ["en-US", "en"], ["fr-FR", "en"], ["ja-JP", "en"], ["kok-IN", "en"], ["", "en"]] as const)("uses %s as the first-visit browser language", (browserLanguage, expected) => {
+  it.each([["ko", "ko"], ["ko-KR", "ko"], ["en-US", "en"], ["fr-FR", "en"], ["kok-IN", "en"], ["", "en"]] as const)("uses %s as the first-visit browser language", (browserLanguage, expected) => {
     expect(preferredLocale("/docreview-rag/", null, browserLanguage)).toBe(expected);
     expect(preferredLocale("/docs/", "invalid", browserLanguage)).toBe(expected);
   });

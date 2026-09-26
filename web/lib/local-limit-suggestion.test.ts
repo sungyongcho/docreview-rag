@@ -4,11 +4,12 @@ import { suggestLocalLimits } from "./local-limit-suggestion";
 const base = DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget;
 describe("local CPU recommendations", () => {
   it("adds measured generation headroom without modifying the supplied budget", () => {
+    const supplied = structuredClone(base);
     const result = suggestLocalLimits(base, 11.7)!;
     expect(result.budget.max_wall_clock_s).toBe(445);
     expect(result.budget.max_output_tokens).toBe(4000);
     expect(result.budget.max_input_tokens).toBe(base.max_input_tokens);
-    expect(base.max_wall_clock_s).toBe(120);
+    expect(base).toEqual(supplied);
   });
   it("reduces output when the 600-second server ceiling cannot fit the current output cap", () => {
     const result = suggestLocalLimits(base, 1)!;
