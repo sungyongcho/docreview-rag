@@ -382,18 +382,19 @@ class RuntimeApiServices(ApiServices):
         self.corpus_access = CorpusAccess()
         self._session_factory = session_factory
         self._embedding_provider = embedding_provider
-        self._llm_providers = dict(llm_providers or {})
-        self._provider_budgets = dict(provider_budgets or {})
+        # ReviewEngines owns the registries; copies keep a caller's later edits out of them.
+        providers = dict(llm_providers or {})
+        budgets = dict(provider_budgets or {})
         self.local_connection = local_connection
         self.openai_limits = openai_limits
         self._allow_local_engine = allow_local_engine
         if (
             local_inventory is not None or local_connection is not None and local_connection.enabled
-        ) and "local" not in self._provider_budgets:
+        ) and "local" not in budgets:
             raise ValueError("local discovery requires an explicit local provider budget")
         self._engines = ReviewEngines(
-            llm_providers=self._llm_providers,
-            provider_budgets=self._provider_budgets,
+            llm_providers=providers,
+            provider_budgets=budgets,
             local_inventory=local_inventory,
             local_connection=local_connection,
             openai_limits=openai_limits,

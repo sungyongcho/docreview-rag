@@ -316,8 +316,23 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> 
 
     services = build_runtime_services(load_settings(ReleaseSettings, mode="runtime", env_file=None))
 
-    assert "openai" not in services._llm_providers
-    assert "openai" not in services._provider_budgets
+    import asyncio
+
+    from app.api.errors import ApiProblemError
+    from app.api.review_profile import ReviewSessionProfile
+    from app.api.schemas import ReviewRequest
+
+    async def retrieval(session, query, k, filters):
+        """Fail the test if a review on the unconfigured engine reaches retrieval."""
+        raise AssertionError("an unconfigured engine reached retrieval")
+
+    request = ReviewRequest(
+        query="What are the risk factors?", session_profile=ReviewSessionProfile(engine="openai")
+    )
+    with pytest.raises(ApiProblemError) as refused:
+        asyncio.run(services.review_with_retrieval(request, retrieval))
+    assert refused.value.status_code == 503
+    assert refused.value.error.code == "provider_unavailable"
 
 
 def test_runtime_composition_serves_the_configured_bm25_settings(monkeypatch, tmp_path) -> None:
