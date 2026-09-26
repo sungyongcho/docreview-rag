@@ -496,3 +496,18 @@ def test_unrestricted_filter_without_a_variant_keeps_one_vector_lane(monkeypatch
     assert lexical_calls == [(("en",), "삼성전자 memory"), (("ko",), "삼성 성전 전자 memory")]
     assert result.component_rankings.vector_by_language == {}
     assert result.component_rankings.lexical_by_language == {"en": (2,), "ko": (3,)}
+
+
+def test_package_reexports_each_public_name_from_its_defining_module():
+    """The retrieval package is the one sanctioned re-export façade (AGENTS.md): every name it
+    publishes must be the very object its defining retrieval module exports."""
+    import importlib
+
+    import app.retrieval as public
+
+    assert public.__all__
+    for name in public.__all__:
+        exported = getattr(public, name)
+        assert exported.__module__.startswith("app.retrieval."), name
+        defining = importlib.import_module(exported.__module__)
+        assert getattr(defining, name) is exported, name
