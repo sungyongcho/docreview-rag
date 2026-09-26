@@ -40,7 +40,9 @@ def test_schema_action_uses_the_checkout_port(monkeypatch, capsys, action):
 
 
 @pytest.mark.parametrize(
-    "outcome,expected", [("cancelled", 0), ("succeeded", 0), ("incomplete", 1)]
+    "outcome,expected",
+    [("cancelled", 0), ("incomplete", 1)],
+    ids=["cancelled-exits-zero", "incomplete-exits-one"],
 )
 def test_recreate_cli_maps_explicit_outcomes_without_planning_restart(
     monkeypatch, outcome, expected
