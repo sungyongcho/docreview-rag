@@ -1,7 +1,6 @@
 "use client";
 import { closeSidePanel } from "./side-panel-motion";
 import { SnapshotDetailDrawer } from "./snapshot-detail-drawer";
-import { PublicQualityAccess } from "./public-quality-access";
 import { PublicEvaluationWorkspace } from "./public-evaluation-workspace";
 
 import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
@@ -24,7 +23,8 @@ import { translate, useI18n, type Locale } from "@/lib/i18n";
 
 import { RetainedPanel } from "@/components/retained-panel";
 import { DevelopmentBadge } from "@/components/development-badge";
-import { WorkflowHelp } from "@/components/workflow-help";
+import { MeasureHeading } from "@/components/measure-heading";
+import { UnsavedGoldenDialog } from "@/components/unsaved-golden-dialog";
 
 import "./evaluation-workspace.css";
 
@@ -65,7 +65,6 @@ import type {
   SnapshotComparison,
   SuiteId,
 } from "@/lib/types";
-import { deploymentLabel } from "@/lib/deployment";
 import { loadExperimentDefaults, saveExperimentDefaults, resetExperimentDefaults } from "@/lib/storage";
 import { RetrievalPresetManager } from "./retrieval-preset-manager";
 import { Metric } from "@/components/metric";
@@ -189,25 +188,6 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
   const [goldenIssues, setGoldenIssues] = useState<GoldenFieldError[]>([]);
   const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null);
   const listScroll = useRef(0);
-  const leaveDialog = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!leaveAction) return;
-    const previous = document.activeElement as HTMLElement | null;
-    const overlay = leaveDialog.current?.parentElement;
-    const background = [...document.body.children].filter(element => element !== overlay);
-    const before = background.map(element => element.hasAttribute("inert"));
-    background.forEach(element => element.setAttribute("inert", ""));
-    function keys(event: KeyboardEvent) {
-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setLeaveAction(null); }
-      if (event.key === "Tab") {
-        const buttons = [...(leaveDialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
-        if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons.at(-1)?.focus(); }
-        else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0]?.focus(); }
-      }
-    }
-    document.addEventListener("keydown", keys, true);
-    return () => { document.removeEventListener("keydown", keys, true); background.forEach((element, i) => { if (!before[i]) element.removeAttribute("inert"); }); previous?.focus({ preventScroll: true }); };
-  }, [leaveAction]);
   function requestGoldenLeave(action: () => void) {
     if (goldenDirty) setLeaveAction(() => action); else action();
   }
@@ -753,27 +733,17 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
 
   return (
     <section className={`lab-shell measure-workspace${tab === "golden" && goldenDetailOpen ? " golden-editing" : ""}`}>{confirmationDialog}
-      <header hidden={tab === "golden" && goldenDetailOpen} className="page-heading">
-        <div><p className="eyebrow">{t("Measure")}</p><h1>{t("Measure retrieval before trusting it.")}</h1></div>
-        <div className="page-badges">{environment && <span className="mode-badge">{deploymentLabel(environment)}</span>}<span className={`mode-badge ${live ? "live" : ""}`}>{live ? t("Local operator") : t("Read-only portfolio")}</span></div>
-      </header>
-      <nav hidden={tab === "golden" && goldenDetailOpen} className="lab-tabs workflow-tabs measure-tab-strip" aria-label={t("Measure sections")}>
-        <div className="measure-tab-group measure-workflow-group" role="group" aria-label={t("Evaluation workflow")}>
-          {([["playground", "Search trial"], ["golden", "Golden dataset"], ["runs", "Run evaluation"], ["compare", "Compare & snapshots"]] as const).map(([id, label], index) => <button key={id} type="button" aria-pressed={tab === id || (id === "compare" && tab === "snapshots")} onClick={() => changeTab(id)}><span className="measure-step-chip" aria-hidden="true">{index + 1}</span>{t(label)}</button>)}
-        </div>
-        <div className="measure-tab-group measure-management-group" role="group" aria-label={t("Manage")}>
-          <span className="measure-management-caption" aria-hidden="true">{t("Manage")}</span>
-          <button type="button" aria-pressed={tab === "presets"} onClick={() => changeTab("presets")}>{t("Presets")}</button>
-        </div>
-      </nav>
-      <div className="workflow-section-heading" data-help={tab === "presets" ? "measure.presets.manage" : undefined}><h2>{tab === "presets" ? t("Retrieval presets") : tab === "playground" ? t("Search trial") : tab === "golden" ? t("Prepare a golden dataset") : tab === "runs" ? t("Run evaluation") : tab === "snapshots" ? t(live ? "Snapshot management" : "Published snapshots") : t("Compare evaluation results")}</h2>{live && ["golden", "runs"].includes(tab) && <DevelopmentBadge locale={locale} compact />}<WorkflowHelp active={active} screen={`measure.${tab}`} capabilities={capabilities} /></div>
-      {(live || tab === "playground" || tab === "presets") && <p className="data-origin">{t(live ? "Live workspace · results come from recorded runs" : tab === "playground" ? "Live search within the selected published scope" : "Explore published records. Reading and filtering do not run an evaluation.")}</p>}
-      {!live && !(tab === "golden" && goldenDetailOpen) && (tab === "golden" || tab === "runs" || tab === "compare" || tab === "snapshots") && <PublicQualityAccess section={tab} />}
-      {(live || tab === "playground" || tab === "presets") && <p className="workflow-intro">{tab === "presets" ? t("Create reusable search settings, then select them in a conversation.") : tab === "playground" ? t("Try one question and inspect its evidence before evaluating a whole dataset.") : tab === "golden" ? t(live ? "Select a JSON dataset and inspect its questions. Create a separate file to edit, save changes, then check format and sources." : "Inspect published questions and expected evidence. Editing runs in DEV mode.") : tab === "runs" ? t("Choose the questions and search settings to measure. A run records what was tested and how well the evidence was retrieved.") : tab === "snapshots" ? t("A snapshot preserves search data and an evaluation result so you can reuse a known configuration later.") : t("Choose a baseline and a candidate. Compare evidence hits, rank, and latency. Saving a snapshot is optional.")}</p>}
-      {(tab === "compare" || tab === "snapshots") && <nav className="result-tabs"><button type="button" aria-pressed={tab === "compare"} onClick={() => changeTab("compare")}>{t("Compare results")}</button><button type="button" aria-pressed={tab === "snapshots"} onClick={() => changeTab("snapshots")}>{t(live ? "Snapshot management" : "Published snapshots")}</button></nav>}
+      <MeasureHeading tab={tab} goldenEditing={tab === "golden" && goldenDetailOpen} live={live} active={active} environment={environment} capabilities={capabilities} onSelectTab={changeTab} />
 
 
-      {leaveAction && createPortal(<div className="golden-leave-backdrop"><section ref={leaveDialog} role="dialog" aria-modal="true" aria-label={t("Unsaved question changes")} className="golden-leave-dialog"><h2>{t("Unsaved question changes")}</h2><p>{t("Save this draft before leaving?")}</p><div className="action-row"><button autoFocus type="button" className="button" onClick={() => setLeaveAction(null)}>{t("Continue editing")}</button><button type="button" className="button" disabled={goldenBusy} onClick={() => { const action = leaveAction; setGoldenCaseJson(savedGoldenJson); setGoldenIssues([]); setGoldenError(""); setLeaveAction(null); onLeaveGuard?.(null); action(); }}>{t("Discard and leave")}</button><button type="button" className="button primary" disabled={goldenBusy || !parsedGoldenCase} onClick={async () => { const action = leaveAction; if (await saveSelectedGoldenCase()) { setLeaveAction(null); onLeaveGuard?.(null); action(); } else { setLeaveAction(null); } }}>{t("Save draft and leave")}</button></div></section></div>, document.body)}
+      {leaveAction && <UnsavedGoldenDialog
+        leaveAction={leaveAction}
+        busy={goldenBusy}
+        canSave={Boolean(parsedGoldenCase)}
+        onContinueEditing={() => setLeaveAction(null)}
+        onDiscard={() => { const action = leaveAction; setGoldenCaseJson(savedGoldenJson); setGoldenIssues([]); setGoldenError(""); setLeaveAction(null); onLeaveGuard?.(null); action(); }}
+        onSave={async () => { const action = leaveAction; if (await saveSelectedGoldenCase()) { setLeaveAction(null); onLeaveGuard?.(null); action(); } else { setLeaveAction(null); } }}
+      />}
       {tab === "presets" && <RetrievalPresetManager profile={profile} onApply={onApplyProfile} canApply={capabilities?.can_change_custom_retrieval ?? live} />}
 
       <RetainedPanel active={tab === "playground"}><Playground live={live} profile={profile} publicProfile={publicProfile} publicScopeBlocked={publicScopeBlocked} onProfileChange={onProfileChange} onOpenSnapshots={() => changeTab("snapshots")} /></RetainedPanel>
