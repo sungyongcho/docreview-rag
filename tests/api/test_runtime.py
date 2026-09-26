@@ -280,6 +280,64 @@ def test_component_ranks_use_the_per_language_vector_lane():
     assert [(rank.lane, rank.language, rank.rank) for rank in ranks] == [("vector", None, 3)]
 
 
+def test_reranked_requests_share_one_cross_encoder_model_load(monkeypatch):
+    """Two accuracy-preset requests resolve one reranker, so the model loads once per process."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.api.review_profile import ServerBM25, resolve_retrieval_profile
+    from app.retrieval import cross_encoder
+    from app.retrieval.service import ComponentRankings, RetrievalResult
+    from app.retrieval.types import RetrievalFilters
+    from tests.retrieval.support import fake_sentence_transformers
+
+    monkeypatch.setattr(cross_encoder, "_SHARED_RERANKERS", {}, raising=False)
+    constructions: list[str] = []
+
+    class Encoder:
+        """Count every model construction the optional dependency would perform."""
+
+        def __init__(self, model, *, max_length):
+            del max_length
+            constructions.append(model)
+
+        def predict(self, pairs, *, batch_size):
+            """Score every pair identically; only the load count matters here."""
+            return [0.0] * len(pairs)
+
+    fake_sentence_transformers(monkeypatch, CrossEncoder=Encoder)
+    rerankers = []
+
+    async def record(session, query, **kwargs):
+        """Capture the reranker each request hands to the retrieval service."""
+        del session, query
+        rerankers.append(kwargs["reranker"])
+        return RetrievalResult(
+            hits=(),
+            candidates=(),
+            score_stage="reranker",
+            component_rankings=ComponentRankings(vector=(), lexical=()),
+        )
+
+    services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(), retrieval_service=record
+    )
+    profile = resolve_retrieval_profile(
+        ReviewSessionProfile(retrieval_preset="accuracy"), ServerBM25()
+    )
+    for _ in range(2):
+        asyncio.run(
+            services._retrieve_with_session(
+                cast(AsyncSession, object()), "revenue", 5, RetrievalFilters(), profile
+            )
+        )
+    for reranker in rerankers:
+        asyncio.run(reranker.score("revenue", ["evidence"]))
+
+    assert len(rerankers) == 2
+    assert constructions == [rerankers[0].model], constructions
+    assert rerankers[0] is rerankers[1]
+
+
 @pytest.fixture
 def routing_service():
     """Use a two-registry manifest and stop at the actual retrieval boundary."""

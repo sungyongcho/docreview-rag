@@ -83,8 +83,9 @@ def test_score_preserves_pair_order_and_runs_model_off_loop(monkeypatch):
     class Encoder:
         """Test double for Encoder behavior."""
 
-        def __init__(self, model):
+        def __init__(self, model, *, max_length):
             calls["model"] = model
+            calls["max_length"] = max_length
             calls["constructor_thread"] = threading.get_ident()
 
         def predict(self, pairs, *, batch_size):
@@ -101,6 +102,8 @@ def test_score_preserves_pair_order_and_runs_model_off_loop(monkeypatch):
 
     assert scores == [2.0, -0.25]
     assert calls["model"] == "cross-encoder/fake"
+    # The scoring window is explicit rather than the tokenizer's silent default.
+    assert calls["max_length"] == 512
     assert calls["pairs"] == [("query", "first"), ("query", "second")]
     assert calls["batch_size"] == 5
     assert calls["constructor_thread"] != main_thread
@@ -114,7 +117,8 @@ def test_simultaneous_cold_scores_construct_one_model(monkeypatch):
     class Encoder:
         """Test double for Encoder behavior."""
 
-        def __init__(self, model):
+        def __init__(self, model, *, max_length):
+            del max_length
             constructors.append(model)
             time.sleep(0.05)
 
@@ -136,6 +140,39 @@ def test_simultaneous_cold_scores_construct_one_model(monkeypatch):
 
     assert scores == [[1.0], [1.0]]
     assert constructors == ["cross-encoder/fake"]
+
+
+def test_shared_reranker_is_one_instance_per_model_and_batch_size(monkeypatch):
+    """Callers resolving the same (model, batch_size) share one lazily loaded model."""
+    monkeypatch.setattr(cross_encoder, "_SHARED_RERANKERS", {}, raising=False)
+    constructions: list[str] = []
+
+    class Encoder:
+        """Test double for Encoder behavior."""
+
+        def __init__(self, model, *, max_length):
+            del max_length
+            constructions.append(model)
+
+        def predict(self, pairs, *, batch_size):
+            """Exercise predict behavior."""
+            return [1.0] * len(pairs)
+
+    fake_sentence_transformers(monkeypatch, CrossEncoder=Encoder)
+    first = cross_encoder.CrossEncoderReranker.shared(model="cross-encoder/fake")
+    second = cross_encoder.CrossEncoderReranker.shared(model="cross-encoder/fake")
+    smaller_batches = cross_encoder.CrossEncoderReranker.shared(
+        model="cross-encoder/fake", batch_size=8
+    )
+
+    assert first is second
+    assert smaller_batches is not first
+    assert smaller_batches.batch_size == 8
+    assert asyncio.run(first.score("first", ["document"])) == [1.0]
+    assert asyncio.run(second.score("second", ["document"])) == [1.0]
+    assert constructions == ["cross-encoder/fake"]
+    # Direct construction stays private to its caller and never touches the shared cache.
+    assert cross_encoder.CrossEncoderReranker(model="cross-encoder/fake") is not first
 
 
 def test_component_rankings_record_proposals_not_rerank_survivors(monkeypatch):

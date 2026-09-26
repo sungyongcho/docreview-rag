@@ -411,7 +411,7 @@ class RuntimeApiServices(ApiServices):
             candidate_k=max(plan.candidate_k, k),
             filters=filters,
             rrf_k=plan.rrf_k,
-            reranker=CrossEncoderReranker() if plan.reranker else None,
+            reranker=CrossEncoderReranker.shared() if plan.reranker else None,
             route_by_language=plan.route_by_language,
             lexical_ranker=plan.lexical_ranker or "ts_rank_cd",
             bm25_k1=plan.bm25_k1,

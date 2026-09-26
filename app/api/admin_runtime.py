@@ -787,7 +787,7 @@ class RuntimeAdminApiServices:
                 candidate_k=profile.candidate_k,
                 filters=filters,
                 rrf_k=profile.rrf_k,
-                reranker=CrossEncoderReranker() if profile.reranker else None,
+                reranker=CrossEncoderReranker.shared() if profile.reranker else None,
                 route_by_language=profile.route_by_language,
                 lexical_ranker=profile.lexical_ranker or "ts_rank_cd",
                 bm25_k1=profile.bm25_k1,
