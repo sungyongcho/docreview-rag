@@ -16,14 +16,17 @@ import time
 from typing import Any
 from uuid import uuid4
 
-from dotenv import dotenv_values
-from sqlalchemy.engine import make_url
-
 from app.atomic_write import write_text_atomically
 from app.observability.persistence import redact_sensitive_text
 from app.operator.wipe_commands import WipeCommandRunner
 from app.operator.wipe_errors import WipeError, diagnose_wipe_error
 from app.operator.wipe_files import list_runtime_files, remove_runtime_file
+from app.operator.wipe_inspection import (
+    verify_compose_plan,
+    verify_database_volume,
+    verify_gate_activity,
+    verify_stack_containers,
+)
 
 
 class WipeService:
@@ -81,20 +84,6 @@ class WipeService:
             os.close(self._operation_fd)
             self._operation_fd = None
 
-    def _check_single_worker(self, app: dict[str, Any]) -> None:
-        """Require the known single-worker Uvicorn development process contract."""
-        command = app["Config"].get("Cmd") or []
-        environment = dict(item.split("=", 1) for item in app["Config"]["Env"])
-        if "uvicorn" not in command or any(
-            environment.get(key, "1") != "1" for key in ("WEB_CONCURRENCY", "UVICORN_WORKERS")
-        ):
-            raise WipeError("Reset requires the single-worker Uvicorn development app")
-        for index, argument in enumerate(command):
-            if argument == "--workers" and command[index + 1 : index + 2] != ["1"]:
-                raise WipeError("Reset requires one application worker")
-            if argument.startswith("--workers=") and argument != "--workers=1":
-                raise WipeError("Reset requires one application worker")
-
     async def inspect(self) -> dict[str, Any]:
         """Reject nonlocal targets and active work before exposing a deletion preview."""
         if self.busy():
@@ -126,93 +115,15 @@ class WipeService:
                 raise WipeError("Container belongs to another checkout")
             rows.append(row)
         database, app = rows
-        app_env = dict(item.split("=", 1) for item in app["Config"]["Env"])
-        if app_env.get("MODE") != "dev" or app_env.get("DOCREVIEW_ADMIN_MODE") != "live":
-            raise WipeError("Reset is only available for the live local development stack")
-        self._check_single_worker(app)
-        db_env = dict(item.split("=", 1) for item in database["Config"]["Env"])
-        if any(
-            db_env.get(key) != "filing"
-            for key in ("POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PASSWORD")
-        ):
-            raise WipeError("Database credentials differ from the local Compose contract")
-        application_url = make_url(app_env.get("DATABASE_URL", ""))
-        if (
-            application_url.username,
-            application_url.password,
-            application_url.host,
-            application_url.port or 5432,
-            application_url.database,
-        ) != (
-            "filing",
-            "filing",
-            "db",
-            5432,
-            "filing",
-        ):
-            raise WipeError("Application database is not the local Compose database")
-        data_mounts = [item for item in app["Mounts"] if item["Destination"] == "/app/data"]
-        if (
-            len(data_mounts) != 1
-            or data_mounts[0]["Type"] != "bind"
-            or Path(data_mounts[0]["Source"]).resolve() != self.root / "data"
-            or app_env.get("CORPUS_DIR") != "/app/data/corpus"
-        ):
-            raise WipeError("Application runtime files do not belong to this checkout")
-        ports = database["NetworkSettings"]["Ports"].get("5432/tcp") or []
-        if len(ports) != 1 or ports[0]["HostIp"] not in {"127.0.0.1"}:
-            raise WipeError("Database must have one loopback-only published port")
-        port = int(ports[0]["HostPort"])
-        configured = dotenv_values(self.root / ".env").get("DATABASE_URL") or os.environ.get(
-            "DATABASE_URL"
-        )
-        if configured:
-            url = make_url(configured)
-            if (
-                url.host not in {"localhost", "127.0.0.1", "::1"}
-                or (url.port or 5432) != port
-                or url.database != "filing"
-            ):
-                raise WipeError("Host database configuration points outside the local stack")
-        mounts = [m for m in database["Mounts"] if m["Destination"] == "/var/lib/postgresql/data"]
-        if len(mounts) != 1 or mounts[0]["Type"] != "volume":
-            raise WipeError("Database does not use the expected named volume")
-        volume = mounts[0]["Name"]
+        port, volume = verify_stack_containers(self.root, database, app)
         volume_info = json.loads(await self.commands.run("docker", "volume", "inspect", volume))[0]
-        if (volume_info.get("Labels") or {}).get("com.docker.compose.project") != self.root.name:
-            raise WipeError("Database volume belongs to another project")
-        if volume_info.get("Driver") != "local" or volume_info.get("Options"):
-            raise WipeError("Database volume must use local storage without driver options")
+        verify_database_volume(self.root.name, volume_info)
         compose_json = await self.commands.run(
             *self.commands.compose_command("config", "--format", "json")
         )
         compose = json.loads(compose_json)
         self._compose_json = compose_json
-        planned_db = compose["services"]["db"]
-        planned_ports = planned_db.get("ports", [])
-        planned_mounts = [
-            item
-            for item in planned_db.get("volumes", [])
-            if item["target"] == "/var/lib/postgresql/data"
-        ]
-        planned_volume = (
-            compose["volumes"].get(planned_mounts[0].get("source"), {})
-            if len(planned_mounts) == 1
-            else {}
-        )
-        if (
-            len(planned_ports) != 1
-            or planned_ports[0].get("host_ip") != "127.0.0.1"
-            or int(planned_ports[0]["published"]) != port
-            or int(planned_ports[0]["target"]) != 5432
-            or len(planned_mounts) != 1
-            or planned_mounts[0]["type"] != "volume"
-            or planned_volume.get("name") != volume
-            or planned_volume.get("external", False)
-            or planned_volume.get("driver", "local") != "local"
-            or planned_volume.get("driver_opts")
-        ):
-            raise WipeError("Development Compose configuration differs from the reset target")
+        verify_compose_plan(compose, port=port, volume=volume)
         tables = (
             await self.commands.query_database(
                 database["Id"],
@@ -246,17 +157,12 @@ class WipeService:
                 )
         if app.get("State", {}).get("Running"):
             activity = await self.commands.request_runtime_gate(app["Id"], "activity")
-            if activity.get("active_requests") != 0:
-                raise WipeError("Finish active application requests before resetting")
-            if activity.get("held") and (self._lease is None or self._lease[0] != app["Id"]):
-                raise WipeError("Another reset holds application request admission")
-            instance = activity.get("instance")
-            if not isinstance(instance, str) or not instance:
-                raise WipeError("Application request gate identity is unavailable")
-            if self._lease is not None and (
-                not activity.get("held") or instance != self._lease_instance
-            ):
-                raise WipeError("Application request gate restarted or lost the reset hold")
+            instance = verify_gate_activity(
+                activity,
+                app_container=app["Id"],
+                lease=self._lease,
+                lease_instance=self._lease_instance,
+            )
         elif self._stopped_app != app["Id"]:
             raise WipeError("Start the development app before inspecting its request activity")
         else:
