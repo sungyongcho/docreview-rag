@@ -468,6 +468,39 @@ def test_schema_rejection_stops_closed_with_raw_trace_history_and_observer():
     assert seen == [("retrieve", False), ("grade", True)]
 
 
+@pytest.mark.parametrize(
+    "budget",
+    [Budget(max_wall_clock_s=0.35), Budget(max_iterations=3)],
+    ids=["wall_clock", "iterations"],
+)
+def test_report_node_completes_after_both_paid_calls_on_a_spent_pacing_budget(budget):
+    """Deliver the checked decision when a pacing ceiling is reached after the check.
+
+    The clock reads 0.4 s and the path holds three nodes when the report node is asked
+    for; it sends nothing, so refusing it would only discard a paid, verified answer.
+    """
+    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
+    check = (
+        '{"label":"SUPPORTED","answer":"Revenue increased by ten percent.",'
+        '"citation_chunk_ids":[1],"reason":"The cited chunk states the increase."}'
+    )
+    provider = _provider([_raw(grade), _raw(check, request_id="req-2")])
+
+    result = asyncio.run(
+        run_workflow(
+            _request(budget=budget),
+            retriever=retriever_returning([_hit()]),
+            provider=provider,
+            clock=SequenceClock(),
+        )
+    )
+
+    assert len(provider.prompts) == 2
+    assert result.status == "ok"
+    assert result.node_path == ("retrieve", "grade", "check", "report")
+    assert report_of(result)["label"] == "SUPPORTED"
+
+
 def test_budget_refusal_before_a_node_keeps_the_degradation_history():
     """Keep the retrieval reasons in a report the cumulative guard refused."""
     duplicate = _hit(1)

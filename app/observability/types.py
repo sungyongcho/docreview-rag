@@ -40,11 +40,12 @@ _PROVIDER_RESOURCES: tuple[BudgetResource, ...] = (
     "wall_clock_s",
 )
 
-# A node is refused only on the resources it can actually consume. `retrieve` and
-# `report` issue no provider call, so blocking them on token exhaustion cannot prevent
-# any spend — it only discards work the run has already paid for. Declaring the draw per
-# node means a fifth node must state its resource class instead of silently inheriting
-# the wrong one.
+# A node is refused only on the resources it can actually consume. `retrieve` issues no
+# provider call, so blocking it on token exhaustion cannot prevent any spend, but it
+# opens the run and stays paced. `report` draws nothing: it issues no call and runs
+# after every provider call was paid for, so refusing it on any resource could only
+# discard a finished, verified answer. Declaring the draw per node means a fifth node
+# must state its resource class instead of silently inheriting the wrong one.
 NODE_BUDGET_RESOURCES: Final[Mapping[WorkflowNode, tuple[BudgetResource, ...]]] = MappingProxyType(
     {
         "gate": _PROVIDER_RESOURCES,
@@ -53,7 +54,7 @@ NODE_BUDGET_RESOURCES: Final[Mapping[WorkflowNode, tuple[BudgetResource, ...]]] 
         "chat": _PROVIDER_RESOURCES,
         "grade": _PROVIDER_RESOURCES,
         "check": _PROVIDER_RESOURCES,
-        "report": _PACING_RESOURCES,
+        "report": (),
     }
 )
 

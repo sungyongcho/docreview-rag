@@ -664,7 +664,8 @@ and `source_sha256` from `parser.source_digest`. The hash makes a citation stale
 
 Budgets. The workflow `Budget` (`app/observability/types.py`: `max_iterations` 6, `max_input_tokens` 60000, `max_output_tokens`
 4000, `max_wall_clock_s` 120) is cumulative over the run and enforced only before a node; iterations are nodes entered; wall clock
-is the whole run, so a slow call is not interrupted but the next node is refused. The `ProviderBudget` (`app/llm/schemas.py`:
+is the whole run, so a slow call is not interrupted but the next provider-backed node is refused, while the pure `report` node
+draws no budget resource and completes once both provider calls were paid for. The `ProviderBudget` (`app/llm/schemas.py`:
 `max_input_tokens`, `max_output_tokens`, `max_cost_usd`, `pricing: TokenPricing`) is per call; `ProviderBudget.exhausted_by` is the
 single definition of exhaustion, and a zero-priced local provider never trips the cost cap. Failures are typed: `BudgetLimitFailure`
 -> status `budget_exceeded` (HTTP 429); `ProviderFailure{node, status, attempts, details, budget, budget_source}` ->
