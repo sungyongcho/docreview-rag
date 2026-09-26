@@ -107,7 +107,7 @@ from app.workflow.gate import (
     is_filing_followup,
     is_filing_turn,
 )
-from app.workflow.runner import NodeObserver, run_workflow
+from app.workflow.runner import BilledRunAllowanceError, NodeObserver, run_workflow
 from app.workflow.types import WorkflowRequest, WorkflowState
 
 type ParseStatus = Literal["parsed", "needs_profile_update"]
@@ -1490,62 +1490,78 @@ class RuntimeApiServices(ApiServices):
                     if on_node is not None:
                         await on_node(node, state)
 
-                report = await self._workflow_service(
-                    workflow_request,
-                    retriever=retrieve_for_workflow,
-                    provider=llm_provider,
-                    on_node=record_node,
-                )
-                execution = await self._execution_context(llm_provider, provider_budget, request)
-                report = report.model_copy(
-                    update={
-                        "request_context": {
-                            **execution,
-                            "path_decision": path,
-                            "stage_results": stage_results,
-                            "effective_settings": {
-                                **cast("JsonObject", execution["effective_settings"]),
+                async def persist(report: RunReport) -> RunReport:
+                    """Attach the execution context, redact, and record one finished run."""
+                    execution = await self._execution_context(
+                        llm_provider, provider_budget, request
+                    )
+                    report = report.model_copy(
+                        update={
+                            "request_context": {
+                                **execution,
+                                "path_decision": path,
+                                "stage_results": stage_results,
+                                "effective_settings": {
+                                    **cast("JsonObject", execution["effective_settings"]),
+                                    "engine": engine,
+                                    "retrieval": profile.model_dump(mode="json"),
+                                    "resolved_scope": scope.model_dump(mode="json"),
+                                    "provider_budget": provider_budget.model_dump(mode="json"),
+                                    "run_limits": workflow_request.budget.model_dump(mode="json"),
+                                    "max_context_chars": workflow_request.max_context_chars,
+                                    "model": llm_provider.model_name,
+                                },
                                 "engine": engine,
-                                "retrieval": profile.model_dump(mode="json"),
+                                "requested_profile": request.session_profile.model_dump(
+                                    mode="json"
+                                ),
+                                "resolved_profile": profile.model_dump(mode="json"),
                                 "resolved_scope": scope.model_dump(mode="json"),
-                                "provider_budget": provider_budget.model_dump(mode="json"),
-                                "run_limits": workflow_request.budget.model_dump(mode="json"),
-                                "max_context_chars": workflow_request.max_context_chars,
-                                "model": llm_provider.model_name,
-                            },
-                            "engine": engine,
-                            "requested_profile": request.session_profile.model_dump(mode="json"),
-                            "resolved_profile": profile.model_dump(mode="json"),
-                            "resolved_scope": scope.model_dump(mode="json"),
-                            "routing_queries": routed_queries,
-                            "selection": (
-                                {
-                                    "candidate_snapshot_sha256": hashlib.sha256(
-                                        request.evidence_selection.candidate_token.encode("utf-8")
-                                    ).hexdigest(),
-                                    "pinned_chunk_ids": list(
-                                        request.evidence_selection.pinned_chunk_ids
-                                    ),
-                                    "excluded_chunk_ids": list(
-                                        request.evidence_selection.excluded_chunk_ids
-                                    ),
-                                }
-                                if request.evidence_selection is not None
-                                else None
-                            ),
+                                "routing_queries": routed_queries,
+                                "selection": (
+                                    {
+                                        "candidate_snapshot_sha256": hashlib.sha256(
+                                            request.evidence_selection.candidate_token.encode(
+                                                "utf-8"
+                                            )
+                                        ).hexdigest(),
+                                        "pinned_chunk_ids": list(
+                                            request.evidence_selection.pinned_chunk_ids
+                                        ),
+                                        "excluded_chunk_ids": list(
+                                            request.evidence_selection.excluded_chunk_ids
+                                        ),
+                                    }
+                                    if request.evidence_selection is not None
+                                    else None
+                                ),
+                            }
                         }
-                    }
-                )
-                safe_run, safe_traces = report_to_records(
-                    report,
-                    secret_values=self._secret_values,
-                )
-                safe_report = records_to_report(safe_run, safe_traces)
-                if session.in_transaction():
-                    await session.rollback()
-                async with session.begin():
-                    await self._run_persister(session, safe_run, safe_traces)
-                return safe_report
+                    )
+                    safe_run, safe_traces = report_to_records(
+                        report,
+                        secret_values=self._secret_values,
+                    )
+                    safe_report = records_to_report(safe_run, safe_traces)
+                    if session.in_transaction():
+                        await session.rollback()
+                    async with session.begin():
+                        await self._run_persister(session, safe_run, safe_traces)
+                    return safe_report
+
+                try:
+                    report = await self._workflow_service(
+                        workflow_request,
+                        retriever=retrieve_for_workflow,
+                        provider=llm_provider,
+                        on_node=record_node,
+                    )
+                except BilledRunAllowanceError as denial:
+                    # Calls were billed before the denial: keep that run on record,
+                    # then let the denial reach the caller's 429 mapping unchanged.
+                    await persist(denial.report)
+                    raise
+                return await persist(report)
 
     async def _trace_rows(self, session: AsyncSession, run_id: str) -> tuple[Trace, ...]:
         """Read this run's traces in recorded step order."""

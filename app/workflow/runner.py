@@ -197,6 +197,19 @@ def _committed_failure(
     return _committed(state, node, failure)
 
 
+class BilledRunAllowanceError(AIAllowanceError):
+    """A shared-allowance denial that stopped a run after an earlier call was billed.
+
+    It is an ``AIAllowanceError`` with the original code, message and retry delay, so
+    every caller keeps its retry mapping. ``report`` is the committed failure report,
+    so a caller that records runs can keep the billed trace before answering.
+    """
+
+    def __init__(self, error: AIAllowanceError, report: RunReport) -> None:
+        super().__init__(error.code, str(error), error.retry_after, error.reset)
+        self.report = report
+
+
 def _allowance_failure(node: GradeOrCheckNode, error: AIAllowanceError) -> ProviderFailure:
     """Type a shared-allowance denial that arrived after an earlier call was billed.
 
@@ -258,7 +271,8 @@ async def run_workflow(
         If the clock is non-finite or moves backwards.
     AIAllowanceError
         If the shared allowance denies a provider call. A denial after an earlier call
-        was billed is first committed to the observer as a typed failure.
+        was billed is first committed to the observer as a typed failure and raised as
+        ``BilledRunAllowanceError``, which carries the committed report.
 
     Notes
     -----
@@ -407,7 +421,7 @@ async def run_workflow(
             measurement.failed = current.failure is not None
         await notify(node, current)
         if denied is not None:
-            raise denied
+            raise BilledRunAllowanceError(denied, failed(current)) from denied
         return failed(current) if current.failure is not None else current
 
     if refusal := blocked_by_budget(state, "retrieve"):

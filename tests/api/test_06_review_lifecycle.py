@@ -474,3 +474,66 @@ def test_runtime_redacts_explicit_secrets_before_persisting_and_returning():
     assert secret not in repr(result)
     assert secret not in persisted_run.system_prompt
     assert secret not in json.dumps(persisted_run.report)
+
+
+def test_allowance_denial_after_a_billed_call_keeps_the_run_on_record(hit):
+    """A check call the shared allowance denies after the grade call was billed still
+    persists the billed run, and the caller still receives the denial for its 429."""
+    from app.release.ai_allowance import AIAllowanceError
+    from tests.llm.support import raw
+
+    grade = json.dumps(
+        {"grades": [{"chunk_id": hit.chunk_id, "relevant": True, "reason": "Direct evidence."}]}
+    )
+
+    class CappedProvider(DeterministicLLMProvider):
+        """Deny the second request before it is sent, as the allowance reservation does."""
+
+        async def _request(self, prompt, schema, budget):
+            """Serve the grade call, then refuse the check call."""
+            if self.prompts:
+                raise AIAllowanceError("public_daily_limit", "Daily AI allowance reached.", 60)
+            return await super()._request(prompt, schema, budget)
+
+    async def retrieval_service(session, query, *, provider, k, filters, **plan):
+        """Return the one staged hit."""
+        del session, query, provider, k, filters, plan
+        return RetrievalResult(
+            candidates=(hit,),
+            hits=(hit,),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(hit.chunk_id,), lexical=()),
+        )
+
+    persisted = []
+
+    async def run_persister(session, run, traces):
+        """Record the sanitized records that reached persistence."""
+        persisted.append((run, tuple(traces)))
+        return run
+
+    services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
+        session_factory=cast(SessionFactory, FakeSession),
+        llm_providers={"openai": CappedProvider([raw(grade, input_tokens=900, output_tokens=40)])},
+        provider_budgets={"openai": provider_budget()},
+        retrieval_service=retrieval_service,
+        run_persister=run_persister,
+        run_id_factory=lambda: "run-denied",
+        scope_index=ManifestScopeIndex.from_entries(
+            (filing_document(issuer="ACME", document_id=hit.doc_id),)
+        ),
+    )
+    request = ReviewRequest.model_validate(
+        {"query": "Revenue?", "session_profile": {"issuers": ["ACME"]}}
+    )
+
+    with pytest.raises(AIAllowanceError) as raised:
+        asyncio.run(services.review(request))
+
+    assert (raised.value.code, raised.value.retry_after) == ("public_daily_limit", 60)
+    ((run, traces),) = persisted
+    assert run.run_id == "run-denied"
+    assert run.status == "budget_exceeded"
+    assert [trace.node for trace in traces] == ["grade"]
+    assert run.report["reason"]["details"][0] == "public_daily_limit"
