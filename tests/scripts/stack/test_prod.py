@@ -237,6 +237,7 @@ def test_complete_data_can_reconcile_a_readiness_failure_without_restoring(envir
 
 def test_readiness_wait_handles_transient_non_json_proxy_response(tmp_path, monkeypatch):
     """A proxy's startup response cannot turn a completed restore into an immediate failure."""
+    from email.message import Message
     import io
     from urllib.error import HTTPError
 
@@ -246,11 +247,13 @@ def test_readiness_wait_handles_transient_non_json_proxy_response(tmp_path, monk
         status = 200
         headers = {"Content-Type": "application/json"}
 
+    failure_headers = Message()
+    failure_headers["Content-Type"] = "text/plain"
     failure = HTTPError(
         "http://local/ready",
         502,
         "Bad Gateway",
-        {"Content-Type": "text/plain"},
+        failure_headers,
         io.BytesIO(b"Bad Gateway"),
     )
     opener = Mock()

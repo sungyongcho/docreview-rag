@@ -81,6 +81,7 @@ def test_changed_reset_identity_stops_rebuild(fresh_io, tmp_path, monkeypatch):
 
 def test_client_preserves_web_auth_and_does_not_retry_errors(monkeypatch):
     """Keep tokens in headers and avoid replaying an uncertain mutation."""
+    from email.message import Message
     from urllib.error import HTTPError
 
     client = commands.LocalClient(
@@ -91,7 +92,7 @@ def test_client_preserves_web_auth_and_does_not_retry_errors(monkeypatch):
     def reject(request, timeout):
         """Record one attempted request without revealing sensitive server details."""
         requests.append(request)
-        raise HTTPError(request.full_url, 409, "private-token", {}, None)
+        raise HTTPError(request.full_url, 409, "private-token", Message(), None)
 
     monkeypatch.setattr(client.opener, "open", reject)
     with pytest.raises(commands.RuntimeCommandError, match="HTTP 409") as error:
@@ -134,6 +135,7 @@ def test_status_reads_the_unified_job_board(monkeypatch, tmp_path, capsys):
 )
 def test_rejection_uses_only_the_generic_message(monkeypatch, payload):
     """Do not echo response text, diagnosis codes, or remediation strings from HTTP errors."""
+    from email.message import Message
     from io import BytesIO
     from urllib.error import HTTPError
 
@@ -143,7 +145,7 @@ def test_rejection_uses_only_the_generic_message(monkeypatch, payload):
     def reject(request, timeout):
         """Return one rejection containing deliberately sensitive arbitrary fields."""
         calls.append(request)
-        raise HTTPError(request.full_url, 409, "private-secret", {}, BytesIO(payload))
+        raise HTTPError(request.full_url, 409, "private-secret", Message(), BytesIO(payload))
 
     monkeypatch.setattr(client.opener, "open", reject)
     with pytest.raises(commands.RuntimeCommandError) as error:

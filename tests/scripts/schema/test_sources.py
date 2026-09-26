@@ -31,7 +31,9 @@ def test_clean_start_removes_sources_but_preserves_unrelated_paths(tmp_path, sam
     reset.stage()
     assert not Manifest.read(corpus / "manifest.json").artifacts
     assert not source_inventory(corpus)
-    assert len(acquisition_draft(corpus)["pairs"]) == (4 if sample else 18)
+    pairs = acquisition_draft(corpus)["pairs"]
+    assert isinstance(pairs, list)
+    assert len(pairs) == (4 if sample else 18)
     reset.finish()
     assert not reset.journal.exists()
     assert sentinel.read_text() == (tmp_path / ".env").read_text() == "keep"

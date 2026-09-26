@@ -103,6 +103,13 @@ def test_banner_needs_only_standard_tools(shell, tmp_path):
     assert result.stderr == ""
 
 
+def description_column(help_row: str) -> int:
+    """Return the offset where a help row's description starts after its padding."""
+    description = re.search(r"\S.*?\s{2,}(\S)", help_row)
+    assert description is not None
+    return description.start(1)
+
+
 @pytest.mark.parametrize("environment", [{}, {"NO_COLOR": ""}, {"TERM": "dumb"}])
 def test_help_color_policy_and_alignment(shell, environment):
     """TTY help uses aligned bold columns; NO_COLOR and dumb terminals stay plain."""
@@ -128,7 +135,7 @@ def test_help_color_policy_and_alignment(shell, environment):
             assert "\x1b[1m" in output and "\x1b[36;1m[START]" in output
         plain = re.sub(r"\x1b\[[0-9;]*m", "", output)
         rows = [line for line in plain.splitlines() if line.startswith("  rag-")]
-        assert len({re.search(r"\S.*?\s{2,}(\S)", line).start(1) for line in rows}) == 1
+        assert len({description_column(line) for line in rows}) == 1
     finally:
         os.close(slave)
         os.close(master)

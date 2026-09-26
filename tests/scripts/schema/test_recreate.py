@@ -26,6 +26,7 @@ def test_wrong_confirmation_never_stops_or_deletes(tmp_path, monkeypatch, answer
     monkeypatch.setattr("builtins.input", lambda prompt: answer)
     assert command.run(tmp_path) == "cancelled"
     assert operation.await_count == 1
+    assert operation.await_args is not None
     assert operation.await_args.args == (
         "postgresql+asyncpg://filing:filing@127.0.0.1:12345/filing",
     )
@@ -186,6 +187,7 @@ def test_real_unreadable_source_offers_quoted_owner_paths_and_one_retry(
             source.read_bytes()
         if owner_repairs:
             result = command.preview_sources(tmp_path)
+            assert result is not None
             assert set(result["files"]) == {str(source.relative_to(tmp_path / "data/corpus"))}
             assert source.read_text() == "preserve these real bytes"
         else:

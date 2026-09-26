@@ -75,6 +75,7 @@ def test_prod_configuration_uses_prod_key_without_acquisition_credentials(tmp_pa
 
 def test_prod_server_readiness_accepts_empty_corpus_without_claiming_search(monkeypatch):
     """An empty but compatible PROD DB is a valid server start, even with HTTP 503 readiness."""
+    from email.message import Message
     import io
     import json
     from unittest.mock import Mock
@@ -86,7 +87,7 @@ def test_prod_server_readiness_accepts_empty_corpus_without_claiming_search(monk
         "corpus": {"database_connected": True, "schema_status": "compatible", "documents": 0},
     }
     error = HTTPError(
-        "http://local/ready", 503, "Not ready", {}, io.BytesIO(json.dumps(response).encode())
+        "http://local/ready", 503, "Not ready", Message(), io.BytesIO(json.dumps(response).encode())
     )
     opener = Mock()
     opener.open.side_effect = error
