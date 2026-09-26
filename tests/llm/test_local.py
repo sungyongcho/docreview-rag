@@ -166,6 +166,11 @@ def test_ollama_timing_preserves_attempts_and_omits_unreceived_fields() -> None:
         assert result.metadata.local_timings[1].eval_duration_ms == 3.0
         assert result.metadata.local_timings[0].prompt_eval_duration_ms is None
         assert result.metadata.local_timings[0].total_duration_ms is None
+        # stage_metadata() is typed as generic JSON; narrow the recorded call read below.
+        assert isinstance(recorded["model_calls"], list)
+        assert isinstance(recorded["model_calls"][0], dict)
+        assert isinstance(recorded["model_calls"][0]["local_timings"], list)
+        assert isinstance(recorded["model_calls"][0]["local_timings"][0], dict)
         assert recorded["model_calls"][0]["attempts"] == 2
         assert recorded["model_calls"][0]["node"] == "grade"
         assert "prompt_eval_duration_ms" not in recorded["model_calls"][0]["local_timings"][0]

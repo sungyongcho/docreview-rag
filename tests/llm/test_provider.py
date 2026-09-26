@@ -61,6 +61,7 @@ def test_deterministic_provider_returns_typed_output_and_trace_metadata():
     result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
 
     assert result.status == "ok"
+    assert result.parsed is not None
     assert result.parsed.label == "SUPPORTED"
     assert result.refusal is None
     assert result.metadata.provider == "deterministic"
@@ -338,12 +339,17 @@ def test_strict_format_closes_every_object_and_requires_every_key():
 
     assert payload["type"] == "json_schema"
     assert payload["name"] == "AnswerDecision"
+    # The OpenAI payload type leaves "strict" optional and types the schema as
+    # dict[str, object]; narrow the parts read below.
+    assert "strict" in payload
     assert payload["strict"] is True
     schema = payload["schema"]
     assert schema["additionalProperties"] is False
+    assert isinstance(schema["properties"], dict)
     assert schema["required"] == list(schema["properties"])
 
     nested = strict_response_format(RelevanceJudgment)["schema"]
+    assert isinstance(nested["$defs"], dict)
     grade = nested["$defs"]["ChunkRelevance"]
     assert grade["additionalProperties"] is False
     assert grade["required"] == list(grade["properties"])
@@ -363,6 +369,8 @@ def test_strict_format_strips_defaults_and_requires_every_field():
 
     schema = strict_response_format(Defaulted)["schema"]
 
+    # The OpenAI payload types the schema as dict[str, object]; narrow the part read below.
+    assert isinstance(schema["properties"], dict)
     assert "default" not in schema["properties"]["label"]
     assert schema["required"] == ["label"]
 

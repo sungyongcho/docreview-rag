@@ -54,10 +54,14 @@ def test_prompt_is_strict_frozen_nonblank_and_forbids_unknown_fields():
     """Freeze a prompt, reject a blank half and refuse any field the schema does not declare."""
     prompt = Prompt(system="Return structured evidence.", user="What changed?")
 
+    # Ill-typed and undeclared fields go through model_validate, pydantic's entry point for
+    # untyped input; the constructor's typed signature does not admit them.
     with pytest.raises(ValidationError):
-        Prompt(system="Return structured evidence.", user=7)
+        Prompt.model_validate({"system": "Return structured evidence.", "user": 7})
     with pytest.raises(ValidationError):
-        Prompt(system="Return structured evidence.", user="What changed?", extra=True)
+        Prompt.model_validate(
+            {"system": "Return structured evidence.", "user": "What changed?", "extra": True}
+        )
     with pytest.raises(ValidationError):
         prompt.user = "mutated"
     with pytest.raises(ValidationError):
@@ -127,8 +131,9 @@ def test_provider_budget_requires_explicit_strict_limits_and_pricing(changes, ex
 
 def test_relevance_judgment_rejects_coercion_and_duplicate_chunks():
     """Reject coerced values and repeated chunk ids in one judgment."""
+    # The ill-typed value goes through model_validate, pydantic's entry point for untyped input.
     with pytest.raises(ValidationError):
-        ChunkRelevance(chunk_id=1, relevant=1, reason="Relevant")
+        ChunkRelevance.model_validate({"chunk_id": 1, "relevant": 1, "reason": "Relevant"})
 
     grade = ChunkRelevance(chunk_id=1, relevant=True, reason="Exact evidence")
     with pytest.raises(ValidationError):
@@ -311,5 +316,6 @@ def test_grade_reason_is_bounded_in_schema_and_truncated_instead_of_rejected():
     assert short.reason == "Direct evidence."
     with pytest.raises(ValidationError):
         ChunkRelevance(chunk_id=1, relevant=True, reason="   ")
+    # The ill-typed value goes through model_validate, pydantic's entry point for untyped input.
     with pytest.raises(ValidationError):
-        ChunkRelevance(chunk_id=1, relevant=True, reason=42)
+        ChunkRelevance.model_validate({"chunk_id": 1, "relevant": True, "reason": 42})
