@@ -160,19 +160,35 @@ def test_matrix_rejects_a_lexical_axis_without_a_ranker():
 
 
 @pytest.mark.parametrize(
-    "changes",
+    ("changes", "message"),
     [
-        {"name": "Not Stable"},
-        {"target_tokens": 0},
-        {"strategy": "unknown"},
-        {"candidate_k": 4},
-        {"lexical_ranker": None},
-        {"lexical_ranker": "okapi"},
-        {"strategy": "vector"},
+        ({"name": "Not Stable"}, "lowercase kebab-case"),
+        ({"target_tokens": 0}, "must be positive"),
+        ({"strategy": "unknown"}, "unsupported retrieval strategy"),
+        ({"candidate_k": 4}, "inconsistent"),
+        ({"lexical_ranker": None}, "requires an explicit lexical ranker"),
+        ({"lexical_ranker": "okapi"}, "requires an explicit lexical ranker"),
+        ({"strategy": "vector"}, "must not name a lexical ranker"),
+        ({"bm25_k1": None}, "require explicit k1"),
+        (
+            {"lexical_ranker": "ts_rank_cd", "bm25_b": None, "bm25_idf": None},
+            "only for bm25 arms",
+        ),
+    ],
+    ids=[
+        "name_not_kebab_case",
+        "nonpositive_chunk_target",
+        "unknown_strategy",
+        "candidate_depth_below_k",
+        "hybrid_without_a_ranker",
+        "unknown_ranker",
+        "vector_names_a_ranker",
+        "bm25_arm_without_k1",
+        "ts_rank_cd_arm_with_a_bm25_value",
     ],
 )
-def test_experiment_config_rejects_ambiguous_or_inconsistent_values(changes):
-    """Reject arm provenance that is malformed or internally contradictory."""
+def test_experiment_config_rejects_ambiguous_or_inconsistent_values(changes, message):
+    """Reject arm provenance that is malformed or internally contradictory, naming the rule."""
     values = {
         "name": "structure-1024-hybrid",
         "target_tokens": 1024,
@@ -188,38 +204,8 @@ def test_experiment_config_rejects_ambiguous_or_inconsistent_values(changes):
         "rrf_k": 60,
     }
     values.update(changes)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         ExperimentConfig(**values)
-
-
-def test_bm25_config_rejects_missing_parameters():
-    """Route a BM25 arm through the shared parameter validator, which rejects a missing k1."""
-    with pytest.raises(ValueError, match="require explicit k1"):
-        ExperimentConfig(
-            name="structure-1024-hybrid-bm25",
-            target_tokens=1024,
-            strategy="hybrid",
-            embedding_provider="deterministic",
-            dimensions=384,
-            lexical_ranker="bm25",
-            bm25_k1=None,
-            bm25_b=DEFAULT_BM25_B,
-            bm25_idf=DEFAULT_BM25_IDF,
-        )
-
-
-def test_non_bm25_config_rejects_bm25_parameters():
-    """Reject BM25 parameters on an arm that runs no BM25 query."""
-    with pytest.raises(ValueError, match="only for bm25 arms"):
-        ExperimentConfig(
-            name="structure-1024-lexical",
-            target_tokens=1024,
-            strategy="lexical",
-            embedding_provider="deterministic",
-            dimensions=384,
-            lexical_ranker="ts_rank_cd",
-            bm25_k1=DEFAULT_BM25_K1,
-        )
 
 
 def test_run_ablation_writes_stable_raw_artifacts_and_comparison_table(tmp_path):
