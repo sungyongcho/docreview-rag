@@ -193,7 +193,7 @@ def _traced_denial(
     return state.model_copy(update={"steps": (*state.steps, trace)})
 
 
-def _committed(
+def _commit_failure(
     state: WorkflowState,
     node: WorkflowNode,
     failure: ProviderFailure | NodeError,
@@ -208,7 +208,7 @@ def _committed(
     )
 
 
-def _committed_failure(
+def _commit_node_error(
     state: WorkflowState,
     node: WorkflowNode,
     error: Exception,
@@ -218,7 +218,7 @@ def _committed_failure(
     if not message.strip():
         message = f"{node} failed without an error message"
     failure = NodeError(node=node, error_type=type(error).__name__, message=message)
-    return _committed(state, node, failure)
+    return _commit_failure(state, node, failure)
 
 
 class BilledRunAllowanceError(AIAllowanceError):
@@ -389,7 +389,7 @@ async def run_workflow(
                 current = report_node(current)
             except Exception as error:
                 measurement.failed = True
-                current = _committed_failure(current, "report", error)
+                current = _commit_node_error(current, "report", error)
                 await notify("report", current)
                 return failed(current)
         await notify("report", current)
@@ -424,7 +424,7 @@ async def run_workflow(
         if isinstance(allowance, ProviderFailure):
             async with stage(node) as measurement:
                 measurement.failed = True
-                current = _committed(current, node, allowance)
+                current = _commit_failure(current, node, allowance)
             await notify(node, current)
             return failed(current)
         denied: AIAllowanceError | None = None
@@ -444,14 +444,15 @@ async def run_workflow(
                 denied = error
                 failure = _allowance_failure(node, error, attempts=error.metadata.requests)
                 current = _traced_denial(current, error.metadata, failure)
-                current = _committed(current, node, failure)
+                current = _commit_failure(current, node, failure)
             except AIAllowanceError as error:
                 if not current.steps:
                     raise
                 denied = error
-                current = _committed(current, node, _allowance_failure(node, error, attempts=0))
+                failure = _allowance_failure(node, error, attempts=0)
+                current = _commit_failure(current, node, failure)
             except Exception as error:
-                current = _committed_failure(current, node, error)
+                current = _commit_node_error(current, node, error)
             measurement.failed = current.failure is not None
         await notify(node, current)
         if denied is not None:
@@ -466,7 +467,7 @@ async def run_workflow(
         except AIAllowanceError:
             raise
         except Exception as error:
-            state = _committed_failure(state, "retrieve", error)
+            state = _commit_node_error(state, "retrieve", error)
             await notify("retrieve", state)
             measurement.failed = True
             return failed(state)
