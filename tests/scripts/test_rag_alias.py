@@ -679,12 +679,14 @@ def run_lifecycle_tty(shell, command, environment, *, answers="", interactive=Tr
         args.append("-i")
     args.extend(["-c", command])
     isolated = {**os.environ, **environment, "TERM": "xterm-256color", "PS1": "", "PS2": ""}
-    pid, master = pty.fork()
-    if pid == 0:
-        try:
-            os.execve(shell, args, isolated)
-        except OSError:
-            os._exit(127)
+    master, slave = pty.openpty()
+    try:
+        # subprocess forks in C, so a multi-threaded pytest process gets no forkpty warning;
+        # login_tty makes the slave the child's controlling terminal and its stdio.
+        child = subprocess.Popen(args, env=isolated, preexec_fn=lambda: os.login_tty(slave))
+    finally:
+        os.close(slave)
+    pid = child.pid
     status = None
     chunks = []
     ended = False
@@ -694,9 +696,7 @@ def run_lifecycle_tty(shell, command, environment, *, answers="", interactive=Tr
             os.write(master, answers.encode())
         while time.monotonic() < deadline:
             if status is None:
-                observed, code = os.waitpid(pid, os.WNOHANG)
-                if observed:
-                    status = os.waitstatus_to_exitcode(code)
+                status = child.poll()
             if select.select([master], [], [], 0.05)[0]:
                 try:
                     data = os.read(master, 65536)
@@ -719,7 +719,7 @@ def run_lifecycle_tty(shell, command, environment, *, answers="", interactive=Tr
                 os.killpg(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            os.waitpid(pid, 0)
+            child.wait()
         os.close(master)
 
 
