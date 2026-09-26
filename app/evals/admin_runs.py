@@ -20,7 +20,7 @@ from app.evals.run import run_matrix
 from app.evals.source_binding import matrix_scope
 from app.evals.suites import SUITES
 from app.evals.types import GoldenCase
-from app.retrieval.cross_encoder import CrossEncoderReranker
+from app.retrieval.cross_encoder import shared_cross_encoder
 from app.retrieval.embeddings import EmbeddingProvider
 from app.retrieval.service import retrieve
 from app.retrieval.types import RetrievalFilters
@@ -49,7 +49,7 @@ def quick_retriever(
             route_by_language=profile.route_by_language,
             filters=filters,
         )
-    reranker = CrossEncoderReranker.shared()
+    reranker = shared_cross_encoder()
 
     async def run(query: str, k: int) -> list[Any]:
         """Retrieve and rerank one query with the bound profile."""

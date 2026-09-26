@@ -86,7 +86,7 @@ from app.observability.usage import USAGE_KEY, merge_usage, review_usage
 from app.operator.job_history import JobHistoryService
 from app.operator.jobs import JobExecutionCoordinator, JobStore, StoredJob
 from app.operator.progress import progress_fields
-from app.retrieval.cross_encoder import CrossEncoderReranker
+from app.retrieval.cross_encoder import shared_cross_encoder
 from app.retrieval.service import ComponentRankings, RetrievalResult, retrieve
 from app.retrieval.types import RetrievalFilters
 
@@ -788,7 +788,7 @@ class RuntimeAdminApiServices:
                 candidate_k=profile.candidate_k,
                 filters=filters,
                 rrf_k=profile.rrf_k,
-                reranker=CrossEncoderReranker.shared() if profile.reranker else None,
+                reranker=shared_cross_encoder() if profile.reranker else None,
                 route_by_language=profile.route_by_language,
                 lexical_ranker=profile.lexical_ranker or "ts_rank_cd",
                 bm25_k1=profile.bm25_k1,

@@ -7,7 +7,7 @@ torch backend extra leaves ``app.retrieval`` importable.
 import asyncio
 from collections.abc import Callable, Sequence
 import threading
-from typing import Protocol, Self, cast
+from typing import Protocol, cast
 
 from app.retrieval._sentence_transformers import ThreadSafeLazy, sentence_transformers_attribute
 from app.retrieval.rerank import RerankProvider
@@ -63,28 +63,6 @@ class CrossEncoderReranker(RerankProvider):
         self.batch_size = batch_size
         self.max_length = max_length
         self._encoder = ThreadSafeLazy[Callable[[list[tuple[str, str]]], list[float]]]()
-
-    @classmethod
-    def shared(
-        cls,
-        *,
-        model: str = DEFAULT_MODEL,
-        batch_size: int = 32,
-        max_length: int = DEFAULT_MAX_LENGTH,
-    ) -> Self:
-        """Return the process-wide reranker for one configuration.
-
-        Every request that asks for reranking resolves the same instance, so the model
-        is read from disk once per process instead of once per request. Direct
-        construction stays private to its caller.
-        """
-        key = (model, batch_size, max_length)
-        with _SHARED_LOCK:
-            reranker = _SHARED_RERANKERS.get(key)
-            if reranker is None:
-                reranker = cls(model=model, batch_size=batch_size, max_length=max_length)
-                _SHARED_RERANKERS[key] = reranker
-        return cast(Self, reranker)
 
     def _load(self) -> Callable[[list[tuple[str, str]]], list[float]]:
         """Return the cached predictor, constructing it once when absent.
@@ -146,5 +124,29 @@ class CrossEncoderReranker(RerankProvider):
         return await asyncio.to_thread(self._predict, pairs)
 
 
+# One reranker per configuration; the lock keeps concurrent first calls from building two.
 _SHARED_RERANKERS: dict[tuple[str, int, int], CrossEncoderReranker] = {}
 _SHARED_LOCK = threading.Lock()
+
+
+def shared_cross_encoder(
+    *,
+    model: str = DEFAULT_MODEL,
+    batch_size: int = 32,
+    max_length: int = DEFAULT_MAX_LENGTH,
+) -> CrossEncoderReranker:
+    """Return the process-wide reranker for one configuration.
+
+    Every request that asks for reranking resolves the same instance, so the model
+    is read from disk once per process instead of once per request. Direct
+    construction stays private to its caller.
+    """
+    key = (model, batch_size, max_length)
+    with _SHARED_LOCK:
+        reranker = _SHARED_RERANKERS.get(key)
+        if reranker is None:
+            reranker = CrossEncoderReranker(
+                model=model, batch_size=batch_size, max_length=max_length
+            )
+            _SHARED_RERANKERS[key] = reranker
+    return reranker

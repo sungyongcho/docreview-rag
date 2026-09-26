@@ -74,7 +74,7 @@ from app.observability.types import JsonObject, RunReport, StepTrace, WorkflowNo
 from app.observability.usage import provider_identity
 from app.operator.corpus_access import CorpusAccess, CorpusUpdatingError
 from app.operator.jobs import _default_session_factory
-from app.retrieval.cross_encoder import CrossEncoderReranker
+from app.retrieval.cross_encoder import shared_cross_encoder
 from app.retrieval.embeddings import EmbeddingProvider
 from app.retrieval.language import detect_query_language
 from app.retrieval.rerank import RerankProvider
@@ -554,7 +554,7 @@ class RuntimeApiServices(ApiServices):
             candidate_k=max(plan.candidate_k, k),
             filters=filters,
             rrf_k=plan.rrf_k,
-            reranker=CrossEncoderReranker.shared() if plan.reranker else None,
+            reranker=shared_cross_encoder() if plan.reranker else None,
             route_by_language=plan.route_by_language,
             lexical_ranker=plan.lexical_ranker or "ts_rank_cd",
             bm25_k1=plan.bm25_k1,

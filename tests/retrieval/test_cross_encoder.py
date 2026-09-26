@@ -159,11 +159,9 @@ def test_shared_reranker_is_one_instance_per_model_and_batch_size(monkeypatch):
             return [1.0] * len(pairs)
 
     fake_sentence_transformers(monkeypatch, CrossEncoder=Encoder)
-    first = cross_encoder.CrossEncoderReranker.shared(model="cross-encoder/fake")
-    second = cross_encoder.CrossEncoderReranker.shared(model="cross-encoder/fake")
-    smaller_batches = cross_encoder.CrossEncoderReranker.shared(
-        model="cross-encoder/fake", batch_size=8
-    )
+    first = cross_encoder.shared_cross_encoder(model="cross-encoder/fake")
+    second = cross_encoder.shared_cross_encoder(model="cross-encoder/fake")
+    smaller_batches = cross_encoder.shared_cross_encoder(model="cross-encoder/fake", batch_size=8)
 
     assert first is second
     assert smaller_batches is not first
