@@ -78,8 +78,9 @@ async def backfill_term_stats(session: AsyncSession) -> TermStatCounts:
 
     Notes
     -----
-    Source and derived-table locks keep the rebuilt rows and singleton corpus metadata
-    on one consistent chunk snapshot.
+    Source and derived-table locks keep the rebuilt rows and the per-language corpus
+    rows (document count and average length for each corpus language) on one
+    consistent chunk snapshot.
     """
     if session.in_transaction():
         raise RuntimeError("backfill_term_stats requires a session without an active transaction")
@@ -245,7 +246,8 @@ def bm25_statement(
 
     Notes
     -----
-    Scores use the atomically rebuilt corpus-size and average-length singleton row.
+    Scores use the atomically rebuilt per-language corpus-size and average-length rows:
+    every chunk is scored against the statistics of its own corpus language.
     """
     normalized_k1, normalized_b = _validated_parameters(query, k, k1, b)
     active_filters = filters or RetrievalFilters()

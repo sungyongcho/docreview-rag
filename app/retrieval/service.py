@@ -144,8 +144,8 @@ async def retrieve(
     provenance) is fixed by the plan table rather than by the query. Each lexical lane
     parses the query with the tokenizer its corpus was indexed with: the ``"ko"`` lane
     uses the same n-gram tokenizer the Korean rows were stored through. A filter
-    mixing corpus languages is rejected because one lexical statement cannot parse a
-    query under two configurations at once.
+    naming several corpus languages runs one lexical lane per language, each with its
+    own tokenizer and text-search configuration.
 
     Vector lanes fan out per language only when ``query_variants`` supplies a
     translation: each corpus is then embedded with the query written in its own
