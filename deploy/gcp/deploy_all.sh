@@ -126,18 +126,6 @@ stage_backend() {
     ui_fail "DOCREVIEW_IMAGE is empty — set it in .env or use the Artifact Registry default."
     exit 1
   fi
-  if [ "${mode}" = "first-install" ]; then
-    if [ -z "${POSTGRES_PASSWORD}" ]; then
-      ui_fail "DEPLOY_POSTGRES_PASSWORD is required — set it in .env (see .env.example)."
-      exit 1
-    fi
-    local artifact_dir="${DEPLOY_ARTIFACT_DIR:-${HOME}/.local/share/docreview/prod-artifacts/20260909-portfolio18}"
-    if [ ! -d "${artifact_dir}" ]; then
-      ui_fail "Deployment artifact directory not found: ${artifact_dir}"
-      exit 1
-    fi
-    ui_ok "artifacts: ${artifact_dir}"
-  fi
   ui_step 4 5 "Backend ${mode}"
   ui_confirm "Run the backend ${mode} deployment on the VM?" || { ui_warn "Cancelled."; exit 1; }
   ui_run "Backend ${mode}" bash "${SCRIPT_DIR}/deploy_backend.sh" "${mode}" || exit 1

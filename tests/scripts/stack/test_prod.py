@@ -1,5 +1,6 @@
 """Validate local PROD restoration boundaries without modifying real services in unit tests."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -40,7 +41,9 @@ def environment(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "require_running_mode", Mock())
     monkeypatch.setattr(prod, "LocalDatabase", lambda _: database)
     monkeypatch.setattr(prod, "receipt_path", lambda *_: receipt)
-    monkeypatch.setattr(prod, "validate_artifacts", Mock(return_value=manifest))
+    monkeypatch.setattr(
+        prod, "validate_artifacts", Mock(return_value=prod.PublicBundle(bundle, manifest, {}, {}))
+    )
     monkeypatch.setattr(prod, "validate_database", Mock())
     monkeypatch.setattr(prod, "validate_restored_files", Mock())
     monkeypatch.setattr(prod, "extract_artifacts", Mock())
@@ -144,6 +147,28 @@ def test_storage_never_follows_foreign_symlinks(tmp_path):
     with pytest.raises(ValueError, match="symlink"):
         prod.ensure_storage(root)
     assert not list(foreign.iterdir())
+
+
+def test_restored_evaluation_checks_follow_the_selected_bundle(tmp_path):
+    """Fresh evaluation names are checked on reuse, and modified mounted evidence is rejected."""
+    target = tmp_path / "restored"
+    (target / "corpus").mkdir(parents=True)
+    (target / "eval-runs").mkdir()
+    manifest = {"artifacts": []}
+    (target / "corpus/manifest.json").write_text(json.dumps(manifest))
+    name = "20260926T234500Z-admin-dart-ko.json"
+    evidence = target / "eval-runs" / name
+    evidence.write_bytes(b"validated evaluation")
+    bundle = prod.PublicBundle(
+        tmp_path / "bundle",
+        manifest,
+        {f"eval_runs/{name}": {"sha256": hashlib.sha256(evidence.read_bytes()).hexdigest()}},
+        {name: {}},
+    )
+    prod.validate_restored_files(bundle, target)
+    evidence.write_bytes(b"changed after restoration")
+    with pytest.raises(ValueError, match="Restored file checksum mismatch"):
+        prod.validate_restored_files(bundle, target)
 
 
 def test_bundle_selection_is_explicit_or_unambiguous(tmp_path, monkeypatch):
@@ -275,10 +300,10 @@ def test_prepared_local_prod_has_verified_sources_vectors_and_foreign_keys():
     database = prod.LocalDatabase(root)
     assert database.isolated(), "The live acceptance target must be the dedicated local PROD volume"
     bundle = prod.artifact_directory(root, None)
-    manifest = prod.validate_artifacts(bundle)
+    validated = prod.validate_artifacts(bundle)
     report = database.report()
-    prod.validate_database(manifest, report, allow_runtime_history=True)
-    prod.validate_restored_files(bundle, prod.storage(root), manifest)
+    prod.validate_database(validated, report, allow_runtime_history=True)
+    prod.validate_restored_files(validated, prod.storage(root))
     database.validate_references()
     counts = json.loads(
         database.sql(

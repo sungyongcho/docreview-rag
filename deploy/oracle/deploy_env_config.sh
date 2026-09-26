@@ -69,7 +69,7 @@ export ORACLE_BUILD_DIR="${DEPLOY_ORACLE_BUILD_DIR:-/home/${ORACLE_SSH_USER}/bui
 
 # ===== Secrets and artifacts (same names as deploy/gcp) =====
 export POSTGRES_PASSWORD="${DEPLOY_POSTGRES_PASSWORD:-}"
-export ARTIFACT_DIR="${DEPLOY_ARTIFACT_DIR:-${HOME}/.local/share/docreview/prod-artifacts/20260909-portfolio18}"
+export ARTIFACT_DIR="${DEPLOY_ARTIFACT_DIR:-}"
 
 _mask_len() {
   local s="${1:-}"

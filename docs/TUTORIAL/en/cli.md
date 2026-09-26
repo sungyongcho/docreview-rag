@@ -105,6 +105,11 @@ environment or `.env`, then the sole directory containing checksums under
 `~/.local/share/docreview/prod-artifacts`. Missing or ambiguous bundles stop preparation
 with an actionable message. No download or paid embedding generation is automatic.
 
+Use a bundle with evaluations generated in the current format. The original
+`20260909-portfolio18` bundle is retained as an archive; its legacy evaluation records
+are not supported. When both bundles are present, select the current bundle explicitly
+with `--artifacts` or `DOCREVIEW_PROD_ARTIFACT_DIR`.
+
 Only the public 18-document deployment bundle is supported. Its checksums and
 deployment format are validated; `database.private.dump` is never restored. PROD uses the
 dedicated `prod_pg_data` volume, separate from DEV's `pg_data`, and restores files

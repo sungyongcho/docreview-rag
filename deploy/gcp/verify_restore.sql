@@ -19,6 +19,24 @@ SELECT json_build_object(
         ) complete
     ),
     'evaluation_paths', (SELECT json_agg(raw_artifact_path ORDER BY raw_artifact_path) FROM eval_results),
+    'evaluations', (
+        SELECT json_agg(json_build_object(
+            'path', e.raw_artifact_path,
+            'suite', e.suite,
+            'config', e.config,
+            'metrics', e.metrics,
+            'snapshot_sources', (
+                SELECT json_agg(json_build_object('doc_id', source.doc_id, 'source_sha256', source.source_sha256))
+                FROM (
+                    SELECT DISTINCT c.doc_id, c.source_sha256
+                    FROM snapshot_chunks c
+                    JOIN evaluation_snapshots s ON s.id = c.snapshot_id
+                    WHERE s.eval_result_id = e.id
+                ) source
+            )
+        ) ORDER BY e.raw_artifact_path)
+        FROM eval_results e
+    ),
     'linked_evaluations', (
         SELECT count(DISTINCT e.id) FROM eval_results e
         JOIN evaluation_snapshots s ON s.eval_result_id = e.id
