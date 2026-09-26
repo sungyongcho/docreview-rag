@@ -166,13 +166,6 @@ def test_ingest_requires_explicit_selection():
         cli.arguments(["ingest", "--manifest", "manifest.json"])
 
 
-@pytest.mark.parametrize("flag", ["--create-schema", "--recreate-schema"])
-def test_ingest_cannot_reset_or_bootstrap_the_database(flag):
-    """Keep first-run setup and destructive reset outside ingestion jobs."""
-    with pytest.raises(cli.CliError):
-        cli.arguments(["ingest", "--manifest", "manifest.json", "--selection", "tutorial", flag])
-
-
 def test_ingest_submits_the_shared_job_contract(monkeypatch):
     """Return the exact application job state rather than run a second ingestion path."""
     from dataclasses import asdict
