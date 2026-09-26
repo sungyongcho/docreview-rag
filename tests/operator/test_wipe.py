@@ -160,11 +160,11 @@ volumes:
     async def scenario():
         """Run the destructive path solely against the declared disposable checkout."""
         try:
-            await service._docker_identity()
-            await service._run(*service._compose("up", "-d", "--wait"))
+            await service.commands.verify_docker_identity()
+            await service.commands.run(*service.commands.compose_command("up", "-d", "--wait"))
             target = await service.inspect()
             assert (await service.capability())["available"] is True
-            await service._run(
+            await service.commands.run(
                 "docker",
                 "exec",
                 target["app_container"],
@@ -175,7 +175,7 @@ volumes:
                 "p.write_text(json.dumps({'pid': 1, 'token': 'disposable-token'})); p.chmod(0o600)",
             )
             assert (await service.capability())["available"] is False
-            await service._run(
+            await service.commands.run(
                 "docker",
                 "exec",
                 target["app_container"],
@@ -191,7 +191,7 @@ volumes:
             with pytest.raises(WipeError, match="Compose configuration differs"):
                 await service.preview()
             overlay.write_text("services: {}\n")
-            await service._sql(
+            await service.commands.query_database(
                 target["database_container"],
                 "CREATE TABLE wipe_probe(id int); INSERT INTO wipe_probe VALUES(1); "
                 "INSERT INTO operator_jobs "
@@ -202,7 +202,9 @@ volumes:
             )
             with pytest.raises(WipeError, match="Finish active jobs"):
                 await service.preview()
-            await service._sql(target["database_container"], "DELETE FROM operator_jobs")
+            await service.commands.query_database(
+                target["database_container"], "DELETE FROM operator_jobs"
+            )
             preview = await service.preview()
             overlay.write_text(
                 "services:\n  app:\n    environment:\n      DOCREVIEW_TEST: changed\n"
@@ -226,12 +228,12 @@ volumes:
                 (root / name).read_text() == "preserved source" for name in preserved_sources
             )
         except WipeError as error:
-            logs = await service._run(
-                *service._compose("logs", "--no-color", "--tail", "50", "app")
+            logs = await service.commands.run(
+                *service.commands.compose_command("logs", "--no-color", "--tail", "50", "app")
             )
             raise AssertionError(f"Disposable app failed: {logs}") from error
         finally:
-            await service._run(*service._compose("down", "-v"))
+            await service.commands.run(*service.commands.compose_command("down", "-v"))
 
     asyncio.run(scenario())
 
@@ -274,13 +276,13 @@ def test_preview_refuses_production_and_external_database(
             )
         raise AssertionError(f"Unexpected operation: {args}")
 
-    monkeypatch.setattr(service, "_run", run)
+    monkeypatch.setattr(service.commands, "run", run)
 
     async def local_daemon():
         """Keep this test focused on application rather than Docker endpoint validation."""
         return {"id": "test-local-daemon"}
 
-    monkeypatch.setattr(service, "_docker_identity", local_daemon)
+    monkeypatch.setattr(service.commands, "verify_docker_identity", local_daemon)
     with pytest.raises(WipeError):
         asyncio.run(service.preview())
     assert len(calls) == 4
@@ -299,41 +301,10 @@ def test_docker_context_refuses_non_unix_targets(tmp_path, monkeypatch, endpoint
         assert args == ("docker", "context", "inspect", "isolated-context")
         return json.dumps([{"Endpoints": {"docker": {"Host": endpoint}}}])
 
-    monkeypatch.setattr(service, "_run", run)
+    monkeypatch.setattr(service.commands, "run", run)
     with pytest.raises(WipeError, match="local Docker Unix socket"):
         asyncio.run(service.preview())
     assert len(calls) == 1
-
-
-def test_docker_commands_pin_endpoint_and_remove_context_overrides(tmp_path, monkeypatch):
-    """A later context change cannot redirect commands away from the preview's local daemon."""
-    service = WipeService(tmp_path, lambda: False)
-    service._docker_host = "unix:///tmp/verified-test.sock"
-    monkeypatch.setenv("DOCKER_CONTEXT", "remote")
-    monkeypatch.setenv("DOCKER_HOST", "ssh://remote")
-    monkeypatch.setenv("DOCKER_TLS_VERIFY", "1")
-    captured = {}
-
-    class Process:
-        """Record one command invocation without launching Docker or any child process."""
-
-        returncode = 0
-
-        async def communicate(self, _input):
-            """Return a successful read-only command response."""
-            return b"test-daemon", b""
-
-    async def spawn(*args, **kwargs):
-        """Capture argv and environment at the real subprocess boundary."""
-        captured.update(argv=args, environment=kwargs["env"])
-        return Process()
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
-    assert asyncio.run(service._run("docker", "info")) == "test-daemon"
-    assert captured["argv"] == ("docker", "--host", "unix:///tmp/verified-test.sock", "info")
-    assert (
-        not {"DOCKER_CONTEXT", "DOCKER_HOST", "DOCKER_TLS_VERIFY"} & captured["environment"].keys()
-    )
 
 
 def test_operation_lock_serializes_other_operator_processes(tmp_path):
@@ -366,8 +337,8 @@ def test_failed_hold_is_released_before_any_stop_and_restart_keeps_evidence(tmp_
         events.append(action)
         return {"lease": payload["lease"], "instance": "new-worker"}
 
-    monkeypatch.setattr(service, "_run", run)
-    monkeypatch.setattr(service, "_runtime_request", request)
+    monkeypatch.setattr(service.commands, "run", run)
+    monkeypatch.setattr(service.commands, "request_runtime_gate", request)
     service._result = {"status": "running", "completed": []}
     asyncio.run(service._execute(target))
     assert events == ["hold", "release"]
@@ -388,7 +359,7 @@ def test_close_terminates_child_and_persists_interrupted_status(tmp_path, monkey
         async def execute():
             """Run a real process with no database or Docker operations."""
             try:
-                await service._run(
+                await service.commands.run(
                     sys.executable,
                     "-c",
                     "import os, pathlib, sys, time; "
@@ -454,9 +425,9 @@ def test_explicit_recovery_releases_only_the_recorded_daemon_and_lease(
         assert payload == {"lease": "recorded-lease"}
         return {"released": True}
 
-    monkeypatch.setattr(recovered, "_docker_identity", identity)
-    monkeypatch.setattr(recovered, "_run", run)
-    monkeypatch.setattr(recovered, "_runtime_request", request)
+    monkeypatch.setattr(recovered.commands, "verify_docker_identity", identity)
+    monkeypatch.setattr(recovered.commands, "run", run)
+    monkeypatch.setattr(recovered.commands, "request_runtime_gate", request)
     if same_daemon:
         result = asyncio.run(recovered.recover())
         assert result["recovery_required"] is False
@@ -504,8 +475,8 @@ def test_partial_volume_failure_never_deletes_files_or_automatically_restarts(
         return {"lease": payload["lease"], "instance": "worker-id"}
 
     monkeypatch.setattr(service, "inspect", inspect)
-    monkeypatch.setattr(service, "_run", run)
-    monkeypatch.setattr(service, "_runtime_request", request)
+    monkeypatch.setattr(service.commands, "run", run)
+    monkeypatch.setattr(service.commands, "request_runtime_gate", request)
     asyncio.run(service._execute(target))
     result = service.result()
     assert result["status"] == "failed"
@@ -584,7 +555,7 @@ def test_capability_checks_complete_preview_prerequisites_without_writes(
                     }
                 ]
             )
-        if args == service._compose("config", "--format", "json"):
+        if args == service.commands.compose_command("config", "--format", "json"):
             return json.dumps(compose)
         if args == ("git", "ls-files", "-z"):
             return ""
@@ -609,10 +580,10 @@ def test_capability_checks_complete_preview_prerequisites_without_writes(
         assert (container, action, payload) == ("app-id", "activity", None)
         return {"active_requests": 0, "held": False, "instance": "test-gate"}
 
-    monkeypatch.setattr(service, "_run", run)
-    monkeypatch.setattr(service, "_sql", sql)
-    monkeypatch.setattr(service, "_docker_identity", identity)
-    monkeypatch.setattr(service, "_runtime_request", activity)
+    monkeypatch.setattr(service.commands, "run", run)
+    monkeypatch.setattr(service.commands, "query_database", sql)
+    monkeypatch.setattr(service.commands, "verify_docker_identity", identity)
+    monkeypatch.setattr(service.commands, "request_runtime_gate", activity)
     capability = asyncio.run(service.capability())
     assert capability["available"] is (blocker is None)
     assert capability["checked_at"]

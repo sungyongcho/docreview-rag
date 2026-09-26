@@ -11,12 +11,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import signal
-import stat
 import tempfile
 import time
 from typing import Any
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from dotenv import dotenv_values
@@ -24,6 +21,7 @@ from sqlalchemy.engine import make_url
 
 from app.atomic_write import write_text_atomically
 from app.observability.persistence import redact_sensitive_text
+from app.operator.wipe_commands import WipeCommandRunner
 from app.operator.wipe_errors import WipeError, diagnose_wipe_error
 from app.operator.wipe_files import list_runtime_files, remove_runtime_file
 
@@ -38,7 +36,7 @@ class WipeService:
         self._preview: dict[str, Any] | None = None
         self.lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
-        self._docker_host: str | None = None
+        self.commands = WipeCommandRunner(self.root)
         self._lease: tuple[str, str] | None = None
         self._lease_instance: str | None = None
         self._lease_daemon: dict[str, Any] | None = None
@@ -61,7 +59,7 @@ class WipeService:
                 self._lease_daemon = recorded["lease_daemon"]
                 if self._lease_daemon is None:
                     raise WipeError("Reset audit daemon identity is missing")
-                self._docker_host = self._lease_daemon["endpoint"]
+                self.commands.docker_host = self._lease_daemon["endpoint"]
             if self._result["status"] == "running":
                 self._result.update(status="interrupted", message="Operator restarted during reset")
 
@@ -83,141 +81,6 @@ class WipeService:
             os.close(self._operation_fd)
             self._operation_fd = None
 
-    async def _run(
-        self,
-        *argv: str,
-        environment: dict[str, str] | None = None,
-        input_text: str | None = None,
-    ) -> str:
-        """Run exact arguments with bounded, redacted failure reporting."""
-        environment = dict(os.environ if environment is None else environment)
-        if argv[0] == "docker" and argv[1] != "context" and self._docker_host is not None:
-            argv = ("docker", "--host", self._docker_host, *argv[1:])
-            for key in ("DOCKER_CONTEXT", "DOCKER_HOST", "DOCKER_TLS", "DOCKER_TLS_VERIFY"):
-                environment.pop(key, None)
-        process = await asyncio.create_subprocess_exec(
-            *argv,
-            cwd=self.root,
-            env=environment,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.PIPE if input_text is not None else None,
-            start_new_session=True,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input_text.encode() if input_text is not None else None), 180
-            )
-        except TimeoutError:
-            await self._terminate(process)
-            raise WipeError("Local reset command timed out") from None
-        except asyncio.CancelledError:
-            await self._terminate(process)
-            raise
-        if process.returncode:
-            raise WipeError(redact_sensitive_text(stderr.decode(errors="replace")[-2000:]))
-        return stdout.decode()
-
-    async def _terminate(self, process: asyncio.subprocess.Process) -> None:
-        """Stop Docker CLI children before releasing an interrupted reset."""
-        if process.returncode is None:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            await process.wait()
-
-    async def _docker_identity(self) -> dict[str, Any]:
-        """Pin all commands to a verified local Unix socket and daemon identity."""
-        if self._docker_host is None:
-            context = os.environ.get("DOCKER_CONTEXT")
-            host = os.environ.get("DOCKER_HOST") if not context else None
-            if not host:
-                arguments = (context,) if context else ()
-                metadata = json.loads(await self._run("docker", "context", "inspect", *arguments))
-                host = metadata[0]["Endpoints"]["docker"]["Host"]
-            parsed = urlparse(host)
-            if (
-                parsed.scheme != "unix"
-                or parsed.netloc
-                or not Path(parsed.path).is_absolute()
-                or parsed.query
-                or parsed.fragment
-            ):
-                raise WipeError("Reset requires a local Docker Unix socket")
-            self._docker_host = f"unix://{Path(parsed.path).resolve()}"
-        socket_path = Path(urlparse(self._docker_host).path)
-        metadata = socket_path.stat()
-        if not stat.S_ISSOCK(metadata.st_mode):
-            raise WipeError("Docker endpoint is not a local Unix socket")
-        daemon_id = (await self._run("docker", "info", "--format", "{{.ID}}")).strip()
-        if not daemon_id:
-            raise WipeError("Docker daemon identity is unavailable")
-        return {
-            "endpoint": self._docker_host,
-            "id": daemon_id,
-            "socket_device": metadata.st_dev,
-            "socket_inode": metadata.st_ino,
-        }
-
-    def _compose(self, *arguments: str, frozen: bool = False) -> tuple[str, ...]:
-        """Use only this checkout and the explicit development overlay."""
-        return (
-            "docker",
-            "compose",
-            "--project-directory",
-            str(self.root),
-            "-p",
-            self.root.name,
-            *(
-                ("-f", "-")
-                if frozen
-                else ("-f", "docker/docker-compose.yml", "-f", "docker/docker-compose.dev.yml")
-            ),
-            *arguments,
-        )
-
-    async def _runtime_request(
-        self, container: str, action: str, payload: dict[str, str] | None = None
-    ) -> dict[str, Any]:
-        """Contact the verified app's request gate only through its container loopback."""
-        code = """import json, os, pathlib, stat, sys, urllib.error, urllib.request
-live = []
-for path in pathlib.Path('/tmp').glob('docreview-runtime-gate-*.json'):
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    with os.fdopen(descriptor) as stream:
-        metadata = os.fstat(stream.fileno())
-        if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
-            sys.exit('Runtime reset token file permissions are invalid')
-        if metadata.st_uid != os.getuid():
-            sys.exit('Runtime reset token file owner differs from application user')
-        record = json.load(stream)
-    pid = record.get('pid')
-    if type(pid) is not int or pid <= 0:
-        sys.exit('Runtime reset token process identity is invalid')
-    if pathlib.Path('/proc', str(pid)).exists():
-        live.append(record)
-if len(live) != 1:
-    sys.exit('Reset requires exactly one live application gate worker')
-payload = json.loads(sys.argv[2])
-request = urllib.request.Request(
-    'http://127.0.0.1:8000/_internal/reset/' + sys.argv[1],
-    data=json.dumps(payload).encode() if payload is not None else None,
-    headers={'Content-Type': 'application/json', 'X-DocReview-Reset': live[0]['token']},
-    method='POST' if payload is not None else 'GET',
-)
-try:
-    with urllib.request.urlopen(request, timeout=10) as response:
-        print(response.read().decode())
-except urllib.error.HTTPError as error:
-    sys.exit('Runtime reset gate rejected the request: HTTP ' + str(error.code))
-"""
-        return json.loads(
-            await self._run(
-                "docker", "exec", container, "python", "-c", code, action, json.dumps(payload)
-            )
-        )
-
     def _check_single_worker(self, app: dict[str, Any]) -> None:
         """Require the known single-worker Uvicorn development process contract."""
         command = app["Config"].get("Cmd") or []
@@ -238,11 +101,11 @@ except urllib.error.HTTPError as error:
             raise WipeError(
                 "Finish active local operations before resetting", code="active_local_operations"
             )
-        daemon = await self._docker_identity()
+        daemon = await self.commands.verify_docker_identity()
         rows = []
         for service in ("db", "app"):
             ids = (
-                await self._run(
+                await self.commands.run(
                     "docker",
                     "ps",
                     "-aq",
@@ -254,7 +117,7 @@ except urllib.error.HTTPError as error:
             ).split()
             if len(ids) != 1:
                 raise WipeError(f"Expected exactly one local {service} container")
-            row = json.loads(await self._run("docker", "inspect", ids[0]))[0]
+            row = json.loads(await self.commands.run("docker", "inspect", ids[0]))[0]
             labels = row["Config"]["Labels"]
             if (
                 Path(labels.get("com.docker.compose.project.working_dir", "")).resolve()
@@ -315,12 +178,14 @@ except urllib.error.HTTPError as error:
         if len(mounts) != 1 or mounts[0]["Type"] != "volume":
             raise WipeError("Database does not use the expected named volume")
         volume = mounts[0]["Name"]
-        volume_info = json.loads(await self._run("docker", "volume", "inspect", volume))[0]
+        volume_info = json.loads(await self.commands.run("docker", "volume", "inspect", volume))[0]
         if (volume_info.get("Labels") or {}).get("com.docker.compose.project") != self.root.name:
             raise WipeError("Database volume belongs to another project")
         if volume_info.get("Driver") != "local" or volume_info.get("Options"):
             raise WipeError("Database volume must use local storage without driver options")
-        compose_json = await self._run(*self._compose("config", "--format", "json"))
+        compose_json = await self.commands.run(
+            *self.commands.compose_command("config", "--format", "json")
+        )
         compose = json.loads(compose_json)
         self._compose_json = compose_json
         planned_db = compose["services"]["db"]
@@ -349,7 +214,7 @@ except urllib.error.HTTPError as error:
         ):
             raise WipeError("Development Compose configuration differs from the reset target")
         tables = (
-            await self._sql(
+            await self.commands.query_database(
                 database["Id"],
                 "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename",
             )
@@ -358,10 +223,14 @@ except urllib.error.HTTPError as error:
         for table in tables:
             if not table.replace("_", "").isalnum():
                 raise WipeError("Unexpected database table identifier")
-            counts[table] = int(await self._sql(database["Id"], f'SELECT count(*) FROM "{table}"'))
+            counts[table] = int(
+                await self.commands.query_database(
+                    database["Id"], f'SELECT count(*) FROM "{table}"'
+                )
+            )
         for table in ("operator_jobs",):
             if table in counts and int(
-                await self._sql(
+                await self.commands.query_database(
                     database["Id"],
                     f"SELECT count(*) FROM {table} WHERE status IN ('queued','running','pending')",
                 )
@@ -376,7 +245,7 @@ except urllib.error.HTTPError as error:
                     ],
                 )
         if app.get("State", {}).get("Running"):
-            activity = await self._runtime_request(app["Id"], "activity")
+            activity = await self.commands.request_runtime_gate(app["Id"], "activity")
             if activity.get("active_requests") != 0:
                 raise WipeError("Finish active application requests before resetting")
             if activity.get("held") and (self._lease is None or self._lease[0] != app["Id"]):
@@ -393,14 +262,14 @@ except urllib.error.HTTPError as error:
         else:
             instance = self._lease_instance
             if int(
-                await self._sql(
+                await self.commands.query_database(
                     database["Id"],
                     "SELECT count(*) FROM pg_stat_activity WHERE datname='filing' "
                     "AND backend_type='client backend' AND pid <> pg_backend_pid()",
                 )
             ):
                 raise WipeError("Close other database clients before resetting")
-        tracked = set((await self._run("git", "ls-files", "-z")).split("\0"))
+        tracked = set((await self.commands.run("git", "ls-files", "-z")).split("\0"))
         return {
             "project": self.root.name,
             "daemon": daemon,
@@ -438,26 +307,6 @@ except urllib.error.HTTPError as error:
                 "checked_at": datetime.now(UTC).isoformat(),
                 "diagnosis": None,
             }
-
-    async def _sql(self, container: str, query: str) -> str:
-        """Query the verified database directly without using external connection settings."""
-        return (
-            await self._run(
-                "docker",
-                "exec",
-                container,
-                "psql",
-                "-U",
-                "filing",
-                "-d",
-                "filing",
-                "-At",
-                "-v",
-                "ON_ERROR_STOP=1",
-                "-c",
-                query,
-            )
-        ).strip()
 
     async def preview(self) -> dict[str, Any]:
         """Issue one confirmation token for the current target, valid for five minutes."""
@@ -542,28 +391,30 @@ except urllib.error.HTTPError as error:
                 return self.result()
             self._acquire_operation()
             try:
-                daemon = await self._docker_identity()
+                daemon = await self.commands.verify_docker_identity()
                 if self._lease_daemon is None or any(
                     self._lease_daemon.get(key) != daemon.get(key) for key in ("id", "endpoint")
                 ):
                     raise WipeError("Docker target changed; inspect the interrupted reset manually")
                 container, lease = self._lease
                 present = (
-                    await self._run(
+                    await self.commands.run(
                         "docker", "ps", "-aq", "--no-trunc", "--filter", f"id={container}"
                     )
                 ).split()
                 if present and present != [container]:
                     raise WipeError("Interrupted application container identity is ambiguous")
                 row = (
-                    json.loads(await self._run("docker", "inspect", container))[0]
+                    json.loads(await self.commands.run("docker", "inspect", container))[0]
                     if present
                     else None
                 )
                 if row is not None and row["State"]["Running"]:
-                    activity = await self._runtime_request(container, "activity")
+                    activity = await self.commands.request_runtime_gate(container, "activity")
                     if activity.get("instance") == self._lease_instance:
-                        await self._runtime_request(container, "release", {"lease": lease})
+                        await self.commands.request_runtime_gate(
+                            container, "release", {"lease": lease}
+                        )
                 self._lease = None
                 self._lease_instance = None
                 self._lease_daemon = None
@@ -610,7 +461,7 @@ except urllib.error.HTTPError as error:
     async def _execute(self, target: dict[str, Any]) -> None:
         """Reset one explicit volume and allowlisted files, reporting partial failures."""
         try:
-            await self._run(
+            await self.commands.run(
                 str(self.root / ".venv/bin/python"),
                 "-c",
                 "from app.db.bootstrap import bootstrap_schema",
@@ -619,7 +470,7 @@ except urllib.error.HTTPError as error:
             self._lease_instance = target["gate_instance"]
             self._lease_daemon = target["daemon"]
             self._stage("hold_requests")
-            held = await self._runtime_request(
+            held = await self.commands.request_runtime_gate(
                 target["app_container"], "hold", {"lease": self._lease[1]}
             )
             if (
@@ -630,7 +481,7 @@ except urllib.error.HTTPError as error:
             if await self.inspect() != target:
                 raise WipeError("Runtime changed before stopping the app; no data was deleted")
             self._stage("stop_app")
-            await self._run("docker", "stop", target["app_container"])
+            await self.commands.run("docker", "stop", target["app_container"])
             self._result["completed"].append("app_stopped")
             self._stopped_app = target["app_container"]
             self._lease = None
@@ -644,9 +495,9 @@ except urllib.error.HTTPError as error:
             ):
                 raise WipeError("The verified Compose configuration is unavailable")
             self._stage("database_volume")
-            await self._run("docker", "stop", target["database_container"])
-            await self._run("docker", "rm", target["database_container"])
-            await self._run("docker", "volume", "rm", target["volume"])
+            await self.commands.run("docker", "stop", target["database_container"])
+            await self.commands.run("docker", "rm", target["database_container"])
+            await self.commands.run("docker", "volume", "rm", target["volume"])
             self._result["completed"].append("database_removed")
             self._stage("runtime_files")
             removed = 0
@@ -657,8 +508,9 @@ except urllib.error.HTTPError as error:
                 self._persist()
             self._result["completed"].append("runtime_files_removed")
             self._stage("empty_schema")
-            await self._run(
-                *self._compose("up", "-d", "--wait", "db", frozen=True), input_text=compose_json
+            await self.commands.run(
+                *self.commands.compose_command("up", "-d", "--wait", "db", frozen=True),
+                input_text=compose_json,
             )
             recreated = await self.inspect()
             if any(recreated[key] != target[key] for key in ("daemon", "volume", "port")):
@@ -678,13 +530,15 @@ async def main():
         await engine.dispose()
 asyncio.run(main())
 """
-            await self._run(
+            await self.commands.run(
                 str(self.root / ".venv/bin/python"), "-c", code, environment=environment
             )
             self._result["completed"].append("empty_schema_created")
             self._stage("restart_app")
-            await self._run(
-                *self._compose("up", "-d", "--no-deps", "--wait", "app", frozen=True),
+            await self.commands.run(
+                *self.commands.compose_command(
+                    "up", "-d", "--no-deps", "--wait", "app", frozen=True
+                ),
                 input_text=compose_json,
             )
             self._stopped_app = None
@@ -709,7 +563,9 @@ asyncio.run(main())
                 container, lease = self._lease
                 if "app_stopped" not in self._result["completed"]:
                     try:
-                        await self._runtime_request(container, "release", {"lease": lease})
+                        await self.commands.request_runtime_gate(
+                            container, "release", {"lease": lease}
+                        )
                     except (WipeError, OSError, ValueError, KeyError) as error:
                         self._result["recovery_error"] = redact_sensitive_text(str(error))
                     else:
