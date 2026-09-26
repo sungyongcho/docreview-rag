@@ -146,6 +146,9 @@ class OpenAILimitsManager:
             ("max_cost_usd", max_cost_usd, self._ceiling.max_cost_usd),
         ]
         for name, value, ceiling in checks:
+            # NaN compares by raising InvalidOperation, so it is refused before any comparison.
+            if isinstance(value, Decimal) and not value.is_finite():
+                raise OpenAILimitsError("openai_limits_invalid", f"{name} must be a finite number.")
             if value <= 0:
                 raise OpenAILimitsError(
                     "openai_limits_invalid", f"{name} must be greater than zero."
@@ -177,6 +180,8 @@ class OpenAILimitsManager:
             if type(input_tokens) is not int or type(output_tokens) is not int:
                 raise ValueError("token caps must be integers")
             cost = Decimal(str(data["max_cost_usd"]))
+            if not cost.is_finite():
+                raise ValueError("cost cap must be finite")
         except PermissionError:
             self._source = "invalid"
             self._error = (
