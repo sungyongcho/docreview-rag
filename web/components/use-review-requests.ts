@@ -67,7 +67,7 @@ export function useReviewRequests({
    * Replace the active conversation's messages. Reads the current list at update time
    * so a change made while a review streams (a toolbar edit, a pin) is not reverted.
    */
-  function updateActive(messages: ChatMessage[], selectedProfile?: ReviewSessionDraft | null) {
+  function updateActive(messages: ChatMessage[]) {
     const targetId = activeId;
     setConversations((current) => saveConversations(current.map((conversation) =>
       conversation.id === targetId
@@ -76,7 +76,6 @@ export function useReviewRequests({
             title: conversationTitle(messages),
             updatedAt: new Date().toISOString(),
             messages,
-            profile: selectedProfile === undefined ? conversation.profile : selectedProfile,
           }
         : conversation,
     )));
