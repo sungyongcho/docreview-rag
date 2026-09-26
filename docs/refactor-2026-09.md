@@ -243,8 +243,10 @@ details)`; `scripts.stack.commands.main` serves only `corpus`. `rag-dev doctor` 
   aliases for categories renamed in `f11f30b` (web-c10); the 'Saved connection' fallback for responses without a server catalog
   (web-c03) and the answer-engine fallback for readiness payloads without `review_engines` (web-c04); the `casual_chat` and
   `chat`-node rendering branches in `review-path-choice`, `review-progress`, `review-stage-details` and `service-shell` (web-c08;
-  the type unions keep the literals, section 3); the legacy walkthrough and bookmark anchor redirects in the documentation registry
-  (web-c09; an old bookmark opens the page at the top).
+  the type unions keep the literals, section 3; a transcript saved before the conversation route was retired still loads, but its
+  path badge now reads "Document review" and its five stages "Not performed in this request" instead of "Conversation reply" and
+  "Skipped: conversation reply without retrieval"); the legacy walkthrough and bookmark anchor redirects in the documentation
+  registry (web-c09; an old bookmark opens the page at the top).
 - Unreachable or duplicate: the portfolio-fixture pipeline source and the always-empty `fallbackDocuments` prop (web-c11);
   `schema_status === "ok"` acceptance (web-c13); the `operatorBaseUrl`/`operatorBase` pair (web-c14); `JobActivityPanel` and its
   CSS, `MEASURE_TABS`, `lockedRuns`, `goldenAnswers`, `splitList`, `formatSeconds`, `progressCountsLabel`, `preparationTarget`,
@@ -865,7 +867,7 @@ The suite was pruned in three ways, each with per-test evidence in the appendix:
 - Test doubles and helpers left inside `app/` and `web/lib` moved into test support (`DeterministicLLMProvider`, `ChatReply`,
   `persist_run_report`, `render_commands_markdown`, `CANNED_*`), and duplicated builders were consolidated.
 
-Round 3 pruned the remaining suite with per-test branch-coverage contexts (`pytest --cov-context=test`, C tracer, over `app/` and `scripts/`): 2546 tests collected after the code removals became 2180 (−366): 135 were subsumed by a named kept test, 127 were duplicate parametrized cases, 61 near-duplicates became one parametrized test with the same assertions, 14 tested a private helper already exercised through its public caller, and 1 pinned wording only. No test file was removed in this round. Coverage was re-measured after pruning: 16,594 of 18,711 statements (86.16%) and 4,205 of 5,430 branches, against 16,595 and 4,207 before pruning. The single statement and two branches are `app/corpus_admin.py` lines 310–312, the two `AdminCommand` deletion-confirmation errors that no test on `main` asserted; the earlier run had recorded them only as a phantom sequential arc chain (309→310→311→312→313, through two `raise` lines) inside one threaded live test, so no removed test ever covered them. Per-directory counts and every removed test with its covering test: appendix, round 3.
+Round 3 pruned the remaining suite with per-test branch-coverage contexts (`pytest --cov-context=test`, C tracer, over `app/` and `scripts/`): 2546 tests collected after the code removals became 2183 (−363, after three tests were restored on review; see the appendix): 135 were subsumed by a named kept test, 127 were duplicate parametrized cases, 61 near-duplicates became one parametrized test with the same assertions, 14 tested a private helper already exercised through its public caller, and 1 pinned wording only. No test file was removed in this round. Coverage was re-measured after pruning: 16,594 of 18,711 statements (86.16%) and 4,205 of 5,430 branches, against 16,595 and 4,207 before pruning. The single statement and two branches are `app/corpus_admin.py` lines 310–312, the two `AdminCommand` deletion-confirmation errors that no test on `main` asserted; the earlier run had recorded them only as a phantom sequential arc chain (309→310→311→312→313, through two `raise` lines) inside one threaded live test, so no removed test ever covered them. Per-directory counts and every removed test with its covering test: appendix, round 3.
 
 The rule (D-6): coverage of live behaviour is preserved and no assertion is loosened. Where a deleted test also pinned live
 behaviour, that assertion moved (the `TokenPricing.estimate` arithmetic at policy prices moved into `tests/llm/test_schemas.py`; the
@@ -874,12 +876,12 @@ fresh-start preview, status and preserved-path assertions moved into
 editors also removed the `ChunkModuleProxy` that turned a missing chunk symbol into a silent `pytest.skip`, so the chunk tests now
 fail instead of skipping when the chunker changes shape.
 
-Counts: Python 2678 -> 2180 (2142 unit + 38 live) (baseline on `main`: 2640 unit and 38 live tests collected, 2678 in total); web
+Counts: Python 2678 -> 2183 (2145 unit + 38 live) (baseline on `main`: 2640 unit and 38 live tests collected, 2678 in total); web
 1296 tests in 123 files on `main` -> 1282 tests in 223 files (all passing).
 
 ## 10. Verification
 
-Final state (`b1d7daa`, every step under `ulimit -v 4000000`): `ruff check` and `ruff format --check` clean over `app/`, `scripts/`, `tests/` and `deploy/`; `basedpyright` 667 errors, none in `app/` or `scripts/`, 663 in `tests/` (687 on `main`; no file has more errors than on `main`) and 4 in `deploy/gcp/verify_artifacts.py` (unchanged); `git diff --check` clean. Unit suite (`-m "not live_postgres"`): 2142 collected, 2090 passed, 12 failed (the same 12 ids as on `main`, listed below), 40 skipped (the same corpus-dependent skips). Live suite against a disposable pgvector container with `--require-live-postgres`: 38 collected, 35 passed, 3 failed (the same 3 that need external resources, listed below). Per-test outcomes were compared with the baseline after every batch and after pruning: zero regressions and zero newly failing tests. Web: vitest 223 files, 1282 tests passed; `npm run typecheck`, `npm run check:api` and `next build` (43 static pages) passed. Evaluation parity: section 8. Compose smoke: below.
+Final state (`b1d7daa`, every step under `ulimit -v 4000000`): `ruff check` and `ruff format --check` clean over `app/`, `scripts/`, `tests/` and `deploy/`; `basedpyright` 667 errors, none in `app/` or `scripts/`, 663 in `tests/` (687 on `main`; no file has more errors than on `main`) and 4 in `deploy/gcp/verify_artifacts.py` (unchanged); `git diff --check` clean. Unit suite (`-m "not live_postgres"`): 2145 collected, 2093 passed, 12 failed (the same 12 ids as on `main`, listed below), 40 skipped (the same corpus-dependent skips). Live suite against a disposable pgvector container with `--require-live-postgres`: 38 collected, 35 passed, 3 failed (the same 3 that need external resources, listed below). Per-test outcomes were compared with the baseline after every batch and after pruning: zero regressions and zero newly failing tests. Web: vitest 223 files, 1282 tests passed; `npm run typecheck`, `npm run check:api` and `next build` (43 static pages) passed. Evaluation parity: section 8. Compose smoke: below.
 
 Baseline on `main` (`cc2d7c2`, every step under `ulimit -v 4000000`): `ruff check` and `ruff format --check` clean; `basedpyright`
 691 errors, all in `tests/` (687) and `deploy/gcp/verify_artifacts.py` (4), none in `app/` or `scripts/`; unit suite 2640 run, 2588
@@ -1009,7 +1011,7 @@ Bugs noticed and not fixed (out of scope):
 
 | Measure | Before (`main`, `cc2d7c2`) | After (`b1d7daa`) |
 |---|---|---|
-| Python tests collected (unit + live) | 2678 | 2180 (2142 unit + 38 live) |
+| Python tests collected (unit + live) | 2678 | 2183 (2145 unit + 38 live) |
 | Web tests (vitest) | 1296 in 123 files | 1282 tests in 223 files (all passing) |
 | `app/` source lines | 31,510 | 29,505 |
 | `app/` modules | 157 | 151 |

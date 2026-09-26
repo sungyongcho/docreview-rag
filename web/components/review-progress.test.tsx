@@ -73,10 +73,13 @@ describe("Five real-event review phases", () => {
     expect(screen.getAllByText("Not performed in this request")).toHaveLength(2);
   });
 
-  it("does not fabricate RAG phases for a conversation reply", () => {
+  it("renders a stored conversation reply without fabricating RAG phases", () => {
+    // Transcripts saved before the conversation route was retired still carry a "chat" node.
     const state = finishReviewProgress(reviewProgressFromEvent(event("chat"), initialReviewProgress()), "completed", 200);
     render(<ReviewProgressSteps state={state} />);
     expect(screen.getAllByRole("listitem")).toHaveLength(6);
+    expect(REVIEW_STEPS.map((_, i) => phaseStatus(state, i))).toEqual(["not-run", "not-run", "not-run", "not-run", "done"]);
+    expect(screen.getAllByText("Not performed in this request")).toHaveLength(4);
     expect(screen.getByText("Execution complete")).toBeVisible();
   });
 

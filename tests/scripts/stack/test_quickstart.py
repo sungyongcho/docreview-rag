@@ -374,6 +374,26 @@ def test_second_database_failure_stops_before_reset(configured, monkeypatch):
     launch.assert_called_once_with("dev", ["down"], root=configured)
 
 
+def test_schema_drift_blocks_application_start(configured, monkeypatch):
+    """A declined retry after schema drift keeps the data intact and never starts services."""
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(setup.subprocess, "check_output", lambda *a, **k: "2.39.0")
+    database = Mock()
+    prepare = AsyncMock(side_effect=setup.SchemaDriftError("fixture drift"))
+    confirm = Mock(return_value=False)
+    forbidden = Mock()
+    monkeypatch.setattr(setup, "ensure_database", database)
+    monkeypatch.setattr(setup, "prepare_schema", prepare)
+    monkeypatch.setattr(setup, "confirm", confirm)
+    monkeypatch.setattr(setup, "start_ready", forbidden)
+    with pytest.raises(RuntimeError, match="Schema is still blocked"):
+        setup.quickstart(configured)
+    assert database.call_count == prepare.await_count == 1
+    confirm.assert_called_once()
+    forbidden.assert_not_called()
+
+
 def test_second_schema_failure_cannot_reset_or_start_services(configured, monkeypatch):
     """Retrying a read-only schema check once never turns it into implicit recreation."""
     from unittest.mock import Mock

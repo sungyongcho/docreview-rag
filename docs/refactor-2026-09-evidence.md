@@ -24,6 +24,8 @@ How to read the tables:
 
 ## Round 1: unreachable code
 
+Dispositions in this table are the round-1 outcomes. Round 2 revisited several items that round 1 kept: the `/reset-local` page (web-14 → web-c01), the golden candidate files (evals-02/03 → evals-c02), the module CLIs (retrieval-01/09/10/11 → retrieval-c02/c03), `app/main.py` (see D-5) and `render_commands_markdown` (ops-06 → ops-c12); the round-2 table carries their final disposition.
+
 | id | file | title | verifier votes (defended/3) | disposition |
 |---|---|---|---|---|
 | api-01 | `app/release/limiter.py` | Remove uncalled DailyCostLimiter.remaining() | 0 | deleted |
@@ -544,6 +546,8 @@ New test-support modules: `tests/llm/support.py` (`DeterministicLLMProvider`, `C
 `tests/workflow/support.py::retrieval_result`, `web/lib/canned-test-support.ts`.
 
 ## Round 3: test pruning with per-test coverage evidence
+
+Restored after the independent review, because the behaviour they assert had no other offline test: `tests/retrieval/test_translate.py::test_translate_query_fails_closed_instead_of_returning_the_original` (the translator's own refusal / schema-rejection gate), `tests/retrieval/test_lexical.py::test_search_executes_once_and_validates_database_mappings` (the only offline execution of `lexical_search`) and `tests/scripts/stack/test_quickstart.py::test_schema_drift_blocks_application_start` (a declined retry after schema drift never starts services). The per-lane table below shows the counts before those three were restored.
 
 Per-test branch coverage over `app/` and `scripts/` was recorded with `pytest --cov-context=test` (C tracer). Each lane agent read the evidence and every test in its directory; a test was removed only when a named kept test asserts the same behaviour (subsumed / duplicate), when two near-duplicates became one parametrized test with the same assertions (merged), when it exercised only a private helper already covered through its public caller, or when it pinned wording alone.
 

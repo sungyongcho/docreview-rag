@@ -1,10 +1,15 @@
 """Safe PostgreSQL full-text lexical retrieval tests."""
 
+import asyncio
+from types import SimpleNamespace
+from typing import cast
+
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.retrieval import lexical
 from app.retrieval.types import RetrievalFilters
-from tests.retrieval.support import normalized_sql
+from tests.retrieval.support import RecordingSession, hit_values, normalized_sql
 
 
 def test_statement_uses_safe_websearch_cover_density_and_complete_hit_projection():
@@ -96,3 +101,23 @@ def test_statement_rejects_blank_queries_and_nonpositive_limits(query, k):
     """Reject blank queries and nonpositive result limits."""
     with pytest.raises(ValueError):
         lexical.lexical_statement(query, k)
+
+
+def test_search_executes_once_and_validates_database_mappings():
+    """Execute one statement and validate mappings as typed hits."""
+    mapping = hit_values(score=0.625)
+
+    class Result:
+        """Expose one deterministic lexical mapping result."""
+
+        def mappings(self):
+            """Return the recorded hit mapping."""
+            return SimpleNamespace(all=lambda: [mapping])
+
+    session = RecordingSession(Result())
+    hits = asyncio.run(lexical.lexical_search(cast(AsyncSession, session), "research expense", 4))
+
+    assert len(session.statements) == 1
+    assert len(hits) == 1
+    assert hits[0].chunk_id == mapping["chunk_id"]
+    assert hits[0].score == 0.625

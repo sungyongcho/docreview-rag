@@ -79,6 +79,18 @@ def test_translation_contract_rejects_blank_extra_and_unknown_languages():
         )
 
 
+def test_translate_query_fails_closed_instead_of_returning_the_original():
+    """Raise on refusal or repeated schema failure instead of using the input."""
+    # Schema failure survives the provider's one repair attempt.
+    rejecting = DeterministicLLMProvider([raw("not json"), raw("still not json")])
+    with pytest.raises(QueryTranslationError, match="schema_rejected"):
+        translate(rejecting)
+
+    refusing = DeterministicLLMProvider([raw("", refusal="I cannot help with that.")])
+    with pytest.raises(QueryTranslationError, match="provider_refused"):
+        translate(refusing)
+
+
 def test_translate_query_rejects_a_provider_that_misreports_the_source_language():
     """Check the claimed source against the local detector instead of trusting it."""
     provider = DeterministicLLMProvider(
