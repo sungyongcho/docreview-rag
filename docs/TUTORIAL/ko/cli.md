@@ -650,7 +650,7 @@ NVDA/AMD FY2023–2024 선택을 준비합니다. 두 옵션은 동시에 사용
 <!-- heading-alias: 현재-단계에서-설정-복구 -->
 ### 현재 단계에서 설정 복구 {#configuration-repair-within-the-current-step}
 
-`rag-dev start`와 `rag-dev reset data --local`는 잘못된 키의 `.env` 줄과 실제 shell/file 출처를
+`rag-dev start`는 잘못된 키의 `.env` 줄과 실제 shell/file 출처를
 알리고 인증 값은 숨깁니다. `[f]`는 이번 실행의 잘못된 shell export 제외,
 `[e]`는 두 공개 임베딩 설정 저장, `[r]`은 로컬 수정 후 재검사, `[q]`는 취소입니다.
 부모 셸은 변경하지 않으며 시작 실패 시 볼륨을 보존하는 확인된 복구를 제안합니다.

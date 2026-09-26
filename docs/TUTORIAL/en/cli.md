@@ -578,7 +578,7 @@ and inspect completed stages before retrying.
 
 ### Configuration repair within the current step {#configuration-repair-within-the-current-step}
 
-`rag-dev start` and `rag-dev reset data --local` report invalid keys' `.env` lines and effective
+`rag-dev start` reports invalid keys' `.env` lines and effective
 shell/file sources without exposing credentials. Choose `[f]` to ignore failing
 shell exports for this invocation, `[e]` to write the two public embedding settings,
 `[r]` to recheck a local edit, or `[q]` to cancel. Parent-shell exports are unchanged.
