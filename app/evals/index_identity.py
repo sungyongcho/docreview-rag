@@ -2,11 +2,11 @@
 
 from dataclasses import asdict
 import hashlib
-import json
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.canonical_json import canonical_json
 from app.db.models import Chunk, ChunkEmbedding, Document, ParsedStructure
 from app.db.queries import join_current_parse
 from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
@@ -14,9 +14,7 @@ from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
 
 def _encode(value: object) -> bytes:
     """Encode index evidence deterministically without lossy string fallbacks."""
-    return json.dumps(
-        value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False
-    ).encode()
+    return canonical_json(value).encode()
 
 
 async def index_fingerprint(session: AsyncSession, identity: EmbeddingIdentity) -> str:

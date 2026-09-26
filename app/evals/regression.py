@@ -11,6 +11,7 @@ from typing import Any, Final, Literal, cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.canonical_json import canonical_json
 from app.db.models import EvalResult
 
 type MetricName = Literal["recall_at_k", "hit_rate_at_k", "mrr"]
@@ -196,13 +197,7 @@ def serialize_config(config: Mapping[str, Any]) -> str:
     except RecursionError as exc:
         raise ValueError("config is nested too deeply to serialize") from exc
     try:
-        return json.dumps(
-            dict(config),
-            allow_nan=False,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
+        return canonical_json(dict(config))
     except (RecursionError, TypeError, ValueError) as exc:
         raise ValueError("config must contain only finite JSON values") from exc
 
