@@ -8,6 +8,7 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel
 
+from app.llm.local_diagnostics import failure_kind
 from app.llm.provider import Clock, LLMProvider, RawProviderResponse, strict_response_format
 from app.llm.schemas import LocalModelTiming, Prompt, ProviderBudget
 
@@ -98,6 +99,24 @@ class LocalLLMProvider(LLMProvider):
         if self._owned_client is not None:
             await self._owned_client.aclose()
 
+    async def _post_json(self, url: str, body: dict[str, object]) -> object:
+        """POST ``body`` to ``url`` and decode the reply, naming a failure by its kind only.
+
+        ``httpx`` writes the request URL into ``HTTPStatusError`` text, and a refusal
+        message travels into the public failure details and the persisted trace. The
+        server address is an admin-only setting, so a transport or status failure is
+        reported through :func:`failure_kind` (``http_503``, ``timeout``, ``refused``)
+        and never through the exception text.
+        """
+        headers = {"authorization": f"Bearer {self._api_key}"} if self._api_key else {}
+        try:
+            response = await self._client.post(url, headers=headers, json=body)
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            kind = failure_kind(error)
+            raise ValueError(f"local model server request failed: {kind}") from error
+        return response.json()
+
     async def _request[OutputT: BaseModel](
         self,
         prompt: Prompt,
@@ -119,11 +138,9 @@ class LocalLLMProvider(LLMProvider):
     ) -> RawProviderResponse:
         """Call an OpenAI Responses-compatible local endpoint."""
         base = self._base_url[:-3] if self._base_url.endswith("/v1") else self._base_url
-        headers = {"authorization": f"Bearer {self._api_key}"} if self._api_key else {}
-        response = await self._client.post(
+        payload = await self._post_json(
             f"{base}/v1/responses",
-            headers=headers,
-            json={
+            {
                 "model": self.model_name,
                 "instructions": prompt.system,
                 "input": prompt.user,
@@ -132,8 +149,6 @@ class LocalLLMProvider(LLMProvider):
                 "store": False,
             },
         )
-        response.raise_for_status()
-        payload = response.json()
         if not isinstance(payload, dict):
             raise ValueError("local Responses payload was not a JSON object")
         usage = payload.get("usage")
@@ -169,11 +184,9 @@ class LocalLLMProvider(LLMProvider):
         saw, which is the one failure this system must not hide, so the window is asked
         to match the budget the caller already enforces.
         """
-        headers = {"authorization": f"Bearer {self._api_key}"} if self._api_key else {}
-        response = await self._client.post(
+        payload = await self._post_json(
             f"{self._base_url}/api/chat",
-            headers=headers,
-            json={
+            {
                 "model": self.model_name,
                 "messages": [
                     {"role": "system", "content": prompt.system},
@@ -195,12 +208,12 @@ class LocalLLMProvider(LLMProvider):
                 },
             },
         )
-        response.raise_for_status()
-        payload = response.json()
-        message = payload.get("message") if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            raise ValueError("Ollama response was not a JSON object")
+        message = payload.get("message")
         output_text = message.get("content") if isinstance(message, dict) else None
-        input_tokens = payload.get("prompt_eval_count") if isinstance(payload, dict) else None
-        output_tokens = payload.get("eval_count") if isinstance(payload, dict) else None
+        input_tokens = payload.get("prompt_eval_count")
+        output_tokens = payload.get("eval_count")
         if not isinstance(output_text, str):
             raise ValueError("Ollama response did not include message content")
         if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):

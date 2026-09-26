@@ -337,3 +337,39 @@ def test_responses_payload_without_text_or_refusal_fails_closed() -> None:
     assert result.status == "provider_error"
     assert isinstance(result.refusal, ProviderRefusal)
     assert "output text" in result.refusal.message
+
+
+@pytest.mark.parametrize("protocol", ["ollama", "openai_responses"])
+def test_http_status_failure_names_its_kind_and_never_the_private_endpoint(
+    protocol: LocalLlmProtocol,
+) -> None:
+    """The server address is an admin-only setting and the refusal message reaches the
+    public failure details and the persisted trace, so a 503 is reported by its kind."""
+    base = "http://192.168.50.7:11434"
+
+    result = complete_locally(
+        lambda request: httpx.Response(503, json={"error": "model is loading"}),
+        protocol=protocol,
+        base_url=base,
+    )
+
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert base not in result.refusal.message
+    assert "192.168.50.7" not in result.refusal.message
+    assert "http_503" in result.refusal.message
+    assert result.metadata.api_url.startswith("local://")
+
+
+def test_transport_failure_is_reported_by_its_kind_only() -> None:
+    """A timeout on the way to the server is described as a timeout and nothing more."""
+
+    def time_out(request: httpx.Request) -> httpx.Response:
+        """Fail the connection attempt the way httpx reports a connect timeout."""
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    result = complete_locally(time_out, protocol="ollama", base_url="http://192.168.50.7:11434")
+
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert result.refusal.message == "ValueError: local model server request failed: timeout"
