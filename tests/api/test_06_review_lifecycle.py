@@ -210,7 +210,10 @@ def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(hi
     )
 
     with TestClient(create_api_app(services)) as client:
-        response = client.post("/retrieve", json={"query": "Revenue?"})
+        response = client.post(
+            "/retrieve",
+            json={"query": "Revenue?", "session_profile": {"issuers": ["ACME"]}},
+        )
 
     assert response.status_code == 200
     assert response.json()["results"][0]["chunk_id"] == hit.chunk_id
@@ -378,7 +381,10 @@ def test_semantically_invalid_filters_are_a_typed_400():
     with TestClient(create_api_app(services), raise_server_exceptions=False) as client:
         response = client.post(
             "/retrieve",
-            json={"query": "revenue", "session_profile": {"languages": ["en", "ko"]}},
+            json={
+                "query": "revenue",
+                "session_profile": {"issuers": ["NVDA"], "languages": ["en", "ko"]},
+            },
         )
 
     assert response.status_code == 400
@@ -412,7 +418,9 @@ def test_runtime_maps_provider_exceptions_to_nonsecret_503():
     )
 
     with TestClient(create_api_app(services), raise_server_exceptions=False) as client:
-        response = client.post("/review", json={"query": "Revenue?"})
+        response = client.post(
+            "/review", json={"query": "Revenue?", "session_profile": {"issuers": ["NVDA"]}}
+        )
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "provider_unavailable"
@@ -457,7 +465,10 @@ def test_runtime_redacts_explicit_secrets_before_persisting_and_returning():
         secret_values=(secret,),
     )
 
-    result = asyncio.run(services.review(ReviewRequest(query="Revenue?")))
+    request = ReviewRequest.model_validate(
+        {"query": "Revenue?", "session_profile": {"issuers": ["NVDA"]}}
+    )
+    result = asyncio.run(services.review(request))
 
     persisted_run = persisted[0][0]
     assert secret not in repr(result)
