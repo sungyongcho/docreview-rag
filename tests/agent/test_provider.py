@@ -90,11 +90,23 @@ def test_openai_adapter_sends_tools_and_parses_function_calls():
     assert result.incomplete is False
 
 
-def test_openai_adapter_surfaces_an_incomplete_response():
-    """Mark a turn the output ceiling cut off, so the loop can stop instead of nudging."""
+@pytest.mark.parametrize(
+    ("details", "reason"),
+    [
+        pytest.param(None, None, id="no-details"),
+        pytest.param(
+            SimpleNamespace(reason="max_output_tokens"), "max_output_tokens", id="ceiling"
+        ),
+        pytest.param(SimpleNamespace(reason="content_filter"), "content_filter", id="filter"),
+    ],
+)
+def test_openai_adapter_surfaces_an_incomplete_response_with_its_reason(details, reason):
+    """Mark a cut-off turn and name why it stopped, so the loop can tell a budget stop from a
+    provider one instead of nudging a truncated reply."""
     response = SimpleNamespace(
         id="resp-2",
         status="incomplete",
+        incomplete_details=details,
         output_text="The filings sho",
         output=(),
         usage=SimpleNamespace(input_tokens=30, output_tokens=16),
@@ -104,6 +116,7 @@ def test_openai_adapter_surfaces_an_incomplete_response():
     result = asyncio.run(provider.turn("instructions", [], [], max_output_tokens=16))
 
     assert result.incomplete is True
+    assert result.incomplete_reason == reason
     assert result.tool_calls == ()
 
 
@@ -161,8 +174,8 @@ def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
     assert closed == [True]
 
 
-def test_openai_adapter_reports_failed_responses_and_the_incomplete_reason():
-    """A failed reply is a provider failure, and a cut-off reply names why it stopped."""
+def test_openai_adapter_reports_a_failed_response_as_a_provider_failure():
+    """A failed reply is a provider failure, not an empty turn the loop would replay."""
     failed = SimpleNamespace(
         id="resp-failed",
         status="failed",
@@ -176,17 +189,3 @@ def test_openai_adapter_reports_failed_responses_and_the_incomplete_reason():
     with pytest.raises(RuntimeError, match="failed"):
         asyncio.run(provider.turn("instructions", [], [], max_output_tokens=16))
     assert len(responses.calls) == 1
-
-    filtered = SimpleNamespace(
-        id="resp-filtered",
-        status="incomplete",
-        error=None,
-        incomplete_details=SimpleNamespace(reason="content_filter"),
-        output_text="",
-        output=(),
-        usage=SimpleNamespace(input_tokens=30, output_tokens=2),
-    )
-    provider, _ = openai_provider(filtered)
-    result = asyncio.run(provider.turn("instructions", [], [], max_output_tokens=16))
-    assert result.incomplete is True
-    assert result.incomplete_reason == "content_filter"
