@@ -12,6 +12,7 @@ import { ANSWER_MODEL_HINT, STAGE_COPY, failureMessage } from "./pipeline";
 import { localEngineStatus } from "./local-models";
 import { ONBOARDING_KEY } from "./storage";
 import { REVIEW_STEPS } from "@/components/review-progress";
+import { FAILURE_FACTS, RUN_FACTS } from "@/components/review-response";
 import { DocumentationRedirect } from "@/components/documentation-navigation";
 
 const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -136,9 +137,16 @@ describe("Korean and English UI", () => {
 
   it("covers all literal UI messages and preserves interpolation parameters", () => {
     const missing = new Set<string>();
-    for (const name of readdirSync("components").filter((name) => name.endsWith(".tsx") && !name.includes(".test."))) {
+    // Hooks and helpers without markup live in .ts files, and their messages reach `t` too.
+    const componentFiles = readdirSync("components").filter(
+      (name) => /\.tsx?$/.test(name) && !name.includes(".test."),
+    );
+    for (const name of componentFiles) {
       const file = join("components", name);
-      const tree = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      // Parsed as TSX, a .ts file's `<Type>value` assertion would read as markup.
+      const scriptKind = name.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+      const source = readFileSync(file, "utf8");
+      const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKind);
       function visit(node: ts.Node) {
         if (ts.isPropertyAssignment(node) && ["label", "title", "description", "mechanism", "tradeoff"].includes(node.name.getText(tree)) && ts.isStringLiteral(node.initializer)) {
           // An empty initial form value is metadata, not a translatable UI message.
@@ -167,12 +175,14 @@ describe("Korean and English UI", () => {
     expect(translate("ko", "Delete {p0}", { p0: "Original title" })).toBe("Original title 삭제");
   });
 
-  it("covers app-owned help, pipeline and progress copy selected through variables", () => {
+  it("covers app-owned help, pipeline, progress and diagnostic copy chosen by variables", () => {
     const messages = [
       ...Object.values(HELP_SCREEN_TITLES),
       ...Object.values(HELP_TOPICS).flatMap((topics) => topics.flatMap((topic) => [topic.title, ...topic.body, ...(topic.tune ? [topic.tune] : [])])),
       ...Object.values(STAGE_COPY).flatMap((stage) => [stage.title, stage.description, stage.why]),
       ...REVIEW_STEPS.flatMap((phase) => [phase.label, phase.detail]),
+      ...RUN_FACTS.map(([, label]) => label),
+      ...FAILURE_FACTS.map(([, label]) => label),
       ANSWER_MODEL_HINT,
     ];
     expect([...new Set(messages.filter((message) => !(message in KO)))]).toEqual([]);

@@ -1,4 +1,3 @@
-// A .tsx file so the literal-coverage check in lib/i18n.test.tsx scans the status messages below.
 import { useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 
 import { useNotifications } from "@/components/notifications";

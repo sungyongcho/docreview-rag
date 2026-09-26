@@ -1,4 +1,3 @@
-// A .tsx file so the literal-coverage check in lib/i18n.test.tsx also scans the diagnostic labels below.
 import { failureMessage, failureReport } from "@/lib/pipeline";
 import type { ChatMessage } from "@/lib/types";
 
@@ -39,7 +38,7 @@ export function extractTrace(payload: Record<string, unknown>): string {
   return values.filter((key) => root[key] !== undefined).map((key) => `${key}=${String(root[key])}`).join(" · ");
 }
 
-const RUN_FACTS: ReadonlyArray<readonly [string, string]> = [
+export const RUN_FACTS: ReadonlyArray<readonly [string, string]> = [
   ["status", "Status"],
   ["run_id", "Run id"],
   ["iterations", "Iterations"],
@@ -51,7 +50,7 @@ const RUN_FACTS: ReadonlyArray<readonly [string, string]> = [
 ];
 
 /** Failure fields worth naming, keyed by the shape that carries them. */
-const FAILURE_FACTS: ReadonlyArray<readonly [string, string]> = [
+export const FAILURE_FACTS: ReadonlyArray<readonly [string, string]> = [
   ["code", "Failure"],
   ["resource", "Exhausted resource"],
   ["limit", "Limit"],
