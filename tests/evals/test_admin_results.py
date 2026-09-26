@@ -14,6 +14,7 @@ from app.evals.admin import EvaluationAdminService
 from app.evals.admin_results import compatible_baseline
 from app.evals.regression import SCORING_CONFIG_KEY
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.support import load_settings
 
 
 class _Row:
@@ -69,10 +70,8 @@ def _artifact(path: Path, first_rank: int | None) -> Path:
 
 def _service(tmp_path: Path, rows: dict[int, _Row]) -> EvaluationAdminService:
     """Build the service against on-disk artifacts and stored rows."""
-    # `_env_file` is a pydantic-settings init option the synthesized signature omits.
-    without_dotenv: dict[str, Any] = {"_env_file": None}
     return EvaluationAdminService(
-        settings=Settings(corpus_dir=tmp_path, **without_dotenv),
+        settings=load_settings(Settings, env_file=None, corpus_dir=tmp_path),
         provider=DeterministicEmbeddingProvider(),
         artifact_dir=tmp_path / "runs",
         session_factory=cast(Any, lambda: _Session(rows)),

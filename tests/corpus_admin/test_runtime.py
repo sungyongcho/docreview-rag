@@ -2,7 +2,7 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 
@@ -20,6 +20,7 @@ from app.retrieval.bm25 import TermStatCounts
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.corpus_admin.support import LedgerStore, write_manifest
 from tests.live_postgres import live_postgres_unavailable
+from tests.support import load_settings
 
 
 @pytest.mark.parametrize("fails", [False, True], ids=["success", "failure"])
@@ -76,7 +77,7 @@ def test_bm25_job_reports_completion_only_after_rebuild(tmp_path: Path, monkeypa
         )
         job = await service.enqueue(AdminCommand("rebuild_bm25"))
         await service._job_queue._queue.join()
-        finished = (await service.jobs()).history[0]
+        finished = (await service._job_queue.jobs()).history[0]
         expected_status = "failed" if fails else "succeeded"
         expected_current = 0 if fails else 1
         assert finished.status == store.rows[job.job_id].status == expected_status
@@ -136,10 +137,8 @@ def test_ingest_leaves_bm25_for_explicit_rebuild_and_preserves_progress(tmp_path
         try:
             await bootstrap_schema(engine)
             store = JobStore(session_factory=factory)
-            # `_env_file` is a pydantic-settings init option the synthesized signature omits.
-            without_dotenv: dict[str, Any] = {"_env_file": None}
             service = RuntimeCorpusAdminService(
-                settings=Settings(corpus_dir=tmp_path, **without_dotenv),
+                settings=load_settings(Settings, env_file=None, corpus_dir=tmp_path),
                 session_factory=factory,
                 engine=engine,
                 embedding_provider=provider,

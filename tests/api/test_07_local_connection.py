@@ -1,7 +1,5 @@
 """Local settings routes, public capabilities, and production connection boundaries."""
 
-from typing import Any
-
 from fastapi.testclient import TestClient
 import httpx
 import pytest
@@ -12,6 +10,7 @@ from app.llm.local_engine import local_provider_budget
 from app.release.app import create_release_app
 from app.release.config import AdminMode, ReleaseSettings
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.support import load_settings
 
 
 def connection_app(
@@ -39,12 +38,10 @@ def connection_app(
             "local": local_provider_budget(max_input_tokens=1000, max_output_tokens=100)
         },
     )
-    # BaseSettings.__init__ takes `_env_file` and validation aliases such as
-    # DOCREVIEW_ENVIRONMENT through **values; the field-derived signature the type
-    # checker sees lists neither, so they travel as an explicit untyped mapping.
-    init_options: dict[str, Any] = {"_env_file": None, "DOCREVIEW_ENVIRONMENT": environment}
-    settings = ReleaseSettings(
-        **init_options,
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
+        DOCREVIEW_ENVIRONMENT=environment,
         mode="runtime",
         host="127.0.0.1",
         admin_mode=admin_mode,

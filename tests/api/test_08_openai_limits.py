@@ -2,7 +2,6 @@
 
 import asyncio
 from decimal import Decimal
-from typing import Any
 
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -17,6 +16,7 @@ from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
 from app.release.app import create_release_app
 from app.release.config import AdminMode, ReleaseSettings
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.support import load_settings
 
 
 class _StubProvider(LLMProvider):
@@ -72,12 +72,10 @@ def limits_app(tmp_path, environment="dev", admin_mode: AdminMode = "live", admi
         openai_limits=manager,
         allow_local_engine=environment == "dev",
     )
-    # BaseSettings.__init__ takes `_env_file` and validation aliases such as
-    # DOCREVIEW_ENVIRONMENT through **values; the field-derived signature the type
-    # checker sees lists neither, so they travel as an explicit untyped mapping.
-    init_options: dict[str, Any] = {"_env_file": None, "DOCREVIEW_ENVIRONMENT": environment}
-    settings = ReleaseSettings(
-        **init_options,
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
+        DOCREVIEW_ENVIRONMENT=environment,
         mode="runtime",
         host="127.0.0.1",
         admin_mode=admin_mode,

@@ -7,7 +7,7 @@ import math
 import subprocess
 import sys
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 from pydantic import SecretStr, ValidationError
 import pytest
@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.retrieval import embeddings
 from tests.retrieval.support import RecordingSession
+from tests.support import load_settings
 
 IDENTITY = embeddings.DeterministicEmbeddingProvider().identity
 
@@ -258,13 +259,13 @@ assert created == ["direct-key", "factory-key"]
 
 def test_settings_require_nonblank_api_key_for_openai_provider():
     """Reject an OpenAI provider configured with a blank API key."""
-    # `_env_file` and the key-slot alias are init options the synthesized signature omits.
-    init_options: dict[str, Any] = {
-        "_env_file": None,
-        "OPENAI_API_KEY_LOCAL": SecretStr("   "),
-    }
     with pytest.raises(ValidationError, match="MODE-selected OpenAI key slot"):
-        Settings(embedding_provider="openai", **init_options)
+        load_settings(
+            Settings,
+            env_file=None,
+            embedding_provider="openai",
+            OPENAI_API_KEY_LOCAL=SecretStr("   "),
+        )
 
 
 def test_provider_factory_uses_validated_settings_without_network_access():
