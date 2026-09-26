@@ -24,7 +24,7 @@ An evidence-first bilingual RAG service for SEC 10-K and Korean DART filings. An
 - **Real corpus** — SEC EDGAR 10-K (NVIDIA, AMD, …) and DART annual reports (Samsung Electronics, SK hynix, NAVER) parsed into source-stable chunks
 - **Evaluation harness** — golden question sets, quick/matrix runs, cross-lingual parity gates, and snapshot comparison with no provider calls
 - **Production guardrails** — per-IP rate limits, per-call cost ceilings, and a UTC daily cost cap; production exposes no admin API, and administration runs in local DEV
-- 2,400+ Python tests and 1,000+ frontend tests
+- 2,100+ Python tests and 1,200+ frontend tests
 
 ## Local Development
 
@@ -78,4 +78,5 @@ Public answers run on the rate/cost budget shown in the UI. Corpus changes and e
 
 - [User guides](docs/TUTORIAL.md) — paired English/Korean tutorials
 - [Compose operations](deploy/docker-compose.md) and [deployment scripts](deploy/gcp/)
+- [Refactor report, September 2026](docs/refactor-2026-09.md) — what was removed and why, the module map, and how one question flows from the API to the answer ([evidence appendix](docs/refactor-2026-09-evidence.md))
 - [Archived README](docs/README_archive.md) — the full pre-rename operator manual
