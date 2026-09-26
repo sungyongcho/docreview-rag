@@ -3,12 +3,12 @@
 from dataclasses import dataclass
 from datetime import date, datetime
 import hashlib
-import os
 from pathlib import Path, PurePosixPath
-import tempfile
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.atomic_write import write_text_atomically
 
 Identifier = Annotated[
     str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
@@ -251,15 +251,12 @@ class Manifest(Contract):
 
     def write(self, path: Path) -> None:
         """Atomically publish a validated manifest without partial destination writes."""
-        payload = self.model_dump_json(indent=2) + "\n"
-        descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-                os.fchmod(output.fileno(), 0o664)
-                output.write(payload)
-                output.flush()
-                os.fsync(output.fileno())
-            os.replace(temporary, path)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        write_text_atomically(
+            path,
+            self.model_dump_json(indent=2) + "\n",
+            mode=0o664,
+            apply_umask=False,
+            fsync_file=True,
+            fsync_directory=False,
+            encoding="utf-8",
+        )

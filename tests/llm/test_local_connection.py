@@ -78,7 +78,7 @@ def test_failed_probe_and_failed_save_keep_the_existing_revision(tmp_path, monke
             """Represent a filesystem that cannot atomically commit the new settings."""
             raise OSError("private filesystem detail")
 
-        monkeypatch.setattr(connections.os, "replace", fail_replace)
+        monkeypatch.setattr("app.atomic_write.os.replace", fail_replace)
         with pytest.raises(LocalConnectionError, match="Could not save"):
             await manager.add_server("Replacement", "http://replacement")
         assert manager.current is old
@@ -241,6 +241,7 @@ def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path)
     try:
         unreadable = LocalConnectionManager(path=path)
         assert unreadable.current.source == "invalid"
+        assert unreadable.current.error is not None
         assert "not readable" in unreadable.current.error
     finally:
         path.chmod(0o600)
@@ -353,7 +354,7 @@ def test_named_server_failures_preserve_registry_active_revision_and_file(
             """Deny only the temporary candidate file's atomic replacement."""
             raise PermissionError("private settings path")
 
-        monkeypatch.setattr(connections.os, "replace", fail_replace)
+        monkeypatch.setattr("app.atomic_write.os.replace", fail_replace)
         with pytest.raises(LocalConnectionError):
             await manager.add_server("Cannot save", "http://new")
         assert manager.current is old

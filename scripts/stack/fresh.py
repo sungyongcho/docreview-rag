@@ -17,6 +17,7 @@ import time
 from urllib.parse import urlparse
 from uuid import uuid4
 
+from app.atomic_write import write_text_atomically
 from app.operator.lifecycle_receipts import receipt_path
 from scripts.stack.operator import LocalOperator
 from scripts.stack.prompts import confirm
@@ -44,11 +45,15 @@ def write_receipt(root: Path, command: str, **values: object) -> None:
     """Atomically retain completed steps without storing configuration or credentials."""
     path = receipt_path(root, command)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps({"command": command, "updated": time.time(), **values}, indent=2)
+    write_text_atomically(
+        path,
+        json.dumps({"command": command, "updated": time.time(), **values}, indent=2),
+        mode=0o666,
+        apply_umask=True,
+        fsync_file=False,
+        fsync_directory=False,
+        encoding=None,
     )
-    temporary.replace(path)
 
 
 def status(root: Path, command: str) -> int:

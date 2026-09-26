@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.atomic_write import write_text_atomically
 from app.db.models import OperatorJob
 
 ARCHIVE_KEY = "__history_archived"
@@ -130,8 +131,6 @@ class JobHistoryService:
         """Atomically publish and fsync a complete JSON backup before database deletion."""
         self._check_directory(create=True)
         backup_id = str(uuid4())
-        target = self._backup_dir / f"{backup_id}.json"
-        temporary = self._backup_dir / f".{backup_id}.tmp"
         records = []
         for row in rows:
             record = {}
@@ -145,20 +144,15 @@ class JobHistoryService:
             "created_at": datetime.now(UTC).isoformat(),
             "records": records,
         }
-        try:
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(payload, stream, ensure_ascii=False, indent=2, allow_nan=False)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, target)
-            directory = os.open(self._backup_dir, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-        finally:
-            temporary.unlink(missing_ok=True)
+        write_text_atomically(
+            self._backup_dir / f"{backup_id}.json",
+            json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False),
+            mode=0o600,
+            apply_umask=True,
+            fsync_file=True,
+            fsync_directory=True,
+            encoding="utf-8",
+        )
         return backup_id
 
     def backup_path(self, backup_id: str) -> Path:

@@ -23,6 +23,7 @@ from uuid import uuid4
 from dotenv import dotenv_values
 from sqlalchemy.engine import make_url
 
+from app.atomic_write import write_text_atomically
 from app.observability.persistence import redact_sensitive_text
 
 
@@ -760,23 +761,21 @@ except urllib.error.HTTPError as error:
 
     def _persist(self) -> None:
         """Atomically preserve minimal local reset progress without corpus contents."""
-        descriptor, filename = tempfile.mkstemp(
-            prefix=self._audit.name + ".", dir=self._audit.parent
+        progress = {
+            "result": self._result,
+            "lease": self._lease,
+            "lease_instance": self._lease_instance,
+            "lease_daemon": self._lease_daemon,
+        }
+        write_text_atomically(
+            self._audit,
+            json.dumps(progress),
+            mode=0o600,
+            apply_umask=True,
+            fsync_file=True,
+            fsync_directory=False,
+            encoding=None,
         )
-        temporary = Path(filename)
-        with os.fdopen(descriptor, "w") as stream:
-            json.dump(
-                {
-                    "result": self._result,
-                    "lease": self._lease,
-                    "lease_instance": self._lease_instance,
-                    "lease_daemon": self._lease_daemon,
-                },
-                stream,
-            )
-            stream.flush()
-            os.fsync(stream.fileno())
-        temporary.replace(self._audit)
 
     def _stage(self, name: str) -> None:
         """Record the next operation before attempting it."""

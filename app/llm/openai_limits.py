@@ -3,13 +3,12 @@
 import asyncio
 from decimal import Decimal, InvalidOperation
 import json
-import os
 from pathlib import Path
-import tempfile
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.atomic_write import write_text_atomically
 from app.llm.schemas import ProviderBudget
 
 DEFAULT_LIMITS_FILE = Path("data/local-settings/openai-limits.json")
@@ -204,21 +203,18 @@ class OpenAILimitsManager:
 
     def _persist(self, data: dict[str, object]) -> None:
         """Atomically replace the saved caps before making them active in memory."""
-        temporary: Path | None = None
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                mode="w", dir=self.path.parent, prefix=".openai-limits-", delete=False
-            ) as stream:
-                temporary = Path(stream.name)
-                # The local Compose app uses the host's primary group for host-readable settings.
-                os.fchmod(stream.fileno(), 0o640)
-                json.dump({"version": 1, **data}, stream)
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
-            temporary = None
+            # The local Compose app uses the host's primary group for host-readable settings.
+            write_text_atomically(
+                self.path,
+                json.dumps({"version": 1, **data}) + "\n",
+                mode=0o640,
+                apply_umask=False,
+                fsync_file=True,
+                fsync_directory=False,
+                encoding=None,
+            )
         except PermissionError as error:
             raise OpenAILimitsError(
                 "openai_limits_save_failed",
@@ -229,6 +225,3 @@ class OpenAILimitsManager:
             raise OpenAILimitsError(
                 "openai_limits_save_failed", "Could not save OpenAI per-call caps."
             ) from error
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
