@@ -32,6 +32,7 @@ from app.db.models import (
     SnapshotDocument,
 )
 from app.db.queries import current_source_matches, join_current_parse
+from app.db.session_factory import SessionFactory
 from app.ingestion.company_names import CompanyNames
 from app.observability.persistence import redact_sensitive_text
 from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
@@ -58,7 +59,7 @@ class DocumentCatalog:
 
     def __init__(
         self,
-        session_factory: Callable[[], AsyncSession],
+        session_factory: SessionFactory,
         *,
         public_only: bool,
         embedding_identity: EmbeddingIdentity,

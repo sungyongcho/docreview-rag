@@ -1,14 +1,12 @@
 """Immutable evaluation snapshots over persisted corpus and result identity."""
 
 from collections import defaultdict
-from collections.abc import Callable
 import hashlib
 import json
 from pathlib import Path
 
 from sqlalchemy import func, insert, literal, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ApiProblemError
 from app.api.schemas import (
@@ -36,6 +34,7 @@ from app.db.models import (
     SnapshotLexemeStat,
 )
 from app.db.queries import join_current_parse
+from app.db.session_factory import SessionFactory
 from app.evals.artifacts import read_strict_json
 from app.evals.index_identity import index_fingerprint
 from app.evals.suites import SUITES
@@ -105,7 +104,7 @@ class SnapshotService:
     def __init__(
         self,
         *,
-        session_factory: Callable[[], AsyncSession] = _default_session_factory,
+        session_factory: SessionFactory = _default_session_factory,
         artifact_dir: Path | None = None,
     ) -> None:
         self._session_factory = session_factory

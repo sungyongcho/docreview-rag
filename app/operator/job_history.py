@@ -1,6 +1,5 @@
 """Archive terminal job records and back them up before explicit deletion."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
@@ -11,10 +10,10 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.atomic_write import write_text_atomically
 from app.db.models import OperatorJob
+from app.db.session_factory import SessionFactory
 
 ARCHIVE_KEY = "__history_archived"
 TERMINAL_STATUSES = ("succeeded", "failed", "interrupted", "cancelled")
@@ -46,7 +45,7 @@ class HistoryResult:
 class JobHistoryService:
     """Maintain history without replaying work or touching result artifacts."""
 
-    def __init__(self, session_factory: Callable[[], AsyncSession], backup_dir: Path) -> None:
+    def __init__(self, session_factory: SessionFactory, backup_dir: Path) -> None:
         """Keep the caller's session factory and dedicated private backup directory."""
         self._session_factory = session_factory
         self._backup_dir = Path(backup_dir).absolute()

@@ -6,7 +6,6 @@ row can never point the admin surface at an arbitrary file.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +20,7 @@ from app.api.admin_schemas import (
     EvaluationResultDetailResponse,
 )
 from app.db.models import EvalResult
+from app.db.session_factory import SessionFactory
 from app.evals.artifacts import read_strict_json
 from app.evals.regression import SCORING_CONFIG_KEY
 
@@ -65,7 +65,7 @@ async def compatible_baseline(
 
 
 async def compare_stored_results(
-    session_factory: Callable[[], AsyncSession],
+    session_factory: SessionFactory,
     artifact_dir: Path,
     candidate_id: int,
     baseline_id: int,
@@ -164,7 +164,7 @@ async def compare_stored_results(
 
 
 async def stored_result_detail(
-    session_factory: Callable[[], AsyncSession], artifact_dir: Path, result_id: int
+    session_factory: SessionFactory, artifact_dir: Path, result_id: int
 ) -> EvaluationResultDetailResponse | None:
     """Return absolute metrics and bounded case summaries for one result."""
     async with session_factory() as session:

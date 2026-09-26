@@ -1,13 +1,11 @@
 """Read exact public evaluation evidence without evaluation or provider work."""
 
-from collections.abc import Callable
 import hashlib
 import json
 from pathlib import Path
 from typing import Any, Literal
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ApiProblemError
 from app.api.public_snapshot_schemas import (
@@ -17,6 +15,7 @@ from app.api.public_snapshot_schemas import (
     PublicSnapshotEvaluation,
 )
 from app.db.models import EvalResult, EvaluationSnapshot, GoldenRevision, SnapshotChunk
+from app.db.session_factory import SessionFactory
 from app.evals.loader import GOLDEN_CASES, golden_payload_sha256
 from app.evals.regression import _comparable_config
 from app.evals.scoring import COVERAGE_THRESHOLD
@@ -62,7 +61,7 @@ def _unavailable() -> ApiProblemError:
 class PublicSnapshotDetails:
     """Use the runtime's existing session and confined artifact boundaries."""
 
-    def __init__(self, session_factory: Callable[[], AsyncSession], snapshots: SnapshotService):
+    def __init__(self, session_factory: SessionFactory, snapshots: SnapshotService):
         self._session_factory = session_factory
         self._snapshots = snapshots
 
