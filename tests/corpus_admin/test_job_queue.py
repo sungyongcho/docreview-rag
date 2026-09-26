@@ -16,7 +16,7 @@ from app.operator.progress import PROGRESS_KEY, stored_progress
 from tests.corpus_admin.support import LedgerStore
 
 
-def test_runtime_queue_is_fifo_and_reports_progress(tmp_path: Path) -> None:
+def test_runtime_queue_runs_one_job_at_a_time_in_submission_order(tmp_path: Path) -> None:
     """Run one job at a time and preserve submission order in bounded history."""
 
     async def scenario() -> None:
