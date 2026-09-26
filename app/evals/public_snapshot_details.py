@@ -17,11 +17,11 @@ from app.api.public_snapshot_schemas import (
     PublicSnapshotEvaluation,
 )
 from app.db.models import EvalResult, EvaluationSnapshot, GoldenRevision, SnapshotChunk
-from app.evals.admin import SUITES
 from app.evals.loader import GOLDEN_CASES, golden_payload_sha256
 from app.evals.regression import _comparable_config
 from app.evals.scoring import COVERAGE_THRESHOLD
 from app.evals.snapshots import SnapshotService, _golden_sha256
+from app.evals.suites import SUITES
 from app.evals.types import GoldenCase
 
 MAX_ARTIFACT_BYTES = 16 * 1024 * 1024

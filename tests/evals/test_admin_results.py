@@ -1,4 +1,4 @@
-"""Artifact-reading paths of the evaluation admin service."""
+"""Stored-result reading: detail, comparison, confinement, and baseline lookup."""
 
 import asyncio
 from datetime import UTC, datetime
@@ -10,6 +10,7 @@ import pytest
 
 from app.config import Settings
 from app.evals.admin import EvaluationAdminService
+from app.evals.admin_results import compatible_baseline
 from app.evals.regression import SCORING_CONFIG_KEY
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
@@ -165,12 +166,11 @@ def test_compatible_baseline_reads_the_scoring_stamp_that_persistence_writes(
     identity = {"golden_sha256": "a" * 64, "corpus_fingerprint": "b" * 64}
     config = {"admin_identity": identity, SCORING_CONFIG_KEY: {"k": 5}}
     row = _Row(1, _artifact(runs / "one.json", 1), config)
-    service = _service(tmp_path, {1: row})
 
     async def lookup(k: int) -> _Row | None:
         """Ask for the newest baseline scored at cutoff ``k``."""
         async with _Session({1: row}) as session:
-            return await service._compatible_baseline(
+            return await compatible_baseline(
                 cast(Any, session),
                 suite="sec-en",
                 golden_sha256="a" * 64,

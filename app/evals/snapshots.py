@@ -36,9 +36,9 @@ from app.db.models import (
     SnapshotLexemeStat,
 )
 from app.db.queries import join_current_parse
-from app.evals.admin import SUITES
 from app.evals.artifacts import read_strict_json
 from app.evals.index_identity import index_fingerprint
+from app.evals.suites import SUITES
 from app.operator.jobs import _default_session_factory
 from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
 

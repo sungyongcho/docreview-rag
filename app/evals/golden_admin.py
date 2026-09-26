@@ -15,7 +15,6 @@ from pydantic import ValidationError
 
 from app.api.admin_schemas import GoldenCanonicalResource, GoldenRevisionResource, GoldenSuiteId
 from app.config import get_settings
-from app.evals.admin import SUITES
 from app.evals.artifacts import read_strict_json
 from app.evals.drafts import (
     DRAFT_CASES,
@@ -33,6 +32,7 @@ from app.evals.loader import (
     validate_unique_cases,
 )
 from app.evals.source_binding import bind_golden
+from app.evals.suites import SUITES
 
 
 class GoldenAdminService:
