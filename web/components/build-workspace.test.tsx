@@ -958,17 +958,21 @@ it("separates deselection and cancellation from confirmed deletion without prema
   expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
 });
 
-it("locks deletion while another corpus job is still queued", async () => {
-  const status = "queued" as const;
+it.each(["queued", "running"] as const)("locks deletion while another corpus job is %s", async (status) => {
   const submitted: Record<string, unknown>[] = []; const previews: Record<string, unknown>[] = [];
   stubSourceLifecycle(lifecycleSources(), submitted, previews);
   const job: OperatorJob = { job_id: "other-corpus-job", domain: "corpus", kind: "backfill_embeddings", request: {}, status, stage: "embed", current: 1, total: 10, detail_current: null, detail_total: null, message: "Embedding", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-09-08T12:00:00Z", started_at: null, finished_at: null, updated_at: "2026-09-08T12:00:00Z" };
-  render(<Harness live readiness={READY_RUNTIME} jobBoard={{ jobs: [job], active_count: 1, queued_count: 0 }} />);
+  const { rerender } = render(<Harness live readiness={READY_RUNTIME} />);
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
   await screen.findByRole("button", { name: "NVDA FY2024 · On disk" });
-  fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
-  expect(screen.getByRole("button", { name: "Delete all downloaded originals" })).toBeDisabled();
+  const deleteButton = screen.getByRole("button", { name: "Delete all downloaded originals" });
+  await waitFor(() => expect(deleteButton).toBeEnabled());
+  rerender(<Harness live readiness={READY_RUNTIME} jobBoard={{ jobs: [job], active_count: status === "running" ? 1 : 0, queued_count: status === "queued" ? 1 : 0 }} />);
+  expect(deleteButton).toBeDisabled();
+  fireEvent.click(deleteButton);
   expect(previews).toEqual([]); expect(submitted).toEqual([]);
+  rerender(<Harness live readiness={READY_RUNTIME} />);
+  await waitFor(() => expect(deleteButton).toBeEnabled());
 });
 
 it("opens the golden-set manager from pipeline evaluation setup", async () => {

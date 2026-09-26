@@ -56,13 +56,13 @@ it("keeps a limited local engine selectable and preserves a missing explicit mod
   expect(screen.getByLabelText("Answer engine")).toHaveValue("local");
 });
 
-it("translates the selected-model prefix while preserving the chosen identifier", async () => {
+it("translates the selected-model prefix while preserving a long chosen identifier", async () => {
   vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
   vi.resetModules();
   const { LocalEngineSettings } = await import("./local-engine-settings");
   const { I18nProvider, LOCALE_KEY } = await import("@/lib/i18n");
   localStorage.setItem(LOCALE_KEY, "ko");
-  const name = "original-model:custom-tag";
+  const name = `original-model:${"x".repeat(200)}:custom-tag`;
   const readiness: Readiness = {
     status: "ready", mode: "runtime", admin_mode: "live", policy_revision: "test", models: {}, review_enabled: true, active_review_model: null,
     review_engines: { local: { enabled: true, protocol: "ollama", models: [model(name)] } },
