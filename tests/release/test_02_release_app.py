@@ -106,11 +106,16 @@ def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> N
 @pytest.mark.parametrize(
     "environment,admin_mode,headers,public,ready",
     [
-        ("prod", "readonly", {}, True, True),
         ("prod", "readonly", {}, True, False),
         ("dev", "readonly", {}, True, True),
         ("dev", "live", {"x-docreview-public": "true"}, True, True),
         ("dev", "live", {}, False, True),
+    ],
+    ids=[
+        "prod-surface-with-a-degraded-corpus",
+        "dev-readonly-surface",
+        "dev-live-proxy-marked-request",
+        "dev-live-operator-request",
     ],
 )
 def test_public_readiness_publishes_counts_and_withholds_only_write_access(

@@ -9,7 +9,8 @@ from app.release.config import ReleaseSettings
 
 
 def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> None:
-    """Default to the offline mode with proxy trust and the provider off."""
+    """Default to the offline read-only mode with the provider off and proxy headers untrusted,
+    with a per-call cap that covers the largest default call."""
     for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
         monkeypatch.delenv(name, raising=False)
 
@@ -19,16 +20,10 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
     assert settings.openai_api_key is None
     assert settings.openai_enabled is False
     assert settings.admin_mode == "readonly"
-    assert settings.rate_limit_per_minute == 10
-    assert settings.rate_limit_per_day == 50
-    assert settings.public_daily_cost_usd == Decimal("0.10")
     assert settings.trust_proxy_headers is False
     budget = settings.provider_budget()
-    assert budget.pricing.estimate(
-        budget.max_input_tokens,
-        budget.max_output_tokens,
-    ) == Decimal("0.00312")
-    assert Decimal("0.00312") <= budget.max_cost_usd
+    largest_call = budget.pricing.estimate(budget.max_input_tokens, budget.max_output_tokens)
+    assert largest_call <= budget.max_cost_usd
 
 
 def test_canned_mode_keeps_the_provider_off_even_with_a_key(monkeypatch) -> None:

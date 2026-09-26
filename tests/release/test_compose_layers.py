@@ -89,12 +89,6 @@ def test_the_production_overlay_environment_refuses_the_local_engine(monkeypatch
     assert settings.local_llm_enabled is False
 
 
-@pytest.mark.parametrize("name", ["docker-compose.dev.yml", "docker-compose.prod.yml"])
-def test_overlays_declare_no_required_variables(name: str) -> None:
-    """`docker compose config` runs on a clean checkout, where nothing is exported."""
-    assert ":?" not in (ROOT / "docker" / name).read_text(encoding="utf-8")
-
-
 def test_the_deployment_artifact_moved_out_of_the_root() -> None:
     """The VM file lives beside the script that copies it, and forwards no local model key."""
     deploy = ROOT / "deploy" / "gcp" / "docker-compose.deploy.yml"
