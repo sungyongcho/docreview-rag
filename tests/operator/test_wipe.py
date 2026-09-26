@@ -12,32 +12,9 @@ import sys
 import pytest
 
 from app.ingestion.manifest import CorpusIdentity, Manifest
-from app.operator.wipe import WipeError, WipeService
+from app.operator.wipe import WipeService
+from app.operator.wipe_errors import WipeError
 from tests.live_postgres import live_postgres_unavailable
-
-
-def test_runtime_file_allowlist_preserves_sources_and_rejects_links(tmp_path):
-    """Only runtime files are candidates; tracked sources and symlink targets survive."""
-    for name in (
-        "data/corpus/raw.html",
-        "data/corpus/manifest.json",
-        "data/corpus/protected.html",
-        "data/local-settings/local-llm.json",
-        "data/golden/new_v2_astra.json",
-        ".env",
-    ):
-        path = tmp_path / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("test")
-    service = WipeService(tmp_path, lambda: False)
-    files = service._files({"data/corpus/protected.html"})
-    assert {row["path"] for row in files} == {
-        "data/corpus/raw.html",
-        "data/local-settings/local-llm.json",
-    }
-    (tmp_path / "data/corpus/link.html").symlink_to(tmp_path / ".env")
-    with pytest.raises(WipeError, match="symbolic link"):
-        service._files(set())
 
 
 def test_confirmation_rejects_changed_expired_and_duplicate_previews(tmp_path, monkeypatch):
@@ -359,25 +336,6 @@ def test_docker_commands_pin_endpoint_and_remove_context_overrides(tmp_path, mon
     )
 
 
-def test_file_deletion_refuses_changed_parent_directory(tmp_path):
-    """Replacing a runtime directory with a link cannot delete the external target's file."""
-    root = tmp_path / "checkout"
-    corpus = root / "data/corpus"
-    corpus.mkdir(parents=True)
-    (corpus / "raw.html").write_text("same content")
-    service = WipeService(root, lambda: False)
-    item = service._files(set())[0]
-    external = tmp_path / "external"
-    external.mkdir()
-    (external / "raw.html").write_text("same content")
-    corpus.rename(corpus.with_name("original"))
-    corpus.symlink_to(external, target_is_directory=True)
-    with pytest.raises(OSError):
-        service._remove_file(item)
-    assert (external / "raw.html").read_text() == "same content"
-    assert (corpus.with_name("original") / "raw.html").exists()
-
-
 def test_operation_lock_serializes_other_operator_processes(tmp_path):
     """A second service cannot execute reset while another service owns the checkout lock."""
     first = WipeService(tmp_path, lambda: False)
@@ -558,24 +516,6 @@ def test_partial_volume_failure_never_deletes_files_or_automatically_restarts(
     assert service._stopped_app is None
 
 
-def test_preview_refuses_runtime_files_without_delete_permission(tmp_path, monkeypatch):
-    """Reject predictable filesystem failure before the database deletion stage is reachable."""
-    corpus = tmp_path / "data/corpus"
-    corpus.mkdir(parents=True)
-    (corpus / "raw.html").write_text("keep this")
-    service = WipeService(tmp_path, lambda: False)
-    monkeypatch.setattr("app.operator.wipe.os.access", lambda *_args, **_kwargs: False)
-    with pytest.raises(WipeError, match="cannot be removed") as failure:
-        service._files(set())
-    diagnosis = failure.value.diagnosis
-    assert diagnosis["code"] == "runtime_file_permission"
-    assert diagnosis["details"]["path"] == "data/corpus/raw.html"
-    assert diagnosis["details"]["parent"]["uid"] == corpus.stat().st_uid
-    assert diagnosis["details"]["operator_uid"] == os.geteuid()
-    assert any("setfacl" in step and str(corpus) in step for step in diagnosis["remediation"])
-    assert (corpus / "raw.html").read_text() == "keep this"
-
-
 @pytest.mark.parametrize("blocker", [None, "permissions", "queued_jobs"])
 def test_capability_checks_complete_preview_prerequisites_without_writes(
     tmp_path, monkeypatch, blocker
@@ -587,7 +527,7 @@ def test_capability_checks_complete_preview_prerequisites_without_writes(
     runtime.write_text("preserve runtime")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     if blocker == "permissions":
-        monkeypatch.setattr("app.operator.wipe.os.access", lambda *_args, **_kwargs: False)
+        monkeypatch.setattr("app.operator.wipe_files.os.access", lambda *_args, **_kwargs: False)
     labels = {"com.docker.compose.project.working_dir": str(tmp_path)}
     database = {
         "Id": "db-id",
@@ -689,37 +629,3 @@ def test_capability_checks_complete_preview_prerequisites_without_writes(
     assert service._operation_fd is None
     assert not service._audit.exists()
     assert runtime.read_text() == "preserve runtime"
-
-
-def test_read_permission_failure_has_actionable_diagnosis(tmp_path, monkeypatch):
-    """Explain unreadable contents even when parent delete permissions pass."""
-    runtime = tmp_path / "data/local-settings/local-llm.json"
-    runtime.parent.mkdir(parents=True)
-    runtime.write_text("preserve runtime")
-    service = WipeService(tmp_path, lambda: False)
-
-    def unreadable(_path):
-        """Model a denied fingerprint read without changing file permissions."""
-        raise PermissionError("Permission denied")
-
-    monkeypatch.setattr(Path, "read_bytes", unreadable)
-    with pytest.raises(WipeError, match="cannot be read") as failure:
-        service._files(set())
-    assert failure.value.diagnosis["details"]["operation"] == "read"
-    assert runtime.read_text() == "preserve runtime"
-
-
-def test_symlink_and_changed_file_fail_closed(tmp_path):
-    """An external link or a modified preview entry cannot be silently erased."""
-    service = WipeService(tmp_path, lambda: False)
-    target = tmp_path / "data/local-settings/connection.json"
-    target.parent.mkdir(parents=True)
-    target.write_text("before")
-    item = service._files(set())[0]
-    target.write_text("changed")
-    with pytest.raises(WipeError, match="changed"):
-        service._remove_file(item)
-    assert target.read_text() == "changed"
-    (tmp_path / "data/local-settings/connection.link").symlink_to(target)
-    with pytest.raises(WipeError, match="symbolic link"):
-        service._files(set())

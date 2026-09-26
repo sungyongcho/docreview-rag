@@ -9,7 +9,8 @@ import pytest
 
 from app.operator.commands import COMMANDS, OperatorCommand
 from app.operator.service import OperatorJobManager, create_operator_app
-from app.operator.wipe import WipeError, WipeService
+from app.operator.wipe import WipeService
+from app.operator.wipe_errors import WipeError
 
 TOKEN = "local-test-token"
 ORIGIN = "http://127.0.0.1:8000"

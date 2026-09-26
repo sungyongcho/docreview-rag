@@ -11,7 +11,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shlex
 import signal
 import stat
 import tempfile
@@ -25,41 +24,8 @@ from sqlalchemy.engine import make_url
 
 from app.atomic_write import write_text_atomically
 from app.observability.persistence import redact_sensitive_text
-
-
-class WipeError(RuntimeError):
-    """A reset cannot safely proceed against its declared target."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        code: str = "reset_precondition_failed",
-        details: dict[str, Any] | None = None,
-        remediation: list[str] | None = None,
-    ) -> None:
-        """Attach safe diagnostic evidence while preserving the existing error message."""
-        super().__init__(message)
-        self.diagnosis = {
-            "code": code,
-            "details": details or {},
-            "remediation": remediation
-            or ["Resolve the reported condition, then check reset availability again."],
-        }
-
-
-def diagnose_wipe_error(error: Exception) -> dict[str, Any]:
-    """Keep known reset evidence and identify unclassified inspection failures honestly."""
-    if isinstance(error, WipeError):
-        return error.diagnosis
-    return {
-        "code": "reset_inspection_failed",
-        "details": {"error_type": type(error).__name__},
-        "remediation": [
-            "The cause is unknown. Review the operator error and local service status, "
-            "then check reset availability again."
-        ],
-    }
+from app.operator.wipe_errors import WipeError, diagnose_wipe_error
+from app.operator.wipe_files import list_runtime_files, remove_runtime_file
 
 
 class WipeService:
@@ -210,117 +176,6 @@ class WipeService:
             ),
             *arguments,
         )
-
-    def _permission_error(self, path: Path, *, operation: str) -> WipeError:
-        """Explain the denied operation without changing owners, modes, or runtime data."""
-        uid = os.geteuid()
-        details: dict[str, Any] = {
-            "path": path.relative_to(self.root).as_posix(),
-            "operation": operation,
-            "operator_uid": uid,
-            "operator_gid": os.getegid(),
-            "operator_groups": sorted(set(os.getgroups()) | {os.getegid()}),
-        }
-        for key, item in (("file", path), ("parent", path.parent)):
-            try:
-                metadata = item.stat()
-            except OSError:
-                details[key] = {"path": str(item), "metadata": "unavailable"}
-            else:
-                details[key] = {
-                    "path": str(item),
-                    "uid": metadata.st_uid,
-                    "gid": metadata.st_gid,
-                    "mode": f"{stat.S_IMODE(metadata.st_mode):04o}",
-                }
-        actions = {
-            "remove": "removed",
-            "read": "read",
-            "enumerate": "enumerated",
-        }
-        commands = (
-            [f"sudo setfacl -m u:{uid}:rwx -- {shlex.quote(str(path))}"]
-            if operation == "enumerate"
-            else [
-                f"sudo setfacl -m u:{uid}:rwx -- {shlex.quote(str(path.parent))}",
-                f"sudo setfacl -m u:{uid}:r -- {shlex.quote(str(path))}",
-            ]
-        )
-        return WipeError(
-            f"Runtime file cannot be {actions[operation]} by this operator: {details['path']}",
-            code="runtime_file_permission",
-            details=details,
-            remediation=[
-                "The operator needs file read access and parent directory read, write, and "
-                "search access. Ask the owner or administrator to grant these while preserving "
-                "the application's existing access.",
-                "If POSIX ACLs are supported, an administrator can run these targeted commands "
-                "manually; they do not delete data:",
-                *commands,
-                "If access is still denied, check parent traversal permissions, sticky bits, "
-                "ACLs, and read-only mounts. Then check reset availability again.",
-            ],
-        )
-
-    def _files(self, tracked: set[str]) -> list[dict[str, Any]]:
-        """Enumerate runtime-only paths while preserving every tracked file and source JSON."""
-        candidates: list[Path] = []
-
-        def inaccessible(error: OSError) -> None:
-            """Refuse an incomplete preview instead of silently skipping unreadable directories."""
-            if isinstance(error, PermissionError) and error.filename:
-                raise self._permission_error(Path(error.filename), operation="enumerate") from error
-            raise WipeError("Runtime files could not be fully enumerated") from error
-
-        names = ["data/corpus", "data/eval_runs", "data/local-settings"]
-        for name in names:
-            directory = self.root / name
-            if not directory.exists():
-                continue
-            if directory.is_symlink() or directory.resolve() != directory.absolute():
-                raise WipeError(f"Runtime directory contains a symbolic link: {name}")
-            for parent, directories, filenames in os.walk(directory, onerror=inaccessible):
-                if any((Path(parent) / child).is_symlink() for child in directories):
-                    raise WipeError(f"Runtime directory contains a symbolic link: {name}")
-                candidates.extend(
-                    path
-                    for filename in filenames
-                    if name != "data/corpus" or Path(filename).suffix in {".html", ".xml", ".zip"}
-                    for path in (Path(parent) / filename,)
-                )
-        result = []
-        for path in sorted(set(candidates)):
-            relative = path.relative_to(self.root).as_posix()
-            if relative in tracked or any(
-                parent.as_posix() in tracked for parent in Path(relative).parents
-            ):
-                continue
-            if path.is_symlink() or path.resolve() != path.absolute():
-                raise WipeError(f"Runtime path contains a symbolic link: {relative}")
-            if not path.is_file():
-                continue
-            if not os.access(path.parent, os.W_OK | os.X_OK, effective_ids=True):
-                raise self._permission_error(path, operation="remove")
-            metadata = path.stat()
-            parent_metadata = path.parent.stat()
-            if parent_metadata.st_mode & stat.S_ISVTX and os.geteuid() not in {
-                0,
-                metadata.st_uid,
-                parent_metadata.st_uid,
-            }:
-                raise self._permission_error(path, operation="remove")
-            try:
-                fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
-            except PermissionError as error:
-                raise self._permission_error(path, operation="read") from error
-            result.append(
-                {
-                    "path": relative,
-                    "bytes": metadata.st_size,
-                    "sha256": fingerprint,
-                }
-            )
-        return result
 
     async def _runtime_request(
         self, container: str, action: str, payload: dict[str, str] | None = None
@@ -556,7 +411,7 @@ except urllib.error.HTTPError as error:
             "volume": volume,
             "port": port,
             "tables": counts,
-            "files": self._files(tracked),
+            "files": list_runtime_files(self.root, tracked),
         }
 
     async def capability(self) -> dict[str, Any]:
@@ -729,36 +584,6 @@ except urllib.error.HTTPError as error:
                 self._persist()
                 self._release_operation()
 
-    def _remove_file(self, item: dict[str, Any]) -> None:
-        """Unlink a verified runtime entry through directory descriptors without following links."""
-        relative = Path(item["path"])
-        if relative.is_absolute() or ".." in relative.parts:
-            raise WipeError("Runtime file escaped the checkout")
-        directory = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            for component in relative.parts[:-1]:
-                child = os.open(
-                    component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory
-                )
-                os.close(directory)
-                directory = child
-            descriptor = os.open(
-                relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory
-            )
-            with os.fdopen(descriptor, "rb") as stream:
-                opened = os.fstat(stream.fileno())
-                if (
-                    not stat.S_ISREG(opened.st_mode)
-                    or hashlib.file_digest(stream, "sha256").hexdigest() != item["sha256"]
-                ):
-                    raise WipeError(f"File changed during reset: {item['path']}")
-                current = os.stat(relative.name, dir_fd=directory, follow_symlinks=False)
-                if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
-                    raise WipeError(f"File changed during reset: {item['path']}")
-                os.unlink(relative.name, dir_fd=directory)
-        finally:
-            os.close(directory)
-
     def _persist(self) -> None:
         """Atomically preserve minimal local reset progress without corpus contents."""
         progress = {
@@ -826,7 +651,7 @@ except urllib.error.HTTPError as error:
             self._stage("runtime_files")
             removed = 0
             for item in target["files"]:
-                self._remove_file(item)
+                remove_runtime_file(self.root, item)
                 removed += 1
                 self._result["removed_files"] = removed
                 self._persist()
