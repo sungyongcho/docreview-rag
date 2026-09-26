@@ -707,18 +707,6 @@ describe("derivePipeline", () => {
     expect(stage(pipeline, "filings").numbers).toEqual(["30 / 30 filings on disk", "SEC 21/21", "DART 9/9"]);
   });
 
-  it("waits with Checking… on a live build before readiness or the admin snapshot arrives", () => {
-    const pipeline = derivePipeline(liveInput({ healthKind: "checking", readiness: null, corpus: null, manifests: [], registryCounts: {} }));
-
-    expect(pipeline.source).toBe("pending");
-    expect(pipeline.readOnly).toBe(false);
-    for (const id of ["filings", "index", "embeddings", "lexical", "ask", "answer_model", "evaluate"] as const) {
-      expect(stage(pipeline, id).status, id).toBe("unknown");
-      expect(stage(pipeline, id).numbers, id).toEqual([]);
-    }
-    expect(pipeline.next).toBeNull();
-  });
-
   it("does not report un-ingested filings when the registry facets are unavailable", () => {
     const pipeline = derivePipeline(liveInput({ registryCounts: {} }));
     const index = stage(pipeline, "index");
@@ -787,6 +775,8 @@ it("explains a refusal made before the call from the projected prompt size", asy
 
 it.each([true, false])("keeps initial connection checks neutral for live=%s without trusting fixture data", (live) => {
   const pipeline = derivePipeline(liveInput({ live, healthKind: "checking", readiness: null, corpus: null, manifests: [], registryCounts: {} }));
+  expect(pipeline.source).toBe("pending");
+  expect(pipeline.readOnly).toBe(!live);
   expect(pipeline.corpusReady).toBe(false);
   expect(pipeline.next).toBeNull();
   for (const item of pipeline.stages) {

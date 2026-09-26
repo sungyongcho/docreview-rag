@@ -227,6 +227,7 @@ it.each(["en", "ko"] as const)("stores a restored interruption by its canonical 
   stubPublicApi();
   seedAnsweredConversation();
   const conversations = loadConversations();
+  const answer = conversations[0].messages[1].text;
   conversations[0].messages.push({ id: "pending", role: "assistant", text: "", pending: true });
   saveConversations(conversations);
   render(<I18nProvider><ServiceShell /></I18nProvider>);
@@ -237,27 +238,9 @@ it.each(["en", "ko"] as const)("stores a restored interruption by its canonical 
   fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: next }));
   await waitFor(() => expect(screen.getByText(next === "ko" ? INTERRUPTION_KO : INTERRUPTION_EN)).toBeVisible());
   expect(screen.queryByText(next === "ko" ? INTERRUPTION_EN : INTERRUPTION_KO)).toBeNull();
-  expect(loadConversations()[0].messages.at(-1)?.text).toBe(INTERRUPTION_EN);
-});
-
-it("reads a stored interruption notice in the current language", async () => {
-  const stored = INTERRUPTION_EN;
-  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
-  localStorage.setItem("docreview.locale", "en");
-  stubPublicApi();
-  seedAnsweredConversation();
-  const conversations = loadConversations();
-  const answer = conversations[0].messages[1].text;
-  conversations[0].messages.push({ id: "legacy", role: "assistant", text: stored });
-  saveConversations(conversations);
-  render(<I18nProvider><ServiceShell /></I18nProvider>);
-  await waitFor(() => expect(screen.getByText(INTERRUPTION_EN)).toBeVisible());
-  expect(screen.queryByText(INTERRUPTION_KO)).toBeNull();
-  fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: "ko" }));
-  await waitFor(() => expect(screen.getByText(INTERRUPTION_KO)).toBeVisible());
   // Only the app's own notice is localized; the generated answer and the stored text stay untouched.
   expect(screen.getByText(answer)).toBeVisible();
-  expect(loadConversations()[0].messages.at(-1)?.text).toBe(stored);
+  expect(loadConversations()[0].messages.at(-1)?.text).toBe(INTERRUPTION_EN);
 });
 
 it("opens a new chat from the app logo while preserving the previous conversation", async () => {
