@@ -8,7 +8,6 @@ from app.evals.parity import (
     DEFAULT_MIN_RECALL_RATIO,
     GATED_METRIC,
     LANGUAGE_REGRESSION_TOLERANCES,
-    PARITY_REGRESSION_TOLERANCE,
     assess_parity,
     parity_markdown,
 )
@@ -229,25 +228,20 @@ def test_assess_parity_validates_its_own_inputs_and_floor():
         assess_parity(cast(RetrievalEvaluation, object()), korean)
 
 
-def test_language_regression_tolerance_allows_more_than_one_flipped_case():
-    """Absorb single-case noise per language while still catching a collapse."""
-    assert PARITY_REGRESSION_TOLERANCE > 1 / 24
-    assert LANGUAGE_REGRESSION_TOLERANCES.recall_at_k == PARITY_REGRESSION_TOLERANCE
-    assert LANGUAGE_REGRESSION_TOLERANCES.hit_rate_at_k == PARITY_REGRESSION_TOLERANCE
-    assert LANGUAGE_REGRESSION_TOLERANCES.mrr == PARITY_REGRESSION_TOLERANCE
-
+def test_language_regression_tolerance_absorbs_one_flipped_case_on_every_metric():
+    """Absorb one flipped case of 24 on each gated metric while still catching a collapse."""
     baseline = {"recall_at_k": 0.80, "hit_rate_at_k": 0.80, "mrr": 0.80}
-    single_case = {"recall_at_k": 0.80 - 1 / 24, "hit_rate_at_k": 0.80, "mrr": 0.80}
-    collapse = {"recall_at_k": 0.60, "hit_rate_at_k": 0.80, "mrr": 0.80}
+    one_flipped_case = {metric: value - 1 / 24 for metric, value in baseline.items()}
+    collapse = {metric: 0.60 for metric in baseline}
 
-    def compare(current):
-        return compare_against_baseline(
-            baseline, current, tolerances=LANGUAGE_REGRESSION_TOLERANCES
-        )
+    absorbed = compare_against_baseline(
+        baseline, one_flipped_case, tolerances=LANGUAGE_REGRESSION_TOLERANCES
+    )
+    caught = compare_against_baseline(baseline, collapse, tolerances=LANGUAGE_REGRESSION_TOLERANCES)
 
-    assert compare(single_case).passed
-    assert not compare(collapse).passed
-    assert compare(collapse).regressed_metrics == ("recall_at_k",)
+    assert absorbed.passed
+    assert not caught.passed
+    assert caught.regressed_metrics == ("recall_at_k", "hit_rate_at_k", "mrr")
 
 
 def test_parity_markdown_renders_the_verdict_and_the_undefined_ratio():
