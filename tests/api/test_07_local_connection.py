@@ -8,11 +8,14 @@ from app.api.runtime import RuntimeApiServices
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import local_provider_budget
 from app.release.app import create_release_app
-from app.release.config import ReleaseSettings
+from app.release.config import AdminMode, ReleaseSettings
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.support import load_settings
 
 
-def connection_app(tmp_path, environment="dev", admin_mode="live", admin_cors_origin=None):
+def connection_app(
+    tmp_path, environment="dev", admin_mode: AdminMode = "live", admin_cors_origin=None
+):
     """Build real routes with metadata-only transport and no database calls."""
 
     def metadata(request: httpx.Request) -> httpx.Response:
@@ -35,10 +38,11 @@ def connection_app(tmp_path, environment="dev", admin_mode="live", admin_cors_or
             "local": local_provider_budget(max_input_tokens=1000, max_output_tokens=100)
         },
     )
-    settings = ReleaseSettings(
-        _env_file=None,
-        DOCREVIEW_ENVIRONMENT=environment,
-        mode="runtime",
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
+        environment=environment,
+        service_mode="runtime",
         host="127.0.0.1",
         admin_mode=admin_mode,
         admin_cors_origin=admin_cors_origin,

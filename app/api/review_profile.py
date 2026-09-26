@@ -1,6 +1,6 @@
 """Strict conversation-level review settings and server-owned retrieval presets."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Final, Literal, NamedTuple, Self
 
 from pydantic import (
@@ -193,11 +193,27 @@ _BUILTIN_BM25: Final[Mapping[str, object]] = {
     "bm25_b": DEFAULT_BM25_B,
     "bm25_idf": DEFAULT_BM25_IDF,
 }
+# The BM25 fields every retrieval plan carries, in their declaration order.
+_BM25_FIELDS: Final = tuple(_BUILTIN_BM25)
 
 
-def with_server_bm25[P: BaseModel](
-    retrieval: P, server: ServerBM25 | None = None, *, builtin: bool = False
+def _inherit_server_bm25[P: BaseModel](
+    retrieval: P, server: ServerBM25 | None, names: Sequence[str]
 ) -> P:
+    """Replace the named BM25 fields of a retrieval plan with the server settings."""
+    configured = server or ServerBM25()
+    values = {
+        "bm25_k1": float(configured.k1),
+        "bm25_b": float(configured.b),
+        "bm25_idf": configured.idf,
+    }
+    inherited = {name: values[name] for name in names}
+    if not inherited:
+        return retrieval
+    return type(retrieval).model_validate({**retrieval.model_dump(), **inherited})
+
+
+def with_server_bm25[P: BaseModel](retrieval: P, server: ServerBM25 | None = None) -> P:
     """Fill the BM25 values a retrieval plan does not state from the server settings.
 
     Parameters
@@ -206,8 +222,6 @@ def with_server_bm25[P: BaseModel](
         A Custom, stored, or administrator retrieval plan with ``bm25_*`` fields.
     server : ServerBM25 | None
         The configured server values; ``None`` means the built-in defaults.
-    builtin : bool
-        Whether the plan comes from a shipped built-in preset file.
 
     Returns
     -------
@@ -217,23 +231,25 @@ def with_server_bm25[P: BaseModel](
     Notes
     -----
     A request or file states a value by supplying it, and a stated value wins. A
-    built-in preset that repeats a built-in default carries no deliberate tuning, so
-    that value inherits the server setting too; a different built-in value is kept.
+    shipped built-in preset goes through ``with_server_bm25_for_builtin`` instead.
     """
-    configured = server or ServerBM25()
-    inherited = {
-        name: value
-        for name, value in (
-            ("bm25_k1", float(configured.k1)),
-            ("bm25_b", float(configured.b)),
-            ("bm25_idf", configured.idf),
-        )
-        if name not in retrieval.model_fields_set
-        or (builtin and getattr(retrieval, name) == _BUILTIN_BM25[name])
-    }
-    if not inherited:
-        return retrieval
-    return type(retrieval).model_validate({**retrieval.model_dump(), **inherited})
+    unstated = [name for name in _BM25_FIELDS if name not in retrieval.model_fields_set]
+    return _inherit_server_bm25(retrieval, server, unstated)
+
+
+def with_server_bm25_for_builtin[P: BaseModel](retrieval: P, server: ServerBM25 | None = None) -> P:
+    """Fill the BM25 values a shipped built-in preset does not tune from the server settings.
+
+    Parameters and result follow ``with_server_bm25``. A built-in preset that repeats a
+    built-in default carries no deliberate tuning, so that value inherits the server
+    setting like an unstated one; a different built-in value is kept.
+    """
+    untuned = [
+        name
+        for name, default in _BUILTIN_BM25.items()
+        if name not in retrieval.model_fields_set or getattr(retrieval, name) == default
+    ]
+    return _inherit_server_bm25(retrieval, server, untuned)
 
 
 def resolve_retrieval_profile(
@@ -259,7 +275,10 @@ def resolve_retrieval_profile(
         )
     if selected is None:
         raise ValueError("retrieval preset settings are missing")
-    selected = with_server_bm25(selected, server, builtin=builtin)
+    if builtin:
+        selected = with_server_bm25_for_builtin(selected, server)
+    else:
+        selected = with_server_bm25(selected, server)
     return ResolvedRetrievalProfile(
         preset=profile.retrieval_preset,
         **selected.model_dump(mode="python"),

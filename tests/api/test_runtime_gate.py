@@ -14,7 +14,7 @@ import pytest
 from starlette.requests import ClientDisconnect
 
 from app.api.admin_runtime import RuntimeAdminApiServices
-from app.api.app import create_api_app
+from app.api.app import DEV_SURFACE, LIVE_ADMIN_SURFACE, create_api_app
 from app.api.deps import ApiServices
 from app.api.evidence import EvidenceSelection
 from app.api.routes.stream import review_stream
@@ -25,13 +25,18 @@ from app.api.schemas import ReviewRequest
 def test_control_requires_dev_opt_in_loopback_and_private_token(tmp_path, monkeypatch):
     """Expose no control on ordinary apps and reject unauthenticated loopback requests."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    for enabled, admin in ((False, object()), (True, None)):
-        app = create_api_app(admin_services=admin, enable_reset=enabled)
+    for surface, admin in (
+        (DEV_SURFACE, cast(RuntimeAdminApiServices, object())),
+        (LIVE_ADMIN_SURFACE, None),
+    ):
+        app = create_api_app(admin_services=admin, surface=surface)
         with TestClient(app) as client:
             assert client.get("/_internal/reset/activity").status_code == 404
         assert not list(tmp_path.glob("docreview-runtime-gate-*.json"))
 
-    app = create_api_app(admin_services=cast(RuntimeAdminApiServices, object()), enable_reset=True)
+    app = create_api_app(
+        admin_services=cast(RuntimeAdminApiServices, object()), surface=LIVE_ADMIN_SURFACE
+    )
     with TestClient(app, client=("127.0.0.1", 1000)) as client:
         files = list(tmp_path.glob("docreview-runtime-gate-*.json"))
         assert len(files) == 1
@@ -58,7 +63,9 @@ def test_control_requires_dev_opt_in_loopback_and_private_token(tmp_path, monkey
 def test_hold_blocks_admission_and_requires_exact_release(tmp_path, monkeypatch):
     """Keep read liveness accessible while mutations and DB reads wait for exact release."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    app = create_api_app(admin_services=cast(RuntimeAdminApiServices, object()), enable_reset=True)
+    app = create_api_app(
+        admin_services=cast(RuntimeAdminApiServices, object()), surface=LIVE_ADMIN_SURFACE
+    )
 
     @app.get("/health")
     async def health():
@@ -155,6 +162,8 @@ def test_stream_remains_active_until_cancelled_producer_cleanup_finishes(failure
                 await send_waiting.wait()
                 return {"type": "http.disconnect"}
             await asyncio.Event().wait()
+            # Only cancellation ends that wait, so this path never delivers a message.
+            raise AssertionError("an event nobody sets never finishes waiting")
 
         async def send(message):
             """Interrupt delivery only after the workflow has produced its first body."""

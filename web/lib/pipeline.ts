@@ -7,7 +7,7 @@ export type StageId = "filings" | "index" | "embeddings" | "lexical" | "ask" | "
 export type StageStatus = "done" | "action" | "running" | "queued" | "failed" | "blocked" | "readonly" | "unknown";
 export type StageActionKind = "acquire" | "ingest_all" | "embed" | "bm25" | "ask" | "recheck" | "evaluate" | "compare";
 
-export interface StageAction {
+interface StageAction {
   label: string;
   kind: StageActionKind;
 }
@@ -507,12 +507,12 @@ function answerModelDraft(readiness: Readiness | null): Draft {
 }
 
 /** A settings destination that would let the reader change the limit they just hit. */
-export interface FailureFix {
+interface FailureFix {
   label: string;
   category: "limits" | "runtime" | "documents" | "jobs";
 }
 
-export interface FailureReport {
+interface FailureReport {
   text: string;
   /** Absent when no reachable setting would change the outcome. */
   fix?: FailureFix;
@@ -521,15 +521,37 @@ export interface FailureReport {
 /** Where the workflow Budget fields are edited; the label matches the Settings nav. */
 const RUN_LIMITS: FailureFix = { label: "Open run limits", category: "limits" };
 
+/** Kinds `failure_kind` in app/llm/local_diagnostics.py gives a host the app could not reach. */
+const UNREACHABLE_KINDS = new Set(["refused", "dns", "connection"]);
+
+/**
+ * Whether a provider failure is a local model timeout or an unreachable local model host.
+ *
+ * The backend reports a local transport failure as `local model server request failed: <kind>`.
+ * Runs stored before that change carry the httpx exception names instead, so those still count.
+ */
+function localTransportFailure(detail: string): "timeout" | "unreachable" | null {
+  const kind = /local model server request failed: (\w+)/.exec(detail)?.[1];
+  if (kind !== undefined) {
+    if (kind === "timeout") return "timeout";
+    if (UNREACHABLE_KINDS.has(kind)) return "unreachable";
+    return null;
+  }
+  if (/ReadTimeout|ConnectTimeout|TimeoutException/i.test(detail)) return "timeout";
+  if (/ConnectError|Connection refused|ConnectionError/i.test(detail)) return "unreachable";
+  return null;
+}
+
 /**
  * Explain one run failure and, where one exists, name the setting that would change it.
  *
  * Budget failures carry `resource`, which says which ceiling stopped the run; a
  * wall-clock stop is not a token budget and pointing at the wrong field wastes the
  * reader's time. Provider failures are matched on `status`, whose four values are a
- * closed contract. Only the exception class at the head of `details[0]` is read, because
- * the provider text after it is not one. Advice an operator alone can act on, and the
- * Settings categories a public build does not render, are withheld from that build.
+ * closed contract. Only the exception class at the head of `details[0]`, or the local
+ * transport kind the backend names after it, is read, because the rest of the provider
+ * text is not one. Advice an operator alone can act on, and the Settings categories a
+ * public build does not render, are withheld from that build.
  */
 export function failureReport(failure: Record<string, unknown>, developer = LOCAL_ENGINE_VISIBLE): FailureReport {
   if (failure.code === "query_scope_unavailable") {
@@ -554,12 +576,9 @@ export function failureReport(failure: Record<string, unknown>, developer = LOCA
 
   if (status === "budget_exceeded" && failure.code === "provider_failure") {
     const budget = failure.budget && typeof failure.budget === "object" ? failure.budget as Record<string, unknown> : null;
-    const first = Array.isArray(failure.details) && typeof failure.details[0] === "string" ? failure.details[0] : "";
-    // Older persisted reports carry this exact server-generated budget line.
-    const legacy = /^(input_tokens|output_tokens|estimated_cost_usd): used=([\d.]+) limit=([\d.]+)$/.exec(first);
-    const resource = budget?.which ?? legacy?.[1];
-    const used = budget?.used ?? legacy?.[2];
-    const limit = budget?.limit ?? legacy?.[3];
+    const resource = budget?.which;
+    const used = budget?.used;
+    const limit = budget?.limit;
     const kind = resource === "input_tokens" ? "input token" : resource === "output_tokens" ? "output token" : resource === "estimated_cost_usd" ? "estimated cost" : null;
     const amount = used !== undefined && limit !== undefined ? ` (${used} of ${limit})` : "";
     const projected = typeof budget?.projected_input_tokens === "number" ? budget.projected_input_tokens : null;
@@ -600,13 +619,14 @@ export function failureReport(failure: Record<string, unknown>, developer = LOCA
   }
 
   if (status === "provider_error" && LOCAL_ENGINE_VISIBLE) {
-    if (/ReadTimeout|ConnectTimeout|TimeoutException/i.test(detail)) {
+    const transport = localTransportFailure(detail);
+    if (transport === "timeout") {
       return {
         text: `The model did not answer within the time limit${tried}. Raise LOCAL_LLM_TIMEOUT_S, or choose a smaller model.`,
         fix: { label: "Open System status", category: "runtime" },
       };
     }
-    if (/ConnectError|Connection refused|ConnectionError/i.test(detail)) {
+    if (transport === "unreachable") {
       return {
         text: "The model host is unreachable. Check that the separately installed model server is running and LOCAL_LLM_BASE_URL is reachable from the app.",
         fix: { label: "Open System status", category: "runtime" },

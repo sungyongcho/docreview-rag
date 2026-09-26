@@ -1,6 +1,5 @@
 """Archive terminal job records and back them up before explicit deletion."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
@@ -11,9 +10,10 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.atomic_write import write_text_atomically
 from app.db.models import OperatorJob
+from app.db.session_factory import SessionFactory
 
 ARCHIVE_KEY = "__history_archived"
 TERMINAL_STATUSES = ("succeeded", "failed", "interrupted", "cancelled")
@@ -45,7 +45,7 @@ class HistoryResult:
 class JobHistoryService:
     """Maintain history without replaying work or touching result artifacts."""
 
-    def __init__(self, session_factory: Callable[[], AsyncSession], backup_dir: Path) -> None:
+    def __init__(self, session_factory: SessionFactory, backup_dir: Path) -> None:
         """Keep the caller's session factory and dedicated private backup directory."""
         self._session_factory = session_factory
         self._backup_dir = Path(backup_dir).absolute()
@@ -130,8 +130,6 @@ class JobHistoryService:
         """Atomically publish and fsync a complete JSON backup before database deletion."""
         self._check_directory(create=True)
         backup_id = str(uuid4())
-        target = self._backup_dir / f"{backup_id}.json"
-        temporary = self._backup_dir / f".{backup_id}.tmp"
         records = []
         for row in rows:
             record = {}
@@ -145,20 +143,14 @@ class JobHistoryService:
             "created_at": datetime.now(UTC).isoformat(),
             "records": records,
         }
-        try:
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(payload, stream, ensure_ascii=False, indent=2, allow_nan=False)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, target)
-            directory = os.open(self._backup_dir, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-        finally:
-            temporary.unlink(missing_ok=True)
+        write_text_atomically(
+            self._backup_dir / f"{backup_id}.json",
+            json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False),
+            mode=0o600,
+            apply_umask=True,
+            encoding="utf-8",
+            fsync_directory=True,
+        )
         return backup_id
 
     def backup_path(self, backup_id: str) -> Path:

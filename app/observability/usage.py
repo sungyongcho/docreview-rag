@@ -11,12 +11,9 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from pydantic import JsonValue
-from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import OperatorJob, Trace
-from app.observability.persistence import stored_step_requests
-from app.observability.types import StepTrace
+from app.db.models import OperatorJob
 
 USAGE_KEY = "provider_usage"
 LEDGER_KIND = "embedding_usage"
@@ -224,104 +221,34 @@ async def persist_embedding_usage(session: AsyncSession, record: dict[str, objec
         )
 
 
-def _sent_requests(context: Mapping[str, object], trace: Trace | StepTrace | Row[Any]) -> int:
-    """Count the requests one trace sent: kept on a step, reconstructed for a stored row."""
-    if isinstance(trace, StepTrace):
-        return trace.requests
-    return stored_step_requests(context, step=trace.step, retries=trace.retries)
+def recorded_model_calls(run_context: Mapping[str, object] | None) -> list[dict[str, Any]]:
+    """Read current call records; an explicit empty list records a provider-free run."""
+    calls = (run_context or {}).get("model_calls")
+    if not isinstance(calls, list):
+        raise ValueError("recorded model calls must be a list")
+    if any(not isinstance(call, dict) for call in calls):
+        raise ValueError("recorded model calls must be objects")
+    return calls
 
 
-def review_usage(
-    run_context: Mapping[str, object] | None, traces: Sequence[Trace | StepTrace | Row[Any]]
-) -> list[dict[str, object]]:
-    """Prefer complete request-local call records, using Trace only for older missing details."""
-    context = run_context or {}
-    base_identity = context.get("provider_identity")
-    base_identity = (
-        {
-            key: base_identity[key]
-            for key in ("provider", "local", "credential_slot")
-            if key in base_identity
-        }
-        if isinstance(base_identity, dict)
-        else {}
-    )
-    calls = context.get("model_calls")
-    if not isinstance(calls, list) or not calls:
-        return [
-            usage_record(
-                identity=provider_identity(
-                    api_url=trace.api_url,
-                    **{
-                        key: base_identity[key]
-                        for key in ("provider", "local", "credential_slot")
-                        if key in base_identity
-                    },
-                ),
-                model_name=trace.model_name,
-                role=trace.node,
-                requests=_sent_requests(context, trace),
-                input_tokens=trace.input_tokens,
-                cached_input_tokens=trace.cached_input_tokens,
-                cache_write_input_tokens=trace.cache_write_input_tokens,
-                output_tokens=trace.output_tokens,
-                reasoning_tokens=trace.reasoning_tokens,
-                estimated_cost_usd=trace.estimated_cost_usd,
-            )
-            for trace in traces
-        ]
-    available = list(traces)
-    records = []
-    for call in calls:
-        if not isinstance(call, dict):
-            raise ValueError("Persisted model usage call is not an object")
-        model = str(call.get("model", "unknown"))
-        role = str(call.get("node", "unknown"))
-        matched = next(
-            (
-                trace
-                for trace in available
-                if trace.model_name == model
-                and trace.node == role
-                and trace.input_tokens == call.get("input_tokens")
-                and trace.output_tokens == call.get("output_tokens")
+def review_usage(run_context: Mapping[str, object] | None) -> list[dict[str, object]]:
+    """Project each recorded call once, including routing and unsent provider denials."""
+    return [
+        usage_record(
+            identity=provider_identity(
+                provider=call["provider"],
+                local=call["local"],
+                credential_slot=call["credential_slot"],
             ),
-            None,
+            model_name=call["model"],
+            role=call["node"] or "unknown",
+            requests=call["attempts"],
+            input_tokens=call["input_tokens"],
+            cached_input_tokens=call["cached_input_tokens"],
+            cache_write_input_tokens=call["cache_write_input_tokens"],
+            output_tokens=call["output_tokens"],
+            reasoning_tokens=call["reasoning_tokens"],
+            estimated_cost_usd=Decimal(call["estimated_cost_usd"]),
         )
-        if matched is not None:
-            available.remove(matched)
-        identity = {
-            **base_identity,
-            **{key: call[key] for key in ("provider", "local", "credential_slot") if key in call},
-        }
-        resolved = provider_identity(
-            api_url=call.get("api_url", matched.api_url if matched is not None else None),
-            **identity,
-        )
-        cost = call.get(
-            "estimated_cost_usd", matched.estimated_cost_usd if matched is not None else None
-        )
-        records.append(
-            usage_record(
-                identity=resolved,
-                model_name=model,
-                role=role,
-                requests=call.get("attempts", 1),
-                input_tokens=call.get("input_tokens"),
-                estimated_cost_usd=Decimal(str(cost))
-                if cost is not None
-                else (Decimal(0) if resolved["local"] is True else None),
-                **{
-                    field: call.get(field, getattr(matched, field, 0))
-                    for field in (
-                        "cached_input_tokens",
-                        "cache_write_input_tokens",
-                        "output_tokens",
-                        "reasoning_tokens",
-                    )
-                },
-            )
-        )
-    if available:
-        records.extend(review_usage({"provider_identity": base_identity}, available))
-    return records
+        for call in recorded_model_calls(run_context)
+    ]

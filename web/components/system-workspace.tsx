@@ -146,7 +146,7 @@ function ApiInspector({ ready }: { ready: boolean }) {
   );
 }
 
-const USAGE_ROLE_LABELS: Record<string, string> = { gate: "Classification", route: "Routing", retrieve: "Retrieval", chat: "Answer", grade: "Grading", check: "Checking", report: "Answer", embedding: "Embedding" };
+const USAGE_ROLE_LABELS: Record<string, string> = { gate: "Classification", route: "Routing", retrieve: "Retrieval", grade: "Grading", check: "Checking", report: "Answer", embedding: "Embedding" };
 
 function UsagePanel() {
   const { t, locale } = useI18n();

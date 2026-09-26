@@ -282,7 +282,7 @@ details)`; `scripts.stack.commands.main` serves only `corpus`. `rag-dev doctor` 
 - The `@blocked path /admin*` block in `deploy/Caddyfile` stays as the edge's second layer for the private routes; the `/ingest*`
   prefix was dropped from it after review because the route no longer exists (a request there gets the API's own 404).
 - `app/agent/decompose.py` (agent-06): `app/evals/decomposition.py` imports `make_decomposed_retriever`, and the user named that
-  evaluation as a root.
+  evaluation as a root. Second-pass update: the evaluation remains; its helper moved to `app/evals/decompose.py` (section 13.7).
 - `python -m app.evals.run` (`main`) and `python -m app.evals.crosslingual`: documented only in the archive, but the admin Matrix
   mode currently fails (section 11), which leaves `run.py` as the only working ablation runner, and README.md advertises
   cross-lingual parity as a feature.
@@ -382,7 +382,7 @@ and its first docstring line was read. Line counts are `wc -l` on the branch hea
 | `app.py` (553) | `create_release_app`, `build_runtime_services`, `/health`, `/release`, `/capabilities`, `/limits`, `/ready`, static UI mount at `/docreview-rag`. | `space.py` |
 | `config.py` (222) | `ReleaseSettings` (`DOCREVIEW_*`), key slot by `MODE`, `provider_budget()`, `validate_release_limits`. | `app.py` |
 | `middleware.py` (323) | `ReleaseGuardMiddleware` (public lock, admin lock, rate and cost gates), `SecurityHeadersMiddleware`, `client_host`. | `app.py` |
-| `limiter.py` (191) | `InProcessRateLimiter`, `DailyCostLimiter`. | `app.py`, middleware |
+| `limiter.py` (191) | `InProcessRateLimiter`, `DailyCostLimiter`. Second-pass update: removed in favor of `SharedAIAllowance` for every mode (section 13.7). | `app.py`, middleware |
 | `ai_allowance.py` (224) | `SharedAIAllowance` (SQLite), `RequestAIAllowance`, `reserve_openai`, `AIAllowanceError`. | middleware, `OpenAILLMProvider` |
 | `secrets.py` (43) | Log redaction filter. | `build_runtime_services` |
 | `browser_reset.py` (22) | Reads the fresh-start marker for `/capabilities`. | `app.py` |
@@ -419,7 +419,7 @@ and its first docstring line was read. Line counts are `wc -l` on the branch hea
 | `tools.py` (81) | `Tool`, `ToolError`, `safe_runtime_error`, reserved names. | registry, builtin tools |
 | `provider.py` (269) | `ToolCallingProvider`, `DeterministicToolProvider`, `OpenAIToolProvider`. | loop, `__main__.py` |
 | `types.py` (190) | `AgentBudget`, `ToolCall`, `Observation`, `AgentStep`, `AgentCitation`, `AgentAnswer`, `AgentResult`. | loop, providers |
-| `decompose.py` (189) | `decompose_query` and `make_decomposed_retriever`. | `app/evals/decomposition.py` |
+| `decompose.py` (189) | `decompose_query` and `make_decomposed_retriever`. Second-pass update: moved to `app/evals/decompose.py` (section 13.7). | `app/evals/decomposition.py` |
 | `mcp_server.py` (106) | MCP stdio server over the registry (untouched by this work). | `__main__.py --mcp` |
 | `__main__.py` (233) | `python -m app.agent` CLI and `--mcp` dispatch. | operators |
 
@@ -533,6 +533,9 @@ and its first docstring line was read. Line counts are `wc -l` on the branch hea
 | `web/scripts/` | `build-metadata.mjs` (fingerprint for `next.config.ts`), `prepare-tutorial.mjs` (renders the tutorials before dev/test/build), `tutorial-watch.mjs`, `dev.mjs`, `tutorial-test-support.mjs`. | `npm run build` / `dev` / `test` |
 
 ## 6. How one question flows
+
+Second-pass update: the limiter split and request-admission steps below describe the first pass.
+Every mode now uses shared per-call metering; see sections 13.2 and 13.8 for that flow.
 
 Follow `POST /review` with `{"query": "...", "session_profile": {...}}`. Every name below was checked against the branch head.
 
@@ -664,7 +667,8 @@ and `source_sha256` from `parser.source_digest`. The hash makes a citation stale
 
 Budgets. The workflow `Budget` (`app/observability/types.py`: `max_iterations` 6, `max_input_tokens` 60000, `max_output_tokens`
 4000, `max_wall_clock_s` 120) is cumulative over the run and enforced only before a node; iterations are nodes entered; wall clock
-is the whole run, so a slow call is not interrupted but the next node is refused. The `ProviderBudget` (`app/llm/schemas.py`:
+is the whole run, so a slow call is not interrupted but the next provider-backed node is refused, while the pure `report` node
+draws no budget resource and completes once both provider calls were paid for. The `ProviderBudget` (`app/llm/schemas.py`:
 `max_input_tokens`, `max_output_tokens`, `max_cost_usd`, `pricing: TokenPricing`) is per call; `ProviderBudget.exhausted_by` is the
 single definition of exhaustion, and a zero-priced local provider never trips the cost cap. Failures are typed: `BudgetLimitFailure`
 -> status `budget_exceeded` (HTTP 429); `ProviderFailure{node, status, attempts, details, budget, budget_source}` ->
@@ -742,7 +746,7 @@ the prompt). `execute_tool` is the shared dispatcher: `ToolError` messages pass 
 `DeterministicToolProvider` replays queued turns (the CLI's offline demo and tests); `OpenAIToolProvider` calls the Responses API
 with strict tools, `store=False` and SDK retries disabled, so every billed request is exactly one agent step, and shares
 `openai_usage` with the review provider. `decompose_query` and `make_decomposed_retriever` (`app/agent/decompose.py`) serve only the
-decomposition evaluation.
+decomposition evaluation. Second-pass update: their defining module is now `app/evals/decompose.py` (section 13.7).
 
 Exposure. `python -m app.agent --question "..." [--provider deterministic|openai] [--model ...] [--k] [--max-iterations]
 [--max-cost-usd]` (`app/agent/__main__.py`) builds the registry over the process `Session` and `get_embedding_provider()`, runs
@@ -933,6 +937,8 @@ an artifact directory), `tests/scripts/stack/test_prod.py::test_prepared_local_p
 ## 11. Larger restructuring ideas not executed
 
 Concrete ideas from the round-1 lane maps, the round-2 lane maps and the editors' follow-ups, de-duplicated, for the next pass.
+This is the first-pass backlog: sections 13.3 and 13.7 record the items completed in the second pass, and section 13.9 records
+the deliberately retained work.
 
 Composition and layering:
 
@@ -945,7 +951,8 @@ Composition and layering:
   instead of importing the private `_run_cli`; fold `breakdown_by_category` and `decomposition.category_metrics` into one helper.
 - Move `app/agent/decompose.py` next to its only user (`app/evals/decomposition.py`) or into `app/retrieval`, and decide whether the
   `decomposition` model role in `app/openai_models.py` stays. Fix the layering inversion `app/operator/lifecycle_receipts.py ->
-  scripts.stack.fresh.receipt_path` by moving the helper into `app/operator`.
+  scripts.stack.fresh.receipt_path` by moving the helper into `app/operator`. Second-pass update: the module move and receipt-path
+  ownership change were completed (section 13.7).
 - One local HTTP client for `scripts/stack/cli.py require_running_mode`, `scripts/stack/commands.py LocalClient` and
   `scripts/stack/quickstart.py wait_ready`; one Compose `ps` parser for `quickstart.py` and `scripts/schema/recreate.py` (the
   JSON-array branch is reachable only in `recreate`, where it would raise `TypeError`); one allowance interface instead of
@@ -1046,3 +1053,383 @@ Documentation touched on the branch: `docs/TUTORIAL/{en,ko}/cli.md`, `environmen
 precedence, the removed doctor fallback, the removed tunnel, the retry-refusal wording, retired storage records), `README.md` (no
 admin API on the public deployment), `scripts/README.md`, `deploy/docker-compose.md`. `docs/README_archive.md` was left unchanged as
 history.
+
+## 13. Second pass (`refactor/cleanup-pass-2`)
+
+The second pass continues the branch at `8ca94d9`, using `7780a72` as its comparison
+baseline. Its approved sequence was to correct evidenced defects, simplify the named
+modules, review test quality and verify the integrated result. Work stayed within the
+assigned areas. Readability guided the edits: descriptive names, one responsibility per
+function, plain control flow and comments that explain intent.
+
+The earlier agents' records supply the original reproductions, red/green regressions and
+differential comparisons. They describe reachability, behavior-parity and test-evidence
+checks by the change authors and integrator. This continuation independently checked the
+integration state, reconciled the pending review commits and audited the retained test
+assertions. That is integration and implementation verification; the authors' and
+integrator's checks are not represented as independent review of their own contributions.
+The [evidence appendix](refactor-2026-09-evidence.md#second-pass-test-cleanup-audit) records
+the test-removal audit and the boundaries it restored. Historical measurements elsewhere
+in this report keep their original commit scope.
+
+### 13.1 Bugs fixed
+
+The table preserves the earlier bug record and its regression references. Pre-fix failures
+are inherited evidence, rather than fresh reproductions by this continuation. Documentation
+corrections and the explicitly bounded reranker window are identified as such. Test names
+after `::` in the same cell share the preceding file unless another file is named.
+
+| Bug | Commit | Correction | Regression evidence |
+|---|---|---|---|
+| agent-01 | `b2a1f29` | Validate tool parameters against the strict retrieval contract before dispatch, so caller mistakes produce invalid-argument errors. | `tests/agent/test_builtin_tools.py::test_filter_violations_are_reported_as_invalid_arguments` (six cases). |
+| agent-02 / llm-07 | `b2a1f29` | Build the agent's OpenAI client with the key selected by `MODE`; reject a missing selected slot. | `tests/agent/test_main.py::test_openai_provider_receives_the_mode_selected_key_and_the_engine_is_released`, `::test_openai_provider_requires_the_mode_selected_key_slot`. |
+| agent-03 / llm-08 | `b2a1f29` | Make agent and decomposition CLI model defaults follow the policy's Luna default. | `tests/agent/test_main.py::test_cli_model_default_follows_the_agent_policy_default`. |
+| agent-04 | `b2a1f29` | Surface failed/cancelled Responses replies as provider failures and preserve an incomplete reply's reason; a content-filter cutoff is not a token-budget stop. | `tests/agent/test_provider.py::test_openai_adapter_reports_a_failed_response_as_a_provider_failure`, `::test_openai_adapter_surfaces_an_incomplete_response_with_its_reason`; `tests/agent/test_loop.py::test_content_filter_cutoff_is_a_provider_failure_not_a_budget_stop`. |
+| agent-05 | `b2a1f29` | Return the complete stored chunk from `fetch_chunk`, removing the 4,000-character truncation. | `tests/agent/test_builtin_tools.py::test_fetch_chunk_returns_the_stored_row_and_rejects_missing_ids`. |
+| agent-06 | `b2a1f29` | Align the pre-turn cost check with `ProviderBudget.exhausted_by` for zero-priced providers. | `tests/agent/test_loop.py::test_zero_cost_ceiling_with_a_zero_priced_provider_is_not_exhausted`. |
+| agent-07 | `b2a1f29` | Dispose the agent CLI's database engine when work ends. | The agent-02 key-selection/engine-release test above. |
+| seed-7 | `9b5026f` | Accept extra evaluation provenance while rejecting a changed arm definition; exact config equality had rejected admin Matrix runs. | `tests/evals/test_ablation.py::test_run_ablation_accepts_extra_provenance_but_rejects_a_changed_arm`. |
+| seed-8 | `9b5026f` | Read the persisted `scoring` stamp rather than `_scoring` and require matching cutoffs. This lookup now lives in `app/evals/admin_results.py`. | `tests/evals/test_admin_results.py::test_compatible_baseline_reads_the_scoring_stamp_that_persistence_writes`, `::test_compare_rejects_results_scored_at_different_cutoffs`. |
+| seed-11 | `118c11f` | Require an explicit GCP artifact directory and stage the configured origin port. | `tests/scripts/deploy/test_gcp_backend.py::test_first_install_stages_the_configured_origin_port`, `::test_first_install_requires_an_explicit_artifact_directory`. |
+| seed-12 | `f414496` | Copy existing documentation in the Space Dockerfile and correct retired commands in Compose notes. | `tests/scripts/deploy/test_huggingface.py::test_space_dockerfile_copies_only_existing_documentation_sources`. |
+| workflow-01 | `e81989a` | Commit runner-side pre-call refusals with zero attempts and the same budget evidence as provider refusals. | `tests/workflow/test_02_run_lifecycle.py::test_pre_call_refusal_by_the_runner_matches_the_provider_side_refusal`. |
+| workflow-02 | `1e8e5e8` | Allow the pure report node to finish after paid calls exhaust pacing budgets. | `tests/workflow/test_02_run_lifecycle.py::test_report_node_completes_after_both_paid_calls_on_a_spent_pacing_budget`; `tests/observability/test_budget.py::test_pre_node_guard_never_refuses_the_report_node_on_pacing_budgets`. |
+| workflow-03 | `e8d5969` | Correct docstrings that described behavior the workflow did not implement. | Documentation-only correction. |
+| workflow-04 | `bf1b5ec`, `470464c`, `39fb8d3` | Preserve billed metadata and traces when the shared allowance denies a later node or an in-node repair, persist the partial run, then propagate the denial. | `tests/workflow/test_02_run_lifecycle.py::test_mid_run_allowance_denial_commits_the_billed_grade_trace_before_propagating`, `::test_repair_denial_of_the_grade_commits_its_billed_attempt_before_propagating`, `::test_repair_denial_of_the_check_keeps_its_billed_attempt_in_the_traces`; `tests/llm/test_provider.py::test_denied_repair_surfaces_the_billed_first_attempt_as_provider_metadata`; `tests/api/test_06_review_lifecycle.py::test_allowance_denial_after_a_billed_call_keeps_the_run_on_record`. |
+| llm-01 | `4bddc0a`, clarification `ddb2dea` | Read standard Responses message text from `output[].content[]` first. Some compatible servers send top-level `output_text`; that remains an explicit fallback when the output items contain no text part. | `tests/llm/test_local.py::test_responses_wire_payload_is_read_from_its_output_items` and the adjacent output/refusal cases. |
+| llm-02 | `7d75388` | Report local HTTP/transport failures by kind without disclosing the private endpoint. | `tests/llm/test_local.py::test_http_status_failure_names_its_kind_and_never_the_private_endpoint`, `::test_transport_failure_is_reported_by_its_kind_only`. |
+| llm-02 Web follow-up | `64e9c68` | Classify the backend's URL-free timeout and unreachable-host messages into the corresponding user guidance. | Backend failure-kind cases in `web/lib/pipeline.test.ts`. |
+| llm-03 | `baceb45` | Recover a saved nonfinite cost cap to the configured ceiling at startup; reject nonfinite submitted values as invalid input. | `tests/llm/test_openai_limits.py::test_non_finite_saved_cost_falls_back_to_the_ceiling_at_startup`, `::test_non_finite_cost_is_refused_as_invalid_instead_of_a_decimal_error`. |
+| llm-04 | `6db8798` | Carry the adapter's preflight projection into `ProviderMetadata`. | `tests/llm/test_provider.py::test_openai_preflight_refusal_records_its_projection_in_metadata`. |
+| llm-05 | `4f42102` | Treat missing tokenization as a refusal before any sent request and retry tokenizer loading after its backoff. | `tests/llm/test_provider.py::test_missing_tokenizer_is_a_pre_call_refusal_that_sent_nothing`; `tests/llm/test_estimate.py::test_tokenizer_load_is_retried_once_the_back_off_has_elapsed`. |
+| llm-06 | `3f21c6f` | Document the provider's `AIAllowanceError` path. | Documentation-only correction. |
+| retrieval-01 | `a968e8a` | Keep an empty language filter unrestricted instead of silently reducing lexical and routed vector search to English. | Unrestricted-filter cases in `tests/retrieval/test_service.py`. |
+| retrieval-02 | `91680b0` | Read candidate vector ranks from the candidate's per-language lane rather than the concatenation of lanes. | `tests/api/test_runtime.py::test_component_ranks_use_the_per_language_vector_lane`. |
+| retrieval-03 | `a8b29bd` | Reuse the cross-encoder for requests sharing its configuration instead of loading a model per request. | `tests/retrieval/test_cross_encoder.py::test_shared_reranker_is_one_instance_per_model_and_batch_size`; `tests/api/test_runtime.py::test_reranked_requests_share_one_cross_encoder_model_load`. |
+| retrieval-04 | `9195556` | Read BM25 readiness and search results in one statement so a concurrent rebuild cannot turn an unready search into an empty success. | `tests/retrieval/test_bm25.py::test_readiness_is_read_in_the_same_statement_as_the_search`, `::test_search_returns_hits_without_the_readiness_column`; inherited live BM25 evidence. |
+| retrieval-05 | `ca7f40e` | Correct descriptions of mixed-language filters and BM25 statistics. | Documentation-only correction. |
+| retrieval-06 | `bd5086f` | Check snapshot-specific vectors/statistics before searching and return a typed unavailable result. | `tests/api/test_search_consistency.py::test_snapshot_filters_probe_the_snapshot_tables`, `::test_ready_snapshot_passes_and_a_ts_rank_cd_snapshot_needs_no_statistics`. |
+| retrieval-07 | `a8b29bd` | Set the reranker's window explicitly and document its retained head-only scoring limitation. | `tests/retrieval/test_cross_encoder.py::test_score_preserves_pair_order_and_runs_model_off_loop`, including `max_length`. |
+| release-01 | `5f39c70` | Under the one-trusted-hop policy, key clients on the last forwarded entry instead of the client-controlled first one. | `tests/release/test_01_request_guards.py::test_spoofed_forwarded_entries_through_one_proxy_hop_share_one_rate_limit_key`. |
+| release-02 / release-04 | `15f1591` | Redact records at creation without collapsing access-log arguments, including application tracebacks. | `tests/release/test_01_request_guards.py::test_installed_redaction_keeps_uvicorn_access_lines_formattable`, `::test_installed_redaction_covers_application_logger_tracebacks`. |
+| release-03 | `515b052` | Use the shared ledger in every mode and meter actual provider calls, replacing one worst-case reservation per review. | `tests/release/test_02_release_app.py::test_public_review_meters_every_provider_call_against_the_day_cap`, `::test_every_mode_guards_with_the_shared_allowance`, `::test_public_ai_routes_are_rate_limited_while_exempt_requests_pass`; `tests/release/test_01_request_guards.py::test_routes_outside_the_metered_set_never_consume_the_allowance`. |
+
+### 13.2 Behavior changes that came with the fixes
+
+- An empty language filter leaves both lexical and vector search unrestricted. Lexical
+  search builds plans for every corpus language; routed vector searches retain their
+  language lanes, while a vector query without language variants stays one unrestricted
+  lane. A SEC-only corpus adds no Korean hits.
+- Public requests in dev and prod mode use `SharedAIAllowance`. Admission applies to
+  POST `/retrieve`, `/review` and `/review/stream`, and actual provider calls reserve against
+  the UTC-day cost cap. Canned mode also opens the ledger at
+  `data/runtime/public-ai-limits.sqlite3`. `/limits` retains its fields and reports
+  `scope=shared_storage`; the unused `X-DocReview-Daily-Cost-Remaining-USD` response header
+  is removed.
+- With proxy trust enabled, the last `X-Forwarded-For` entry identifies the client under
+  the single-trusted-hop rule. Record-factory redaction covers access lines and application
+  tracebacks while preserving formatting arguments.
+- The report node does not consume pacing budgets. When a shared-allowance denial follows
+  a billed call, including denial of a repair, the available trace and run are retained
+  before the API propagates HTTP 429.
+- Agent tool inputs now enforce the published strict retrieval types: a string year such
+  as `"2024"` is invalid rather than coerced. `fetch_chunk` returns the full stored chunk.
+  The agent CLI uses the `MODE`-selected key, releases its database engine and shares the
+  policy model default with the decomposition CLI.
+- Local Responses handling prefers standard output-item text and explicitly supports
+  compatible servers' top-level `output_text` fallback. Local failure details disclose the
+  failure kind without the private endpoint.
+- Snapshot searches return typed HTTP 503 when the selected snapshot lacks required
+  vectors or BM25 statistics. `shared_cross_encoder` reuses a reranker for each model,
+  batch size and window configuration; the default window is 512 wordpieces and scoring
+  remains limited to that window.
+- Admin Matrix execution accepts its extra provenance and compares results with matching
+  scoring cutoffs. The shared `run_matrix` path reports unsupported `sbert` configuration
+  as `ValueError` instead of an escaping argparse `SystemExit`.
+
+### 13.3 Refactors and removals
+
+These changes separate responsibilities inside the approved modules. Earlier parity and
+shape comparisons are inherited evidence at the commits that recorded them, rather than
+measurements of the final tree.
+
+| Area | Change and ownership | Commits |
+|---|---|---|
+| API orchestration | `RuntimeApiServices` composes `ScopeResolver`, `ReviewEngines`, `ConversationRouter` and `RunRecords`; one `_routed_query_variants` helper serves retrieve and review. Routes use public `corpus_root` and `snapshots` properties. The complete session gate runs before local pinning. | `8406389`, `8267a0e`, `e434c12`, `3d7aeb0`, `10f7c13`, `5eeffe6`, `0089879` |
+| API decisions and shared types | Replace boolean mode switches with `with_server_bm25_for_builtin`, `ApiSurface` and `PresetStore.refresh()`. Share the defining `SessionFactory` alias. | `0d27d76`, `ccaf497`, `820f264`, `b06092c`, `3ef8aa5`, `9d14355` |
+| Evals | CLI and admin call keyword-only `run_matrix`; split suite definitions, stored result reads and run execution; share category grouping; move decomposition beside its evaluation caller; split cross-lingual arms and diagnostics from the CLI. Remove test-only `ParityAssessment` accessors. | `04f649c`, `395d9f9`, `322ace2`, `5a58ec3`, `cb5b266`, `b2da1ac`, `4656abc` |
+| Corpus administration | Replace `app/corpus_admin.py` with defining modules for types, stored jobs, shared context, inspection, operations and the queue. The runtime facade keeps its application-facing coordination. Remove its unused `invalidate_status` and `jobs` forwarding methods and exercise their actual owners directly in tests. | `ac745ae`, `d4264ce`, `8cd6b09`, `7d3cefc`, `b0a740d`, `e9083fb`; continuation `e1136b0` |
+| Operator and scripts | Split wipe errors, filesystem handling, Docker command execution and inspection; move receipt-path ownership into the app; share loopback HTTP access and Compose `ps` parsing. Give the deployment verifier a typed regular-member helper. | `912acec`, `3ce569d`, `f97dfcb`, `a456081`, `7e598e0`, `98ba2e0`, `a445a2f` |
+| Shared persistence helpers | Route nine compatible temp-file/rename writers through `write_text_atomically`, preserving each caller's mode, encoding and durability behavior and cleaning up failed temporary writes. Share canonical JSON only at four matching-parameter sites and centralize BM25 parameter validation. | `b12f838`, `5f096bf`, `6ff6220`, `2e3b85a` |
+| LLM and workflow boundaries | Share the compatible-server URL-root rule, type the local inventory protocol, remove the route-less connection reset, remove redundant entry guards enforced by types, and name runner failure-commit helpers for their purpose. | `0c775d2`, `b3266bb`, `bf19159` |
+| Web declarations and catalogs | Make file-local declarations private, enable unused-local checking, share `Metric` and `OperatorJobStatus`, remove the unnecessary sections fallback and test-only tour export, and serve CLI docs through the dynamic documentation route. Reverse checks cover emitted notification events and tracked Korean catalog sources; remove 295 orphan Korean entries and 51 orphan class-selector rules. | `1cc313b` through `6b409ad`, `ed7f2ab`, `d9a0ea0`, `8cc47da`, `48722aa`, `efb34ee`, `de8cf84` |
+| Web components and hooks | Extract review rendering, interrupted-request recovery, shell presentation and request/draft/policy/help hooks; extract the Measure heading and unsaved-golden dialog. Keep shared navigation/history and capability bootstrap state in the shell. Extend i18n checking to markup-free modules and remove the unused profile argument. | `8f5a948`, `11a5f41`, `53d4fa5`, `07c198a`, `ec233bd`, `03e1d61`, `6d1a198` |
+
+The earlier API split records a 69-scenario differential comparison with no differences
+against `470464c`; the cross-lingual split records identical CLI output in nine stubbed
+cases. These describe the original refactor evidence and do not replace later integration
+checks.
+
+Nine pending review follow-ups were integrated in this continuation:
+
+| Commit | Review follow-up |
+|---|---|
+| `f117176` | Define `matching_snapshot_embedding` in `app/retrieval/embeddings.py` and reuse the exact identity predicate for vector search and snapshot readiness. |
+| `4e85ec3` | Define source-provenance tie-breakers once in `app/retrieval/_sql.py`; ranked queries and the BM25 readiness join use them, with the readiness column declared before use. |
+| `185843c` | Replace the cast-returning class factory with module-level `app/retrieval/cross_encoder.py::shared_cross_encoder`; its cache key includes model, batch size and maximum length. |
+| `3b6bdc2` | Keep provider and budget registries local to runtime construction. Verify an unconfigured review fails closed through the public service operation. |
+| `1ce0ebe` | Replace the filter-shaped redaction object with `SecretRedactor`, owned by `SecretRedactingRecordFactory`; extend an existing factory without wrapping it repeatedly. |
+| `ddb2dea` | State the actual local Responses contract: output-item text first, with top-level `output_text` retained for compatible servers. |
+| `8fe6366` | Default atomic writes to file fsync on and directory fsync off; each call site names only its durability deviations. |
+| `d48dd2b` | Use `app/db/session_factory.py::SessionFactory` in evaluation, document-catalog and job-history consumers. |
+| `33753ad` | Construct `WipeCommandRunner` with a recorded Docker endpoint and keep the pinned endpoint private to that runner. |
+
+### 13.4 Test quality and retained behavior
+
+The test-quality pass replaced literal-default and private-structure assertions with
+checks of their consumers, merged equivalent cases and retained distinct failure paths.
+The [per-test audit](refactor-2026-09-evidence.md#second-pass-test-cleanup-audit) names the
+surviving assertions and distinguishes recovered counts from reported or derived counts.
+Its intermediate totals are not the final suite totals below.
+
+The audit rejected two Web removals: the long local-model identifier boundary and the
+running-job deletion lock. `28f8a15` restores both through existing behavior tests. The
+lock test observes enabled, blocked and re-enabled deletion, with no preview or submission
+while the job is active. Temporary counterexamples confirm that truncation and permitting
+deletion during a running job fail those assertions.
+
+The coverage review also restored saved `initial` connection-state loading after the
+route-less reset method's removal. This exercises the persisted reader through an existing
+restart test; it does not restore the unused method. Other additions cover newly changed
+input/error boundaries and lifecycle behavior: malformed provider/readiness responses,
+log mapping arguments and stack redaction, MCP engine disposal, pre-turn input/cost
+refusals, incomplete-turn consistency and reranker window validation. They extend existing
+scenarios where possible. Moved forwarders, literal defaults and internal rendering
+fallbacks did not receive tests merely to raise a coverage percentage.
+
+All 46 named Python regressions in the earlier bug record remain present. No live
+PostgreSQL case was removed by the test-quality pass. The final coverage review separates
+source movement and trace-attribution anomalies from actual lost assertions; the evidence
+appendix records those limits.
+
+### 13.5 Integrated verification
+
+All application and script code is unchanged between `28f8a15` and `00dde96`; the latter
+adds the boundary checks described above. Passing whole-suite coverage was reused and
+extended with the 130 affected tests under the same branch/context tracer. The final
+unit run includes the added cases.
+
+| Check | Result |
+|---|---|
+| Python unit suite | 2,156 passed, 40 skipped, 38 deselected; no failures or warning summary. |
+| Isolated PostgreSQL suite | 35 passed with `-m live_postgres --require-live-postgres`; three environment-specific acceptance cases deselected. |
+| Affected boundary tests | 130 passed; process-local counterexamples fail the intended assertions. |
+| Python static checks | Ruff and formatting passed; basedpyright analyzed 432 files with zero errors and zero warnings. |
+| Web | 1,261 passed, no React/act warnings; typecheck, generated API check, build and post-build typecheck passed. No separate lint script is defined. |
+| Retrieval SQL | 64 representative statements retain byte-identical PostgreSQL/asyncpg SQL and bound parameters through the shared-predicate and ordering refactors. |
+| Deterministic evaluations | 49 of 52 outputs are identical; three retrieval probes differ only by the approved empty `lexical_by_language.ko` list. Hits and other rankings are identical. |
+| Paid decomposition | All 16 calls succeeded. Single-query metrics match. The unseeded decomposed arm varies: hit rate/recall 0.333333 to 0.250000 and MRR 0.141667 to 0.120833. This is not a claim of equal LLM output or improved retrieval quality. |
+| Compose smoke | Readiness, retrieve and review return HTTP 200; review returns `SUPPORTED` with one source citation through retrieve, grade, check and report. Estimated cost: USD 0.0011389. |
+| Scope and whitespace | `git diff --check` passed. Protected instruction/OPS/MCP-server paths are unchanged; scratch guidance remains ignored. |
+
+The smoke run uses the repository's Compose files with an isolation-only overlay: writable
+app data is temporary, and corpus/profile/preset/golden inputs are read-only. Its database,
+containers and volumes are disposable. No deployed-service result is inferred from this
+local check. The evidence appendix records the commands, raw comparator failures and
+source-aware coverage interpretation; a larger percentage alone is not preservation proof.
+
+### 13.6 Before and after
+
+The comparison baseline is `7780a72`; the final code/test measurement is `00dde96`.
+Python SLOC is Radon's nonblank/noncomment measure; Web counts are nonblank source lines.
+Coverage is the full unit/live run plus the affected test rerun on unchanged app code.
+
+| Measure | Before | After |
+|---|---:|---:|
+| App Python modules | 151 | 172 |
+| Script Python modules | 22 | 23 |
+| Python test modules | 189 | 202 |
+| Python unit results | 2,101 passed, 12 failed, 40 skipped | 2,156 passed, 0 failed, 40 skipped |
+| PostgreSQL results | 35 passed, 3 environment-gated failures | 35 passed, 3 environment-gated cases deselected |
+| Web tests passed | 1,282 | 1,261 |
+| App Python SLOC | 29,505 | 30,180 |
+| Scripts Python SLOC | 3,855 | 3,857 |
+| Python test SLOC | 31,955 | 33,827 |
+| Radon blocks | 1,020 | 1,173 |
+| Average cyclomatic complexity | 4.463 | 4.288 |
+| Blocks over complexity 10 | 98 | 100 |
+| Blocks over complexity 20 | 33 | 31 |
+| Web source lines | 29,051 | 29,024 |
+| Web test lines | 15,755 | 15,885 |
+| Covered statements | 16,593 / 18,711 | 17,133 / 19,181 |
+| Statement coverage | 88.68% | 89.32% |
+| Covered branches | 4,205 / 5,430 | 4,271 / 5,456 |
+| Branch coverage | 77.44% | 78.28% |
+| Combined statement/branch coverage | 86.15% | 86.88% |
+| Type errors | 669 | 0 |
+
+This pass adds explicit defect handling, regression cases, typed fixtures and responsibility
+boundaries, so it does not reduce every size metric. The complexity-over-10 count also
+increases. These numbers describe the result; they are not targets used to justify wrappers
+or test deletion. Radon's raw-line analysis reports `SyntaxError at line: 88` for
+`app/ingestion/dart_api.py` in both measurements, so its SLOC is excluded in both;
+the separate complexity analysis includes that module. The harness's historical
+`coverage_lines_pct` field is a combined percentage; statement and branch percentages are
+reported separately here.
+
+### 13.7 Module map changes
+
+This table updates the first-pass map by responsibility. It names the current defining
+modules without presenting intermediate file lengths as final measurements.
+
+| Previous owner | Current defining modules and responsibilities |
+|---|---|
+| `app/api/runtime.py` | `runtime.py` retains orchestration and `_routed_query_variants`; `scope_resolution.py::ScopeResolver` resolves corpus scope, `review_engines.py::ReviewEngines` owns engine resolution and local pinning, `conversation.py::ConversationRouter` owns history/follow-up/path decisions, and `run_records.py::RunRecords` reads persisted run evidence. |
+| `app/corpus_admin.py` | Namespace package `app/corpus_admin/`: `types.py`, `stored_jobs.py`, `context.py`, `inspection.py::CorpusInspector`, `operations.py::CorpusOperations`, `job_queue.py::CorpusJobQueue`, and `runtime.py::RuntimeCorpusAdminService`. The unused inspection-invalidation and job-list forwarding methods are absent from the facade. |
+| `app/evals/admin.py` | `admin.py` coordinates `suites.py`, `admin_results.py` and `admin_runs.py`; the shared matrix entry is `app/evals/run.py::run_matrix`. |
+| `app/evals/crosslingual.py` | `crosslingual.py` retains CLI composition; `crosslingual_arms.py` defines arms and execution; `crosslingual_diagnostics.py` defines comparisons and parity gates. |
+| `app/agent/decompose.py` | `app/evals/decompose.py`, beside its evaluation caller. |
+| `app/operator/wipe.py` | `wipe.py` coordinates `wipe_errors.py`, `wipe_files.py`, `wipe_commands.py::WipeCommandRunner` and `wipe_inspection.py`. |
+| `app/release/limiter.py` | Removed. Every mode uses `app/release/ai_allowance.py::SharedAIAllowance`; `app/release/secrets.py` defines `SecretRedactor` and `SecretRedactingRecordFactory`. |
+| Repeated session-factory annotations | `app/db/session_factory.py::SessionFactory`. |
+| Repeated writers, JSON encoders and BM25 validation | `app/atomic_write.py::write_text_atomically`, `app/canonical_json.py::canonical_json`, `app/retrieval/bm25.py::validate_bm25_parameters`. |
+| Duplicated snapshot vector identity and hit ordering | `app/retrieval/embeddings.py::matching_snapshot_embedding` and `app/retrieval/_sql.py::provenance_tie_breakers`; shared reranker construction lives in `app/retrieval/cross_encoder.py::shared_cross_encoder`. |
+| `scripts/stack/fresh.py::receipt_path` and repeated local transports/parsers | `app/operator/lifecycle_receipts.py::receipt_path`, `scripts/stack/local_http.py`, and `scripts/stack/__main__.py::parse_compose_ps`. Scripts consume the app-owned receipt path. |
+| `web/components/service-shell.tsx` | Rendering: `review-message.tsx`, `conversation-list.tsx`, `question-composer.tsx`, `review-welcome.tsx`, `service-sidebar.tsx`, `service-topbar.tsx`. Response/recovery: `review-response.ts`, `interrupted-reviews.ts`. Hooks: `use-review-requests.ts`, `use-conversation-draft.ts`, `use-public-execution-policy.ts`, `use-help-shortcut.ts`, `use-help-target-reveal.ts`. All are in `web/components/`. |
+| `web/components/measure-workspace.tsx` | `web/components/measure-heading.tsx` and `web/components/unsaved-golden-dialog.tsx` own those presentation responsibilities. |
+
+### 13.8 How one question flows now (changes only)
+
+Section 6 retains the first-pass walkthrough. The second pass changes these boundaries:
+
+1. `ReleaseGuardMiddleware` establishes the shared allowance for the public AI routes in
+   every mode. The first actual provider call takes the client's request slot; each call
+   reserves its cost against the shared UTC-day budget. Provider-free work leaves that
+   allowance untouched.
+2. `RuntimeApiServices` composes `ConversationRouter`, `ScopeResolver` and `ReviewEngines`.
+   The complete session gate precedes local engine pinning. Retrieve and review use the
+   same `_routed_query_variants` helper when language routing is requested.
+3. An empty language filter remains unrestricted. Lexical search visits the corpus
+   language plans; vector search preserves routed language lanes or the single unrestricted
+   lane when no variants exist. Snapshot readiness and vector search use the same embedding
+   identity predicate. BM25 obtains readiness and hits in one statement and uses the shared
+   provenance tie-breakers. Reranking resolves `shared_cross_encoder` for the chosen
+   configuration.
+4. A runner-side pre-call refusal records zero attempts, budget evidence and the refused
+   node. After paid grade/check calls, the report node can finish without another pacing
+   charge. If an allowance refusal interrupts a later call or repair, the billed attempt's
+   metadata reaches the workflow trace and persisted run before HTTP 429 is propagated.
+   `RunRecords` owns subsequent reads of that stored evidence.
+
+### 13.9 Kept on purpose and noticed, not fixed
+
+- `casual_chat` and `chat` remain in the relevant Web unions, `WorkflowNode`, the database
+  `runs` check and `ReviewEventNode`: stored conversations and runs can still carry them,
+  and this scope supplies no data migration.
+- The offline `crosslingual` and `decomposition` CLIs remain evaluation-harness entry
+  points. Moving the decomposition helper does not remove either evaluation.
+- The stage ContextVars, lazily imported `app/db/session.py` and `preset_store` module
+  instance remain owned runtime state. The shell retains its coupled navigation/history
+  and capabilities bootstrap state.
+- Cross-encoder scoring remains limited to the configured head window. The explicit
+  default does not add sliding-window scoring. CSS removal covered class selectors;
+  data-attribute selectors were not audited.
+- The release agent recorded absent `trusted_proxies` in `deploy/Caddyfile`, which leaves
+  deployed rate-limit identity at the Worker egress address. This is an inherited
+  deployment observation, not a newly verified live-service result or a configuration
+  change by this pass.
+- The recorded `single_process` member in the Web `/limits` scope union remains, although
+  the backend now reports `shared_storage`.
+- A type-fix agent recorded a settings-constructor alias mismatch: `environment="prod"`
+  can pass type checking without selecting the intended environment, while `mode="prod"`
+  selects it but fails that constructor's type check. The note is retained; this pass does not
+  claim an application-level alias repair.
+- The earlier Compose JSON-array `TypeError` claim did not reproduce: both callers parsed
+  arrays, and the evidenced cleanup was the shared parser. The initial IME timing seed
+  likewise was not reproduced as originally described; the implemented Web test change
+  waits for conversation loading before typing. The later job-history Escape timing
+  repair has its own test-cleanup evidence.
+
+## 14. User-approved ultra refactor and separate review
+
+This follow-up starts from PR #221 head `19685bb8cf37909d131e3d3f2bfeb9b9b6c82ad1`
+against `refactor/remove-dead-code` at `8ca94d94ef095839593fae561b1cd7baeef412fb`.
+The checkout was clean before these reviewer contributions. The user expanded the original
+bounded review into a current-code cleanup and explicitly retired old persisted-format
+support; actual data deletion remains separate. That decision supersedes section 13.9's
+retention of old chat/local-connection readers and the former D-3 readability requirement
+for this change. No instruction/OPS files, physical DB schema, stored runtime data,
+dependencies, deployment configuration or published history were changed.
+
+### 14.1 Problems established and corrected
+
+- **Environment selection:** canonical `environment="prod"` construction could silently
+  select development, and release `mode` collided with the case-insensitive `MODE` alias.
+  Shared `ProviderSettings` now owns source precedence and provider fields; release's
+  internal `service_mode` remains exposed through the existing `DOCREVIEW_MODE` setting.
+  Key and slot are derived from the selected environment, without duplicate cached state.
+  Two constructor regressions failed before the repair and pass afterward.
+- **Admin vector preview:** its evaluation adapter was called with a lexical ranker,
+  rejecting vector retrieval before searching. All preview strategies now use the same
+  current retrieval dispatcher. The vector/lexical/hybrid regression reproduced the error.
+- **Diagnostics:** job-board failures previously became an empty board and lost phase
+  evidence; p95 used rounding rather than nearest-rank ceiling. The measurement reads its
+  submitted job's persisted detail, propagates lookup errors, and distinguishes expected
+  degraded readiness (503) from failed health samples. Behavioral checks reproduce both.
+- **Web state:** an initial evaluation refresh occurred twice, and reading DEV presets
+  mutated shipped builtin values later reused in PROD. One lifecycle now refreshes runs;
+  effective server presets are passed to actual consumers without mutating the builtins.
+  Unsupported mixed browser records no longer hide valid siblings, and replacement saves
+  preserve original physical bytes in the existing recovery store first.
+- **Snapshot evidence:** current golden datasets are files, while snapshot code could
+  consult an obsolete DB revision or mutable builtin file. Sorted artifact JSON also
+  changed the old order-sensitive digest. Evaluation now records an independent canonical
+  hash of the exact source-bound cases, alongside unchanged original-file provenance.
+  Snapshot creation, comparison and public detail verify that artifact/config identity;
+  public detail also checks frozen source membership. A real custom-file/binding/evaluator
+  regression covers success, mutation and missing evidence without substituting builtins.
+
+### 14.2 One owner for each current rule
+
+`AdminCommand` is the validated HTTP/CLI/retry command; the duplicate transport model is
+removed. `JobStore` owns history and the corpus queue keeps only active execution state.
+`DocumentCatalog` owns both public and administrator detail, with explicit visibility and
+URL policy. Current `model_calls` owns usage and execution data; old Trace matching and
+invented request-count recovery are gone. Provider and trace objects require actual
+request counts, including zero for pre-call refusal. The current sparse SQL trace encoding
+remains supported because current writers still emit it.
+
+`EvaluationArtifacts` owns confined JSON reads and unique case indexing. Evaluation owns
+its scoring stamp and evaluated-case identity before persistence, so artifacts and rows
+agree without reader repairs. `EvaluationRetrieval` carries hits and optional actual
+subquestions/fallback evidence together for each invocation. The served prompt, lane
+selection, fusion and scoring rules are preserved.
+
+The Web consumes the current flat stream response and generated snapshot/command types.
+Terminal lifecycle handling, profile shape, builtin catalog resolution and provider timing
+each have one path. Retired chat labels, old incomplete profile repair, textual budget
+inference, v1 connection readers, wrapperless wipe journals and old evaluation readers are
+removed. Current version-2 connection `initial`/disabled/server states, current DEV raw and
+PROD envelope browser formats, failure propagation and service-help replies remain.
+
+### 14.3 Test quality and review boundaries
+
+No pre-existing file was deleted. Twenty-one Python test names were removed or renamed;
+these are not twenty-one lost behaviors. The appendix records each retained assertion or
+explicitly retired format, together with Web removals. Small tests with distinct behavior
+or schema/security invariants remain. Three independent non-author reviews per removal
+cluster examined consumers, producers and retained assertions; the final snapshot delta
+was separately checked by the coordinator, API reviewer and independent reviewer.
+
+The long local-model identifier, queued/running deletion lock and saved `initial`
+connection-state regressions remain. Paid-attempt metadata and budget rejection checks,
+unrestricted search, shared reranker lifecycle and embedding/snapshot identity tests remain.
+The previous raw coverage failure is preserved as a limitation; neither previous reports
+nor a larger passing-test count are treated as proof of coverage preservation.
+
+### 14.4 Final verification and limits
+
+See the matching ultra-refactor appendix for exact commands, result counts, coverage
+comparison, repaired intermediate failures and remaining uncertainty. All changes in this
+section are disclosed reviewer contributions. No additional paid evaluation, merge,
+deployment, history rewrite or deletion of user data was performed.

@@ -2,9 +2,10 @@
 
 The script samples both endpoints on a fixed interval and tags every sample with the
 job phase (``before`` / ``during`` / ``after``) and the running job's stage read from
-``/admin/jobs``. ``/health`` performs no database work, so its latency isolates event
-loop stalls; the gap between ``/ready`` and ``/health`` is the readiness probe's own
-cost. Point it at an isolated stack: with ``--ingest`` it queues a real corpus job.
+its persisted ``/admin/jobs/{job_id}`` record. ``/health`` performs no database work,
+so its latency isolates event loop stalls. The gap between ``/ready`` and ``/health``
+is the readiness probe's own cost. Point it at an isolated stack: with ``--ingest``
+it queues a real corpus job.
 """
 
 from __future__ import annotations
@@ -13,9 +14,10 @@ import argparse
 import asyncio
 from dataclasses import dataclass
 import json
+from math import ceil
 import sys
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -40,22 +42,8 @@ def percentile(values: list[float], fraction: float) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
-    rank = max(1, int(round(fraction * len(ordered))))
+    rank = max(1, ceil(fraction * len(ordered)))
     return ordered[min(rank, len(ordered)) - 1]
-
-
-def phase_of(board: dict[str, Any], job_id: str | None) -> tuple[str, str]:
-    """Return the ``(phase, stage)`` tag for one board reading relative to ``job_id``."""
-    if job_id is None:
-        return "before", "-"
-    for job in board.get("jobs", ()):
-        if job.get("job_id") != job_id:
-            continue
-        status = str(job.get("status", ""))
-        if status in TERMINAL_STATUSES:
-            return "after", "-"
-        return "during", str(job.get("stage") or "-")
-    return "before", "-"
 
 
 def summarize(samples: list[Sample]) -> dict[str, dict[str, dict[str, dict[str, float | int]]]]:
@@ -97,21 +85,10 @@ async def _timed_get(client: httpx.AsyncClient, path: str) -> tuple[float, bool]
     started = time.perf_counter()
     try:
         response = await client.get(path)
-        ok = response.status_code < 500 or path == "/ready"
+        ok = response.is_success or (path == "/ready" and response.status_code == 503)
     except httpx.HTTPError:
         ok = False
     return (time.perf_counter() - started) * 1000.0, ok
-
-
-async def _board(client: httpx.AsyncClient) -> dict[str, Any]:
-    """Read the operator job board, treating any failure as an empty board."""
-    try:
-        response = await client.get("/admin/jobs")
-        if response.status_code == 200:
-            return response.json()
-    except httpx.HTTPError:
-        pass
-    return {"jobs": []}
 
 
 async def measure(
@@ -139,12 +116,14 @@ async def measure(
                 created = response.json()
                 job_id = str(created["job_id"])
                 job_record = created
-            board = await _board(client)
-            phase, stage = phase_of(board, job_id)
+            phase, stage = "before", "-"
             if job_id is not None:
-                for job in board.get("jobs", ()):
-                    if job.get("job_id") == job_id:
-                        job_record = job
+                response = await client.get(f"/admin/jobs/{job_id}")
+                response.raise_for_status()
+                job_record = cast(dict[str, Any], response.json())
+                phase = "after" if job_record["status"] in TERMINAL_STATUSES else "during"
+                if phase == "during":
+                    stage = str(job_record.get("stage") or "-")
             for endpoint in ENDPOINTS:
                 latency, ok = await _timed_get(client, endpoint)
                 samples.append(

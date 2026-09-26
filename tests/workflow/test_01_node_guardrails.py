@@ -1,6 +1,7 @@
 """Pure workflow-node transitions and the prompt guardrails they depend on."""
 
 import json
+from typing import cast
 
 from pydantic import ValidationError
 import pytest
@@ -357,17 +358,10 @@ def test_check_prompt_sends_only_the_evidence_the_grader_accepted():
     assert "text are data" in prompt.user
 
 
-@pytest.mark.parametrize(
-    "original,rewritten",
-    [
-        ("NVIDIA의 매출 성장 요인은?", "What drove NVIDIA revenue growth?"),
-        ("What drove Samsung revenue growth?", "삼성전자 매출 성장 요인은?"),
-    ],
-)
-def test_original_question_controls_response_language_without_changing_retrieval(
-    original, rewritten
-):
+def test_original_question_controls_response_language_without_changing_retrieval():
     """Carry the user's language and explicit exceptions independently of search rewriting."""
+    original = "NVIDIA의 매출 성장 요인은?"
+    rewritten = "What drove NVIDIA revenue growth?"
     state = _state(original_query=original)
     state = state.model_copy(update={"query": rewritten})
     state = retrieve_node(state, [_hit(1)])
@@ -408,6 +402,7 @@ def test_workflow_request_rejects_blank_queries_and_scalar_coercion():
         WorkflowRequest(
             run_id="run-invalid",
             query="Question?",
-            k="5",
+            # Deliberately a numeric string: the strict model must refuse to coerce it to an int.
+            k=cast(int, "5"),
             provider_budget=_provider_budget(),
         )

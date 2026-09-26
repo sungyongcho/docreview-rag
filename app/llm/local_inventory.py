@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.llm.local import LocalLlmProtocol, openai_compatible_root
 from app.llm.local_diagnostics import failure_kind
 from app.llm.local_engine import resolve_local_protocol
 
@@ -45,7 +46,7 @@ class LocalModelInfo:
 class LocalInventorySnapshot:
     """One immutable discovery result shared by readiness and request validation."""
 
-    protocol: str
+    protocol: LocalLlmProtocol
     models: tuple[LocalModelInfo, ...]
     checked_at: str
     reason: str | None = None
@@ -112,7 +113,7 @@ class LocalModelInventory:
     ) -> None:
         """Keep connection settings private to the server and defer all HTTP work."""
         self.base_url = base_url.rstrip("/")
-        self.protocol = resolve_local_protocol(base_url, protocol)
+        self.protocol: LocalLlmProtocol = resolve_local_protocol(base_url, protocol)
         self.api_key = api_key
         self._transport = transport
         self._lock = asyncio.Lock()
@@ -278,8 +279,7 @@ class LocalModelInventory:
             timeout=PROBE_TIMEOUT_S, headers=headers, transport=self._transport
         ) as client:
             if self.protocol == "openai_responses":
-                root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
-                response = await client.get(f"{root}/v1/models")
+                response = await client.get(f"{openai_compatible_root(self.base_url)}/v1/models")
                 response.raise_for_status()
                 return tuple(
                     LocalModelInfo(name=item["id"], selectable=True)

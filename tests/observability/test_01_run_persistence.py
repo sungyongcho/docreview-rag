@@ -59,6 +59,32 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
         report = run_report(
             system_prompt=f"Ground every claim. API_KEY={SECRET}",
             node_path=["retrieve", "grade"],
+            request_context={
+                "model_calls": [
+                    {
+                        "step": step,
+                        "node": node,
+                        "model": "gpt-4.1-mini",
+                        "provider": "openai_responses",
+                        "local": False,
+                        "credential_slot": "OPENAI_API_KEY_LOCAL",
+                        "attempts": attempts,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "cached_input_tokens": 0,
+                        "cache_write_input_tokens": 0,
+                        "reasoning_tokens": 0,
+                        "estimated_cost_usd": cost,
+                        "elapsed_ms": 12.5,
+                        "local_timings": [],
+                        "projected_input_tokens": None,
+                    }
+                    for step, node, attempts, input_tokens, output_tokens, cost in (
+                        (1, "grade", 1, 100, 20, "0.000072"),
+                        (2, "check", 2, 40, 8, "0.0000288"),
+                    )
+                ]
+            },
             steps=[
                 step_trace(),
                 step_trace(
@@ -68,6 +94,7 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
                     output_tokens=8,
                     estimated_cost_usd=Decimal("0.0000288"),
                     retries=1,
+                    requests=2,
                 ),
             ],
         )

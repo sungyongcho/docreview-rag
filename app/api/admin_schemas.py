@@ -25,6 +25,7 @@ from app.api.review_profile import (
 )
 from app.api.schemas import EvidenceHit, RunResponse
 from app.config import LexicalRanker
+from app.corpus_admin.types import AdminCommand
 from app.evals.source_binding import SourceCheck
 from app.llm.local_connection import ConnectionSource, LocalProtocol, validate_base_url
 from app.llm.openai_limits import OpenAICallLimits
@@ -42,15 +43,6 @@ type GoldenSuiteId = Literal[
 type EvaluationMode = Literal["quick", "matrix"]
 type EvaluationJobStatus = Literal[
     "queued", "running", "succeeded", "failed", "interrupted", "cancelled"
-]
-type CorpusOperationKind = Literal[
-    "acquire_edgar",
-    "acquire_dart",
-    "ingest_manifest",
-    "ingest_selected",
-    "delete_sources",
-    "backfill_embeddings",
-    "rebuild_bm25",
 ]
 type DocumentSort = Literal[
     "doc_id",
@@ -128,11 +120,9 @@ class GoldenRevisionResource(StrictAdminModel):
     file_content: dict[str, object] = Field(default_factory=dict)
     completion: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     suite_id: GoldenSuiteId
-    version: PositiveInt
-    status: Literal["draft", "validated", "published"]
+    status: Literal["draft", "validated"]
     payload: tuple[dict[str, object], ...]
     sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-    parent_id: PositiveInt | None
     created_at: datetime
     updated_at: datetime
 
@@ -172,7 +162,6 @@ class SnapshotCreateRequest(StrictAdminModel):
 
     label: Annotated[str, Field(min_length=1, max_length=128)]
     eval_result_id: PositiveInt
-    golden_revision_id: PositiveInt | None = None
     public: StrictBool = False
 
 
@@ -215,54 +204,6 @@ class EvaluationRunRequest(StrictAdminModel):
             self.profile.reranker is not None or self.profile.route_by_language
         ):
             raise ValueError("matrix runs do not support reranking or language routing")
-        return self
-
-
-class CorpusOperationRequest(StrictAdminModel):
-    """One safe corpus operation accepted by the local operator API."""
-
-    kind: CorpusOperationKind
-    document_ids: Annotated[tuple[str, ...] | None, BeforeValidator(_tuple_from_json_array)] = None
-    deletion_token: str | None = None
-    confirm_delete: StrictBool | None = None
-    identifiers: Annotated[
-        tuple[str, ...],
-        BeforeValidator(_tuple_from_json_array),
-    ] = ()
-    years: Annotated[
-        tuple[PositiveInt, ...],
-        BeforeValidator(_tuple_from_json_array),
-    ] = ()
-    manifest: str | None = None
-    selection_id: str | None = None
-    expected_documents: PositiveInt | None = None
-
-    @model_validator(mode="after")
-    def validate_selection(self) -> Self:
-        """Require exact source selections and explicit deletion confirmation."""
-        if self.kind == "delete_sources":
-            if not self.deletion_token or self.confirm_delete is not True:
-                raise ValueError(
-                    "Source deletion requires a preview token and explicit confirmation."
-                )
-            if (
-                self.identifiers
-                or self.years
-                or self.manifest
-                or self.selection_id
-                or self.document_ids
-            ):
-                raise ValueError("Deletion targets must come from the confirmed preview.")
-        elif self.deletion_token is not None or self.confirm_delete is not None:
-            raise ValueError("Deletion confirmation applies only to source deletion.")
-        if self.kind == "ingest_selected" and (
-            not self.document_ids or len(set(self.document_ids)) != len(self.document_ids)
-        ):
-            raise ValueError("ingest_selected requires nonempty unique document_ids")
-        if self.kind == "ingest_manifest" and (
-            not (self.manifest or "").strip() or not (self.selection_id or "").strip()
-        ):
-            raise ValueError("ingestion requires a manifest and selection_id")
         return self
 
 
@@ -426,7 +367,7 @@ class CorpusJobResource(StrictAdminModel):
     """The same corpus job snapshot returned to CLI and web clients."""
 
     job_id: str
-    command: CorpusOperationRequest
+    command: AdminCommand
     status: Literal["queued", "running", "succeeded", "failed", "interrupted", "cancelled"]
     stage: str
     current: NonnegativeInt

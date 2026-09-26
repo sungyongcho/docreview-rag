@@ -260,8 +260,6 @@ async def run_agent(
     ------
     ValueError
         If the question is blank.
-    TypeError
-        If registry, provider, or budget does not satisfy its declared contract.
 
     Notes
     -----
@@ -271,19 +269,15 @@ async def run_agent(
     ``budget_exceeded`` before a request whose remaining output allowance is below
     the provider floor, after a turn whose usage overshoots a cumulative limit,
     and after an ``incomplete`` turn the output ceiling cut off — a truncated turn
-    can never produce an accepted answer. Observation payloads older than
+    can never produce an accepted answer. A turn the provider cut off for another
+    reason, such as a content filter, ends as ``provider_error`` because no budget
+    change can repair it. Observation payloads older than
     ``KEEP_OUTPUT_EXCHANGES`` exchanges are compacted out of the replay to keep
     input tokens linear in run length.
     """
-    if not isinstance(question, str) or not question.strip():
+    if not question.strip():
         raise ValueError("question must not be blank")
-    if not isinstance(registry, ToolRegistry):
-        raise TypeError("registry must be a ToolRegistry")
-    if not isinstance(provider, ToolCallingProvider):
-        raise TypeError("provider must implement ToolCallingProvider")
     limits = budget or AgentBudget()
-    if not isinstance(limits, AgentBudget):
-        raise TypeError("budget must be an AgentBudget")
     system_prompt = build_instructions(registry)
 
     tool_specs = [*registry.specs(), final_answer_spec()]
@@ -347,15 +341,38 @@ async def run_agent(
         """Record the replay boundary of the exchange that just ended."""
         exchange_ends.append(len(input_items))
 
-    while len(steps) < limits.max_iterations:
+    # Mirrors ProviderBudget.exhausted_by: whether another request may start is
+    # judged inclusively, and a zero-priced provider never exhausts a cost ceiling.
+    priced = (
+        provider.pricing.input_per_million_usd > 0 or provider.pricing.output_per_million_usd > 0
+    )
+
+    def exhausted_before_turn() -> str | None:
+        """Name the first limit that leaves no room for another request, if any."""
         remaining_output = limits.max_total_output_tokens - total_output
-        out_of_input = total_input >= limits.max_total_input_tokens
-        out_of_cost = total_cost >= limits.max_total_cost_usd
-        if out_of_input or out_of_cost or remaining_output < MIN_TURN_OUTPUT_TOKENS:
-            return finish(
-                "budget_exceeded",
-                failure="token budget or cost budget exhausted before the run could finish",
+        if total_input >= limits.max_total_input_tokens:
+            return (
+                "input-token budget exhausted before the run could finish "
+                f"({total_input} of {limits.max_total_input_tokens} tokens used)"
             )
+        if remaining_output < MIN_TURN_OUTPUT_TOKENS:
+            return (
+                "output-token budget exhausted before the run could finish "
+                f"({remaining_output} of {limits.max_total_output_tokens} tokens left, "
+                f"{MIN_TURN_OUTPUT_TOKENS} needed for a turn)"
+            )
+        if priced and total_cost >= limits.max_total_cost_usd:
+            return (
+                "cost budget exhausted before the run could finish "
+                f"(${total_cost} of ${limits.max_total_cost_usd} spent)"
+            )
+        return None
+
+    while len(steps) < limits.max_iterations:
+        exhausted = exhausted_before_turn()
+        if exhausted is not None:
+            return finish("budget_exceeded", failure=exhausted)
+        remaining_output = limits.max_total_output_tokens - total_output
         _compact_exchanges(input_items, exchange_ends)
         request_started = time.perf_counter()
         try:
@@ -407,6 +424,14 @@ async def run_agent(
             )
         if turn.incomplete:
             record_step(turn, (), usage)
+            if turn.incomplete_reason not in (None, "max_output_tokens"):
+                return finish(
+                    "provider_error",
+                    failure=(
+                        "the provider cut the turn off before it finished: "
+                        f"{turn.incomplete_reason}"
+                    ),
+                )
             return finish(
                 "budget_exceeded",
                 failure="the output-token ceiling cut the provider turn off before it finished",

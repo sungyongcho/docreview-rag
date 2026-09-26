@@ -1,15 +1,13 @@
 "use client";
+import { useSavedPresets } from "@/lib/use-saved-presets";
 import { applyProdPolicy, newProdProfile } from "@/lib/prod-profile";
 import { usePublishedCorpus } from "@/lib/use-published-corpus";
 import { effectivePublishedProfile, publicTargetIds, pinPublicTargets, createPublicTargets } from "@/lib/published-scope";
 import { useConfirmation } from "./use-confirmation";
-import { SearchUpdateStatus, SEARCH_UPDATE_KINDS, searchUpdateProgress } from "./search-update-status";
-import { NotificationCenter } from "@/components/notification-center";
 import { NotificationSignals } from "@/components/notification-signals";
-import type { NotificationTarget, NotificationDetail } from "@/lib/notification-registry";
+import type { NotificationTarget } from "@/lib/notification-registry";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
-import { scopeFailurePatch, scopeFailureProgress, publicScopeFailure, isReviewLimitation, reviewLimitationMessage } from "@/lib/scope-failure";
-import { ScopeFailureSummary } from "@/components/scope-failure-summary";
+import { publicScopeFailure } from "@/lib/scope-failure";
 import { BrowserStorageSupport } from "@/components/browser-storage";
 import { applyFreshStartReset, FRESH_START_RECEIPT_KEY, browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
 import { useI18n } from "@/lib/i18n";
@@ -19,35 +17,13 @@ import { conversationSettingsError } from "@/lib/saved-presets";
 import { configurePresetStorage } from "@/lib/preset-storage";
 import { ProfileCompatibilityNotice } from "./profile-compatibility-notice";
 import { SlowCpuNotice } from "./slow-cpu-notice";
-import { BuildInfo, ProductBrand } from "@/components/product-brand";
-import { CreatorSignature } from "@/components/creator-signature";
-import { GuidesNavigation } from "@/components/guides-navigation";
 import type { DisclosureStage } from "@/components/review-stage-details";
 import { RunDetailsPanel } from "@/components/run-details-panel";
-import { EvidenceCandidates } from "@/components/evidence-candidates";
-import { LanguageSwitch } from "@/lib/i18n";
 import { localCpuWarning, localModelIssue, selectedLocalModel } from "@/lib/local-models";
 
-import {
-  Activity,
-  ArrowUpRight,
-  CircleHelp,
-  FlaskConical,
-  Hammer,
-  MessageSquare,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Send,
-  SquarePen,
-  Trash2,
-  Settings,
-  TriangleAlert,
-  X,
-} from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RetainedPanel } from "@/components/retained-panel";
 import "./workspace-navigation.css";
-import { WorkspaceHistory } from "@/components/workspace-history";
 import { navigationLabel, navigationUrl, parseNavigationUrl, type NavigationTarget } from "@/lib/navigation";
 
 import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
@@ -55,35 +31,36 @@ import { ConversationSettings, type ConversationSettingsTab } from "@/components
 import { LocalEngineSettings } from "@/components/local-engine-settings";
 import { ComposerBanner, ComposerToolbar, composerBanner } from "@/components/composer-toolbar";
 import { HelpOverlay } from "@/components/help-overlay";
-import { MarkdownMessage } from "@/components/markdown-message";
+import { QuestionComposer } from "@/components/question-composer";
+import { restoreInterruptedConversations } from "@/components/interrupted-reviews";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding, type TourView } from "@/components/onboarding";
-import { PathDecisionBadge, ReviewProgressSteps, reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer } from "@/components/review-progress";
+import { ReviewMessage } from "@/components/review-message";
+import { ReviewWelcome } from "@/components/review-welcome";
 import { ServiceHealthModal } from "@/components/service-health-modal";
+import { ServiceSidebar } from "@/components/service-sidebar";
+import { ServiceTopbar } from "@/components/service-topbar";
 import { SettingsModal, type SettingsCategory } from "@/components/settings-modal";
-import { DevModeBubble, DevPromotionProvider } from "@/components/dev-mode-bubble";
-import { DEV_ONLY_REASONS, SOURCE_REPOSITORY_URL } from "@/lib/dev-mode";
+import { DevPromotionProvider } from "@/components/dev-mode-bubble";
+import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
 import { NotificationProvider, useNotifications } from "@/components/notifications";
-import { ThemeSwitch } from "@/components/theme-switch";
-import {
-  ApiError,
-  getCapabilities,
-  getReleaseLimits,
-  retrieveEvidence,
-  streamReview,
-} from "@/lib/api";
+import { getCapabilities } from "@/lib/api";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { profileCompatibilityIssue } from "@/lib/profile-compatibility";
-import { failureMessage, failureReport } from "@/lib/pipeline";
 import { helpScreen } from "@/lib/help-content";
 import { helpTopicScreen } from "@/lib/help-search";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
 import { loadConversations, loadHelpOpen, newConversation, ONBOARDING_KEY, saveConversations, saveHelpOpen } from "@/lib/storage";
-import type { Capabilities, ChatMessage, Conversation, EvidenceHit, PublishedSnapshot, RetrievalProfile, ReviewSessionDraft } from "@/lib/types";
+import type { Capabilities, ChatMessage, Conversation, PublishedSnapshot, RetrievalProfile, ReviewSessionDraft } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
 import { useRuntimeHealth } from "@/lib/use-runtime-health";
 import { useOperatorJobs } from "@/lib/use-operator-jobs";
+import { useConversationDraft } from "./use-conversation-draft";
+import { useHelpShortcut } from "./use-help-shortcut";
+import { useHelpTargetReveal } from "./use-help-target-reveal";
+import { usePublicExecutionPolicy } from "./use-public-execution-policy";
+import { useReviewRequests } from "./use-review-requests";
 
 type View = "review" | "build" | "measure" | "system";
 
@@ -101,27 +78,11 @@ export function ServiceShell() {
   return <div><div><NotificationProvider><ServiceSession /></NotificationProvider></div></div>;
 }
 
-// Application status text, not a generated answer. It is stored as this canonical English source and
-// translated when rendered, so a conversation saved in one language reads correctly in the other.
-const INTERRUPTION_NOTICE = "The request was interrupted. Send the question again.";
-
-/** Identify the app's own interruption notice by its exact stored text; nothing else is matched. */
-function isInterruptionNotice(message: { role: string; text?: string }): boolean {
-  return message.role === "assistant" && message.text?.trim() === INTERRUPTION_NOTICE;
-}
-
-/** Restored requests cannot resume themselves after a reload or browser import. */
-function restoreInterruptedConversations(saved: Conversation[]): Conversation[] {
-  return saved.map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: INTERRUPTION_NOTICE, execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
-}
-
 function ServiceSession() {
+  const { builtins } = useSavedPresets();
   const { confirm, confirmationDialog } = useConfirmation();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const currentConversations = useRef(conversations);
-  currentConversations.current = conversations;
-  const draftSavePending = useRef(false);
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<View>("review");
   const [navigationHistory, setNavigationHistory] = useState<NavigationEntry[]>([]);
@@ -138,13 +99,11 @@ function ServiceSession() {
   const [measureTab, setMeasureTab] = useState<MeasureTab>("playground");
   const [systemTab, setSystemTab] = useState<SystemTab>("status");
   const [measureResultId, setMeasureResultId] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const composerInput = useRef<HTMLTextAreaElement>(null);
-  const composerComposing = useRef(false);
   const [runDetailsMessageId, setRunDetailsMessageId] = useState<string | null>(null);
   const [runDetailsStage, setRunDetailsStage] = useState<{ stage: DisclosureStage | null } | undefined>();
   const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
@@ -155,9 +114,6 @@ function ServiceSession() {
   const ragTrigger = useRef<HTMLButtonElement>(null);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | undefined>(undefined);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const [activeReview, setActiveReview] = useState<{ conversationId: string; messageId: string } | null>(null);
-  const currentConversationId = useRef(activeId);
-  currentConversationId.current = activeId;
   const messagesViewport = useRef<HTMLDivElement>(null);
   const followReview = useRef(true);
   const lastReview = useRef<{ conversationId: string; messageId: string } | null>(null);
@@ -195,12 +151,8 @@ function ServiceSession() {
   const initialized = useRef(false);
   const tourInitialized = useRef(false);
   const { notify } = useNotifications();
-  const notificationView = useRef(view);notificationView.current = view;
   const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check);
   const workPending = operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0;
-  const searchJobs = operatorJobs.board.jobs.filter(job => job.domain === "corpus" && SEARCH_UPDATE_KINDS.has(job.kind));
-  const activeSearchJob = searchJobs.find(job => job.status === "running") ?? searchJobs.find(job => job.status === "queued");
-  const jobProgressLabel = activeSearchJob && !operatorJobs.stale ? searchUpdateProgress(activeSearchJob, t) : null;
 
 
 
@@ -255,7 +207,7 @@ function ServiceSession() {
         const target = parseNavigationUrl(window.location.href, initial.map((item) => item.id), remembered.id);
         const selected = target?.view === "review" ? initial.find((item) => item.id === target.conversationId) ?? remembered : remembered;
         setActiveId(selected.id);
-        setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
+        setProfile(selected.profile);
         const position = window.history.state?.docreviewNavigation?.position;
         navigationPosition.current = Number.isSafeInteger(position) ? position : 0;
         if (target) {
@@ -295,56 +247,14 @@ function ServiceSession() {
     const loaded = restoreInterruptedConversations(loadConversations());
     const next = loaded.length ? loaded : [newConversation(loadDefaultProfile())];
     const selected = next.find(item => item.id === loadActiveConversation()) ?? next[0];
-    setConversations(next); setActiveId(selected.id); setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
+    setConversations(next); setActiveId(selected.id); setProfile(selected.profile);
   }), []);
 
   const active = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) ?? conversations[0],
     [activeId, conversations],
   );
-  const query = active?.draft ?? "";
-
-  /** Keep each conversation's composer independent without serializing on every keystroke. */
-  function setQuery(value: string | ((current: string) => string)) {
-    const targetId = active?.id;
-    setConversations((current) => current.map((conversation) => {
-      if (conversation.id !== targetId) return conversation;
-      const draft = typeof value === "function" ? value(conversation.draft ?? "") : value;
-      if (draft === (conversation.draft ?? "")) return conversation;
-      draftSavePending.current = true;
-      return { ...conversation, draft };
-    }));
-  }
-
-  /** Flush the latest conversation state before leaving the page or unmounting. */
-  const saveDraft = useCallback(() => {
-    if (!draftSavePending.current) return;
-    saveConversations(currentConversations.current);
-    draftSavePending.current = false;
-  }, []);
-  useEffect(() => {
-    if (!draftSavePending.current) return;
-    const timer = window.setTimeout(saveDraft, 300);
-    return () => window.clearTimeout(timer);
-  }, [conversations, saveDraft]);
-  useEffect(() => {
-    /** Mobile browsers may hide a page without delivering pagehide before termination. */
-    const saveWhenHidden = () => { if (document.visibilityState === "hidden") saveDraft(); };
-    window.addEventListener("pagehide", saveDraft);
-    document.addEventListener("visibilitychange", saveWhenHidden);
-    return () => {
-      window.removeEventListener("pagehide", saveDraft);
-      document.removeEventListener("visibilitychange", saveWhenHidden);
-      saveDraft();
-    };
-  }, [saveDraft]);
-  useEffect(() => {
-    // Grow with the draft up to the CSS max-height; browsers without field-sizing need the measurement.
-    const element = composerInput.current;
-    if (!element || "fieldSizing" in element.style) return;
-    element.style.height = "auto";
-    element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
-  }, [query]);
+  const { query, setQuery } = useConversationDraft(active, conversations, setConversations);
   useLayoutEffect(() => {
     const target = lastReview.current;
     if (view !== "review" || !target || target.conversationId !== active?.id) return;
@@ -355,19 +265,7 @@ function ServiceSession() {
     if (element && followReview.current) element.scrollTop = element.scrollHeight;
   }, [active?.messages, active?.id, view]);
 
-  const [publicPolicy, setPublicPolicy] = useState<ReviewSessionDraft["prompt_policy"] | null>(null);
-  const [publicPolicyFailed, setPublicPolicyFailed] = useState(false);
-  const [publicPolicyRevision, setPublicPolicyRevision] = useState(0);
-  useEffect(() => {
-    if (adminLive || !permissions) return;
-    let current = true;
-    setPublicPolicy(null); setPublicPolicyFailed(false);
-    void getReleaseLimits().then(limits => {
-      if (!limits.prompt_policy?.workflow_budget) throw new Error("Public execution policy unavailable");
-      if (current) setPublicPolicy(limits.prompt_policy);
-    }).catch(() => { if (current) setPublicPolicyFailed(true); });
-    return () => { current = false; };
-  }, [adminLive, permissions?.environment, publicPolicyRevision]);
+  const { policy: publicPolicy, failed: publicPolicyFailed, retry: retryPublicPolicy } = usePublicExecutionPolicy(adminLive, permissions);
 
   const storedSessionProfile = active?.profile ?? profile;
   const publicCorpus = usePublishedCorpus(!adminLive);
@@ -388,7 +286,7 @@ function ServiceSession() {
     if (!targetId) return;
     const reset = { doc_ids: [], registries: [], issuers: [], fiscal_years: [] };
     setConversations((current) => saveConversations(current.map((conversation) => conversation.id === targetId
-      ? { ...conversation, publishedTargets: createPublicTargets(publicCorpus.documents, targets ?? publicCorpus.documents.filter((doc) => ids.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...reset }, updatedAt: new Date().toISOString() }
+      ? { ...conversation, publishedTargets: createPublicTargets(publicCorpus.documents, targets ?? publicCorpus.documents.filter((doc) => ids.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))), profile: { ...conversation.profile, ...reset }, updatedAt: new Date().toISOString() }
       : conversation)));
   }
   /** Keep pipeline experiments separate from the committed search scope. */
@@ -406,20 +304,25 @@ function ServiceSession() {
   }
 
   const latestEvidenceId = active?.messages.filter((message) => message.evidence?.length).at(-1)?.id ?? null;
-  const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt, jobs: operatorJobs.board.jobs });
+  const banner = composerBanner({ builtins, readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt, jobs: operatorJobs.board.jobs });
   const compatibilityIssue = adminLive ? profileCompatibilityIssue(activeSessionProfile, permissions) : null;
   const localIssue = localAllowed ? localModelIssue(activeSessionProfile, runtimeHealth.readiness) : null;
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
   const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
-  const settingsValidationError = conversationSettingsError(activeSessionProfile);
+  const settingsValidationError = conversationSettingsError(activeSessionProfile, builtins);
   const sendBlocked = (!adminLive && !publicPolicy) || publicScopeBlocked || settingsValidationError !== null || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
+  const { busy, activeReview, submit, reviewSelectedEvidence, markEvidence } = useReviewRequests({
+    active, activeId, sessionProfile: activeSessionProfile, localModel, sendBlocked, developer: adminLive, view, query, setQuery,
+    setConversations, reviewAbort, onReviewStarted: (target) => { lastReview.current = target; followReview.current = true; },
+    setDailyBudgetResetAt: setResetAt, checkRuntimeHealth: runtimeHealth.check,
+  });
 
   useEffect(() => {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
     const targetId = active.id;
     setConversations((current) => saveConversations(current.map((conversation) => {
-      if (conversation.id !== targetId || conversation.profile?.local_model) return conversation;
-      return { ...conversation, profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), local_model: localModel } };
+      if (conversation.id !== targetId || conversation.profile.local_model) return conversation;
+      return { ...conversation, profile: { ...conversation.profile, local_model: localModel } };
     })));
   }, [active?.id, activeSessionProfile.engine, activeSessionProfile.local_model, localModel, localAllowed, compatibilityIssue]);
 
@@ -489,7 +392,7 @@ function ServiceSession() {
     if (normalized.view === "review" && normalized.conversationId) {
       setActiveId(normalized.conversationId);
       const selected = conversations.find((conversation) => conversation.id === normalized.conversationId);
-      if (selected) setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
+      if (selected) setProfile(selected.profile);
     }
     setView(normalized.view);
     return true;
@@ -532,7 +435,7 @@ function ServiceSession() {
         const restored = conversations.find((item) => item.id === entry.conversationId);
         if (restored) {
           setActiveId(restored.id);
-          setProfile(restored.profile ?? DEFAULT_SESSION_PROFILE);
+          setProfile(restored.profile);
         }
         setConversationTab(entry.conversationTab);
       } else if (nextPosition < origin.position) {
@@ -584,26 +487,7 @@ function ServiceSession() {
     setPendingHelpTarget(id === "review.snapshot" ? "measure.snapshots.list" : id === "measure.runs.chunk_targets" ? "measure.runs.mode" : id.startsWith("review.retrieval.") && activeSessionProfile.retrieval_preset !== "custom" ? "review.retrieval" : id);
   }
 
-  useEffect(() => {
-    if (!pendingHelpTarget) return;
-    let finished = false;
-    const observer = new MutationObserver(revealTarget);
-    /** Lazy panels and evaluation dialogs can mount after the workspace navigation commits. */
-    function revealTarget() {
-      if (finished) return;
-      const target = Array.from(document.querySelectorAll<HTMLElement>(`[data-help="${pendingHelpTarget}"]`)).find((element) => !element.closest("[hidden]"));
-      if (!target) return;
-      finished = true;
-      observer.disconnect();
-      for (let disclosure = target.closest("details"); disclosure; disclosure = disclosure.parentElement?.closest("details") ?? null) disclosure.open = true;
-      target.scrollIntoView?.({ block: "center", inline: "nearest" });
-      setPendingHelpTarget(null);
-    }
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
-    const frame = requestAnimationFrame(revealTarget);
-    const timeout = window.setTimeout(() => { finished = true; observer.disconnect(); setPendingHelpTarget(null); }, 2000);
-    return () => { finished = true; cancelAnimationFrame(frame); window.clearTimeout(timeout); observer.disconnect(); };
-  }, [pendingHelpTarget, view, buildTab, measureTab, systemTab, conversationTab]);
+  useHelpTargetReveal(pendingHelpTarget, () => setPendingHelpTarget(null), `${view}/${buildTab}/${measureTab}/${systemTab}/${conversationTab}`);
 
   /** Keep settings callbacks and guarded workspace history as the only notification destinations. */
   function openNotification(target: NotificationTarget) {
@@ -633,12 +517,12 @@ function ServiceSession() {
 
   function createReview(confirmed = false) {
     if (!confirmed && view === "measure" && unsavedGolden && goldenLeaveGuard.current) { goldenLeaveGuard.current(() => createReview(true)); return; }
-    const reusable = [active, ...conversations].find(item => item && item.messages.length === 0 && !profileCompatibilityIssue(item.profile ?? DEFAULT_SESSION_PROFILE, permissions));
+    const reusable = [active, ...conversations].find(item => item && item.messages.length === 0 && !profileCompatibilityIssue(item.profile, permissions));
     const conversation = reusable ?? newConversation(adminLive && permissions?.environment === "dev" ? undefined : newProdProfile(publicPolicy ?? undefined));
     if (reusable && activeId === reusable.id && view === "review") return;
     if (!reusable) persist([conversation, ...conversations]);
     setActiveId(conversation.id);
-    setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE);
+    setProfile(conversation.profile);
     navigate({ view: "review", conversationId: conversation.id }, true);
   }
 
@@ -655,173 +539,6 @@ function ServiceSession() {
     const conversation = newConversation(adminLive && permissions?.environment === "dev" ? undefined : newProdProfile(publicPolicy ?? undefined));
     persist([conversation]);
     setActiveId(conversation.id);
-  }
-
-  function conversationTitle(messages: ChatMessage[]): string {
-    return (messages.find((message) => message.role === "user")?.text ?? "New review").slice(0, 52);
-  }
-
-  /**
-   * Replace the active conversation's messages. Reads the current list at update time
-   * so a change made while a review streams (a toolbar edit, a pin) is not reverted.
-   */
-  function updateActive(messages: ChatMessage[], selectedProfile?: ReviewSessionDraft | null) {
-    const targetId = activeId;
-    setConversations((current) => saveConversations(current.map((conversation) =>
-      conversation.id === targetId
-        ? {
-            ...conversation,
-            title: conversationTitle(messages),
-            updatedAt: new Date().toISOString(),
-            messages,
-            profile: selectedProfile === undefined ? conversation.profile : selectedProfile,
-          }
-        : conversation,
-    )));
-  }
-
-  /** Append submitted messages atomically to their original conversation. */
-  function appendMessage(conversationId: string, added: ChatMessage | ChatMessage[]) {
-    setConversations((current) => saveConversations(current.map((conversation) => {
-      if (conversation.id !== conversationId) return conversation;
-      const messages = [...conversation.messages, ...(Array.isArray(added) ? added : [added])];
-      return { ...conversation, title: conversationTitle(messages), updatedAt: new Date().toISOString(), messages };
-    })));
-  }
-
-  /** Update one reserved assistant identity without overwriting concurrent profile or evidence edits. */
-  function updateMessage(conversationId: string, messageId: string, patch: Partial<Omit<ChatMessage, "id" | "role">>, notificationDetail?: NotificationDetail) {
-    if (patch.pending === false && notificationView.current !== "review") {
-      const failed = patch.execution?.outcome === "failed";
-      const cancelled = patch.execution?.outcome === "cancelled";
-      const limited = patch.execution?.outcome === "limited";
-      notify(limited && patch.execution?.pathDecision ? reviewLimitationMessage(patch.execution.pathDecision, t) : failed ? patch.text ?? t("Review failed.") : t(cancelled ? "Review cancelled." : "Review completed."), failed ? "error" : cancelled || limited ? "warning" : "success", `review:${conversationId}:${messageId}`, undefined, { event: "review-result", target: { view: "review", conversationId }, title: limited ? "Request scope guidance" : failed ? "Review failed" : cancelled ? "Review cancelled" : "Review completed", detail: limited ? undefined : notificationDetail });
-    }
-    setConversations((current) => saveConversations(current.map((conversation) => conversation.id === conversationId ? { ...conversation, updatedAt: new Date().toISOString(), messages: conversation.messages.map((message) => message.id === messageId ? { ...message, ...patch } : message) } : conversation)));
-  }
-
-  /** One-off read of the reset time after a `daily_cost_limit` error so the banner can say when answers resume. */
-  function noteDailyBudget(reason: unknown) {
-    if (reason instanceof ApiError && reason.code === "daily_cost_limit") {
-      void getReleaseLimits().then((limits) => setResetAt(limits.daily_cost_reset_at_utc)).catch(() => undefined);
-    }
-  }
-
-  async function submit() {
-    const question = query.trim();
-    if (!question || busy || !active || sendBlocked) return;
-    setQuery("");
-    setBusy(true);
-    const requestStarted = Date.now();
-    let execution = initialReviewProgress(false, 0, (active.profile ?? profile).corpus_scope);
-
-    reviewAbort.current?.abort();
-    const controller = new AbortController();
-    reviewAbort.current = controller;
-    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: question };
-    const conversationId = active.id;
-    const assistantId = crypto.randomUUID();
-    const pending = [...active.messages, userMessage];
-    lastReview.current = { conversationId, messageId: assistantId };
-    setActiveReview(lastReview.current);
-    followReview.current = true;
-    let preparedEvidence: EvidenceHit[] = [];
-    const selectedProfile = { ...activeSessionProfile, local_model: localModel };
-    appendMessage(conversationId, [userMessage, { id: assistantId, role: "assistant", text: "", pending: true, execution, question }]);
-    try {
-      let evidence: EvidenceHit[] = [];
-      let candidateToken: string | undefined;
-      const history = pending
-        .slice(0, -1)
-        .filter((message) => !message.pending && message.text.trim() && (message.role === "user" || message.role === "assistant"))
-        .map((message) => ({ role: message.role, text: message.text }));
-      const response = await streamReview(
-        question,
-        selectedProfile,
-        null,
-        history,
-        (event) => { if (controller.signal.aborted) return; execution = reviewProgressFromEvent(event, execution); updateMessage(conversationId, assistantId, { execution }); },
-        controller.signal,
-        (payload) => {
-          if (controller.signal.aborted) return;
-          evidence = payload.candidates.length ? payload.candidates : payload.results;
-          preparedEvidence = evidence;
-          candidateToken = payload.candidate_token ?? undefined;
-          execution = candidateProgress(execution, evidence.length, payload.resolved_scope, payload.path_decision);
-          updateMessage(conversationId, assistantId, { execution });
-        },
-      );
-      if (controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
-      const answer = terminalAnswer(response);
-      const terminal = (response.run ?? response) as Record<string, unknown>;
-      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution, terminal.report);
-      setResetAt(null);
-      const assistant: Partial<ChatMessage> = {
-        pending: false,
-        text: answer,
-        execution,
-        performance: terminal.execution as Record<string, unknown> | undefined,
-        evidence,
-        evidenceLabel: terminalEvidenceLabel(response),
-        citations: terminalCitationCount(response),
-        trace: extractTrace(response),
-        diagnostics: runDiagnostics(response),
-        failureFix: terminalFailureFix(response),
-        question,
-        candidateToken,
-        pinnedChunkIds: [],
-        excludedChunkIds: [],
-      };
-      updateMessage(conversationId, assistantId, assistant, notificationErrorDetail(terminal.failure));
-    } catch (reason) {
-      execution = scopeFailureProgress(reason, execution);
-      execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
-      const scopeFailure = scopeFailurePatch(reason, adminLive);
-      if (scopeFailure && !controller.signal.aborted) {
-        updateMessage(conversationId, assistantId, { ...scopeFailure, pending: false, execution }, notificationErrorDetail(reason));
-        return;
-      }
-      if (isInfrastructureFailure(reason)) {
-        updateMessage(conversationId, assistantId, { pending: false, execution, text: reason instanceof Error ? reason.message : t("The review could not be completed.") }, notificationErrorDetail(reason));
-        if (currentConversationId.current === conversationId) setQuery((current) => current || question);
-        await runtimeHealth.check();
-        return;
-      }
-      let evidence = preparedEvidence;
-      // The provider gate and the daily cost limiter both reject before retrieval runs,
-      // so fetch the evidence separately for the evidence-only reply.
-      if (reason instanceof ApiError && reason.code === "provider_unavailable" && !evidence.length) {
-        try {
-          const retrieved = await retrieveEvidence(question, selectedProfile);
-          evidence = retrieved.candidates.length ? retrieved.candidates : retrieved.results;
-          execution = { ...execution, resolvedScope: resolvedScopeFromServer(retrieved.resolved_scope) ?? execution.resolvedScope };
-        } catch {
-          // Preserve the original provider error when retrieval is also unavailable.
-        }
-      }
-      noteDailyBudget(reason);
-      const message =
-        controller.signal.aborted ? t("Request cancelled") :
-        reason instanceof ApiError && reason.code === "daily_cost_limit"
-          ? notificationErrorMessage(reason)
-          : reason instanceof ApiError && reason.code === "provider_unavailable" && evidence.length
-            ? "No answer model is configured. Retrieved filing evidence is shown below without a generated answer. See Build › step 6."
-          : reason instanceof Error
-            ? reason.message
-            : "The review could not be completed.";
-      updateMessage(conversationId, assistantId, {
-        pending: false,
-        text: message,
-        execution,
-        evidence,
-        evidenceLabel: "Retrieved candidates — answer not generated",
-      }, notificationErrorDetail(reason));
-    } finally {
-      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check(true);
-      setBusy(false);
-      setActiveReview(null);
-      if (reviewAbort.current === controller) reviewAbort.current = null;
-    }
   }
 
   function applyProfile(nextProfile: RetrievalProfile, source?: string) {
@@ -848,7 +565,7 @@ function ServiceSession() {
     setProfile((current) => ({ ...current, ...update }));
     if (targetId) setConversations((current) => saveConversations(current.map((conversation) =>
       conversation.id === targetId
-        ? { ...conversation, ...(dimensionsChanged ? { publishedTargets: createPublicTargets(publicCorpus.documents, publicCorpus.documents.filter((doc) => selection?.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))) } : {}), updatedAt: new Date().toISOString(), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...update } }
+        ? { ...conversation, ...(dimensionsChanged ? { publishedTargets: createPublicTargets(publicCorpus.documents, publicCorpus.documents.filter((doc) => selection?.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))) } : {}), updatedAt: new Date().toISOString(), profile: { ...conversation.profile, ...update } }
         : conversation,
     )));
   }
@@ -861,7 +578,7 @@ function ServiceSession() {
     const storedProfile = snapshot.profile.retrieval_profile;
     const retrieval = storedProfile && typeof storedProfile === "object"
       ? storedProfile as RetrievalProfile
-      : resolvedRetrievalProfile(active?.profile ?? profile);
+      : resolvedRetrievalProfile(active?.profile ?? profile, builtins);
     const next = {
       ...(active?.profile ?? profile),
       snapshot_id: snapshot.snapshot_id,
@@ -872,93 +589,6 @@ function ServiceSession() {
     updateSessionProfile(next);
     navigate({ view: "review" });
     notify(t("Snapshot {p0} applied to this review.", { p0: snapshot.label }), "success", "snapshot-review", undefined, { event: "snapshot-review-notice", target: { view: "review", conversationId: activeId } });
-  }
-
-  function markEvidence(messageId: string, chunkId: number, mode: "pin" | "exclude") {
-    if (!active) return;
-    const messages = active.messages.map((message) => {
-      if (message.id !== messageId) return message;
-      const pins = new Set(message.pinnedChunkIds ?? []);
-      const excludes = new Set(message.excludedChunkIds ?? []);
-      if (mode === "pin") {
-        excludes.delete(chunkId);
-        pins.has(chunkId) ? pins.delete(chunkId) : pins.add(chunkId);
-      } else {
-        pins.delete(chunkId);
-        excludes.has(chunkId) ? excludes.delete(chunkId) : excludes.add(chunkId);
-      }
-      return { ...message, pinnedChunkIds: [...pins], excludedChunkIds: [...excludes] };
-    });
-    updateActive(messages);
-  }
-
-  async function useSelectedEvidence(message: ChatMessage) {
-    if (!active || !message.question || !message.candidateToken || busy || sendBlocked) return;
-    setBusy(true);
-    const conversationId = active.id;
-    const selected = (message.evidence ?? []).filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)).length;
-    const requestStarted = Date.now();
-    let execution = initialReviewProgress(true, selected, (active.profile ?? profile).corpus_scope);
-    const assistantId = crypto.randomUUID();
-    lastReview.current = { conversationId, messageId: assistantId };
-    setActiveReview(lastReview.current);
-    followReview.current = true;
-    appendMessage(conversationId, { id: assistantId, role: "assistant", text: "", pending: true, execution, question: message.question });
-    const controller = new AbortController();
-    reviewAbort.current = controller;
-    try {
-      // Reuse the context that produced this candidate snapshot, excluding its question and later turns.
-      const messageIndex = active.messages.findIndex((item) => item.id === message.id);
-      const questionIndex = active.messages.slice(0, Math.max(0, messageIndex)).findLastIndex((item) => item.role === "user" && item.text === message.question);
-      const historyTurns = activeSessionProfile.prompt_policy.history_turns;
-      const originalHistory = active.messages.slice(0, Math.max(0, questionIndex))
-        .filter((item) => !item.pending && item.text.trim() && (item.role === "user" || item.role === "assistant"))
-        .map((item) => ({ role: item.role, text: item.text }));
-      const response = await streamReview(
-        message.question,
-        activeSessionProfile,
-        {
-          candidateToken: message.candidateToken,
-          pinned: message.pinnedChunkIds ?? [],
-          excluded: message.excludedChunkIds ?? [],
-        },
-        historyTurns > 0 ? originalHistory.slice(-historyTurns) : [],
-        (event) => { if (controller.signal.aborted) return; execution = reviewProgressFromEvent(event, execution); updateMessage(conversationId, assistantId, { execution }); },
-        controller.signal,
-      );
-      if (controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
-      setResetAt(null);
-      const terminal = (response.run ?? response) as Record<string, unknown>;
-      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution, terminal.report);
-      updateMessage(conversationId, assistantId, {
-        pending: false,
-        execution,
-        performance: terminal.execution as Record<string, unknown> | undefined,
-        text: terminalAnswer(response),
-        evidence: message.evidence?.filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)),
-        evidenceLabel: terminalEvidenceLabel(response),
-        citations: terminalCitationCount(response),
-        trace: extractTrace(response),
-        diagnostics: runDiagnostics(response),
-        failureFix: terminalFailureFix(response),
-      }, notificationErrorDetail(terminal.failure));
-    } catch (reason) {
-      execution = scopeFailureProgress(reason, execution);
-      execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
-      const scopeFailure = scopeFailurePatch(reason, adminLive);
-      if (scopeFailure && !controller.signal.aborted) {
-        updateMessage(conversationId, assistantId, { ...scopeFailure, pending: false, execution }, notificationErrorDetail(reason));
-        return;
-      }
-      updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution }, notificationErrorDetail(reason));
-      noteDailyBudget(reason);
-      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Selected evidence review failed."), "error", "evidence-review", undefined, { event: "evidence-review-error", detail: notificationErrorDetail(reason) });
-    } finally {
-      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check(true);
-      setBusy(false);
-      setActiveReview(null);
-      if (reviewAbort.current === controller) reviewAbort.current = null;
-    }
   }
 
   function closeTour() {
@@ -978,20 +608,8 @@ function ServiceSession() {
     setHelpOpen(open);
   }
 
-  /** `?` toggles Help anywhere except inside a text control, and never behind the tour or a modal. */
   const modalOpen = settingsOpen || runtimeHealth.modalVisible || (view === "review" && conversationTab !== null);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "?" || tourOpen || modalOpen) return;
-      const target = event.target;
-      if (target instanceof Element && target.closest('[role="dialog"][aria-modal="true"]')) return;
-      if (target instanceof HTMLElement && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable || target.hasAttribute("contenteditable"))) return;
-      event.preventDefault();
-      setHelp(!helpOpen);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [helpOpen, tourOpen, modalOpen]);
+  useHelpShortcut({ helpOpen, tourOpen, modalOpen, setHelp });
   const currentTab = view === "build" ? buildTab : view === "measure" ? measureTab : view === "system" ? systemTab : "";
   const location = `${view}/${buildTab}/${measureTab}/${systemTab}`;
   /** The workspace reserves room for the panel only while it is actually on screen. */
@@ -1056,55 +674,51 @@ function ServiceSession() {
   return (
     <DevPromotionProvider promote={!adminLive}>
     <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}${runDetailsMessage ? " run-details-open" : ""}`}>{confirmationDialog}
-      {sidebarOpen && <button className="sidebar-backdrop" type="button" aria-label={t("Close navigation overlay")} onClick={closeSidebar} />}
-      <aside id="service-navigation" className="sidebar" inert={!sidebarOpen} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeSidebar(); } }}>
-        <div className="brand"><ProductBrand onActivate={() => createReview()} actionLabel={`DocReview RAG · ${t("New chat")}`} /><button className="icon-button sidebar-close" type="button" aria-label={t("Close sidebar")} onClick={closeSidebar}><X size={18} /></button></div>
-        <button className="new-review" data-tour="new-review" type="button" aria-pressed={view === "review" && !!active && active.messages.length === 0} onClick={() => createReview()}><SquarePen size={17} /><span>{t("New chat")}</span></button>
-        <p className="sidebar-label">{t("Recent reviews")}</p>
-        <div className="conversation-list" data-tour="recent-reviews">
-          {conversations.filter(conversation => conversation.messages.length > 0).map((conversation) => (
-            <div className="conversation-row" key={conversation.id}>
-              <button type="button" aria-pressed={conversation.id === activeId && view === "review"} onClick={() => navigate({ view: "review", conversationId: conversation.id })}>
-                <MessageSquare size={15} /><span>{conversationTitles[conversation.id]}</span>
-              </button>
-              {conversation.messages.length > 0 && <button className="delete-review" type="button" aria-label={t("Delete {p0}", { p0: conversation.title })} onClick={() => removeReview(conversation.id)}><Trash2 size={14} /></button>}
-            </div>
-          ))}
-        </div>
-        <BuildInfo onOpen={() => openSettings("about")} mode={environment && (environment === "prod"
-            ? <DevModeBubble>
-              <a className="runtime-mode-badge prod" href={SOURCE_REPOSITORY_URL} target="_blank" rel="noreferrer" aria-label={modeLabel ?? undefined}>
-                <strong>PROD</strong><span>{t("MODE")}</span>
-              </a>
-            </DevModeBubble>
-            : <div className={`runtime-mode-badge ${environment}`} role="note" aria-label={modeLabel ?? undefined} title={t("Server environment: {p0}", { p0: modeLabel ?? "" })}>
-              <strong>{environment.toUpperCase()}</strong><span>{t("MODE")}</span>
-            </div>)} />
-        <div className="sidebar-nav">
-          <GuidesNavigation />
-          <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>{t("Build")}</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">{t(", needs attention")}</span></>}</button>
-          <button data-tour="measure" type="button" aria-pressed={view === "measure"} onClick={() => navigate({ view: "measure" })}><FlaskConical size={17} /><span>{t("Measure")}</span></button>
-          <button data-tour="system" className={`nav-secondary system-status-button ${healthBadge(runtimeHealth.kind)}`} type="button" aria-label={t("System · {p0}", { p0: t(healthLabel(runtimeHealth.kind)) })} aria-pressed={view === "system"} onClick={() => navigate({ view: "system", tab: "status" })}><Activity size={17} /><span>{t("System")}</span><span className="system-health"><i aria-hidden="true" />{t(healthLabel(runtimeHealth.kind))}</span></button>
-          <button data-tour="settings" type="button" onClick={() => openSettings()}><Settings size={17} /><span>{t("Settings")}</span></button>
-        </div>
-        {localAllowed && activeSessionProfile.engine === "local" && (
-          <div className="local-mode-badge" role="note">
-            <TriangleAlert size={14} aria-hidden="true" />
-            <span className="local-mode-label">{t("LOCAL MODEL")}{localModel ? t(" · {p0}", { p0: localModel }) : ""}{localIssue ? t(" · Unavailable") : ""}</span>
-            <span className="local-mode-note">{t("Answers use the selected model server. Choose an engine and model above the conversation input. API health and model availability are checked separately.")}{" "}</span>
-          </div>
-        )}
-        <CreatorSignature />
-      </aside>
+      <ServiceSidebar
+        open={sidebarOpen}
+        onClose={closeSidebar}
+        view={view}
+        newChatActive={view === "review" && !!active && active.messages.length === 0}
+        onNewChat={() => createReview()}
+        conversations={conversations}
+        activeConversationId={activeId}
+        conversationTitles={conversationTitles}
+        onDeleteConversation={removeReview}
+        environment={environment}
+        modeLabel={modeLabel}
+        buildNeedsAttention={buildNeedsAttention}
+        healthKind={runtimeHealth.kind}
+        showLocalModel={localAllowed && activeSessionProfile.engine === "local"}
+        localModel={localModel}
+        localModelUnavailable={Boolean(localIssue)}
+        onNavigate={(target) => navigate(target)}
+        onOpenSettings={() => openSettings()}
+        onOpenAbout={() => openSettings("about")}
+      />
 
       <section className="workspace">
-        <header className="topbar">
-          <div className="topbar-navigation">
-            <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel ?? undefined} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
-            <WorkspaceHistory entries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))} currentIndex={navigationHistory.length} onBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }} onForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }} onJump={(index) => jumpNavigation(historyEntries[index].position)} />
-          </div>
-          <div className="topbar-status">{<>{!adminLive && <SearchUpdateStatus updating={runtimeHealth.readiness?.corpus.updating === true} preparation={banner?.kind === "preparation" || banner?.kind === "empty" ? banner.text : null} jobs={operatorJobs.board.jobs} stale={operatorJobs.stale || runtimeHealth.waiting || !runtimeHealth.readiness || runtimeHealth.kind === "api_down"} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} onOpenJobs={adminLive ? jobId => navigate({ view: "build", tab: "jobs", jobId }) : undefined} />}<NotificationCenter jobs={operatorJobs.board.jobs} jobsStale={operatorJobs.stale} developer={adminLive} onNavigate={openNotification} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} /></>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" data-running={operatorJobs.board.active_count > 0} title={t("View all jobs")} type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}><span>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</span>{jobProgressLabel && <span className="job-health-detail">· {jobProgressLabel}</span>}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
-        </header>
+        <ServiceTopbar
+          sidebarToggleRef={sidebarToggle}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen((value) => !value)}
+          modeLabel={modeLabel}
+          historyEntries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))}
+          historyIndex={navigationHistory.length}
+          onHistoryBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }}
+          onHistoryForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }}
+          onHistoryJump={(index) => jumpNavigation(historyEntries[index].position)}
+          developer={adminLive}
+          searchUpdating={runtimeHealth.readiness?.corpus.updating === true}
+          searchPreparation={banner?.kind === "preparation" || banner?.kind === "empty" ? banner.text : null}
+          jobBoard={operatorJobs.board}
+          jobsStale={operatorJobs.stale}
+          searchStatusStale={operatorJobs.stale || runtimeHealth.waiting || !runtimeHealth.readiness || runtimeHealth.kind === "api_down"}
+          statusBlocked={settingsOpen || runtimeHealth.modalVisible || tourOpen}
+          helpOpen={helpOpen}
+          onToggleHelp={() => setHelp(!helpOpen)}
+          onNavigate={(target) => navigate(target)}
+          onOpenNotification={openNotification}
+        />
         {runDetailsMessage && <div className="run-details-backdrop" aria-hidden="true" onClick={() => setRunDetailsMessageId(null)} />}
         {(runtimeHealth.waiting || runtimeHealth.kind === "checking") && <div className="connection-status" role="status"><span>{t(runtimeHealth.waiting ? workPending ? "A job is in progress. Waiting for the API; retrying status checks." : "Connection check delayed. Retrying before declaring an outage." : "Checking API connection…")}</span><button className="button" type="button" disabled={runtimeHealth.checking} onClick={() => void runtimeHealth.check(true)}>{t("Retry connection")}</button></div>}
 
@@ -1112,36 +726,13 @@ function ServiceSession() {
           <div className="messages" ref={messagesViewport} onScroll={(event) => { const element = event.currentTarget; followReview.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}>
             <div className="messages-inner">
               {!active?.messages.length && (
-                <div className="welcome">
-                  <ProductBrand hero onActivate={() => createReview()} actionLabel={`DocReview RAG · ${t("New chat")}`} />
-                  <p className="eyebrow">{t("Grounded by design")}</p>
-                  <h1>{t("Review filings with verifiable evidence.")}</h1>
-                  <p className="welcome-description">{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.").split("NOT_IN_DOCS")[0]}<span className="verdict not-in-docs welcome-verdict">{t("Not in documents")}</span>{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.").split("NOT_IN_DOCS")[1]}</p>
-                  <ol className="first-review-path"><li><strong>01</strong><span>{t("Ask about a filing")}</span></li><li><strong>02</strong><span>{t("Open its original evidence")}</span></li><li><strong>03</strong><span>{t("Inspect execution and compare retrieval")}</span></li></ol>
-                  <div className="welcome-links"><button className="button ghost" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Explore the implementation")}</button><a href={`/docreview-rag/docs/${locale}/`}>{t("Read the guide")}</a></div>
-                  {readiness?.mode === "canned" && <p className="notice">{t("Demonstration data — no live provider calls.")}</p>}
-                  {adminLive && readiness?.corpus?.documents === 0 ? (
-                    <div className="next-step" data-tour="evidence-fallback">
-                      <h2>{t("Corpus is empty")}</h2>
-                      <p>{t("Download and ingest filings first.")}</p>
-                      <div className="action-row"><button className="button primary" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Open Build")}</button></div>
-                    </div>
-                  ) : (
-                    <section className="welcome-examples" data-tour="evidence-fallback" aria-label={t("Example questions")}>
-                      <p className="welcome-examples-hint">{t("Choose an example to edit before sending.")}</p>
-                      <div className="suggestions">
-                        {[
-                          { source: "SEC", language: "en", title: "NVIDIA growth drivers", question: "What drove NVIDIA data center revenue growth?" },
-                          { source: "DART", language: "ko", title: "Samsung memory risks", question: "삼성전자 메모리 사업의 주요 위험은 무엇인가요?" },
-                          { source: "SEC", language: "en", title: "AMD supply-chain risks", question: "What manufacturing and supply-chain risks did AMD identify in its FY2024 10-K?" },
-                          { source: "DART", language: "en", title: "SK hynix HBM outlook", question: "What did SK hynix report about HBM demand and its business outlook in 2024? Cite the filing evidence." },
-                          { source: "SEC", language: "ko", title: "NVIDIA revenue comparison", question: "NVIDIA의 FY2024 총매출은 얼마이며, FY2023과 비교해 어떻게 달라졌나요?" },
-                          { source: "DART", language: "ko", title: "Samsung semiconductor investment", question: "삼성전자의 2024년 반도체 시설투자 목적과 주요 투자 내용을 설명해 주세요." },
-                        ].map((example) => <button key={example.title} type="button" aria-label={t(example.title)} onClick={() => { setQuery(example.question); composerInput.current?.focus(); }}><span className="suggestion-meta"><span className="suggestion-source">{example.source}</span><span>{example.source === "SEC" ? "10-K" : t("Annual report")} · {example.language === "en" ? "English" : "한국어"}</span></span><strong>{t(example.title)}</strong><span className="suggestion-question" lang={example.language}>{example.question}</span></button>)}
-                      </div>
-                    </section>
-                  )}
-                </div>
+                <ReviewWelcome
+                  developer={adminLive}
+                  readiness={readiness}
+                  onNewChat={() => createReview()}
+                  onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })}
+                  onChooseExample={(question) => { setQuery(question); composerInput.current?.focus(); }}
+                />
               )}
               {active?.messages.map((message) => (
                 <ReviewMessage
@@ -1153,7 +744,7 @@ function ServiceSession() {
                   onStop={message.pending && activeReview?.conversationId === active?.id && activeReview.messageId === message.id ? () => reviewAbort.current?.abort() : undefined}
                   onSwitchScope={!busy ? () => { updateSessionProfile({ corpus_scope: "auto" }); setQuery(message.question ?? ""); } : undefined}
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
-                  onUseSelected={() => void useSelectedEvidence(message)}
+                  onUseSelected={() => void reviewSelectedEvidence(message)}
                   onOpenDetails={(stage) => openRunDetails(message.id, stage)}
                   onOpenFix={openFailureFix}
                 />
@@ -1184,11 +775,14 @@ function ServiceSession() {
 
             {!adminLive && <p className="helper" role="status">{t(publicCorpus.status === "loading" ? "Loading published filings…" : publicCorpus.status === "error" ? "Published filings could not be loaded." : !publicCorpus.documents.length ? "No portfolio filings have been published yet." : publicScopeBlocked ? "Select at least one published filing to ask a question." : "Questions use the selected published filings.")}{unavailableScope && <> {t("Some saved filings are no longer published. Review your selection.")}</>}{publicCorpus.status === "error" && <button type="button" className="button ghost" onClick={publicCorpus.refresh}>{t("Retry")}</button>}</p>}
             {permissions && compatibilityIssue && <ProfileCompatibilityNotice key={`${activeId}:${compatibilityIssue}`} message={compatibilityIssue} conversationId={activeId} />}
-            {!adminLive && !publicPolicy && <p className="helper" role="status">{t(publicPolicyFailed ? "Server execution limits could not be loaded. Browser defaults are not the applied policy." : "Loading server execution limits…")}{publicPolicyFailed && <button type="button" className="button ghost" onClick={() => setPublicPolicyRevision(value => value + 1)}>{t("Retry")}</button>}</p>}
-            <label className="composer">
-              <textarea ref={composerInput} data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onCompositionStart={() => { composerComposing.current = true; }} onCompositionEnd={() => { composerComposing.current = false; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { if (composerComposing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return; event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
-              <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
-            </label>
+            {!adminLive && !publicPolicy && <p className="helper" role="status">{t(publicPolicyFailed ? "Server execution limits could not be loaded. Browser defaults are not the applied policy." : "Loading server execution limits…")}{publicPolicyFailed && <button type="button" className="button ghost" onClick={retryPublicPolicy}>{t("Retry")}</button>}</p>}
+            <QuestionComposer
+              inputRef={composerInput}
+              query={query}
+              onQueryChange={setQuery}
+              onSubmit={() => void submit()}
+              sendDisabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked}
+            />
 
             {settingsValidationError && <p role="alert" className="notice error">{t(settingsValidationError)} <button type="button" className="inline-link" onClick={() => openConversationSettings("retrieval")}>{t("Open settings")}</button></p>}
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
@@ -1217,7 +811,7 @@ function ServiceSession() {
           readiness={runtimeHealth.readiness}
           healthKind={runtimeHealth.kind}
           connectionPending={runtimeHealth.waiting}
-          profile={resolvedRetrievalProfile(activeSessionProfile)}
+          profile={resolvedRetrievalProfile(activeSessionProfile, builtins)}
           jobBoard={operatorJobs.board}
           jobsLoading={operatorJobs.loading}
           jobsStale={operatorJobs.stale}
@@ -1242,7 +836,7 @@ function ServiceSession() {
           environment={permissions?.environment}
           live={adminBuild && permissions?.can_run_evaluation === true}
           ready={runtimeHealth.kind === "healthy"}
-          profile={resolvedRetrievalProfile(activeSessionProfile)}
+          profile={resolvedRetrievalProfile(activeSessionProfile, builtins)}
           publicProfile={activeSessionProfile}
           publicScopeBlocked={publicScopeBlocked}
           onProfileChange={updateLabProfile}
@@ -1299,182 +893,4 @@ function ServiceSession() {
     </main>
     </DevPromotionProvider>
   );
-}
-
-interface ReviewMessageProps {
-  onOpenFix?: (category: NonNullable<ChatMessage["failureFix"]>["category"]) => void;
-  message: ChatMessage;
-  catalogMode?: "live" | "published";
-  onStop?: () => void;
-  onSwitchScope?: () => void;
-  onOpenDetails?: (stage?: DisclosureStage) => void;
-  /** The newest message carrying evidence; only that one gets the `review.evidence` help hook. */
-  latestEvidence: boolean;
-  busy: boolean;
-  onMark: (chunkId: number, mode: "pin" | "exclude") => void;
-  onUseSelected: () => void;
-}
-
-/** Verdict pill derived from the terminal label; conversation replies carry no label and get no pill. */
-function verdictPill(message: ChatMessage): { className: string; text: string } | null {
-  if (message.evidenceLabel === "Cited evidence") {
-    const count = message.citations ?? message.evidence?.length ?? 0;
-    return { className: "supported", text: `Supported · ${count} citation${count === 1 ? "" : "s"}` };
-  }
-  if (message.evidenceLabel === "Related evidence — not direct support") return { className: "not-in-docs", text: "Not in documents" };
-  if (message.evidenceLabel === "Retrieved candidates — answer not generated") return { className: "failed", text: "Answer not generated" };
-  const decision = message.execution?.pathDecision;
-  if (isReviewLimitation(decision) && decision?.stopping_reason === "unsupported_request") return { className: "unsupported-request", text: "Unsupported request" };
-  return null;
-}
-
-function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails, onOpenFix }: ReviewMessageProps) {
-  const { t } = useI18n();
-  const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
-  const pill = message.role === "assistant" ? verdictPill(message) : null;
-  const article = useRef<HTMLElement>(null);
-  /** Reveal only this message's evidence list when its report stage links to candidates. */
-  function showEvidence() {
-    const evidence = article.current?.querySelector<HTMLDetailsElement>("details.evidence");
-    if (!evidence) return;
-    evidence.open = true;
-    evidence.querySelector<HTMLElement>("summary")?.focus({ preventScroll: true });
-    evidence.scrollIntoView?.({ block: "nearest" });
-  }
-  return (
-    <article ref={article} className={`message ${message.role}${message.pending ? " pending" : ""}`} data-message-id={message.id} aria-busy={message.pending || undefined}>
-      <div className="message-role">{message.role === "user" ? t("You") : t("DocReview RAG")}</div>
-      <div className="message-body">
-        {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
-        {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} catalogMode={catalogMode} />}
-        {message.role === "assistant" ? (message.text ? <MarkdownMessage>{isReviewLimitation(message.execution?.pathDecision) ? reviewLimitationMessage(message.execution!.pathDecision!, t) : message.scopeFailure ? t("Query scope metadata is unavailable.") : isInterruptionNotice(message) ? t(INTERRUPTION_NOTICE) : message.evidenceLabel === "Retrieved candidates — answer not generated" ? t(message.text) : message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
-        {message.scopeFailure && <ScopeFailureSummary message={message} developer={catalogMode === "live"} onOpenFix={onOpenFix} />}
-        {message.execution && <div className="review-execution-wrap"><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps showDetailsAction={false} catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{onOpenDetails && <div className="review-stage-actions"><button className="button review-summary-action" type="button" data-run-details-open onClick={() => onOpenDetails()}>{t("Open run details")}<ArrowUpRight size={14} aria-hidden="true" /></button></div>}</div>}
-        {message.evidence?.length ? (
-          <>
-            <details className="evidence" data-help={latestEvidence ? "review.evidence" : undefined}>
-              <summary data-tour="evidence-toggle">{t(message.evidenceLabel === "Cited evidence" ? "Retrieved evidence candidates" : message.evidenceLabel ?? "Retrieved candidates")} · {message.evidence.length}</summary>
-              <EvidenceCandidates key={message.id} message={message} busy={busy} onMark={onMark} onUseSelected={onUseSelected} />
-            </details>
-          </>
-        ) : null}
-        {message.role === "assistant" && !message.execution && (message.performance || message.diagnostics?.length || message.trace) && onOpenDetails && <button className="button ghost" type="button" data-run-details-open data-help="review.run-trace" onClick={() => onOpenDetails()}>{t("Run details")}</button>}
-      </div>
-    </article>
-  );
-}
-
-function isInfrastructureFailure(reason: unknown): boolean {
-  return reason instanceof TypeError || (
-    reason instanceof ApiError
-    && ["database_unavailable", "service_unavailable"].includes(reason.code)
-  );
-}
-
-function healthBadge(kind: ReturnType<typeof useRuntimeHealth>["kind"]): string {
-  if (kind === "healthy") return "ready";
-  if (kind === "checking") return "unknown";
-  return "degraded";
-}
-
-function healthLabel(kind: ReturnType<typeof useRuntimeHealth>["kind"]): string {
-  return kind === "api_down" ? "API down" : kind.replace("_", " ");
-}
-
-export function terminalAnswer(payload: Record<string, unknown>): string {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = root.report as Record<string, unknown> | null;
-  if (report?.report_kind === "conversation" && typeof report.answer === "string") return report.answer;
-  if (report?.label === "SUPPORTED" && typeof report.answer === "string") return report.answer;
-  if (report?.label === "NOT_IN_DOCS") {
-    // The card adds the "related evidence" notice itself, so the text carries only the rationale.
-    return typeof report.rationale === "string" ? report.rationale : "The filings do not contain direct support for this question.";
-  }
-  const failure = root.failure as Record<string, unknown> | null;
-  if (failure) return failureMessage(failure);
-  throw new Error("Review completed without a valid terminal report or failure.");
-}
-
-/** Evidence label for a terminal report; conversation replies and other unlabelled reports get none. */
-function terminalEvidenceLabel(payload: Record<string, unknown>): ChatMessage["evidenceLabel"] {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = root.report as Record<string, unknown> | null;
-  if (report?.label === "SUPPORTED") return "Cited evidence";
-  if (report?.label === "NOT_IN_DOCS") return "Related evidence — not direct support";
-  if (report) return undefined;
-  return "Retrieved candidates — answer not generated";
-}
-
-/** Citations the report made, as opposed to the candidate pool the stream sent earlier. */
-function terminalCitationCount(payload: Record<string, unknown>): number | undefined {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = root.report as Record<string, unknown> | null;
-  return Array.isArray(report?.citations) ? report.citations.length : undefined;
-}
-
-function extractTrace(payload: Record<string, unknown>): string {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const values = ["status", "total_requests", "total_input_tokens", "total_output_tokens", "total_time_seconds"];
-  return values.filter((key) => root[key] !== undefined).map((key) => `${key}=${String(root[key])}`).join(" · ");
-}
-
-const RUN_FACTS: ReadonlyArray<readonly [string, string]> = [
-  ["status", "Status"],
-  ["run_id", "Run id"],
-  ["iterations", "Iterations"],
-  ["total_requests", "Provider requests"],
-  ["total_input_tokens", "Input tokens"],
-  ["total_output_tokens", "Output tokens"],
-  ["total_estimated_cost_usd", "Estimated cost"],
-  ["total_time_seconds", "Elapsed seconds"],
-];
-
-/** Failure fields worth naming, keyed by the shape that carries them. */
-const FAILURE_FACTS: ReadonlyArray<readonly [string, string]> = [
-  ["code", "Failure"],
-  ["resource", "Exhausted resource"],
-  ["limit", "Limit"],
-  ["observed", "Observed"],
-  ["blocked_node", "Blocked at"],
-  ["status", "Provider status"],
-  ["node", "Node"],
-  ["attempts", "Attempts"],
-  ["error_type", "Error type"],
-  ["message", "Message"],
-];
-
-/**
- * Flatten one terminal response into labelled rows.
- *
- * The run identifier is included deliberately: it is the only handle a reader has for
- * correlating a failure with `/runs/{id}` and its step traces, and the browser was
- * discarding it. Node paths are joined rather than dropped so the route a run took
- * before failing is visible.
- */
-/** The settings destination for a terminal failure, when the failure names one. */
-function terminalFailureFix(payload: Record<string, unknown>): ChatMessage["failureFix"] {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const failure = root.failure as Record<string, unknown> | null;
-  return failure ? failureReport(failure).fix : undefined;
-}
-
-function runDiagnostics(payload: Record<string, unknown>): Array<{ label: string; value: string }> {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const rows: Array<{ label: string; value: string }> = [];
-  for (const [key, label] of RUN_FACTS) {
-    if (root[key] !== undefined && root[key] !== null) rows.push({ label, value: String(root[key]) });
-  }
-  if (Array.isArray(root.node_path) && root.node_path.length) {
-    rows.push({ label: "Node path", value: root.node_path.join(" → ") });
-  }
-  const failure = root.failure as Record<string, unknown> | null;
-  if (failure) {
-    for (const [key, label] of FAILURE_FACTS) {
-      if (failure[key] !== undefined && failure[key] !== null) rows.push({ label, value: String(failure[key]) });
-    }
-    if (Array.isArray(failure.details) && failure.details.length) {
-      rows.push({ label: "Details", value: failure.details.map(String).join(" · ") });
-    }
-  }
-  return rows;
 }

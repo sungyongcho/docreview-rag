@@ -10,8 +10,6 @@ function operatorToken() {
   return process.env.NEXT_PUBLIC_OPERATOR_TOKEN ?? "";
 }
 
-export type OperatorJobStatus = "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
-
 /** The sidecar schema owns command metadata; retain the existing category union. */
 export type OperatorCommand = Omit<OperatorComponents["schemas"]["CommandResource"], "category"> & {
   category: "inspect" | "verify" | "service";
@@ -28,7 +26,7 @@ export interface OperatorJob {
   job_id: string;
   command_id: string;
   label: string;
-  status: OperatorJobStatus;
+  status: OperatorComponents["schemas"]["JobStatus"];
   output: string;
   exit_code: number | null;
   started_at: string;

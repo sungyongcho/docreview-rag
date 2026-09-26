@@ -1,11 +1,9 @@
 "use client";
 import { closeSidePanel } from "./side-panel-motion";
 import { SnapshotDetailDrawer } from "./snapshot-detail-drawer";
-import { PublicQualityAccess } from "./public-quality-access";
 import { PublicEvaluationWorkspace } from "./public-evaluation-workspace";
 
 import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
-import { DevLockedButton } from "@/components/dev-locked-button";
 import { useConfirmation } from "./use-confirmation";
 import { DatasetLock } from "./dataset-lock";
 import { ParameterHelp } from "./parameter-help";
@@ -24,7 +22,8 @@ import { translate, useI18n, type Locale } from "@/lib/i18n";
 
 import { RetainedPanel } from "@/components/retained-panel";
 import { DevelopmentBadge } from "@/components/development-badge";
-import { WorkflowHelp } from "@/components/workflow-help";
+import { MeasureHeading } from "@/components/measure-heading";
+import { UnsavedGoldenDialog } from "@/components/unsaved-golden-dialog";
 
 import "./evaluation-workspace.css";
 
@@ -65,7 +64,6 @@ import type {
   SnapshotComparison,
   SuiteId,
 } from "@/lib/types";
-import { deploymentLabel } from "@/lib/deployment";
 import { loadExperimentDefaults, saveExperimentDefaults, resetExperimentDefaults } from "@/lib/storage";
 import { RetrievalPresetManager } from "./retrieval-preset-manager";
 import { Metric } from "@/components/metric";
@@ -75,7 +73,7 @@ import { useNotifications } from "@/components/notifications";
 
 export type MeasureTab = "playground" | "golden" | "runs" | "compare" | "snapshots" | "presets";
 
-export interface MeasureWorkspaceProps {
+interface MeasureWorkspaceProps {
   publicProfile?: import("@/lib/types").ReviewSessionDraft;
   publicScopeBlocked?: boolean;
   capabilities?: Capabilities | null;
@@ -189,25 +187,6 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
   const [goldenIssues, setGoldenIssues] = useState<GoldenFieldError[]>([]);
   const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null);
   const listScroll = useRef(0);
-  const leaveDialog = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!leaveAction) return;
-    const previous = document.activeElement as HTMLElement | null;
-    const overlay = leaveDialog.current?.parentElement;
-    const background = [...document.body.children].filter(element => element !== overlay);
-    const before = background.map(element => element.hasAttribute("inert"));
-    background.forEach(element => element.setAttribute("inert", ""));
-    function keys(event: KeyboardEvent) {
-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setLeaveAction(null); }
-      if (event.key === "Tab") {
-        const buttons = [...(leaveDialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
-        if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons.at(-1)?.focus(); }
-        else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0]?.focus(); }
-      }
-    }
-    document.addEventListener("keydown", keys, true);
-    return () => { document.removeEventListener("keydown", keys, true); background.forEach((element, i) => { if (!before[i]) element.removeAttribute("inert"); }); previous?.focus({ preventScroll: true }); };
-  }, [leaveAction]);
   function requestGoldenLeave(action: () => void) {
     if (goldenDirty) setLeaveAction(() => action); else action();
   }
@@ -317,7 +296,6 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
 
   async function refresh() {
     if (!live) return;
-    void refreshJobs();
     try {
       const [suiteRows, snapshotRows] = await Promise.all([getGoldenSuites(), getAdminSnapshots()]);
       setSuites(Array.isArray(suiteRows) ? suiteRows : []);
@@ -573,10 +551,7 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
     snapshotSaving.current = true;
     setSavingSnapshot(true); setSavedSnapshotResult(null); setFailedSnapshotResult(null);
     try {
-      const identity = resultDetail?.config.admin_identity;
-      const goldenSha = typeof identity === "object" && identity !== null ? (identity as Record<string, unknown>).golden_sha256 : resultDetail?.config.golden_sha256;
-      const revision = goldenRevisions.find((item) => item.status === "published" && item.sha256 === goldenSha);
-      const created = await createSnapshot({ label: snapshotLabel.trim(), eval_result_id: selectedResultId, golden_revision_id: revision?.status === "published" ? revision.revision_id : null, public: false });
+      const created = await createSnapshot({ label: snapshotLabel.trim(), eval_result_id: selectedResultId, public: false });
       setSnapshots((current) => [created, ...current.filter(item => item.snapshot_id !== created.snapshot_id)]);
       if (snapshotResult.current === resultId) setSnapshotLabel("");
       setSavedSnapshotResult(resultId);
@@ -748,32 +723,20 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
   }
 
   const datasetSelect = (helpId: string) => <label data-help={helpId}>{t("Golden suite")}<select disabled={goldenBusy} value={selectedGoldenRevision ? `file:${selectedGoldenRevision}` : suiteId} onChange={event => selectDataset(event.target.value)}>{suites.map(suite => <option key={suite.suite_id} value={suite.suite_id}>{suite.title ?? suite.filename} · {suite.filename} ({t("Built-in")})</option>)}{allGoldenFiles.map(file => <option key={file.revision_id} value={`file:${file.revision_id}`}>{file.filename}</option>)}</select></label>;
-  // A public surface learns dataset names only from the published snapshots it can read.
-  const publicSuites = useMemo(() => { const seen = new Map<string, string>(); for (const snapshot of snapshots) { const id = snapshot.eval_result?.suite; if (id && !seen.has(id)) seen.set(id, snapshot.suite_title ?? id); } return [...seen.entries()]; }, [snapshots]);
 
   return (
     <section className={`lab-shell measure-workspace${tab === "golden" && goldenDetailOpen ? " golden-editing" : ""}`}>{confirmationDialog}
-      <header hidden={tab === "golden" && goldenDetailOpen} className="page-heading">
-        <div><p className="eyebrow">{t("Measure")}</p><h1>{t("Measure retrieval before trusting it.")}</h1></div>
-        <div className="page-badges">{environment && <span className="mode-badge">{deploymentLabel(environment)}</span>}<span className={`mode-badge ${live ? "live" : ""}`}>{live ? t("Local operator") : t("Read-only portfolio")}</span></div>
-      </header>
-      <nav hidden={tab === "golden" && goldenDetailOpen} className="lab-tabs workflow-tabs measure-tab-strip" aria-label={t("Measure sections")}>
-        <div className="measure-tab-group measure-workflow-group" role="group" aria-label={t("Evaluation workflow")}>
-          {([["playground", "Search trial"], ["golden", "Golden dataset"], ["runs", "Run evaluation"], ["compare", "Compare & snapshots"]] as const).map(([id, label], index) => <button key={id} type="button" aria-pressed={tab === id || (id === "compare" && tab === "snapshots")} onClick={() => changeTab(id)}><span className="measure-step-chip" aria-hidden="true">{index + 1}</span>{t(label)}</button>)}
-        </div>
-        <div className="measure-tab-group measure-management-group" role="group" aria-label={t("Manage")}>
-          <span className="measure-management-caption" aria-hidden="true">{t("Manage")}</span>
-          <button type="button" aria-pressed={tab === "presets"} onClick={() => changeTab("presets")}>{t("Presets")}</button>
-        </div>
-      </nav>
-      <div className="workflow-section-heading" data-help={tab === "presets" ? "measure.presets.manage" : undefined}><h2>{tab === "presets" ? t("Retrieval presets") : tab === "playground" ? t("Search trial") : tab === "golden" ? t("Prepare a golden dataset") : tab === "runs" ? t("Run evaluation") : tab === "snapshots" ? t(live ? "Snapshot management" : "Published snapshots") : t("Compare evaluation results")}</h2>{live && ["golden", "runs"].includes(tab) && <DevelopmentBadge locale={locale} compact />}<WorkflowHelp active={active} screen={`measure.${tab}`} capabilities={capabilities} /></div>
-      {(live || tab === "playground" || tab === "presets") && <p className="data-origin">{t(live ? "Live workspace · results come from recorded runs" : tab === "playground" ? "Live search within the selected published scope" : "Explore published records. Reading and filtering do not run an evaluation.")}</p>}
-      {!live && !(tab === "golden" && goldenDetailOpen) && (tab === "golden" || tab === "runs" || tab === "compare" || tab === "snapshots") && <PublicQualityAccess section={tab} />}
-      {(live || tab === "playground" || tab === "presets") && <p className="workflow-intro">{tab === "presets" ? t("Create reusable search settings, then select them in a conversation.") : tab === "playground" ? t("Try one question and inspect its evidence before evaluating a whole dataset.") : tab === "golden" ? t(live ? "Select a JSON dataset and inspect its questions. Create a separate file to edit, save changes, then check format and sources." : "Inspect published questions and expected evidence. Editing runs in DEV mode.") : tab === "runs" ? t("Choose the questions and search settings to measure. A run records what was tested and how well the evidence was retrieved.") : tab === "snapshots" ? t("A snapshot preserves search data and an evaluation result so you can reuse a known configuration later.") : t("Choose a baseline and a candidate. Compare evidence hits, rank, and latency. Saving a snapshot is optional.")}</p>}
-      {(tab === "compare" || tab === "snapshots") && <nav className="result-tabs"><button type="button" aria-pressed={tab === "compare"} onClick={() => changeTab("compare")}>{t("Compare results")}</button><button type="button" aria-pressed={tab === "snapshots"} onClick={() => changeTab("snapshots")}>{t(live ? "Snapshot management" : "Published snapshots")}</button></nav>}
+      <MeasureHeading tab={tab} goldenEditing={tab === "golden" && goldenDetailOpen} live={live} active={active} environment={environment} capabilities={capabilities} onSelectTab={changeTab} />
 
 
-      {leaveAction && createPortal(<div className="golden-leave-backdrop"><section ref={leaveDialog} role="dialog" aria-modal="true" aria-label={t("Unsaved question changes")} className="golden-leave-dialog"><h2>{t("Unsaved question changes")}</h2><p>{t("Save this draft before leaving?")}</p><div className="action-row"><button autoFocus type="button" className="button" onClick={() => setLeaveAction(null)}>{t("Continue editing")}</button><button type="button" className="button" disabled={goldenBusy} onClick={() => { const action = leaveAction; setGoldenCaseJson(savedGoldenJson); setGoldenIssues([]); setGoldenError(""); setLeaveAction(null); onLeaveGuard?.(null); action(); }}>{t("Discard and leave")}</button><button type="button" className="button primary" disabled={goldenBusy || !parsedGoldenCase} onClick={async () => { const action = leaveAction; if (await saveSelectedGoldenCase()) { setLeaveAction(null); onLeaveGuard?.(null); action(); } else { setLeaveAction(null); } }}>{t("Save draft and leave")}</button></div></section></div>, document.body)}
+      {leaveAction && <UnsavedGoldenDialog
+        leaveAction={leaveAction}
+        busy={goldenBusy}
+        canSave={Boolean(parsedGoldenCase)}
+        onContinueEditing={() => setLeaveAction(null)}
+        onDiscard={() => { const action = leaveAction; setGoldenCaseJson(savedGoldenJson); setGoldenIssues([]); setGoldenError(""); setLeaveAction(null); onLeaveGuard?.(null); action(); }}
+        onSave={async () => { const action = leaveAction; if (await saveSelectedGoldenCase()) { setLeaveAction(null); onLeaveGuard?.(null); action(); } else { setLeaveAction(null); } }}
+      />}
       {tab === "presets" && <RetrievalPresetManager profile={profile} onApply={onApplyProfile} canApply={capabilities?.can_change_custom_retrieval ?? live} />}
 
       <RetainedPanel active={tab === "playground"}><Playground live={live} profile={profile} publicProfile={publicProfile} publicScopeBlocked={publicScopeBlocked} onProfileChange={onProfileChange} onOpenSnapshots={() => changeTab("snapshots")} /></RetainedPanel>
@@ -782,18 +745,15 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
         {goldenDetailOpen && <GoldenQuestionEditor filename={selectedFile?.filename ?? ""} registry={fileRegistry} onDelete={goldenReadOnly || !selectedGoldenCase ? undefined : () => void deleteGoldenQuestion(selectedGoldenCase, { confirmed: true })} json={goldenCaseJson} readOnly={goldenReadOnly} dirty={goldenDirty} busy={goldenBusy} error={goldenError} issues={goldenIssues} onChange={json => { setGoldenCaseJson(json); setGoldenError(""); setGoldenIssues([]); }} onReload={() => void reloadGoldenQuestion()} onSave={() => void saveSelectedGoldenCase()} onBack={closeGoldenDetails} onParsing={onOpenPreparation ? () => requestGoldenLeave(() => { setGoldenDetailOpen(false); onOpenPreparation(2); }) : undefined} />}
 
         <section hidden={goldenDetailOpen} className="surface form-stack golden-controls evaluation-golden-controls">
-          {live && <div className="golden-dataset-selector">{datasetSelect("measure.golden.suite")}<button type="button" className="button" disabled={goldenBusy || goldenDirty} onClick={() => setDraftFormOpen(value => !value)}><Plus size={15} />{t("Create draft")}</button></div>}
+          <div className="golden-dataset-selector">{datasetSelect("measure.golden.suite")}<button type="button" className="button" disabled={goldenBusy || goldenDirty} onClick={() => setDraftFormOpen(value => !value)}><Plus size={15} />{t("Create draft")}</button></div>
           {draftFormOpen && <div className="golden-draft-form"><label>{t("JSON filename")}<input value={draftFilename} placeholder="my-evaluation.json" onChange={event => setDraftFilename(event.target.value)} /></label><label>{t("Starting content")}<select value={emptyDraft ? "empty" : "copy"} onChange={event => setEmptyDraft(event.target.value === "empty")}><option value="copy">{t("Copy selected dataset")}</option><option value="empty">{t("Empty dataset")}</option></select></label><button type="button" className="button primary" disabled={goldenBusy || !draftFilename.trim().endsWith(".json")} onClick={() => void newGoldenDraft()}>{t("Create file")}</button><button type="button" className="button ghost" onClick={() => setDraftFormOpen(false)}>{t("Cancel")}</button></div>}
-          {live && <div className="golden-file golden-file-inline" data-help="measure.golden.revision"><div className="golden-file-header"><FileJson size={18} aria-hidden="true" /><div className="golden-file-identity"><strong className="golden-file-title">{selectedFile?.filename ?? t("Loading…")}{!activeGoldenRevision && <DatasetLock />}</strong><div className="golden-file-traits">{fileRegistry.toUpperCase()} · {t(fileLanguage === "en" ? "English" : fileLanguage === "ko" ? "Korean" : fileLanguage === "mixed" ? "English / Korean" : fileLanguage)} · {t("Question count: {count}", { count: activeGoldenCases.length })}{!activeGoldenRevision && <span className="golden-builtin-badge">{t("Built-in")}</span>}</div></div><button className="button ghost" type="button" disabled={!selectedFile} aria-expanded={sourceJsonOpen} aria-controls={sourceJsonOpen ? sourceJsonId : undefined} onClick={() => setSourceJsonOpen(value => !value)}>{t("View source JSON")}<ChevronDown size={15} aria-hidden="true" /></button>{activeGoldenRevision && <button className="button ghost golden-file-delete" type="button" disabled={goldenBusy || goldenDirty} aria-label={t("Delete dataset file")} title={t("Delete dataset file")} onClick={() => void deleteGoldenFile()}><Trash2 size={15} aria-hidden="true" /></button>}</div>{sourceJsonOpen && selectedFile && <div id={sourceJsonId} className="source-json"><h3>{t("Source JSON · read-only")}</h3><code>SHA-256 · {selectedFile.sha256}</code><pre>{JSON.stringify("file_content" in selectedFile ? selectedFile.file_content : selectedFile.payload, null, 2)}</pre></div>}</div>}
-          {live && active && tab === "golden" && <GoldenPreparation request={evaluationRequest} onOpenSources={onOpenPreparation ? () => onOpenPreparation(1) : undefined} />}
-          {!live && <div className="golden-public-list"><p className="helper">{t("Built-in evaluation datasets behind the published snapshots. Editing and new drafts run in DEV mode.")}</p>
-            {publicSuites.length ? <ul className="golden-public-suites">{publicSuites.map(([id, title]) => <li key={id}><FileJson size={15} aria-hidden="true" /><strong>{title}</strong><span className="mode-badge">{t("Built-in")}</span></li>)}</ul> : <p className="helper">{t("No published snapshot names a dataset yet.")}</p>}
-            <div className="action-row"><DevLockedButton reason="golden"><Plus size={15} />{t("Create draft")}</DevLockedButton><DevLockedButton reason="evaluation" className="button primary">{t("Evaluate this dataset")}</DevLockedButton></div>
-          </div>}
+          <div className="golden-file golden-file-inline" data-help="measure.golden.revision"><div className="golden-file-header"><FileJson size={18} aria-hidden="true" /><div className="golden-file-identity"><strong className="golden-file-title">{selectedFile?.filename ?? t("Loading…")}{!activeGoldenRevision && <DatasetLock />}</strong><div className="golden-file-traits">{fileRegistry.toUpperCase()} · {t(fileLanguage === "en" ? "English" : fileLanguage === "ko" ? "Korean" : fileLanguage === "mixed" ? "English / Korean" : fileLanguage)} · {t("Question count: {count}", { count: activeGoldenCases.length })}{!activeGoldenRevision && <span className="golden-builtin-badge">{t("Built-in")}</span>}</div></div><button className="button ghost" type="button" disabled={!selectedFile} aria-expanded={sourceJsonOpen} aria-controls={sourceJsonOpen ? sourceJsonId : undefined} onClick={() => setSourceJsonOpen(value => !value)}>{t("View source JSON")}<ChevronDown size={15} aria-hidden="true" /></button>{activeGoldenRevision && <button className="button ghost golden-file-delete" type="button" disabled={goldenBusy || goldenDirty} aria-label={t("Delete dataset file")} title={t("Delete dataset file")} onClick={() => void deleteGoldenFile()}><Trash2 size={15} aria-hidden="true" /></button>}</div>{sourceJsonOpen && selectedFile && <div id={sourceJsonId} className="source-json"><h3>{t("Source JSON · read-only")}</h3><code>SHA-256 · {selectedFile.sha256}</code><pre>{JSON.stringify("file_content" in selectedFile ? selectedFile.file_content : selectedFile.payload, null, 2)}</pre></div>}</div>
+          {active && tab === "golden" && <GoldenPreparation request={evaluationRequest} onOpenSources={onOpenPreparation ? () => onOpenPreparation(1) : undefined} />}
+
         </section>
         <section hidden={goldenDetailOpen} ref={goldenSplit.workspaceRef} className="surface golden-manager" data-help="measure.golden.questions">
-          <div className="surface-heading"><div><h2>{live ? t("Golden questions") : t("Latest comparison")}</h2>{live && <p className="helper">{activeGoldenRevision ? t(activeGoldenRevision.status === "validated" ? "Source checks passed" : "Editable draft") : t("Built-in golden set")}{goldenScoreResult ? ` · ${evaluationSettings(goldenScoreResult.config, locale)} · ${new Date(goldenScoreResult.created_at).toLocaleString(locale)}` : t(" · no evaluation result selected")}</p>}</div>{live && <div className="action-row golden-question-actions">{!goldenReadOnly && <><button className="button" type="button" disabled={goldenBusy || goldenDirty} onClick={addGoldenQuestion}><Plus size={14} />{t("Add question")}</button><button className="button" type="button" disabled={goldenBusy || goldenDirty || !activeGoldenCases.length} onClick={() => void changeGoldenStatus("validate")}>{t("Check format and sources")}</button></>}<button className="button primary" type="button" disabled={goldenBusy || goldenDirty} onClick={prepareEvaluation}>{t("Evaluate this dataset")}</button></div>}</div>
-          {live ? <><div className="golden-table-tools"><input aria-label={t("Search golden cases")} placeholder={t("Search ID, question, category, facet, or tag")} value={goldenCaseQuery} onChange={(event) => setGoldenCaseQuery(event.target.value)} /><select aria-label={t("Sort golden cases")} value={goldenCaseSort} onChange={(event) => setGoldenCaseSort(event.target.value)}><option value="id">{t("ID")}</option><option value="question">{t("Question")}</option><option value="category">{t("Category")}</option><option value="facet">{t("Facet")}</option></select></div><div id={goldenSplit.listPanelId} ref={goldenSplit.listRef} className="golden-table-scroll"><table><thead><tr><th>{t("ID")}</th><th>{t("Question")}</th><th>{t("Category")}</th><th>{t("Facet")}</th><th>{t("Tags")}</th>{goldenScoreResult && <><th>{t("Eval")}</th><th>{t("First rank")}</th><th>{t("RR")}</th></>}{!goldenReadOnly && <th className="golden-row-actions"><span className="sr-only">{t("Actions")}</span></th>}</tr></thead><tbody>{visibleGoldenCases.map((item) => { const score = goldenScoreResult?.cases.find((value) => value.case_id === item.id); const rank = score?.first_relevant_rank ?? null; return <tr key={String(item.id)} tabIndex={0} onClick={() => openGoldenCase(item)} onKeyDown={(event) => { if (event.key === "Enter") openGoldenCase(item); }} className={selectedGoldenCase === String(item.id) ? "selected" : ""}><td><span className="golden-id-cell"><button type="button" className="row-detail" onClick={(event) => { event.stopPropagation(); openGoldenCase(item); }}>{String(item.id)}</button>{activeGoldenRevision && ((activeGoldenRevision.completion?.[String(item.id)]?.length ?? 0) > 0 ? <span className="golden-case-flag incomplete"><TriangleAlert size={11} aria-hidden="true" />{t("Incomplete")}</span> : <span className="golden-case-flag" title={t("Input complete")}><Check size={11} aria-hidden="true" />{t("Input complete")}</span>)}</span></td><td>{String(item.question) || t("Untitled question")}</td><td>{item.category == null ? "—" : t(String(item.category))}</td><td>{t(String(item.facet))}</td><td>{Array.isArray(item.tags) && item.tags.length ? item.tags.join(", ") : "—"}</td>{goldenScoreResult && <><td>{score ? rank ? t("hit") : t("miss") : t("not run")}</td><td>{rank ?? "—"}</td><td>{score ? (rank ? 1 / rank : 0).toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false }) : "—"}</td></>}{!goldenReadOnly && <td className="golden-row-actions"><button type="button" className="golden-row-delete" aria-label={t("Delete question {p0}", { p0: String(item.id) })} title={t("Delete question")} disabled={goldenBusy} onClick={(event) => { event.stopPropagation(); void deleteGoldenQuestion(String(item.id)); }}><Trash2 size={13} aria-hidden="true" /></button></td>}</tr>; })}</tbody></table></div>{!visibleGoldenCases.length && <p className="helper">{t("No questions match this filter.")}</p>}</> : (comparison?.metrics ?? []).map((metric) => <div className="metric-row" key={metric.name}><span>{metric.name}</span><strong>{metric.candidate.toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false })}</strong><em className={metric.delta >= 0 ? "positive" : "negative"}>{metric.delta >= 0 ? "+" : ""}{metric.delta.toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false })}</em></div>)}
+          <div className="surface-heading"><div><h2>{t("Golden questions")}</h2><p className="helper">{activeGoldenRevision ? t(activeGoldenRevision.status === "validated" ? "Source checks passed" : "Editable draft") : t("Built-in golden set")}{goldenScoreResult ? ` · ${evaluationSettings(goldenScoreResult.config, locale)} · ${new Date(goldenScoreResult.created_at).toLocaleString(locale)}` : t(" · no evaluation result selected")}</p></div><div className="action-row golden-question-actions">{!goldenReadOnly && <><button className="button" type="button" disabled={goldenBusy || goldenDirty} onClick={addGoldenQuestion}><Plus size={14} />{t("Add question")}</button><button className="button" type="button" disabled={goldenBusy || goldenDirty || !activeGoldenCases.length} onClick={() => void changeGoldenStatus("validate")}>{t("Check format and sources")}</button></>}<button className="button primary" type="button" disabled={goldenBusy || goldenDirty} onClick={prepareEvaluation}>{t("Evaluate this dataset")}</button></div></div>
+          <div className="golden-table-tools"><input aria-label={t("Search golden cases")} placeholder={t("Search ID, question, category, facet, or tag")} value={goldenCaseQuery} onChange={(event) => setGoldenCaseQuery(event.target.value)} /><select aria-label={t("Sort golden cases")} value={goldenCaseSort} onChange={(event) => setGoldenCaseSort(event.target.value)}><option value="id">{t("ID")}</option><option value="question">{t("Question")}</option><option value="category">{t("Category")}</option><option value="facet">{t("Facet")}</option></select></div><div id={goldenSplit.listPanelId} ref={goldenSplit.listRef} className="golden-table-scroll"><table><thead><tr><th>{t("ID")}</th><th>{t("Question")}</th><th>{t("Category")}</th><th>{t("Facet")}</th><th>{t("Tags")}</th>{goldenScoreResult && <><th>{t("Eval")}</th><th>{t("First rank")}</th><th>{t("RR")}</th></>}{!goldenReadOnly && <th className="golden-row-actions"><span className="sr-only">{t("Actions")}</span></th>}</tr></thead><tbody>{visibleGoldenCases.map((item) => { const score = goldenScoreResult?.cases.find((value) => value.case_id === item.id); const rank = score?.first_relevant_rank ?? null; return <tr key={String(item.id)} tabIndex={0} onClick={() => openGoldenCase(item)} onKeyDown={(event) => { if (event.key === "Enter") openGoldenCase(item); }} className={selectedGoldenCase === String(item.id) ? "selected" : ""}><td><span className="golden-id-cell"><button type="button" className="row-detail" onClick={(event) => { event.stopPropagation(); openGoldenCase(item); }}>{String(item.id)}</button>{activeGoldenRevision && ((activeGoldenRevision.completion?.[String(item.id)]?.length ?? 0) > 0 ? <span className="golden-case-flag incomplete"><TriangleAlert size={11} aria-hidden="true" />{t("Incomplete")}</span> : <span className="golden-case-flag" title={t("Input complete")}><Check size={11} aria-hidden="true" />{t("Input complete")}</span>)}</span></td><td>{String(item.question) || t("Untitled question")}</td><td>{item.category == null ? "—" : t(String(item.category))}</td><td>{t(String(item.facet))}</td><td>{Array.isArray(item.tags) && item.tags.length ? item.tags.join(", ") : "—"}</td>{goldenScoreResult && <><td>{score ? rank ? t("hit") : t("miss") : t("not run")}</td><td>{rank ?? "—"}</td><td>{score ? (rank ? 1 / rank : 0).toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false }) : "—"}</td></>}{!goldenReadOnly && <td className="golden-row-actions"><button type="button" className="golden-row-delete" aria-label={t("Delete question {p0}", { p0: String(item.id) })} title={t("Delete question")} disabled={goldenBusy} onClick={(event) => { event.stopPropagation(); void deleteGoldenQuestion(String(item.id)); }}><Trash2 size={13} aria-hidden="true" /></button></td>}</tr>; })}</tbody></table></div>{!visibleGoldenCases.length && <p className="helper">{t("No questions match this filter.")}</p>}
           <p className="helper">{t("Hit, first rank, and reciprocal rank measure retrieval—not final-answer factuality.")}</p>
         </section>
       </>}</RetainedPanel>

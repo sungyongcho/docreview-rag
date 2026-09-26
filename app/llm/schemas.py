@@ -370,7 +370,9 @@ class ProviderRefusal(StrictSchema):
 
     status: Literal["provider_refused", "provider_error"]
     message: NonBlank
-    attempts: Annotated[StrictInt, Field(ge=1, le=2)]
+    #: Requests actually sent; zero when a local precondition of the call refused it
+    #: before anything reached the provider.
+    attempts: Annotated[StrictInt, Field(ge=0, le=2)]
 
 
 type CompletionFailure = SchemaRejected | BudgetExceeded | ProviderRefusal
@@ -395,19 +397,10 @@ class ProviderMetadata(StrictSchema):
     raw_outputs: tuple[StrictStr, ...]
     local_timings: tuple[LocalModelTiming, ...] = ()
     #: Requests actually sent to the provider: one per raw output, or zero when the only
-    #: attempt was refused before the call. Defaults to the captured attempts.
+    #: attempt was refused before the call.
     requests: NonNegativeInt
     #: Set when the final attempt was refused before the call from its projected size.
     projected_input_tokens: NonNegativeInt | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def default_requests(cls, data: object) -> object:
-        """Count one request per captured raw output unless the caller states otherwise."""
-        if isinstance(data, dict) and data.get("requests") is None:
-            outputs = data.get("raw_outputs")
-            data = {**data, "requests": len(outputs) if isinstance(outputs, tuple | list) else 1}
-        return data
 
     @model_validator(mode="after")
     def validate_attempt_metadata(self) -> Self:

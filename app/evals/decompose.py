@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Sequence
 import logging
-from typing import TYPE_CHECKING, Annotated, NamedTuple, Self
+from typing import TYPE_CHECKING, Annotated, Self
 
 from pydantic import Field, StrictStr
 from pydantic.functional_validators import model_validator
 
+from app.db.session_factory import SessionFactory
+from app.evals.types import Decomposition, EvaluationRetrieval
 from app.llm.schemas import Prompt, ProviderBudget, StrictSchema
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K, fuse_ranked_lists
@@ -17,12 +18,9 @@ from app.retrieval.service import retrieve
 from app.retrieval.types import ChunkHit
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
+    from app.evals.arms import Retriever
     from app.llm.provider import LLMProvider
 
-type Retriever = Callable[[str, int], Awaitable[Sequence[ChunkHit]]]
-type SessionFactory = Callable[[], AsyncSession]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,19 +50,6 @@ class QueryDecomposition(StrictSchema):
         if len(set(normalized)) != len(normalized):
             raise ValueError("sub-questions must be unique")
         return self
-
-
-class Decomposition(NamedTuple):
-    """Sub-questions plus the provider status that produced them.
-
-    ``fallback_status`` is ``None`` when the LLM decomposed the question, and the
-    provider's failure status when the original question is being used unchanged
-    — so a caller can tell an intended refusal-degradation from an outage instead
-    of reading identical results from both.
-    """
-
-    sub_questions: tuple[str, ...]
-    fallback_status: str | None
 
 
 async def decompose_query(
@@ -168,7 +153,7 @@ def make_decomposed_retriever(
             )
             return result.hits
 
-    async def retrieve_decomposed(question: str, k: int) -> Sequence[ChunkHit]:
+    async def retrieve_decomposed(question: str, k: int) -> EvaluationRetrieval:
         """Decompose one question, retrieve each sub-question concurrently, and fuse."""
         decomposition = await decompose_query(
             question,
@@ -184,6 +169,9 @@ def make_decomposed_retriever(
         ranked_lists = await asyncio.gather(
             *(retrieve_one(sub_question, k) for sub_question in decomposition.sub_questions)
         )
-        return fuse_ranked_lists(ranked_lists, k, rrf_k=rrf_k)
+        return EvaluationRetrieval(
+            hits=tuple(fuse_ranked_lists(ranked_lists, k, rrf_k=rrf_k)),
+            decomposition=decomposition,
+        )
 
     return retrieve_decomposed

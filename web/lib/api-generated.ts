@@ -1182,6 +1182,35 @@ export interface components {
             year: number;
         };
         /**
+         * AdminCommand
+         * @description Validated safe operation submitted through the local administrator UI.
+         */
+        AdminCommand: {
+            /** Confirm Delete */
+            confirm_delete?: boolean | null;
+            /** Deletion Token */
+            deletion_token?: string | null;
+            /** Document Ids */
+            document_ids?: string[] | null;
+            /** Expected Documents */
+            expected_documents?: number | null;
+            /**
+             * Identifiers
+             * @default []
+             */
+            identifiers: string[];
+            kind: components["schemas"]["AdminJobKind"];
+            /** Manifest */
+            manifest?: string | null;
+            /** Selection Id */
+            selection_id?: string | null;
+            /**
+             * Years
+             * @default []
+             */
+            years: number[];
+        };
+        /**
          * AdminDocumentResource
          * @description One filing row with current chunk and embedding coverage.
          */
@@ -1228,6 +1257,8 @@ export interface components {
             /** Text Chunks */
             text_chunks: number;
         };
+        /** @enum {string} */
+        AdminJobKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "ingest_selected" | "delete_sources" | "backfill_embeddings" | "rebuild_bm25";
         /**
          * ApiError
          * @description Machine-readable HTTP failure shared by all routes.
@@ -1332,7 +1363,7 @@ export interface components {
              * Blocked Node
              * @enum {string}
              */
-            blocked_node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            blocked_node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1468,7 +1499,7 @@ export interface components {
          * @description The same corpus job snapshot returned to CLI and web clients.
          */
         CorpusJobResource: {
-            command: components["schemas"]["CorpusOperationRequest"];
+            command: components["schemas"]["AdminCommand"];
             /**
              * Created At
              * Format: date-time
@@ -1503,37 +1534,6 @@ export interface components {
             status: "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
             /** Total */
             total: number | null;
-        };
-        /** @enum {string} */
-        CorpusOperationKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "ingest_selected" | "delete_sources" | "backfill_embeddings" | "rebuild_bm25";
-        /**
-         * CorpusOperationRequest
-         * @description One safe corpus operation accepted by the local operator API.
-         */
-        CorpusOperationRequest: {
-            /** Confirm Delete */
-            confirm_delete?: boolean | null;
-            /** Deletion Token */
-            deletion_token?: string | null;
-            /** Document Ids */
-            document_ids?: string[] | null;
-            /** Expected Documents */
-            expected_documents?: number | null;
-            /**
-             * Identifiers
-             * @default []
-             */
-            identifiers: string[];
-            kind: components["schemas"]["CorpusOperationKind"];
-            /** Manifest */
-            manifest?: string | null;
-            /** Selection Id */
-            selection_id?: string | null;
-            /**
-             * Years
-             * @default []
-             */
-            years: number[];
         };
         /**
          * CorpusSnapshotResource
@@ -2358,7 +2358,7 @@ export interface components {
         };
         /**
          * ExecutionData
-         * @description Versioned execution envelope; absent historical fields remain explicitly null.
+         * @description Versioned execution envelope with explicitly optional measurements.
          */
         ExecutionData: {
             /**
@@ -2425,12 +2425,10 @@ export interface components {
             input_tokens: number;
             /** Local */
             local?: boolean | null;
-            /** Local Timings */
-            local_timings?: components["schemas"]["LocalModelTiming"][];
             /** Model */
             model: string;
             /** Node */
-            node?: ("gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report") | null;
+            node?: ("gate" | "route" | "retrieve" | "grade" | "check" | "report") | null;
             /** Output Tokens */
             output_tokens: number;
             /** Projected Input Tokens */
@@ -2479,7 +2477,7 @@ export interface components {
              * Node
              * @enum {string}
              */
-            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
             /** Reasons */
             reasons?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -2593,8 +2591,6 @@ export interface components {
             };
             /** Filename */
             filename: string;
-            /** Parent Id */
-            parent_id: number | null;
             /** Payload */
             payload: {
                 [key: string]: unknown;
@@ -2607,15 +2603,13 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "draft" | "validated" | "published";
+            status: "draft" | "validated";
             suite_id: components["schemas"]["GoldenSuiteId"];
             /**
              * Updated At
              * Format: date-time
              */
             updated_at: string;
-            /** Version */
-            version: number;
         };
         /**
          * GoldenSpan
@@ -3014,7 +3008,7 @@ export interface components {
              * Node
              * @enum {string}
              */
-            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
         };
         /**
          * OpenAILimitsRequest
@@ -3330,7 +3324,7 @@ export interface components {
         };
         /**
          * PublicSnapshotDataset
-         * @description One filtered page from the exact published golden version.
+         * @description One filtered page from the exact cases evaluated by a published snapshot.
          */
         PublicSnapshotDataset: {
             /** Cases */
@@ -3341,16 +3335,12 @@ export interface components {
             limit: number;
             /** Offset */
             offset: number;
-            /** Revision Id */
-            revision_id: number | null;
             /** Snapshot Id */
             snapshot_id: number;
             /** Suite */
             suite: string;
             /** Total */
             total: number;
-            /** Version */
-            version: number | null;
         };
         /**
          * PublicSnapshotEvaluation
@@ -3777,7 +3767,7 @@ export interface components {
             /** Iterations */
             iterations: number;
             /** Node Path */
-            node_path: ("gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report")[];
+            node_path: ("gate" | "route" | "retrieve" | "grade" | "check" | "report")[];
             /** Report */
             report: components["schemas"]["WorkflowReport"] | components["schemas"]["ConversationReport"] | null;
             /** Run Id */
@@ -3862,8 +3852,6 @@ export interface components {
         SnapshotCreateRequest: {
             /** Eval Result Id */
             eval_result_id: number;
-            /** Golden Revision Id */
-            golden_revision_id?: number | null;
             /** Label */
             label: string;
             /**
@@ -3909,8 +3897,6 @@ export interface components {
             /** Document Count */
             document_count: number;
             eval_result: components["schemas"]["EvalResultResource"];
-            /** Golden Revision Id */
-            golden_revision_id: number | null;
             /** Label */
             label: string;
             /** Profile */
@@ -4069,7 +4055,7 @@ export interface components {
              * Node
              * @enum {string}
              */
-            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
             /** Path Decision */
             path_decision?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -4129,7 +4115,7 @@ export interface components {
              * Node
              * @enum {string}
              */
-            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
             /** Output Tokens */
             output_tokens: number;
             /**
@@ -4437,7 +4423,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CorpusOperationRequest"];
+                "application/json": components["schemas"]["AdminCommand"];
             };
         };
         responses: {

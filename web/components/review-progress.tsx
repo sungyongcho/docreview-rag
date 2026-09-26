@@ -10,7 +10,7 @@ import type { CorpusScope, ReviewEventNode, ReviewExecution, ReviewResolvedScope
 
 import { ReviewStageDetails, type DisclosureStage } from "@/components/review-stage-details";
 
-export type ReviewNode = ReviewEventNode;
+type ReviewNode = ReviewEventNode;
 export type ReviewProgressState = ReviewExecution;
 
 export const REVIEW_STEPS = [
@@ -32,7 +32,7 @@ function advanceProgress(node: ReviewNode, evidence: number, relevant: number, s
   const phase = currentStepIndex(node);
   const retry = Boolean(previous && phase >= 0 && phase < currentStepIndex(previous.node));
   const retained = retry ? (previous?.observed ?? []).filter((item) => currentStepIndex(item) < phase) : previous?.observed ?? [];
-  return { ...previous, node, evidence, relevant, steps, observed: [...new Set([...retained, node])], outcome: "running", retries: (previous?.retries ?? 0) + (retry ? 1 : 0) };
+  return { ...previous, node, evidence, relevant, steps, completedNodes: previous?.completedNodes ?? [], observed: [...new Set([...retained, node])], outcome: "running", retries: (previous?.retries ?? 0) + (retry ? 1 : 0) };
 }
 
 export function reviewProgressFromEvent(event: ReviewProgress, previous?: ReviewProgressState): ReviewProgressState {
@@ -43,7 +43,7 @@ export function reviewProgressFromEvent(event: ReviewProgress, previous?: Review
   const next = advanceProgress(event.node, event.evidence_count ?? previous?.evidence ?? 0, event.relevant_count ?? previous?.relevant ?? 0, event.step_count ?? previous?.steps ?? 0, previous);
   const phase = currentStepIndex(event.node);
   const repeated = previous && phase < currentStepIndex(previous.node);
-  const completed = repeated ? (previous.completedNodes ?? []).filter((node) => currentStepIndex(node) < phase) : previous?.completedNodes ?? [];
+  const completed = repeated ? previous.completedNodes.filter((node) => currentStepIndex(node) < phase) : previous?.completedNodes ?? [];
   return { ...next, lastEventAt: Date.now(), activeNode: event.phase === "start" ? event.node : null,
     pathDecision: event.path_decision ?? previous?.pathDecision,
     resolvedScope: resolvedScopeFromServer(event.path_decision?.resolved_scope ?? event.resolved_scope) ?? previous?.resolvedScope,
@@ -58,7 +58,7 @@ export function initialReviewProgress(revalidating = false, evidence = 0, select
 
 export function candidateProgress(previous: ReviewProgressState, evidence: number, resolvedScope?: unknown, pathDecision?: ReviewPathDecision | null): ReviewProgressState {
   const next = advanceProgress("candidates", evidence, 0, previous.steps, previous);
-  return { ...next, pathDecision: pathDecision ?? previous.pathDecision, resolvedScope: resolvedScopeFromServer(resolvedScope) ?? previous.resolvedScope, lastEventAt: Date.now(), activeNode: previous.activeNode === "retrieve" ? "retrieve" : null, completedNodes: [...(previous.completedNodes ?? []).filter((node) => currentStepIndex(node) < 1), "candidates"] };
+  return { ...next, pathDecision: pathDecision ?? previous.pathDecision, resolvedScope: resolvedScopeFromServer(resolvedScope) ?? previous.resolvedScope, lastEventAt: Date.now(), activeNode: previous.activeNode === "retrieve" ? "retrieve" : null, completedNodes: [...previous.completedNodes.filter((node) => currentStepIndex(node) < 1), "candidates"] };
 }
 
 /** Only actual observed phases become complete; skipped phases stay explicit. */
@@ -68,19 +68,13 @@ export function phaseStatus(state: ReviewProgressState, index: number): string {
   if (state.pathStatus === "failed" || state.pathStatus === "cancelled") return "not-run";
   if (state.skippedNodes?.[REVIEW_STEPS[index]?.node]) return "skipped";
   const stopped = state.outcome === "failed" || state.outcome === "cancelled";
-  const seen = new Set((state.observed ?? [state.node]).map(currentStepIndex));
-  if (state.completedNodes) {
-    const done = state.completedNodes.some((node) => currentStepIndex(node) === index);
-    if (state.outcome === "completed") return done ? "done" : "not-run";
-    if (index === current && (state.outcome === "failed" || state.outcome === "cancelled")) return state.outcome;
-    if (state.activeNode && currentStepIndex(state.activeNode) === index) return "current";
-    if (done) return "done";
-    if (stopped) return "not-run";
-    return state.node === "waiting" && index === 0 ? "waiting" : "pending";
-  }
-  if (state.outcome === "completed") return seen.has(index) ? "done" : "not-run";
-  if (index === current) return state.outcome === "failed" || state.outcome === "cancelled" ? state.outcome : state.node === "waiting" ? "waiting" : "current";
-  return index < current && seen.has(index) ? "done" : stopped ? "not-run" : "pending";
+  const done = state.completedNodes.some((node) => currentStepIndex(node) === index);
+  if (state.outcome === "completed") return done ? "done" : "not-run";
+  if (index === current && (state.outcome === "failed" || state.outcome === "cancelled")) return state.outcome;
+  if (state.activeNode && currentStepIndex(state.activeNode) === index) return "current";
+  if (done) return "done";
+  if (stopped) return "not-run";
+  return state.node === "waiting" && index === 0 ? "waiting" : "pending";
 }
 
 /** Apply terminal evidence without inferring execution from the verdict alone. */
@@ -109,11 +103,11 @@ export function finishReviewProgress(state: ReviewProgressState, outcome: "compl
   const label = result?.label ?? objectRecord(reported?.decision)?.label;
   const reasons = [result?.reasons, ...results.filter((value) => value?.node === "grade" || value?.node === "report").map((value) => value?.reasons)].flatMap((value) => Array.isArray(value) ? value : []);
   const threshold = reasons.map(objectRecord).find((reason) => reason?.code === "relevance_below_threshold");
-  const checkObserved = (state.observed ?? []).includes("check") || (state.completedNodes ?? []).includes("check");
+  const checkObserved = state.observed.includes("check") || state.completedNodes.includes("check");
   if (label === "NOT_IN_DOCS" && threshold && !checkObserved) {
     state = { ...state, skippedNodes: { check: "relevance_below_threshold" }, evidence: typeof threshold.candidate_count === "number" ? threshold.candidate_count : state.evidence, relevant: typeof threshold.relevant_count === "number" ? threshold.relevant_count : state.relevant };
   }
-  return { ...state, node: "report", activeNode: null, completedNodes: state.completedNodes ? [...new Set([...state.completedNodes, "report" as const])] : undefined, observed: [...new Set([...(state.observed ?? []), "report" as const])], outcome, elapsedMs };
+  return { ...state, node: "report", activeNode: null, completedNodes: [...new Set([...state.completedNodes, "report" as const])], observed: [...new Set([...state.observed, "report" as const])], outcome, elapsedMs };
 }
 
 /** Accept only JSON objects at the optional historical execution boundary. */
@@ -148,7 +142,7 @@ export function PathDecisionBadge({ decision, catalogMode }: { decision: ReviewP
 }
 
 /** The requested mode and confirmed applied routing remain distinct throughout execution. */
-export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgressState; onSwitchScope?: () => void }) {
+function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgressState; onSwitchScope?: () => void }) {
   const { t } = useI18n();
   const decision = state.pathDecision;
   const resolved = decision?.resolved_scope ?? state.resolvedScope;
@@ -177,7 +171,7 @@ export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgress
   </div>;
 }
 
-export function WaitingGlyph() {
+function WaitingGlyph() {
   return <span className="waiting-glyph" aria-hidden="true">◐</span>;
 }
 

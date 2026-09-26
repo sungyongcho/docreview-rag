@@ -9,6 +9,7 @@ import pytest
 from app.release import browser_reset
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
+from tests.support import load_settings
 
 
 def test_marker_is_absent_until_fresh_start_writes_it(tmp_path, monkeypatch):
@@ -39,7 +40,9 @@ def test_only_dev_capabilities_expose_the_checkout_reset(tmp_path, monkeypatch, 
     reset_id = str(uuid4())
     marker.write_text(json.dumps({"reset_id": reset_id}))
     monkeypatch.setattr(browser_reset, "BROWSER_RESET_PATH", marker)
-    settings = ReleaseSettings(_env_file=None, mode="canned", DOCREVIEW_ENVIRONMENT=environment)
+    settings = load_settings(
+        ReleaseSettings, env_file=None, service_mode="canned", environment=environment
+    )
     with TestClient(create_release_app(settings)) as client:
         response = client.get("/capabilities")
         assert response.status_code == 200

@@ -11,7 +11,7 @@ from app.api.public_portfolio import PublicPortfolioReader
 from app.api.public_portfolio_schemas import PublicPortfolioPreparation
 from app.api.runtime import RuntimeApiServices
 from app.config import get_settings
-from app.corpus_admin import RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
 
 router = APIRouter(prefix="/public/portfolio", tags=["documents"])
 
@@ -20,8 +20,8 @@ router = APIRouter(prefix="/public/portfolio", tags=["documents"])
 def _reader(runtime: RuntimeApiServices) -> PublicPortfolioReader:
     """Reuse read caches and the active provider identity without invoking the provider."""
     settings = get_settings()
-    if runtime._corpus_root is not None:
-        settings = settings.model_copy(update={"corpus_dir": runtime._corpus_root})
+    if runtime.corpus_root is not None:
+        settings = settings.model_copy(update={"corpus_dir": runtime.corpus_root})
     corpus = RuntimeCorpusAdminService(
         settings=settings,
         session_factory=runtime.session_factory,

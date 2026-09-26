@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Onboarding, TOUR_TARGETS } from "./onboarding";
+import { Onboarding } from "./onboarding";
+import { tourTargets } from "./onboarding-test-support";
 
 /** A host that, like the shell, mounts a step's target only after the step asked for its workspace. */
 function ViewGatedHost({ onClose }: { onClose: () => void }) {
@@ -78,7 +79,7 @@ describe("onboarding", () => {
   });
 
   it("lists every spotlight target once", () => {
-    expect([...TOUR_TARGETS]).toEqual([
+    expect(tourTargets()).toEqual([
       "build", "stage-list", "next-step", "new-review", "composer", "evidence-toggle", "evidence-fallback", "measure", "operations",
     ]);
   });

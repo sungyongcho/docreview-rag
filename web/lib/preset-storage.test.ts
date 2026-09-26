@@ -93,3 +93,16 @@ it("ignores a file response that arrives after effective runtime permissions cha
   expect(presetStorageKind()).toBe("browser");
   expect(readPresetCatalog().presets).toEqual([]);
 });
+
+it("applies server-resolved builtins only while their DEV catalog is active", async () => {
+  const shipped = structuredClone(BUILTIN_PRESETS);
+  vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+  configurePresetStorage({ environment: "dev", can_change_custom_retrieval: true });
+  const resolved = shipped.map(preset => ({ ...preset, retrieval: { ...preset.retrieval, bm25_k1: 2.4 } }));
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ presets_version: "resolved", presets: resolved, errors: [] }))));
+  await refreshFilePresets();
+  expect(readPresetCatalog().builtins.map(preset => preset.retrieval.bm25_k1)).toEqual([2.4, 2.4, 2.4]);
+  configurePresetStorage({ environment: "prod", can_change_custom_retrieval: false });
+  expect(readPresetCatalog().builtins).toEqual(shipped);
+  expect(BUILTIN_PRESETS).toEqual(shipped);
+});

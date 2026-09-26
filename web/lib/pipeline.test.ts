@@ -530,6 +530,49 @@ describe("derivePipeline", () => {
     expect(operator.failureMessage({ status: "schema_rejected", details: ["x"] })).toContain("Smaller local models");
   });
 
+  it("names a local timeout or unreachable host from the kind the backend reports", async () => {
+    // The backend names a local transport failure by its kind alone (`failure_kind` in
+    // app/llm/local_diagnostics.py), never by the httpx exception class.
+    const timeoutMessage = "ValueError: local model server request failed: timeout";
+    const unreachableMessages = [
+      "ValueError: local model server request failed: refused",
+      "ValueError: local model server request failed: dns",
+      "ValueError: local model server request failed: connection",
+    ];
+    const unguidedMessage = "ValueError: local model server request failed: http_503";
+    const failedWith = (message: string) => ({
+      code: "provider_failure",
+      node: "check",
+      status: "provider_error",
+      details: [message],
+    });
+    const neutralSentence = (message: string) =>
+      `The answer could not be generated (provider_error) at the check step. ${message}`;
+
+    // A public bundle cannot act on local advice, so the new kinds keep the neutral sentence too.
+    expect(failureReport(failedWith(timeoutMessage))).toEqual({
+      text: neutralSentence(timeoutMessage),
+    });
+
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const operator = await import("./pipeline");
+    const systemStatus = { label: "Open System status", category: "runtime" };
+
+    const timeout = operator.failureReport(failedWith(timeoutMessage));
+    expect(timeout.text).toContain("LOCAL_LLM_TIMEOUT_S");
+    expect(timeout.fix).toEqual(systemStatus);
+    for (const message of unreachableMessages) {
+      const unreachable = operator.failureReport(failedWith(message));
+      expect(unreachable.text, message).toContain("separately installed model server");
+      expect(unreachable.fix, message).toEqual(systemStatus);
+    }
+    // A kind without specific guidance keeps the backend's words instead of borrowing advice.
+    expect(operator.failureReport(failedWith(unguidedMessage))).toEqual({
+      text: neutralSentence(unguidedMessage),
+    });
+  });
+
   it("sends a budget failure to the settings category that owns the limit", async () => {
     // The wall clock lives in Run limits, not in Prompt & evidence; naming the wrong
     // category is what cost an afternoon when a local run kept stopping at 120 seconds.
@@ -707,18 +750,6 @@ describe("derivePipeline", () => {
     expect(stage(pipeline, "filings").numbers).toEqual(["30 / 30 filings on disk", "SEC 21/21", "DART 9/9"]);
   });
 
-  it("waits with Checking… on a live build before readiness or the admin snapshot arrives", () => {
-    const pipeline = derivePipeline(liveInput({ healthKind: "checking", readiness: null, corpus: null, manifests: [], registryCounts: {} }));
-
-    expect(pipeline.source).toBe("pending");
-    expect(pipeline.readOnly).toBe(false);
-    for (const id of ["filings", "index", "embeddings", "lexical", "ask", "answer_model", "evaluate"] as const) {
-      expect(stage(pipeline, id).status, id).toBe("unknown");
-      expect(stage(pipeline, id).numbers, id).toEqual([]);
-    }
-    expect(pipeline.next).toBeNull();
-  });
-
   it("does not report un-ingested filings when the registry facets are unavailable", () => {
     const pipeline = derivePipeline(liveInput({ registryCounts: {} }));
     const index = stage(pipeline, "index");
@@ -760,13 +791,13 @@ it("schema drift blocks stale completed counts without blocking the answer model
 });
 
 it("preserves the recorded provider output ceiling instead of guessing an input failure", () => {
-  const legacy = { code: "provider_failure", node: "grade", status: "budget_exceeded", details: ["output_tokens: used=600 limit=600", "$: Expecting value at line 1 column 1 [json_invalid]"], attempts: 1 };
-  expect(failureReport(legacy).text).toBe("The model call reached its output token limit (600 of 600) at the grade step.");
-  expect(failureReport(legacy).fix).toBeUndefined();
-  const structured = { ...legacy, budget: { which: "output_tokens", used: 600, limit: 600 }, budget_source: "provider_budget" };
+  const failure = { code: "provider_failure", node: "grade", status: "budget_exceeded", details: ["output_tokens: used=600 limit=600"], attempts: 1 };
+  const structured = { ...failure, budget: { which: "output_tokens", used: 600, limit: 600 }, budget_source: "provider_budget" };
+  expect(failureReport(structured).text).toBe("The model call reached its output token limit (600 of 600) at the grade step.");
   expect(failureReport(structured).fix?.category).toBe("runtime");
   expect(failureReport({ ...structured, budget_source: "run_limits" }).fix?.category).toBe("limits");
-  expect(failureReport({ ...legacy, details: [] }).text).not.toContain("input");
+  expect(failureReport(failure).text).not.toMatch(/input token|output token/);
+  expect(failureReport(failure).fix).toBeUndefined();
 });
 
 it("explains a refusal made before the call from the projected prompt size", async () => {
@@ -787,6 +818,8 @@ it("explains a refusal made before the call from the projected prompt size", asy
 
 it.each([true, false])("keeps initial connection checks neutral for live=%s without trusting fixture data", (live) => {
   const pipeline = derivePipeline(liveInput({ live, healthKind: "checking", readiness: null, corpus: null, manifests: [], registryCounts: {} }));
+  expect(pipeline.source).toBe("pending");
+  expect(pipeline.readOnly).toBe(!live);
   expect(pipeline.corpusReady).toBe(false);
   expect(pipeline.next).toBeNull();
   for (const item of pipeline.stages) {

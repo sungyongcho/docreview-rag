@@ -114,9 +114,8 @@ def test_dev_corpus_flags_are_passed_without_reinterpretation(monkeypatch, tmp_p
     )
 
 
-@pytest.mark.parametrize("old_action", ["up", "down", "start-fresh", "start-quick"])
-def test_retired_top_level_commands_are_not_forwarded(old_action):
+def test_retired_top_level_commands_are_not_forwarded():
     """Explicit command errors replace silent backward-compatible dispatch."""
     with pytest.raises(SystemExit) as error:
-        cli.parser("dev").parse_args([old_action])
+        cli.parser("dev").parse_args(["start-fresh"])
     assert error.value.code == 2

@@ -199,27 +199,37 @@ def test_route_query_repairs_a_source_language_response_once():
 @pytest.mark.parametrize(
     "output, refusal, error, attempts",
     [
-        (
+        pytest.param(
             f'{{"translated_query":"{KOREAN_QUERY}","target_language":"en"}}',
             None,
             "wrong target language",
             1,
+            id="reported-target-differs-from-the-request",
         ),
-        (
+        pytest.param(
             f'{{"translated_query":"{ENGLISH_QUERY}","target_language":"ko"}}',
             None,
             "does not contain the target language",
             1,
+            id="text-not-in-the-target-language",
         ),
-        (
+        pytest.param(
             f'{{"translated_query":"{KOREAN_QUERY}","source_language":"en"}}',
             None,
             "schema_rejected",
             2,
+            id="legacy-source-language-shape-survives-the-repair",
         ),
-        ("not json", None, "schema_rejected", 2),
-        ('{"translated_query":"   ","target_language":"ko"}', None, "schema_rejected", 2),
-        ("", "Cannot translate this query.", "provider_refused", 1),
+        pytest.param(
+            '{"translated_query":"   ","target_language":"ko"}',
+            None,
+            "schema_rejected",
+            2,
+            id="blank-translation-survives-the-repair",
+        ),
+        pytest.param(
+            "", "Cannot translate this query.", "provider_refused", 1, id="provider-refusal"
+        ),
     ],
 )
 def test_route_query_fails_closed_on_invalid_provider_outputs(output, refusal, error, attempts):

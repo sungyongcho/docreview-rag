@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from openai import OpenAIError
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings, get_settings
@@ -272,9 +272,10 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
 
 async def _ingest(args: argparse.Namespace) -> dict[str, object]:
     """Submit the same typed ingestion job used by the development web client."""
-    from app.api.admin_schemas import CorpusJobResource, CorpusOperationRequest
+    from app.api.admin_schemas import CorpusJobResource
+    from app.corpus_admin.types import AdminCommand
 
-    request = CorpusOperationRequest(
+    request = AdminCommand(
         kind="ingest_manifest",
         manifest=args.manifest,
         selection_id=args.selection,
@@ -286,7 +287,7 @@ async def _ingest(args: argparse.Namespace) -> dict[str, object]:
         async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
             response = await client.post(
                 args.api_url.rstrip("/") + "/corpus/jobs/",
-                json=request.model_dump(mode="json"),
+                json=TypeAdapter(AdminCommand).dump_python(request, mode="json"),
                 headers={"Origin": origin},
             )
             response.raise_for_status()

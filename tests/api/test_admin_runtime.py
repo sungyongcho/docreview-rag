@@ -1,68 +1,209 @@
-"""Historical operator jobs stay visible; a retry revalidates their stored command."""
+"""Administrator composition preserves current command, document and retrieval contracts."""
 
 import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import cast
+from typing import Literal, cast
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.api.admin_runtime import RuntimeAdminApiServices
-from app.api.runtime import RuntimeApiServices, SessionFactory
-from app.corpus_admin import CorpusStatus
-from app.operator.jobs import StoredJob
+from app.api.runtime import RuntimeApiServices
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import CorpusStatus
+from app.db.session_factory import SessionFactory
+from app.evals.admin import EvaluationAdminService
+from app.operator.jobs import JobDomain, JobStatus
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
-def test_job_board_reads_history_without_revalidating_ingestion_arguments():
-    """Show an old incomplete ingestion request as stored without revalidating it."""
-    now = datetime.now(UTC)
-    job = StoredJob(
-        job_id="old-ingest",
-        domain="corpus",
-        kind="ingest_manifest",
-        request_json={"manifest": "manifest.json"},
-        status="failed",
-        stage="failed",
-        current=0,
-        total=None,
-        detail_current=None,
-        detail_total=None,
-        message="Earlier ingestion failed",
-        error_code=None,
-        result_refs={},
-        created_at=now,
-        started_at=now,
-        finished_at=now,
-        updated_at=now,
+@pytest.mark.parametrize("strategy", ["vector", "lexical", "hybrid"])
+def test_preview_strategies_use_the_shared_search_contract(monkeypatch, hit, strategy):
+    """Run each valid preview plan through retrieval and preserve its actual component ranks."""
+    from contextlib import asynccontextmanager
+
+    from app.api import search_consistency
+    from app.api.admin_schemas import RetrievalPreviewRequest
+    from app.retrieval import service as retrieval
+
+    calls = []
+
+    async def prepare(*args):
+        """Skip the database readiness probe, retaining the real retrieval dispatcher."""
+        del args
+
+    async def vector_search(*args, **kwargs):
+        """Return a recorded vector candidate without querying PostgreSQL."""
+        calls.append("vector")
+        return [hit]
+
+    async def lexical_search(*args, **kwargs):
+        """Return a recorded lexical candidate without querying PostgreSQL."""
+        calls.append("lexical")
+        return [hit]
+
+    @asynccontextmanager
+    async def no_database():
+        """Provide the session seam consumed by the isolated search components."""
+        yield None
+
+    monkeypatch.setattr(search_consistency, "prepare_search", prepare)
+    monkeypatch.setattr(retrieval, "vector_search", vector_search)
+    monkeypatch.setattr(retrieval, "lexical_search", lexical_search)
+    services = RuntimeAdminApiServices(
+        runtime=RuntimeApiServices(
+            embedding_provider=DeterministicEmbeddingProvider(),
+            session_factory=cast(SessionFactory, no_database),
+        )
     )
-    service = object.__new__(RuntimeAdminApiServices)
-    service._corpus = SimpleNamespace(recover_jobs=AsyncMock())
-    service._evaluations = SimpleNamespace(recover_jobs=AsyncMock())
-    service._job_store = SimpleNamespace(list=AsyncMock(return_value=[job]))
-    board = asyncio.run(service.operator_jobs())
-    assert board.jobs[0].request == {"manifest": "manifest.json"}
-    assert board.jobs[0].message == job.message
-    # The board advertises the retry; the retry itself is refused with a typed 400.
-    assert board.jobs[0].can_retry is True
-
-
-def test_document_detail_checks_schema_before_serializing():
-    """Do not disguise incompatible document storage as an ordinary missing document."""
-    import pytest
-
-    from app.api.errors import ApiProblemError, unavailable
-
-    service = object.__new__(RuntimeAdminApiServices)
-    service._documents = SimpleNamespace(
-        ensure_ready=AsyncMock(side_effect=unavailable("schema_not_ready", "drifted"))
+    request = RetrievalPreviewRequest.model_validate(
+        {
+            "query": "Revenue?",
+            "profile": {
+                "strategy": strategy,
+                "lexical_ranker": None if strategy == "vector" else "ts_rank_cd",
+            },
+            "filters": {"languages": ["en"]},
+        }
     )
-    service._corpus = SimpleNamespace(document_detail=AsyncMock())
-    with pytest.raises(ApiProblemError) as error:
-        asyncio.run(service.document_detail("test"))
-    assert error.value.error.code == "schema_not_ready"
-    service._corpus.document_detail.assert_not_called()
+
+    result = asyncio.run(services.retrieval_preview(request))
+
+    expected = [lane for lane in ("vector", "lexical") if strategy in {lane, "hybrid"}]
+    assert calls == expected
+    assert [item.chunk_id for item in result.results] == [hit.chunk_id]
+    assert result.component_rankings["vector"] == ((hit.chunk_id,) if "vector" in expected else ())
+    assert result.component_rankings["lexical_by_language"] == (
+        {"en": (hit.chunk_id,)} if "lexical" in expected else {}
+    )
+
+
+@pytest.mark.parametrize(
+    "running_domain,running_kind,running_can_cancel",
+    [
+        ("corpus", "backfill_embeddings", True),
+        ("corpus", "ingest_selected", False),
+        ("evaluation", "quick", False),
+    ],
+)
+def test_operator_board_reads_persisted_history_and_global_queue_actions(
+    running_domain: JobDomain,
+    running_kind: Literal["backfill_embeddings", "ingest_selected", "quick"],
+    running_can_cancel: bool,
+):
+    """A fresh API instance shows shared FIFO positions and safe actions from current records."""
+    from datetime import timedelta
+
+    from app.api.admin_schemas import EvaluationRunRequest
+    from app.corpus_admin.stored_jobs import command_payload
+    from app.corpus_admin.types import AdminCommand
+    from tests.corpus_admin.support import LedgerStore
+
+    async def scenario():
+        """Populate the ledger without workers, then exercise the real board and lookup."""
+        store = LedgerStore()
+        started = datetime(2026, 9, 1, tzinfo=UTC)
+        ingest = command_payload(AdminCommand("ingest_selected", document_ids=("filing-a",)))
+        evaluation = EvaluationRunRequest(suite_id="sec-en").model_dump(mode="json")
+        running_request = (
+            evaluation
+            if running_kind == "quick"
+            else command_payload(
+                AdminCommand(
+                    running_kind,
+                    document_ids=("filing-a",) if running_kind == "ingest_selected" else None,
+                )
+            )
+        )
+        records: tuple[tuple[str, JobDomain, str, dict[str, object], JobStatus], ...] = (
+            ("history-success", "corpus", "ingest_selected", ingest, "succeeded"),
+            (
+                "failed-corpus",
+                "corpus",
+                "rebuild_bm25",
+                command_payload(AdminCommand("rebuild_bm25")),
+                "failed",
+            ),
+            ("failed-evaluation", "evaluation", "quick", evaluation, "failed"),
+            (
+                "failed-deletion",
+                "corpus",
+                "delete_sources",
+                command_payload(
+                    AdminCommand("delete_sources", deletion_token="preview", confirm_delete=True)
+                ),
+                "failed",
+            ),
+            ("interrupted-evaluation", "evaluation", "quick", evaluation, "interrupted"),
+            ("running", running_domain, running_kind, running_request, "running"),
+            ("queued-evaluation", "evaluation", "quick", evaluation, "queued"),
+            ("queued-corpus", "corpus", "ingest_selected", ingest, "queued"),
+        )
+        for index, (job_id, domain, kind, request, status) in enumerate(records):
+            created = started + timedelta(minutes=index)
+            await store.create(
+                job_id=job_id,
+                domain=domain,
+                kind=kind,
+                request_json=request,
+                created_at=created,
+            )
+            if status != "queued":
+                await store.put(
+                    job_id,
+                    status=status,
+                    stage="work" if status == "running" else status,
+                    current=1,
+                    total=2,
+                    detail_current=None,
+                    detail_total=None,
+                    message=f"Recorded {job_id}",
+                    started_at=created,
+                    finished_at=None if status == "running" else created + timedelta(seconds=10),
+                    error_code="operation_failed" if status == "failed" else None,
+                    result_refs={"selection_id": "selected"} if job_id == "history-success" else {},
+                )
+
+        def api():
+            """Start a fresh API projection with only recovery side effects replaced."""
+            service = object.__new__(RuntimeAdminApiServices)
+            service._corpus = cast(
+                RuntimeCorpusAdminService, SimpleNamespace(recover_jobs=AsyncMock())
+            )
+            service._evaluations = cast(
+                EvaluationAdminService, SimpleNamespace(recover_jobs=AsyncMock())
+            )
+            service._job_store = store
+            return service
+
+        board = await api().operator_jobs()
+        assert board.active_count == 1
+        assert board.queued_count == 2
+        assert [
+            (job.job_id, job.queue_position, job.can_cancel, job.can_retry) for job in board.jobs
+        ] == [
+            ("queued-corpus", 2, True, False),
+            ("queued-evaluation", 1, True, False),
+            ("running", None, running_can_cancel, False),
+            ("interrupted-evaluation", None, False, True),
+            ("failed-deletion", None, False, False),
+            ("failed-evaluation", None, False, True),
+            ("failed-corpus", None, False, True),
+            ("history-success", None, False, False),
+        ]
+        historical = board.jobs[-1]
+        assert historical.request["document_ids"] == ["filing-a"]
+        assert historical.message == "Recorded history-success"
+        assert historical.result_refs == {"selection_id": "selected"}
+        assert (historical.current, historical.total) == (1, 2)
+        fresh = api()
+        assert await fresh.operator_job("queued-corpus") == board.jobs[0]
+        assert await fresh.operator_job("failed-evaluation") == board.jobs[5]
+        assert await fresh.operator_job("missing") is None
+        assert store.puts == ["succeeded", "failed", "failed", "failed", "interrupted", "running"]
+
+    asyncio.run(scenario())
 
 
 class _RecordingCorpus:
@@ -93,7 +234,7 @@ def test_readiness_status_extends_max_age_while_a_job_is_registered() -> None:
     corpus = _RecordingCorpus()
     services = RuntimeAdminApiServices(
         runtime=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-        corpus=corpus,  # type: ignore[arg-type]
+        corpus=cast(RuntimeCorpusAdminService, corpus),
     )
 
     async def scenario() -> None:
@@ -117,8 +258,11 @@ def test_duplicate_evaluation_is_a_typed_409():
     from app.evals.admin import EvaluationAlreadyQueuedError
 
     service = object.__new__(RuntimeAdminApiServices)
-    service._evaluations = SimpleNamespace(
-        enqueue=AsyncMock(side_effect=EvaluationAlreadyQueuedError("eval-existing"))
+    service._evaluations = cast(
+        EvaluationAdminService,
+        SimpleNamespace(
+            enqueue=AsyncMock(side_effect=EvaluationAlreadyQueuedError("eval-existing"))
+        ),
     )
     with pytest.raises(ApiProblemError) as error:
         asyncio.run(service.enqueue_evaluation(EvaluationRunRequest(suite_id="sec-en")))
@@ -129,18 +273,18 @@ def test_duplicate_evaluation_is_a_typed_409():
 
 def test_acquisition_api_preserves_absent_deletion_and_document_arguments():
     """New optional deletion fields must not make ordinary corpus commands invalid."""
-    from app.api.admin_schemas import CorpusOperationRequest
-    from app.corpus_admin import AdminJob
+    from app.corpus_admin.types import AdminCommand, AdminJob
 
-    request = CorpusOperationRequest(kind="acquire_edgar", identifiers=("NVDA",), years=(2024,))
+    request = AdminCommand(kind="acquire_edgar", identifiers=("NVDA",), years=(2024,))
     service = object.__new__(RuntimeAdminApiServices)
 
     async def enqueue(command):
         """Return the accepted command through the actual dataclass serialization boundary."""
+        assert command is request
         assert command.document_ids is None and command.confirm_delete is None
         return AdminJob("download", command, "queued", "queued", 0, None, "Queued")
 
-    service._corpus = SimpleNamespace(enqueue=enqueue)
+    service._corpus = cast(RuntimeCorpusAdminService, SimpleNamespace(enqueue=enqueue))
     result = asyncio.run(service.enqueue_corpus(request))
     assert result["command"]["kind"] == "acquire_edgar"
 
@@ -168,6 +312,7 @@ def test_evaluation_jobs_expose_each_recorded_result_configuration():
     if not dsn:
         live_postgres_unavailable("EVAL_IDENTITY_TEST_DSN is not configured")
     url = make_url(dsn)
+    assert url.database is not None
     assert url.host in {"localhost", "127.0.0.1"} and url.database.startswith("pipeline_test_")
 
     async def exercise():
@@ -209,8 +354,10 @@ def test_evaluation_jobs_expose_each_recorded_result_configuration():
                 )
             )
             service = object.__new__(RuntimeAdminApiServices)
-            service._runtime = SimpleNamespace(session_factory=factory)
-            service._evaluations = SimpleNamespace(jobs=AsyncMock(return_value=board))
+            service._runtime = cast(RuntimeApiServices, SimpleNamespace(session_factory=factory))
+            service._evaluations = cast(
+                EvaluationAdminService, SimpleNamespace(jobs=AsyncMock(return_value=board))
+            )
             result = await service.evaluation_jobs()
             assert [item.config["strategy"] for item in result.jobs[0].result_summaries] == [
                 "lexical",
@@ -243,6 +390,7 @@ def test_golden_evidence_pages_preserve_exact_source_coordinates():
     if not dsn:
         live_postgres_unavailable("GOLDEN_EVIDENCE_TEST_DSN is not configured")
     url = make_url(dsn)
+    assert url.database is not None
     assert url.host in {"localhost", "127.0.0.1"} and url.database.startswith("pipeline_test_")
 
     async def exercise():
@@ -255,8 +403,9 @@ def test_golden_evidence_pages_preserve_exact_source_coordinates():
             async with factory() as session:
                 await persist_seed_batch(session, batch)
             service = object.__new__(RuntimeAdminApiServices)
-            service._runtime = SimpleNamespace(session_factory=factory)
+            service._runtime = cast(RuntimeApiServices, SimpleNamespace(session_factory=factory))
             first = await service.golden_evidence_chunks("NVDA-FY2024", "", 0, 1)
+            assert first.next_after is not None
             second = await service.golden_evidence_chunks("NVDA-FY2024", "", first.next_after, 1)
             assert len(first.chunks) == len(second.chunks) == 1
             assert first.chunks[0].chunk_id != second.chunks[0].chunk_id
@@ -297,7 +446,10 @@ def test_source_deletion_preview_accepts_the_plan_lists_from_the_corpus_service(
         "retained_derived": True,
     }
     service = object.__new__(RuntimeAdminApiServices)
-    service._corpus = SimpleNamespace(preview_source_deletion=AsyncMock(return_value=plan))
+    service._corpus = cast(
+        RuntimeCorpusAdminService,
+        SimpleNamespace(preview_source_deletion=AsyncMock(return_value=plan)),
+    )
     resource = asyncio.run(
         service.source_deletion_preview(
             SourceDeletionRequest(document_ids=("dart-20250311001085",))
@@ -318,10 +470,6 @@ def test_previews_run_and_present_the_effective_bm25_values(monkeypatch):
 
     calls = []
 
-    async def prepare(*args):
-        """Skip index readiness checks that would need a database."""
-        del args
-
     async def retrieve(session, query, **kwargs):
         """Capture the hybrid retrieval plan without a database."""
         del session, query
@@ -338,8 +486,7 @@ def test_previews_run_and_present_the_effective_bm25_values(monkeypatch):
         """Open no session; the recording retrieval never uses one."""
         yield None
 
-    monkeypatch.setattr(admin_runtime, "prepare_search", prepare)
-    monkeypatch.setattr(admin_runtime, "retrieve", retrieve)
+    monkeypatch.setattr(admin_runtime, "consistent_retrieve", retrieve)
     services = RuntimeAdminApiServices(
         runtime=RuntimeApiServices(
             embedding_provider=DeterministicEmbeddingProvider(),

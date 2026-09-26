@@ -1,8 +1,8 @@
 import { HELP_TOPICS, type HelpTopic } from "./help-content";
 
-export interface HelpPrimer { summary: string; steps: readonly string[]; documentId?: string }
-export interface HelpCluster { id: string; title: string; summary: string; topicIds: readonly string[] }
-export interface HelpGroup { id: string; title: string; summary: string; clusters: readonly HelpCluster[] }
+interface HelpPrimer { summary: string; steps: readonly string[]; documentId?: string }
+interface HelpCluster { id: string; title: string; summary: string; topicIds: readonly string[] }
+interface HelpGroup { id: string; title: string; summary: string; clusters: readonly HelpCluster[] }
 
 const PRIMERS: Record<string, HelpPrimer> = {
   "review.scope": {

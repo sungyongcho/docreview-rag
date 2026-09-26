@@ -1,12 +1,27 @@
 """Arm naming, ordering, and artifact identity shared by the evaluation commands."""
 
 from datetime import UTC, datetime, timedelta, timezone
+import json
 
 import pytest
 
-from app.evals.identity import artifact_filename
+from app.evals.identity import artifact_filename, evaluated_golden_sha256
+from tests.evals.support import absent_case, positive_case
 
 RECORDED_AT = datetime(2026, 8, 12, 14, 30, tzinfo=UTC)
+
+
+def test_evaluated_golden_identity_is_order_independent_but_source_and_question_exact():
+    """JSONB/artifact key order cannot change identity; changed evaluated evidence does."""
+    payload = [positive_case().model_dump(mode="json"), absent_case().model_dump(mode="json")]
+    reordered = json.loads(json.dumps(list(reversed(payload)), sort_keys=True))
+    digest = evaluated_golden_sha256(payload)
+    assert evaluated_golden_sha256(reordered) == digest
+    reordered[1]["question"] = "Changed question?"
+    assert evaluated_golden_sha256(reordered) != digest
+    reordered = json.loads(json.dumps(payload))
+    reordered[0]["answers"][0]["doc_id"] = "other-current-source"
+    assert evaluated_golden_sha256(reordered) != digest
 
 
 def test_artifact_filename_normalizes_equivalent_instants_to_one_utc_stem():

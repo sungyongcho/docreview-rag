@@ -42,7 +42,7 @@ import type {
   EvaluationPreparation,
   ExperimentDefaults,
   CorpusSnapshot,
-  CorpusOperationRequest,
+  AdminCommand,
   OperatorJobBoard,
   Readiness,
   RetrievalProfile,
@@ -53,7 +53,7 @@ import type { RuntimeHealthKind } from "@/lib/use-runtime-health";
 export type BuildTab = "pipeline" | "documents" | "jobs";
 
 /** Cross-workspace destinations the Build pipeline links to. */
-export type BuildNavigationTarget =
+type BuildNavigationTarget =
   | { view: "review" }
   | { view: "system"; tab: "status" }
   | { view: "measure"; tab: "snapshots" | "runs" | "golden"; resultId?: number };
@@ -257,7 +257,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
     void getPublishedSnapshots().then((rows) => setSnapshotCount(Array.isArray(rows) ? rows.length : 0)).catch(() => undefined);
   }, [live]);
 
-  async function queueCorpus(body: CorpusOperationRequest) {
+  async function queueCorpus(body: AdminCommand) {
     if (!live) return;
     setBusy(true);
     try {

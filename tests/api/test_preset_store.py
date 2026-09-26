@@ -72,20 +72,20 @@ def test_corrupt_and_changed_files_debounce_without_rereading_unchanged(store: P
     with patch.object(Path, "read_text", side_effect=AssertionError("unchanged files reread")):
         assert store.catalog(changed.presets_version).unchanged
     (store.directory / "research.json").write_text('{"invalid":')
-    corrupt = store.catalog(force=True)
+    corrupt = store.refresh()
     assert [e.file for e in corrupt.errors] == ["research.json"]
     assert len(corrupt.presets) == 3
     (store.directory / "research.json").write_text(custom(k=9).model_dump_json())
-    assert not store.catalog(force=True).errors
+    assert not store.refresh().errors
     (store.directory / "research.json").unlink()
-    assert len(store.catalog(force=True).presets) == 3
+    assert len(store.refresh().presets) == 3
 
 
 def test_atomic_failure_preserves_previous_bytes(store: PresetStore):
     """A failed replacement leaves the previous valid preset and no temporary file."""
     store.save(custom())
     before = (store.directory / "research.json").read_bytes()
-    with patch("app.api.preset_store.os.replace", side_effect=OSError("disk unavailable")):
+    with patch("app.atomic_write.os.replace", side_effect=OSError("disk unavailable")):
         with pytest.raises(OSError):
             store.save(custom(k=8))
     assert (store.directory / "research.json").read_bytes() == before
@@ -95,6 +95,8 @@ def test_atomic_failure_preserves_previous_bytes(store: PresetStore):
 def test_server_resolves_canonical_files(store: PresetStore):
     """Named request profiles match the exact canonical JSON shipped to the web."""
     for preset in store.catalog().presets:
+        # The fixture seeds only the built-ins, whose IDs are the named retrieval presets.
+        assert preset.id in ("balanced", "korean", "accuracy")
         resolved = resolve_retrieval_profile(ReviewSessionProfile(retrieval_preset=preset.id))
         assert resolved.model_dump(exclude={"preset"}) == preset.retrieval.model_dump()
 

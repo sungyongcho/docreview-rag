@@ -1,25 +1,26 @@
 "use client";
+import { useSavedPresets } from "@/lib/use-saved-presets";
 
 import "./review-controls.css";
 import "./request-preview.css";
 import { PublicRunLimits } from "./public-run-limits";
 import { PresetDetails } from "./preset-details";
 import { useI18n } from "@/lib/i18n";
-import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type ReviewSessionDraft, type RetrievalPreset } from "@/lib/types";
+import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type ReviewSessionDraft, type RetrievalPreset, type RetrievalPresets } from "@/lib/types";
 
 const PRESETS: Array<[RetrievalPreset, string]> = [["balanced", "Balanced"], ["korean", "Korean"], ["accuracy", "Accuracy"], ["custom", "Custom"]];
 
 /** Compare effective values, so preset descriptions cannot drift from request settings. */
-export function presetChanges(profile: ReviewSessionDraft, preset: RetrievalPreset) {
-  const baseline = resolvedRetrievalProfile(DEFAULT_SESSION_PROFILE);
-  const effective = resolvedRetrievalProfile({ ...profile, retrieval_preset: preset });
+export function presetChanges(profile: ReviewSessionDraft, preset: RetrievalPreset, builtins?: RetrievalPresets) {
+  const baseline = resolvedRetrievalProfile(DEFAULT_SESSION_PROFILE, builtins);
+  const effective = resolvedRetrievalProfile({ ...profile, retrieval_preset: preset }, builtins);
   return Object.entries(effective).filter(([key, value]) => value !== baseline[key as keyof typeof baseline]);
 }
 
 /** One description shared by the visible control and the full comparison. */
-export function presetDescription(profile: ReviewSessionDraft, preset: RetrievalPreset) {
-  const effective = resolvedRetrievalProfile({ ...profile, retrieval_preset: preset });
-  const changes = presetChanges(profile, preset);
+export function presetDescription(profile: ReviewSessionDraft, preset: RetrievalPreset, builtins?: RetrievalPresets) {
+  const effective = resolvedRetrievalProfile({ ...profile, retrieval_preset: preset }, builtins);
+  const changes = presetChanges(profile, preset, builtins);
   return {
     purpose: preset === "custom" ? "Uses your explicit retrieval settings." : preset === "accuracy" ? "Ranks a wider candidate pool by relevance." : preset === "korean" ? "Uses language-aware retrieval across the selected filing corpus." : "Uses the default retrieval balance.",
     settings: changes.length ? changes.map(([key, value]) => `${key}: ${String(value)}`).join(" · ") : `strategy: ${effective.strategy} · k: ${effective.k} · candidate_k: ${effective.candidate_k}`,
@@ -28,14 +29,15 @@ export function presetDescription(profile: ReviewSessionDraft, preset: Retrieval
 
 const POLICY_LABELS: Record<string, string> = { history_turns: "Conversation history turns", max_context_chars: "Maximum evidence characters", evidence_overfetch: "Evidence overfetch", max_hits_per_document: "Maximum hits per document", max_iterations: "Maximum iterations", max_input_tokens: "Maximum input tokens", max_output_tokens: "Maximum output tokens", max_wall_clock_s: "Maximum wall clock seconds" };
 
-export type RequestPreviewSection = "filters" | "retrieval" | "evidence" | "limits";
+type RequestPreviewSection = "filters" | "retrieval" | "evidence" | "limits";
 
 /** Keep alternative preset descriptions in Search, separate from the next-request preview. */
 export function RetrievalPresetComparison({ profile, editable }: { profile: ReviewSessionDraft; editable: boolean }) {
   const { t } = useI18n();
+  const { builtins } = useSavedPresets();
   return <details className="request-preview-disclosure"><summary>{t("Compare retrieval presets")}</summary>
     <div className="preset-list">{PRESETS.filter(([id]) => editable || id !== "custom").map(([id, label]) => {
-      const description = presetDescription(profile, id);
+      const description = presetDescription(profile, id, builtins);
       return <PresetDetails key={id} label={t(label)} selected={profile.retrieval_preset === id}>
         <p>{t(description.purpose)}</p><code>{description.settings}</code>
       </PresetDetails>;
@@ -48,7 +50,8 @@ export function RequestPreviewContent({ profile, query, editable = true, onOpenS
   profile: ReviewSessionDraft; query: string; editable?: boolean; onOpenSection?: (section: RequestPreviewSection) => void;
 }) {
   const { t, locale } = useI18n();
-  const effective = resolvedRetrievalProfile(profile);
+  const { builtins } = useSavedPresets();
+  const effective = resolvedRetrievalProfile(profile, builtins);
   const display = (value: unknown) => typeof value === "boolean" ? t(value ? "Enabled" : "Disabled") : value == null || value === "" ? t("None") : typeof value === "number" ? value.toLocaleString(locale) : String(value);
   const selectedFilters: Array<[string, string]> = [
     ["Corpus scope", profile.corpus_scope === "auto" ? t("Auto") : profile.corpus_scope.toUpperCase()],

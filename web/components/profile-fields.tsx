@@ -7,7 +7,7 @@ import { useI18n } from "@/lib/i18n";
 import { useId } from "react";
 import type { RetrievalProfile } from "@/lib/types";
 
-export interface ProfileFieldsProps {
+interface ProfileFieldsProps {
   profile: RetrievalProfile;
   onChange: (profile: RetrievalProfile) => void;
   /** Help screen prefix, e.g. `measure.playground`; each field then carries `data-help="<prefix>.<field>"`. */

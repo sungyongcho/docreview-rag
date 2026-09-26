@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from scripts.stack import cli, prod
+from scripts.stack import cli, local_http, prod
 
 
 @pytest.fixture
@@ -237,6 +237,7 @@ def test_complete_data_can_reconcile_a_readiness_failure_without_restoring(envir
 
 def test_readiness_wait_handles_transient_non_json_proxy_response(tmp_path, monkeypatch):
     """A proxy's startup response cannot turn a completed restore into an immediate failure."""
+    from email.message import Message
     import io
     from urllib.error import HTTPError
 
@@ -246,16 +247,18 @@ def test_readiness_wait_handles_transient_non_json_proxy_response(tmp_path, monk
         status = 200
         headers = {"Content-Type": "application/json"}
 
+    failure_headers = Message()
+    failure_headers["Content-Type"] = "text/plain"
     failure = HTTPError(
         "http://local/ready",
         502,
         "Bad Gateway",
-        {"Content-Type": "text/plain"},
+        failure_headers,
         io.BytesIO(b"Bad Gateway"),
     )
     opener = Mock()
     opener.open.side_effect = [failure, Response(b'{"environment":"prod","status":"ready"}')]
-    monkeypatch.setattr(prod, "build_opener", lambda *_: opener)
+    monkeypatch.setattr(local_http, "build_opener", lambda *_: opener)
     monkeypatch.setattr(prod.time, "sleep", lambda _: None)
     assert prod.wait_search_ready(tmp_path, timeout=1)["status"] == "ready"
     assert opener.open.call_count == 2

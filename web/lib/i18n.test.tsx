@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
@@ -11,6 +12,7 @@ import { ANSWER_MODEL_HINT, STAGE_COPY, failureMessage } from "./pipeline";
 import { localEngineStatus } from "./local-models";
 import { ONBOARDING_KEY } from "./storage";
 import { REVIEW_STEPS } from "@/components/review-progress";
+import { FAILURE_FACTS, RUN_FACTS } from "@/components/review-response";
 import { DocumentationRedirect } from "@/components/documentation-navigation";
 
 const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -21,6 +23,102 @@ afterEach(() => { cleanup(); localStorage.clear(); window.history.replaceState({
 function TestScreen() {
   const { t } = useI18n();
   return <><LanguageSwitch /><h1>{t("Build")}</h1><textarea aria-label="User question" defaultValue="Keep my original question" /></>;
+}
+
+/** Web directories whose strings can reach `t`. */
+const UI_DIRECTORIES = ["app", "components", "lib"];
+/**
+ * Server code and served data whose messages, identifiers and values the UI displays through `t`,
+ * such as golden-case facets and preset labels. Downloaded filings under data/corpus never reach `t`.
+ */
+const SERVER_DIRECTORIES = ["../app", "../schemas", "../scripts", "../data/golden", "../data/presets"];
+/** Stands for a computed value inside a string the UI builds. */
+const ANY_TEXT = "(.+)";
+
+function sourceFiles(directories: string[], extension: RegExp): string[] {
+  const files: string[] = [];
+  for (const directory of directories) {
+    for (const name of readdirSync(directory, { recursive: true }) as string[]) {
+      if (!extension.test(name)) continue;
+      // Tests may quote retired copy, and the catalog itself is what this check audits.
+      if (/\.(test|spec)\./.test(name) || name.endsWith("messages-ko.ts")) continue;
+      files.push(join(directory, name));
+    }
+  }
+  return files;
+}
+
+/** Files the repository ships under the given directories. Local golden drafts, caches and
+ * other untracked files stay out, so the result is the same on every checkout. */
+function trackedFiles(directories: string[], extension: RegExp): string[] {
+  const listed = execFileSync("git", ["ls-files", "-z", "--", ...directories], { encoding: "utf8" });
+  return listed.split("\0").filter((name) => name !== "" && extension.test(name));
+}
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isStringConcatenation(node: ts.Node): node is ts.BinaryExpression {
+  return ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken;
+}
+
+/** Initializers of the file's named values, so a message composed from other constants can be read in full. */
+function fileConstants(tree: ts.SourceFile): Map<string, ts.Expression> {
+  const constants = new Map<string, ts.Expression>();
+  function visit(node: ts.Node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) constants.set(node.name.text, node.initializer);
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  return constants;
+}
+
+/**
+ * Regular-expression parts for a string-building expression: literal text stays, named constants are
+ * read through, and any other computed value matches any text.
+ */
+function builtStringParts(node: ts.Node, constants: Map<string, ts.Expression>, resolving = new Set<string>()): string[] {
+  const parts = (child: ts.Node) => builtStringParts(child, constants, resolving);
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [escapeRegExp(node.text)];
+  if (ts.isParenthesizedExpression(node)) return parts(node.expression);
+  if (isStringConcatenation(node)) return [...parts(node.left), ...parts(node.right)];
+  if (ts.isTemplateExpression(node)) {
+    const result = [escapeRegExp(node.head.text)];
+    for (const span of node.templateSpans) result.push(...parts(span.expression), escapeRegExp(span.literal.text));
+    return result;
+  }
+  // Same-named values in different scopes could point at each other; stop instead of looping.
+  if (!ts.isIdentifier(node) || resolving.has(node.text)) return [ANY_TEXT];
+  const constant = constants.get(node.text);
+  if (!constant) return [ANY_TEXT];
+  return builtStringParts(constant, constants, new Set([...resolving, node.text]));
+}
+
+/** Every text the UI can pass to `t`: literal strings, strings it builds, and text the server sends. */
+function reachableUiText() {
+  const texts: string[] = [];
+  const builtStrings: RegExp[] = [];
+  for (const file of sourceFiles(UI_DIRECTORIES, /\.(tsx?|mjs)$/)) {
+    const tree = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const constants = fileConstants(tree);
+    function visit(node: ts.Node) {
+      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isJsxText(node)) texts.push(node.text);
+      if (ts.isTemplateExpression(node) || isStringConcatenation(node)) {
+        const parts = builtStringParts(node, constants);
+        const literalText = parts.filter((part) => part !== ANY_TEXT).join("");
+        // A pattern with almost no literal text would match every entry and hide real leftovers.
+        if (literalText.trim().length >= 3) builtStrings.push(new RegExp(`^${parts.join("")}$`, "s"));
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(tree);
+  }
+  for (const file of sourceFiles(UI_DIRECTORIES, /\.json$/)) texts.push(readFileSync(file, "utf8"));
+  for (const file of trackedFiles(SERVER_DIRECTORIES, /\.(py|json)$/)) texts.push(readFileSync(file, "utf8"));
+  const joined = texts.join("\n");
+  // The UI prints API identifiers such as `stable_hit` with spaces before translating them.
+  return { corpus: `${joined}\n${joined.replaceAll("_", " ")}`, builtStrings };
 }
 
 describe("Korean and English UI", () => {
@@ -39,9 +137,16 @@ describe("Korean and English UI", () => {
 
   it("covers all literal UI messages and preserves interpolation parameters", () => {
     const missing = new Set<string>();
-    for (const name of readdirSync("components").filter((name) => name.endsWith(".tsx") && !name.includes(".test."))) {
+    // Hooks and helpers without markup live in .ts files, and their messages reach `t` too.
+    const componentFiles = readdirSync("components").filter(
+      (name) => /\.tsx?$/.test(name) && !name.includes(".test."),
+    );
+    for (const name of componentFiles) {
       const file = join("components", name);
-      const tree = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      // Parsed as TSX, a .ts file's `<Type>value` assertion would read as markup.
+      const scriptKind = name.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+      const source = readFileSync(file, "utf8");
+      const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKind);
       function visit(node: ts.Node) {
         if (ts.isPropertyAssignment(node) && ["label", "title", "description", "mechanism", "tradeoff"].includes(node.name.getText(tree)) && ts.isStringLiteral(node.initializer)) {
           // An empty initial form value is metadata, not a translatable UI message.
@@ -70,15 +175,23 @@ describe("Korean and English UI", () => {
     expect(translate("ko", "Delete {p0}", { p0: "Original title" })).toBe("Original title 삭제");
   });
 
-  it("covers app-owned help, pipeline and progress copy selected through variables", () => {
+  it("covers app-owned help, pipeline, progress and diagnostic copy chosen by variables", () => {
     const messages = [
       ...Object.values(HELP_SCREEN_TITLES),
       ...Object.values(HELP_TOPICS).flatMap((topics) => topics.flatMap((topic) => [topic.title, ...topic.body, ...(topic.tune ? [topic.tune] : [])])),
       ...Object.values(STAGE_COPY).flatMap((stage) => [stage.title, stage.description, stage.why]),
       ...REVIEW_STEPS.flatMap((phase) => [phase.label, phase.detail]),
+      ...RUN_FACTS.map(([, label]) => label),
+      ...FAILURE_FACTS.map(([, label]) => label),
       ANSWER_MODEL_HINT,
     ];
     expect([...new Set(messages.filter((message) => !(message in KO)))]).toEqual([]);
+  });
+
+  it("keeps only Korean entries whose English text the UI can still show", () => {
+    const { corpus, builtStrings } = reachableUiText();
+    const isReachable = (english: string) => corpus.includes(english) || builtStrings.some((pattern) => pattern.test(english));
+    expect(Object.keys(KO).filter((english) => !isReachable(english))).toEqual([]);
   });
 
   it("translates generated counts, dependencies and model status without changing identifiers", () => {
@@ -189,7 +302,7 @@ describe("Korean and English UI", () => {
     expect(preferredLocale("/docs/", "invalid", "en-US")).toBe("en");
   });
 
-  it.each([["ko", "ko"], ["ko-KR", "ko"], ["en-US", "en"], ["fr-FR", "en"], ["ja-JP", "en"], ["kok-IN", "en"], ["", "en"]] as const)("uses %s as the first-visit browser language", (browserLanguage, expected) => {
+  it.each([["ko", "ko"], ["ko-KR", "ko"], ["en-US", "en"], ["fr-FR", "en"], ["kok-IN", "en"], ["", "en"]] as const)("uses %s as the first-visit browser language", (browserLanguage, expected) => {
     expect(preferredLocale("/docreview-rag/", null, browserLanguage)).toBe(expected);
     expect(preferredLocale("/docs/", "invalid", browserLanguage)).toBe(expected);
   });

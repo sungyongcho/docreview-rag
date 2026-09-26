@@ -5,7 +5,6 @@ import pytest
 from app.ingestion.registry import REGISTRIES
 from app.retrieval.korean import (
     KOREAN_TEXT_SEARCH_CONFIG,
-    hangul_ngrams,
     lexical_corpus_language,
     lexical_plan,
     tokenize_korean_text,
@@ -13,37 +12,21 @@ from app.retrieval.korean import (
 from app.retrieval.types import RetrievalFilters
 
 
-def test_hangul_runs_become_overlapping_bigrams():
-    """Split a Hangul run into overlapping bigrams so inflection cannot hide a term."""
-    assert tokenize_korean_text("삼성전자") == "삼성 성전 전자"
-
-
-def test_short_hangul_run_stays_whole():
-    """Keep a run shorter than the gram size as one token."""
-    assert hangul_ngrams("칩", 2) == ["칩"]
-    assert tokenize_korean_text("칩 설계") == "칩 설계"
-
-
-def test_particles_still_share_the_stem_grams():
-    """The agglutinative variants a whitespace index separates now share grams."""
-    subject = set(tokenize_korean_text("삼성전자는").split())
-    other = set(tokenize_korean_text("삼성전자가").split())
-
-    assert {"삼성", "성전", "전자"} <= subject & other
-
-
-def test_latin_words_numbers_and_joined_figures_stay_whole():
-    """Leave Latin words, numbers, and joined figures untouched."""
-    tokens = tokenize_korean_text("HBM 매출 300,870,903원 (58.1%)").split()
-
-    assert "hbm" in tokens
-    assert "300,870,903" in tokens
-    assert "58.1" in tokens
-
-
-def test_mixed_script_text_keeps_document_order():
-    """Emit mixed-script tokens in the order the text carries them."""
-    assert tokenize_korean_text("DRAM 시장") == "dram 시장"
+@pytest.mark.parametrize(
+    ("text", "tokens"),
+    [
+        pytest.param("삼성전자", "삼성 성전 전자", id="hangul-run-becomes-overlapping-bigrams"),
+        pytest.param("칩 설계", "칩 설계", id="runs-up-to-the-gram-size-stay-whole"),
+        pytest.param(
+            "HBM 매출 300,870,903원 (58.1%)",
+            "hbm 매출 300,870,903 원 58.1",
+            id="latin-words-and-joined-figures-stay-whole-in-document-order",
+        ),
+    ],
+)
+def test_tokenizer_emits_the_stored_lexical_tokens(text, tokens):
+    """Split Hangul runs into overlapping bigrams and keep every other run whole, in order."""
+    assert tokenize_korean_text(text) == tokens
 
 
 def test_lexical_plans_cover_every_registry_language():

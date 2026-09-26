@@ -62,7 +62,9 @@ async def rerank_hits(
     Notes
     -----
     All provider scores are validated before top-k selection, and the immutable inputs
-    are not changed.
+    are not changed. The provider receives each hit's whole ``index_text``; a provider
+    with a bounded input window, such as the cross-encoder, scores only the head that
+    fits its window.
     """
     if not isinstance(query, str) or not query.strip():
         raise ValueError("rerank query must be nonempty")

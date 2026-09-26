@@ -1,10 +1,15 @@
 """Typed terminal execution data shared by live responses and saved run details."""
 
+import json
+from typing import Self
+
 from pydantic import Field, JsonValue
 
 from app.llm.schemas import LocalModelTiming, StrictSchema
+from app.observability.persistence import sanitize_json
 from app.observability.stages import StageEvent
-from app.observability.types import WorkflowNode
+from app.observability.types import RunReport, WorkflowNode
+from app.observability.usage import recorded_model_calls
 
 
 class ExecutionModelCall(StrictSchema):
@@ -24,7 +29,6 @@ class ExecutionModelCall(StrictSchema):
     provider: str = "unknown"
     local: bool | None = None
     credential_slot: str = "unknown"
-    local_timings: list[LocalModelTiming] = Field(default_factory=list)
     provider_timing: list[LocalModelTiming] | None = None
     timing_unavailable_reason: str | None = "not_recorded"
     error: str | None = None
@@ -57,7 +61,7 @@ class ExecutionStageResult(StrictSchema):
 
 
 class ExecutionData(StrictSchema):
-    """Versioned execution envelope; absent historical fields remain explicitly null."""
+    """Versioned execution envelope with explicitly optional measurements."""
 
     contract_version: int = 1
     path_decision: dict[str, JsonValue] | None = None
@@ -70,3 +74,45 @@ class ExecutionData(StrictSchema):
     routing_queries: dict[str, str] | None = None
     stage_results: list[ExecutionStageResult] | None = None
     local_placement: dict[str, JsonValue] | None = None
+
+    @classmethod
+    def from_run_report(cls, run: RunReport) -> Self:
+        """Project recorded execution data without reconstructing calls from raw traces."""
+        context = run.request_context or {}
+        projected_calls = []
+        for call in recorded_model_calls(context):
+            projected = dict(call)
+            timings = projected.pop("local_timings")
+            projected_calls.append(
+                {
+                    **projected,
+                    "provider_timing": timings or None,
+                    "timing_unavailable_reason": (
+                        None
+                        if timings
+                        else "provider_does_not_report_timing"
+                        if call.get("provider") in {"openai_responses", "openai"}
+                        else "ollama_timing_not_recorded"
+                        if call.get("provider") == "ollama"
+                        else "not_recorded"
+                    ),
+                }
+            )
+        payload = {
+            "total_elapsed_ms": context.get("total_elapsed_ms", run.total_time_seconds * 1000),
+            "stages": context.get("stages", []),
+            "model_calls": projected_calls,
+            **{
+                key: context.get(key)
+                for key in (
+                    "path_decision",
+                    "effective_settings",
+                    "provider_identity",
+                    "resolved_scope",
+                    "routing_queries",
+                    "stage_results",
+                    "local_placement",
+                )
+            },
+        }
+        return cls.model_validate_json(json.dumps(sanitize_json(payload)))

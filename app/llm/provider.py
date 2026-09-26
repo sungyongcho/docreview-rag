@@ -34,6 +34,20 @@ from app.release.ai_allowance import AIAllowanceError, active_allowance, reserve
 type Clock = Callable[[], int]
 
 
+class BilledAttemptAllowanceError(AIAllowanceError):
+    """A shared-allowance denial of a repair after the call's first attempt was billed.
+
+    It is an ``AIAllowanceError`` with the original code, message, retry delay and reset,
+    so every caller keeps its retry mapping. ``metadata`` describes the attempt already
+    sent exactly as a typed failure after that attempt would, so a caller can trace what
+    was billed.
+    """
+
+    def __init__(self, error: AIAllowanceError, metadata: ProviderMetadata) -> None:
+        super().__init__(error.code, str(error), error.retry_after, error.reset)
+        self.metadata = metadata
+
+
 class _OpenAIPreflightError(ValueError):
     """Return a structured budget refusal without counting an unsent provider call."""
 
@@ -41,6 +55,14 @@ class _OpenAIPreflightError(ValueError):
         """Retain the preflight resource and conservative projected bound."""
         super().__init__("OpenAI request exceeds its configured preflight allowance")
         self.failure = failure
+
+
+class _OpenAIPreflightUnavailableError(ValueError):
+    """Refuse before dispatch because a local precondition of the preflight is missing.
+
+    Nothing was sent, so the refusal counts no request and carries no raw output; the
+    message names the precondition rather than a provider fault.
+    """
 
 
 class _ResponsesAPI(Protocol):
@@ -201,23 +223,18 @@ class LLMProvider(ABC):
 
         Raises
         ------
-        TypeError
-            If the boundary values do not use the declared strict types.
         ValueError
             If the injected clock moves backwards.
+        AIAllowanceError
+            If the shared OpenAI allowance denies the call before dispatch; propagated so
+            the API can answer 429. A denied repair raises ``BilledAttemptAllowanceError``,
+            which carries the metadata of the first attempt that was already billed.
 
         Notes
         -----
-        Provider exceptions become typed results. Only invalid caller contracts and a
-        non-monotonic clock escape this boundary.
+        Provider exceptions become typed results. Only a non-monotonic clock and a
+        denied shared allowance escape this boundary.
         """
-        if not isinstance(prompt, Prompt):
-            raise TypeError("prompt must be a Prompt value")
-        if not isinstance(schema, type) or not issubclass(schema, BaseModel):
-            raise TypeError("schema must be a Pydantic model class")
-        if not isinstance(budget, ProviderBudget):
-            raise TypeError("budget must be a ProviderBudget value")
-
         current_prompt = prompt
         raw_outputs: list[str] = []
         local_timings: list[LocalModelTiming] = []
@@ -229,6 +246,22 @@ class LLMProvider(ABC):
         total_reasoning_tokens = 0
         total_request_time_ms = 0.0
 
+        def sent_metadata(projected: int | None = None) -> ProviderMetadata:
+            """Describe the attempts sent so far as this completion's trace metadata."""
+            return self._metadata(
+                raw_outputs=raw_outputs,
+                local_timings=local_timings,
+                request_ids=request_ids,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                cached_input_tokens=total_cached_input_tokens,
+                cache_write_input_tokens=total_cache_write_input_tokens,
+                reasoning_tokens=total_reasoning_tokens,
+                request_time_ms=total_request_time_ms,
+                budget=budget,
+                projected_input_tokens=projected,
+            )
+
         def failed(
             failure: CompletionFailure, *, projected: int | None = None
         ) -> ProviderResult[OutputT]:
@@ -237,19 +270,7 @@ class LLMProvider(ABC):
                 status=failure.status,
                 parsed=None,
                 refusal=failure,
-                metadata=self._metadata(
-                    raw_outputs=raw_outputs,
-                    local_timings=local_timings,
-                    request_ids=request_ids,
-                    input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens,
-                    cached_input_tokens=total_cached_input_tokens,
-                    cache_write_input_tokens=total_cache_write_input_tokens,
-                    reasoning_tokens=total_reasoning_tokens,
-                    request_time_ms=total_request_time_ms,
-                    budget=budget,
-                    projected_input_tokens=projected,
-                ),
+                metadata=sent_metadata(projected),
             )
 
         repair_errors: tuple[str, ...] = ()
@@ -289,9 +310,16 @@ class LLMProvider(ABC):
             started = self._clock()
             try:
                 raw = await self._request(current_prompt, schema, remaining)
-            except AIAllowanceError:
-                raise
+            except AIAllowanceError as error:
+                if not raw_outputs:
+                    # Nothing of this completion was sent, so nothing was billed.
+                    raise
+                # Only the repair was denied: the first attempt was sent and billed, so it
+                # leaves with the denial and the caller can trace it like any paid attempt.
+                raise BilledAttemptAllowanceError(error, sent_metadata()) from error
             except _OpenAIPreflightError as error:
+                # The adapter's stricter projection refused the call; the metadata carries
+                # the same projection so model_calls and the failure details agree.
                 return failed(
                     error.failure.model_copy(
                         update={
@@ -309,6 +337,17 @@ class LLMProvider(ABC):
                             if error.failure.which == "input_tokens"
                             else budget.max_cost_usd,
                         }
+                    ),
+                    projected=error.failure.projected_input_tokens,
+                )
+            except _OpenAIPreflightUnavailableError as error:
+                # A local precondition failed before dispatch: no request went out, so no
+                # empty raw output and no request time are recorded against the provider.
+                return failed(
+                    ProviderRefusal(
+                        status="provider_error",
+                        message=str(error),
+                        attempts=len(raw_outputs),
                     )
                 )
             except Exception as error:
@@ -640,7 +679,10 @@ class OpenAILLMProvider(LLMProvider):
         )
         if projected is None:
             if active_allowance.get() is not None:
-                raise ValueError("OpenAI cost preflight requires the model tokenizer")
+                raise _OpenAIPreflightUnavailableError(
+                    "OpenAI cost preflight requires the model tokenizer, which is unavailable; "
+                    "the request was not sent"
+                )
             reservation = budget.max_cost_usd
         else:
             projected += 128  # Conservative extra room for provider framing around the schema.

@@ -3,13 +3,21 @@
 import asyncio
 from decimal import Decimal
 
+from pydantic import JsonValue
 import pytest
 
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest, RunResponse
 from app.llm.schemas import ProviderBudget, TokenPricing
+from app.observability.types import JsonObject
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.llm.support import DeterministicLLMProvider
+
+
+def json_object(value: JsonValue) -> JsonObject:
+    """Narrow one JSON value that the execution contract defines as an object."""
+    assert isinstance(value, dict)
+    return value
 
 
 def test_effective_budget_exposes_the_limiting_source_and_chat_exclusion():
@@ -26,10 +34,10 @@ def test_effective_budget_exposes_the_limiting_source_and_chat_exclusion():
     provider = DeterministicLLMProvider(())
     request = ReviewRequest(query="Revenue?")
     context = asyncio.run(service._execution_context(provider, budget, request))
-    settings = context["effective_settings"]
-    assert settings["run_limits"]["max_input_tokens"] == 60000
-    assert settings["effective_provider_budget"]["max_input_tokens"] == 2500
-    assert settings["budget_sources"]["max_input_tokens"] == "provider_budget"
+    settings = json_object(context["effective_settings"])
+    assert json_object(settings["run_limits"])["max_input_tokens"] == 60000
+    assert json_object(settings["effective_provider_budget"])["max_input_tokens"] == 2500
+    assert json_object(settings["budget_sources"])["max_input_tokens"] == "provider_budget"
     assert settings["run_limits_source"] == "application_default"
     overridden = ReviewRequest.model_validate(
         {
@@ -37,20 +45,20 @@ def test_effective_budget_exposes_the_limiting_source_and_chat_exclusion():
             "session_profile": {"prompt_policy": {"workflow_budget": {"max_input_tokens": 1000}}},
         }
     )
-    settings = asyncio.run(service._execution_context(provider, budget, overridden))[
-        "effective_settings"
-    ]
-    assert settings["effective_provider_budget"]["max_input_tokens"] == 1000
-    assert settings["budget_sources"]["max_input_tokens"] == "run_limits"
+    context = asyncio.run(service._execution_context(provider, budget, overridden))
+    settings = json_object(context["effective_settings"])
+    assert json_object(settings["effective_provider_budget"])["max_input_tokens"] == 1000
+    assert json_object(settings["budget_sources"])["max_input_tokens"] == "run_limits"
     assert settings["run_limits_source"] == "request"
     chat = asyncio.run(service._execution_context(provider, budget, request, chat_only=True))
-    assert chat["effective_settings"]["retrieval_applicable"] is False
-    assert chat["effective_settings"]["run_limits"] is None
-    assert chat["effective_settings"]["effective_provider_budget"]["max_input_tokens"] == 2500
+    chat_settings = json_object(chat["effective_settings"])
+    assert chat_settings["retrieval_applicable"] is False
+    assert chat_settings["run_limits"] is None
+    assert json_object(chat_settings["effective_provider_budget"])["max_input_tokens"] == 2500
 
 
 def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(successful_run):
-    """Live and persisted projections retain details while historical absence stays unknown."""
+    """Live and persisted projections retain current measurements and optional timing."""
     fields = {
         "routing_queries": {"en": "Revenue?"},
         "resolved_scope": {"source": "issuer_alias"},
@@ -64,9 +72,15 @@ def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(s
                 "elapsed_ms": 4.0,
                 "input_tokens": 9,
                 "output_tokens": 2,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
+                "reasoning_tokens": 0,
+                "estimated_cost_usd": "0.000001",
                 "provider": "openai_responses",
                 "local": False,
                 "credential_slot": "OPENAI_API_KEY_LOCAL",
+                "local_timings": [],
+                "projected_input_tokens": None,
             }
         ],
     }
@@ -90,9 +104,22 @@ def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(s
         mode="json"
     )
     assert restored["execution"] == execution
-    historical = RunResponse.from_run_report(successful_run).model_dump(mode="json")["execution"]
-    assert historical["stage_results"] is None
-    assert historical["effective_settings"] is None
+    provider_free = RunResponse.from_run_report(successful_run).execution
+    assert provider_free is not None
+    assert provider_free.model_calls == []
+    assert provider_free.stage_results is None
+    assert provider_free.effective_settings is None
+
+
+@pytest.mark.parametrize("context", [None, {}, {"model_calls": None}, {"model_calls": {}}])
+def test_execution_rejects_missing_call_records_instead_of_rebuilding_traces(
+    schema_rejected_run, context
+):
+    """A billed trace cannot make an unsupported execution context look current."""
+    with pytest.raises(ValueError, match="recorded model calls must be a list"):
+        RunResponse.from_run_report(
+            schema_rejected_run.model_copy(update={"request_context": context})
+        )
 
 
 @pytest.mark.parametrize(
@@ -156,7 +183,7 @@ def test_local_execution_publishes_measured_cpu_speed_to_readiness(
                 {"query": "Revenue?", "session_profile": {"engine": "local"}}
             )
             async with service._request_connection(request.session_profile):
-                await service._local_profile(request.session_profile)
+                await service._engines.pin_local_model(request.session_profile)
                 state.update(tag_digest=tag_digest, loaded_digest=loaded_digest)
                 await inventory.snapshot()
                 with record_stages() as recorder:

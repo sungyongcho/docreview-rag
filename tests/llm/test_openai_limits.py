@@ -90,6 +90,38 @@ def test_corrupt_or_excessive_file_falls_back_to_the_ceiling(tmp_path) -> None:
     assert excessive.effective() == ceiling()
 
 
+@pytest.mark.parametrize("cost", ["NaN", "sNaN", "Infinity"])
+def test_non_finite_saved_cost_falls_back_to_the_ceiling_at_startup(tmp_path, cost) -> None:
+    """A hand-edited non-finite cost cap is invalid, not a startup crash."""
+    path = tmp_path / "openai-limits.json"
+    path.write_text(
+        json.dumps(
+            {"version": 1, "max_input_tokens": 100, "max_output_tokens": 10, "max_cost_usd": cost}
+        )
+    )
+
+    manager = OpenAILimitsManager(ceiling(), path=path)
+
+    assert manager.state().source == "invalid"
+    assert manager.state().error == "Saved OpenAI per-call caps are invalid; the ceiling applies."
+    assert manager.effective() == ceiling()
+
+
+def test_non_finite_cost_is_refused_as_invalid_instead_of_a_decimal_error(tmp_path) -> None:
+    """A NaN cap is rejected by the typed validation error, never by ``InvalidOperation``."""
+    path = tmp_path / "openai-limits.json"
+    manager = OpenAILimitsManager(ceiling(), path=path)
+
+    with pytest.raises(OpenAILimitsError, match="max_cost_usd must be a finite number") as error:
+        asyncio.run(
+            manager.save(max_input_tokens=100, max_output_tokens=10, max_cost_usd=Decimal("NaN"))
+        )
+
+    assert error.value.code == "openai_limits_invalid"
+    assert manager.effective() == ceiling()
+    assert not path.exists()
+
+
 def test_production_never_reads_the_file_or_accepts_edits(tmp_path) -> None:
     """Production keeps the ceiling even when a lower saved file exists."""
     path = tmp_path / "openai-limits.json"

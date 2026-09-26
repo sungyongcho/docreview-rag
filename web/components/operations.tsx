@@ -23,7 +23,7 @@ import { loadOperationsFilter, saveOperationsFilter, loadOperationsTargetFilter,
 import { useNotifications } from "@/components/notifications";
 
 /** Consecutive failed polls tolerated before one persistent waiting notice replaces per-failure toasts. */
-export const POLL_NOTICE_AFTER_FAILURES = 3;
+const POLL_NOTICE_AFTER_FAILURES = 3;
 const POLL_INTERVAL_MS = 1_000;
 const POLL_HIDDEN_INTERVAL_MS = 5_000;
 const POLL_MAX_BACKOFF_MS = 10_000;
@@ -45,7 +45,7 @@ const TARGET_FILTER_OPTIONS: Array<{ value: OperationsTargetFilter; label: strin
   { value: "app", label: "App" },
 ];
 
-export interface CommandGroup {
+interface CommandGroup {
   category: OperatorCommand["category"];
   commands: OperatorCommand[];
 }
@@ -210,7 +210,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
                   <TerminalSquare size={16} />
                   <span className="command-badges">
                     <span className={`command-kind ${command.category}`}>{t(command.category)}</span>
-                    <span className="command-kind target">{t(TARGET_LABELS[command.target] ?? "Target not reported")}</span>
+                    <span className="command-kind target">{t(TARGET_LABELS[command.target])}</span>
                     {command.confirmation && <span className="command-kind confirmation" title={t(command.confirmation)}><TriangleAlert size={11} aria-hidden="true" />{t("Confirmation required")}</span>}
                   </span>
                 </div>

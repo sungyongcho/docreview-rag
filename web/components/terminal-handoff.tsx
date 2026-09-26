@@ -7,7 +7,6 @@ import { useI18n } from "@/lib/i18n";
 import "./terminal-handoff.css";
 
 import type { Diagnosis, TerminalStep } from "@/lib/preparation-diagnostics";
-export type { TerminalStep } from "@/lib/preparation-diagnostics";
 
 /** Present terminal prerequisites compactly beside the affected preparation step. */
 export function TerminalHandoff({ steps, onRefresh, blocking = true, diagnosis, onNavigate, technicalDetail, compact = false }: { compact?: boolean; steps: TerminalStep[]; onRefresh: () => unknown | Promise<unknown>; blocking?: boolean; diagnosis?: Diagnosis; technicalDetail?: string | null; onNavigate?: (target: NonNullable<Diagnosis["returnTo"]>) => void }) {

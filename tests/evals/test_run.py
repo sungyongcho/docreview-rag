@@ -18,22 +18,18 @@ def test_cli_defaults_to_the_isolated_deterministic_ten_arm_matrix():
     assert not args.persist_results
 
 
-def test_repeated_or_reordered_axes_normalize_to_the_canonical_matrix():
+@pytest.mark.parametrize(
+    ("argv", "axis", "expected"),
+    [
+        (["--strategies", "vector", "lexical", "vector"], "strategies", ["lexical", "vector"]),
+        (["--target-tokens", "2048", "1024", "2048"], "target_tokens", [1024, 2048]),
+        (["--lexical-rankers", "bm25", "bm25"], "lexical_rankers", ["bm25"]),
+    ],
+    ids=["strategies", "target_tokens", "lexical_rankers"],
+)
+def test_every_matrix_axis_is_deduplicated_and_canonically_ordered(argv, axis, expected):
     """Deduplicate and canonically order each axis before any corpus is read."""
-    assert arguments(["--strategies", "vector", "lexical", "vector"]).strategies == [
-        "lexical",
-        "vector",
-    ]
-
-
-def test_duplicate_chunk_targets_and_rankers_normalize_the_same_way():
-    """Apply the same normalization to every matrix axis, not only to the rankers."""
-    args = arguments(
-        ["--target-tokens", "2048", "1024", "2048", "--lexical-rankers", "bm25", "bm25"]
-    )
-
-    assert args.target_tokens == [1024, 2048]
-    assert args.lexical_rankers == ["bm25"]
+    assert getattr(arguments(argv), axis) == expected
 
 
 def test_a_candidate_depth_below_k_is_rejected_by_the_parser():
@@ -42,26 +38,25 @@ def test_a_candidate_depth_below_k_is_rejected_by_the_parser():
         arguments(["-k", "10", "--candidate-k", "5"])
 
 
-def test_the_budget_arm_ignores_the_order_the_axes_were_typed():
-    """Pick the deepest retrieval path, so the same matrix always reports the same budget."""
-    assert budget_arm_selection(["hybrid", "vector", "lexical"], ["ts_rank_cd", "bm25"]) == (
-        "hybrid",
-        "ts_rank_cd",
-    )
-
-
 @pytest.mark.parametrize(
     ("strategies", "rankers", "expected"),
     [
+        (["hybrid", "vector", "lexical"], ["ts_rank_cd", "bm25"], ("hybrid", "ts_rank_cd")),
         (["lexical", "vector"], ["bm25", "ts_rank_cd"], ("vector", None)),
         (["lexical"], ["bm25", "ts_rank_cd"], ("lexical", "ts_rank_cd")),
         (["lexical"], ["bm25"], ("lexical", "bm25")),
     ],
+    ids=[
+        "hybrid_is_deepest_whatever_the_typed_order",
+        "vector_lane_names_no_ranker",
+        "lexical_lane_takes_the_canonical_ranker",
+        "lexical_lane_takes_the_only_ranker",
+    ],
 )
-def test_the_budget_arm_names_a_ranker_only_when_it_runs_a_lexical_query(
+def test_the_budget_arm_is_the_deepest_lane_with_a_ranker_only_for_lexical_queries(
     strategies, rankers, expected
 ):
-    """Leave the budget ranker unset for a vector lane and canonical otherwise."""
+    """Pick the deepest requested lane and name its canonical ranker only when it runs one."""
     assert budget_arm_selection(strategies, rankers) == expected
 
 

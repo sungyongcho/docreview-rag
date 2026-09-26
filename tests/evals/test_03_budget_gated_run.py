@@ -9,7 +9,8 @@ import pytest
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, Settings
 from app.evals.measurement import assess_indexing_budget
 import app.evals.run as run
-from app.evals.run import _run_cli, arguments, main
+from app.evals.run import arguments, main, run_matrix
+from app.evals.types import EvaluationRetrieval
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.evals.support import positive_case, relevant_hit
 
@@ -82,7 +83,7 @@ def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
 
         async def retriever(_query, _k):
             """Return the fixed relevant hit for one bound arm."""
-            return [relevant_hit()]
+            return EvaluationRetrieval(hits=(relevant_hit(),))
 
         return retriever
 
@@ -93,7 +94,7 @@ def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
 def _execute(monkeypatch, argv, **install):
     """Run the command with every boundary stubbed and return its result dict."""
     engine, bound = _install(monkeypatch, **install)
-    result = asyncio.run(_run_cli(arguments(argv)))
+    result = asyncio.run(run_matrix(**vars(arguments(argv))))
     assert engine.disposed
     return result, bound
 

@@ -8,8 +8,9 @@ import pytest
 
 from app.api.errors import ApiProblemError
 from app.api.review_profile import ReviewSessionProfile
-from app.api.runtime import RuntimeApiServices, SessionFactory
+from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest
+from app.db.session_factory import SessionFactory
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import local_provider_budget
 from app.llm.local_inventory import LocalModelInventory
@@ -38,29 +39,29 @@ def local_services(names: list[str]) -> RuntimeApiServices:
 def test_single_model_is_pinned_without_changing_the_requested_engine() -> None:
     """A single model is resolved once and cannot later switch to a replacement."""
     services = local_services(["answer"])
-    profile = asyncio.run(services._local_profile(ReviewSessionProfile(engine="local")))
+    profile = asyncio.run(services._engines.pin_local_model(ReviewSessionProfile(engine="local")))
     assert profile.local_model == "answer"
     assert profile.engine == "local"
     other = local_services(["replacement"])
     with pytest.raises(ApiProblemError) as error:
-        asyncio.run(other._local_profile(profile))
+        asyncio.run(other._engines.pin_local_model(profile))
     assert error.value.error.code == "local_model_unavailable"
     openai = ReviewSessionProfile()
-    assert asyncio.run(services._local_profile(openai)) is openai
+    assert asyncio.run(services._engines.pin_local_model(openai)) is openai
 
 
 def test_multiple_models_require_a_choice_and_isolate_concurrent_requests() -> None:
     """Two conversations get separate providers and never mutate a global active model."""
     services = local_services(["first", "second"])
     with pytest.raises(ApiProblemError) as error:
-        asyncio.run(services._local_profile(ReviewSessionProfile(engine="local")))
+        asyncio.run(services._engines.pin_local_model(ReviewSessionProfile(engine="local")))
     assert error.value.error.code == "local_model_required"
 
     async def resolve() -> list:
         """Resolve independent selections concurrently through the same runtime."""
         return await asyncio.gather(
             *(
-                services._engine(
+                services._engines.resolve_engine(
                     ReviewRequest(
                         query="question",
                         session_profile=ReviewSessionProfile(engine="local", local_model=name),
@@ -79,12 +80,16 @@ def test_multiple_models_require_a_choice_and_isolate_concurrent_requests() -> N
 def test_empty_inventory_blocks_local_execution() -> None:
     """An explicitly chosen local engine never falls back to another provider."""
     with pytest.raises(ApiProblemError) as error:
-        asyncio.run(local_services([])._local_profile(ReviewSessionProfile(engine="local")))
+        asyncio.run(
+            local_services([])._engines.pin_local_model(ReviewSessionProfile(engine="local"))
+        )
     assert error.value.error.code == "local_model_unavailable"
 
 
 def test_request_pins_endpoint_and_provider_across_connection_changes(tmp_path) -> None:
     """Running requests keep their endpoint and model while the next request uses a saved change."""
+    from app.llm.local import LocalLLMProvider
+
     manager = LocalConnectionManager(
         initial_base_url="http://first/v1",
         path=tmp_path / "connection.json",
@@ -105,16 +110,18 @@ def test_request_pins_endpoint_and_provider_across_connection_changes(tmp_path) 
     async def exercise() -> None:
         """Resolve stages before and after a switch, then enter another request boundary."""
         async with services._request_connection(request.session_profile):
-            first, _ = await services._engine(request)
+            first, _ = await services._engines.resolve_engine(request)
+            assert isinstance(first, LocalLLMProvider)
             assert first._base_url == "http://first/v1"
             await manager.add_server("Second", "http://second/v1")
-            later, _ = await services._engine(request)
+            later, _ = await services._engines.resolve_engine(request)
             assert later is first
             assert later.model_name == "answer"
             assert not first._client.is_closed
         assert first._client.is_closed
         async with services._request_connection(request.session_profile):
-            next_request, _ = await services._engine(request)
+            next_request, _ = await services._engines.resolve_engine(request)
+            assert isinstance(next_request, LocalLLMProvider)
             assert next_request._base_url == "http://second/v1"
             assert next_request is not first
         assert next_request._client.is_closed
@@ -248,19 +255,112 @@ def test_missing_candidate_metadata_is_an_explicit_failure(hit):
     assert failure.value.error.code == "evidence_metadata_unavailable"
 
 
-@pytest.fixture
-def routing_service():
-    """Use a two-registry manifest and stop at the actual retrieval boundary."""
+def test_component_ranks_use_the_per_language_vector_lane():
+    """A chunk first in the Korean vector lane is rank 1 tagged ko, not its concatenated offset."""
+    from app.retrieval.service import ComponentRankings, RetrievalResult
+
+    routed = RetrievalResult(
+        hits=(),
+        candidates=(),
+        score_stage="rrf",
+        component_rankings=ComponentRankings(
+            vector=(1, 2, 3),
+            vector_by_language={"en": (1, 2), "ko": (3,)},
+            lexical=(3,),
+            lexical_by_language={"ko": (3,)},
+        ),
+    )
+    ranks = RuntimeApiServices._component_ranks(3, routed)
+    assert [(rank.lane, rank.language, rank.rank) for rank in ranks] == [
+        ("vector", "ko", 1),
+        ("lexical", "ko", 1),
+    ]
+
+    # Without per-language lanes the flat vector tuple is the only provenance available.
+    flat = RetrievalResult(
+        hits=(),
+        candidates=(),
+        score_stage="rrf",
+        component_rankings=ComponentRankings(vector=(1, 2, 3), lexical=()),
+    )
+    ranks = RuntimeApiServices._component_ranks(3, flat)
+    assert [(rank.lane, rank.language, rank.rank) for rank in ranks] == [("vector", None, 3)]
+
+
+def test_reranked_requests_share_one_cross_encoder_model_load(monkeypatch):
+    """Two accuracy-preset requests resolve one reranker, so the model loads once per process."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.api.review_profile import ServerBM25, resolve_retrieval_profile
+    from app.retrieval import cross_encoder
+    from app.retrieval.service import ComponentRankings, RetrievalResult
+    from app.retrieval.types import RetrievalFilters
+    from tests.retrieval.support import fake_sentence_transformers
+
+    monkeypatch.setattr(cross_encoder, "_SHARED_RERANKERS", {}, raising=False)
+    constructions: list[str] = []
+
+    class Encoder:
+        """Count every model construction the optional dependency would perform."""
+
+        def __init__(self, model, *, max_length):
+            del max_length
+            constructions.append(model)
+
+        def predict(self, pairs, *, batch_size):
+            """Score every pair identically; only the load count matters here."""
+            return [0.0] * len(pairs)
+
+    fake_sentence_transformers(monkeypatch, CrossEncoder=Encoder)
+    rerankers = []
+
+    async def record(session, query, **kwargs):
+        """Capture the reranker each request hands to the retrieval service."""
+        del session, query
+        rerankers.append(kwargs["reranker"])
+        return RetrievalResult(
+            hits=(),
+            candidates=(),
+            score_stage="reranker",
+            component_rankings=ComponentRankings(vector=(), lexical=()),
+        )
+
+    services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(), retrieval_service=record
+    )
+    profile = resolve_retrieval_profile(
+        ReviewSessionProfile(retrieval_preset="accuracy"), ServerBM25()
+    )
+    for _ in range(2):
+        asyncio.run(
+            services._retrieve_with_session(
+                cast(AsyncSession, object()), "revenue", 5, RetrievalFilters(), profile
+            )
+        )
+    for reranker in rerankers:
+        asyncio.run(reranker.score("revenue", ["evidence"]))
+
+    assert len(rerankers) == 2
+    assert constructions == [rerankers[0].model], constructions
+    assert rerankers[0] is rerankers[1]
+
+
+def routing_runtime(**overrides) -> RuntimeApiServices:
+    """Use a two-registry manifest and stop at the actual retrieval boundary.
+
+    Keyword overrides replace the defaults below, so a test wires its provider,
+    classifier or persistence through the constructor like the release composition does.
+    """
     from app.retrieval.scope import ManifestScopeIndex
 
     def stop_before_database():
         """Prove successful routing enters retrieval without using the user's database."""
         raise LookupError("retrieval boundary reached")
 
-    return RuntimeApiServices(
-        embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=stop_before_database,
-        scope_index=ManifestScopeIndex.from_entries(
+    options = {
+        "embedding_provider": DeterministicEmbeddingProvider(),
+        "session_factory": stop_before_database,
+        "scope_index": ManifestScopeIndex.from_entries(
             (
                 filing_document(
                     registry="sec", issuer="NVDA", fiscal_year=2023, aliases=("NVDA", "Nvidia")
@@ -282,7 +382,15 @@ def routing_service():
                 ),
             )
         ),
-    )
+    }
+    options.update(overrides)
+    return RuntimeApiServices(**options)
+
+
+@pytest.fixture
+def routing_service():
+    """Use a two-registry manifest and stop at the actual retrieval boundary."""
+    return routing_runtime()
 
 
 @pytest.mark.parametrize(
@@ -302,7 +410,7 @@ def test_followups_reach_retrieval_with_replaced_scope(classified_service, query
     from app.workflow.gate import ConversationTurn
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     events = []
 
     async def observe(event):
@@ -353,7 +461,7 @@ def test_known_company_questions_reach_retrieval_without_classifier(
     from app.observability.stages import record_stages
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     events = []
 
     async def observe(event):
@@ -384,7 +492,7 @@ def test_exact_greetings_use_fixed_guidance_without_classifier(classified_servic
     from app.api.schemas import RetrieveRequest
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     prepared = asyncio.run(service.retrieve(RetrieveRequest(query=query)))
     path = prepared.path_decision
     assert path["intent"] == "service_help"
@@ -407,7 +515,7 @@ def test_server_enforces_history_bounds(routing_service):
             ConversationTurn(role="assistant", text="Prior answer"),
         ),
     )
-    _, path = asyncio.run(routing_service._path_decision(request))
+    _, path = asyncio.run(routing_service._conversation.decide_path(request))
     assert path["history_turns"] == 1
     assert path["matched_rule"] != "filing_followup"
     assert path["retrieval_query"] == request.query
@@ -420,7 +528,7 @@ def test_zero_history_bound_prevents_implicit_inheritance(classified_service):
     from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -444,6 +552,7 @@ def test_zero_history_bound_prevents_implicit_inheritance(classified_service):
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["history_turns"] == 0
     assert error.path_decision["retrieval_query"] == "그럼 2024년은?"
@@ -461,10 +570,11 @@ def test_casual_input_does_not_inherit_filing_scope(routing_service, query):
         query=query, conversation_history=(ConversationTurn(role="user", text="NVDA revenue"),)
     )
     try:
-        _, path = asyncio.run(routing_service._path_decision(request))
+        _, path = asyncio.run(routing_service._conversation.decide_path(request))
     except ApiProblemError as failure:
         assert failure.error.code == "unsupported_request"
         rejected = failure.error.path_decision
+        assert rejected is not None
         assert rejected["retrieval_query"] == query
         assert rejected["matched_rule"] != "filing_followup"
         return
@@ -489,13 +599,14 @@ def test_scope_stops_before_retrieval_with_action(classified_service, profile, c
     from app.api.schemas import RetrieveRequest
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     with pytest.raises(ApiProblemError) as failure:
         asyncio.run(
             service.retrieve(RetrieveRequest(query="NVDA revenue", session_profile=profile))
         )
     error = failure.value.error
     assert error.code == code
+    assert error.path_decision is not None
     assert error.path_decision["stopping_reason"] == code
     assert error.path_decision["suggested_scope"] == (
         "auto" if code == "query_scope_conflict" else None
@@ -562,7 +673,7 @@ def test_unique_company_selection_anchors_short_finance_questions(
     from app.observability.stages import record_stages
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     events = []
 
     async def observe(event):
@@ -594,7 +705,7 @@ def test_explicit_language_filter_still_empties_anchored_document_scope(classifi
     from app.api.schemas import RetrieveRequest
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     with pytest.raises(ApiProblemError) as failure:
         asyncio.run(
             service.retrieve(
@@ -609,6 +720,7 @@ def test_explicit_language_filter_still_empties_anchored_document_scope(classifi
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "query_scope_empty"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["model_call_count"] == 0
     assert prompts == []
@@ -619,7 +731,7 @@ def test_vague_question_with_multiple_selected_companies_is_rejected(classified_
     from app.api.schemas import RetrieveRequest
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -640,6 +752,7 @@ def test_vague_question_with_multiple_selected_companies_is_rejected(classified_
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["suggested_scope"] is None
     assert len(prompts) <= 1
@@ -650,7 +763,7 @@ def test_unknown_selected_document_id_cannot_establish_a_unique_anchor(classifie
     from app.api.schemas import RetrieveRequest
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -673,16 +786,17 @@ def test_unknown_selected_document_id_cannot_establish_a_unique_anchor(classifie
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code in ("query_scope_empty", "ambiguous_issuer")
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert len(prompts) <= 1
 
 
-def test_classifier_history_and_service_guidance_are_recorded_once(routing_service):
+def test_classifier_history_and_service_guidance_are_recorded_once():
     """Stream preparation reuses classification and never generates a free-form answer."""
     from contextlib import asynccontextmanager
     import json
 
-    from app.api.schemas import RetrieveRequest, RunResponse
+    from app.api.schemas import ConversationReport, RetrieveRequest, RunResponse
     from app.llm.local import LocalLLMProvider
     from app.observability.stages import record_stages
     from app.workflow.gate import ConversationTurn
@@ -735,13 +849,15 @@ def test_classifier_history_and_service_guidance_are_recorded_once(routing_servi
             provider = LocalLLMProvider(
                 base_url="http://test", model_name="test", protocol="ollama", client=client
             )
-            routing_service._llm_providers = {"openai": provider}
-            routing_service._provider_budgets = {
-                "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
-            }
-            routing_service._intent_classifier_enabled = True
-            routing_service._session_factory = sessions
-            routing_service._run_persister = persist
+            routing_service = routing_runtime(
+                llm_providers={"openai": provider},
+                provider_budgets={
+                    "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
+                },
+                intent_classifier_enabled=True,
+                session_factory=sessions,
+                run_persister=persist,
+            )
             request = ReviewRequest(
                 query="How do I ask questions in DocReview?",
                 conversation_history=(ConversationTurn(role="user", text="NVDA revenue"),),
@@ -756,17 +872,21 @@ def test_classifier_history_and_service_guidance_are_recorded_once(routing_servi
             return prepared, RunResponse.from_run_report(report)
 
     prepared, result = asyncio.run(exercise())
+    assert prepared.path_decision is not None
     assert prepared.path_decision["intent"] == "service_help"
     assert len(prompts) == 1
     assert prompts[0]["history"] == [{"role": "user", "text": "NVDA revenue"}]
+    assert result.execution is not None
     assert [call.node for call in result.execution.model_calls] == ["gate"]
+    assert isinstance(result.report, ConversationReport)
     assert result.report.response_source == "canned"
+    assert result.execution.path_decision is not None
     assert result.execution.path_decision["source"] == "classifier"
     assert saved[0].request_context["path_decision"]["scope_outcome"] == "not_applicable"
 
 
-def classifier_wiring(service):
-    """Wire a recording single-response classifier transport into the given service."""
+def classifier_wiring():
+    """Build a recording single-response classifier transport and the options that wire it."""
     import json
 
     from app.llm.local import LocalLLMProvider
@@ -790,23 +910,25 @@ def classifier_wiring(service):
         )
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
-    service._llm_providers = {
-        "openai": LocalLLMProvider(
-            base_url="http://test", model_name="test", protocol="ollama", client=client
-        )
+    options = {
+        "llm_providers": {
+            "openai": LocalLLMProvider(
+                base_url="http://test", model_name="test", protocol="ollama", client=client
+            )
+        },
+        "provider_budgets": {
+            "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
+        },
+        "intent_classifier_enabled": True,
     }
-    service._provider_budgets = {
-        "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
-    }
-    service._intent_classifier_enabled = True
-    return responses, prompts, client
+    return options, responses, prompts, client
 
 
 @pytest.fixture
-def classified_service(routing_service):
+def classified_service():
     """Exercise structured provider parsing while forbidding unplanned provider calls."""
-    responses, prompts, client = classifier_wiring(routing_service)
-    yield routing_service, responses, prompts
+    options, responses, prompts, client = classifier_wiring()
+    yield routing_runtime(**options), responses, prompts
     asyncio.run(client.aclose())
 
 
@@ -829,7 +951,7 @@ def test_review_preserves_original_question_across_search_rewriting(
 
     async def exercise():
         """Use the real scope resolver with a separately rewritten retrieval question."""
-        _, path = await service._path_decision(request)
+        _, path = await service._conversation.decide_path(request)
         path = {**path, "retrieval_query": "What drove NVIDIA revenue growth in 2024?"}
         await service._review(request, on_node=None, retrieval_override=None, path=path)
 
@@ -853,6 +975,7 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
         """Prove successful routing enters retrieval without using the user's database."""
         raise LookupError("retrieval boundary reached")
 
+    options, responses, prompts, client = classifier_wiring()
     service = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=stop_before_database,
@@ -866,8 +989,8 @@ def test_hbm_outlook_question_stays_deterministic_with_local_index():
                 ),
             )
         ),
+        **options,
     )
-    responses, prompts, client = classifier_wiring(service)
     events = []
 
     async def observe(event):
@@ -1006,6 +1129,7 @@ def test_routing_stops_before_search_and_answer(
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == code
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == stage
     assert error.path_decision["stopping_reason"] == code
     assert error.path_decision["suggested_scope"] is None
@@ -1020,32 +1144,23 @@ def test_routing_stops_before_search_and_answer(
 
 
 @pytest.mark.parametrize(
-    "query,names,target,prior,calls",
+    "query,names,target,calls",
     [
-        ("Nvidia growth drivers", None, None, None, 0),
-        ("Compare all available companies", None, None, None, 0),
-        ("Compare all available companies' revenue", None, None, None, 0),
-        ("그럼 2024년은?", None, None, "NVDA revenue 2023", 0),
-        (
-            "NVIDIA 10-K sexual harassment risk disclosure",
-            ["Nvidia"],
-            "explicit",
-            None,
-            1,
-        ),
-        (
-            "삼성전자 사업보고서의 성희롱 관련 위험",
-            ["삼성전자"],
-            "explicit",
-            None,
-            1,
-        ),
+        ("Nvidia growth drivers", None, None, 0),
+        ("Compare all available companies", None, None, 0),
+        ("NVIDIA 10-K sexual harassment risk disclosure", ["Nvidia"], "explicit", 1),
+        ("삼성전자 사업보고서의 성희롱 관련 위험", ["삼성전자"], "explicit", 1),
+    ],
+    ids=[
+        "known_issuer_without_a_finance_term",
+        "corpus_wide_comparison_without_a_metric",
+        "classified_sensitive_topic_in_an_sec_filing",
+        "classified_sensitive_topic_in_a_dart_filing",
     ],
 )
-def test_supported_questions_reach_search(classified_service, query, names, target, prior, calls):
+def test_supported_questions_reach_search(classified_service, query, names, target, calls):
     """Deterministic filing questions and classified targets both reach actual retrieval."""
     from app.api.schemas import RetrieveRequest
-    from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
     if calls:
@@ -1057,9 +1172,8 @@ def test_supported_questions_reach_search(classified_service, query, names, targ
                 "target_scope": target,
             }
         )
-    history = (ConversationTurn(role="user", text=prior),) if prior else ()
     with pytest.raises(LookupError, match="retrieval boundary reached"):
-        asyncio.run(service.retrieve(RetrieveRequest(query=query, conversation_history=history)))
+        asyncio.run(service.retrieve(RetrieveRequest(query=query)))
     assert len(prompts) <= calls
     assert len(prompts) <= 1
 
@@ -1078,7 +1192,7 @@ def test_explicit_corpus_wide_scope_keeps_every_language(classified_service, end
     from app.observability.stages import record_stages
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     events = []
 
     async def observe(event):
@@ -1193,7 +1307,7 @@ def test_mixed_prior_turn_cannot_anchor_a_followup(classified_service):
     from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -1219,6 +1333,7 @@ def test_mixed_prior_turn_cannot_anchor_a_followup(classified_service):
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["retrieval_query"] == "그럼 2024년은?"
     assert error.path_decision["matched_rule"] != "filing_followup"
@@ -1231,7 +1346,7 @@ def test_classifier_all_without_corpus_wide_cue_is_clarified(classified_service,
     from app.api.schemas import RetrieveRequest
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -1246,6 +1361,7 @@ def test_classifier_all_without_corpus_wide_cue_is_clarified(classified_service,
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["stopping_reason"] == "ambiguous_issuer"
     assert error.path_decision["target_scope"] == "all"
@@ -1260,7 +1376,7 @@ def test_roleplay_overrides_previous_filing_context(classified_service):
     from app.workflow.gate import ConversationTurn
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     with pytest.raises(ApiProblemError) as failure:
         asyncio.run(
             service.retrieve(
@@ -1272,6 +1388,7 @@ def test_roleplay_overrides_previous_filing_context(classified_service):
         )
     error = failure.value.error
     assert error.code == "unsupported_request"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "path"
     assert error.path_decision["source"] == "deterministic"
     assert error.path_decision["model_call_count"] == 0
@@ -1285,7 +1402,7 @@ def test_restatement_after_unresolved_prior_cannot_inherit_scope(classified_serv
     from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -1309,6 +1426,7 @@ def test_restatement_after_unresolved_prior_cannot_inherit_scope(classified_serv
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "ambiguous_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert len(prompts) <= 1
 
@@ -1326,7 +1444,7 @@ def test_restatement_with_new_unknown_target_never_inherits_prior_issuer(classif
     from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -1350,6 +1468,7 @@ def test_restatement_with_new_unknown_target_never_inherits_prior_issuer(classif
     assert failure.value.status_code == 422
     error = failure.value.error
     assert error.code == "unknown_issuer"
+    assert error.path_decision is not None
     assert error.path_decision["stopping_stage"] == "gate"
     assert error.path_decision["missing_issuers"] == ["UnknownCorp"]
     assert len(prompts) == 1

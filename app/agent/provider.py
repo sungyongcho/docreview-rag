@@ -11,14 +11,18 @@ from pydantic.functional_validators import model_validator
 
 from app.agent.types import ToolCall
 from app.llm.provider import openai_usage
-from app.llm.schemas import NonNegativeInt, StrictSchema, TokenPricing
+from app.llm.schemas import NonBlank, NonNegativeInt, StrictSchema, TokenPricing
 from app.openai_models import ReasoningEffort, resolve_openai_model
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
 class ProviderTurn(StrictSchema):
-    """One raw provider response: prose, requested tool calls, and usage."""
+    """One raw provider response: prose, requested tool calls, and usage.
+
+    ``incomplete_reason`` names why a cut-off turn stopped (``max_output_tokens``
+    or ``content_filter``) so the loop can tell a budget stop from a provider one.
+    """
 
     output_text: str
     tool_calls: tuple[ToolCall, ...]
@@ -29,6 +33,7 @@ class ProviderTurn(StrictSchema):
     reasoning_tokens: NonNegativeInt = 0
     request_id: str | None = None
     incomplete: bool = False
+    incomplete_reason: NonBlank | None = None
 
     @model_validator(mode="after")
     def unique_call_ids(self) -> Self:
@@ -36,6 +41,8 @@ class ProviderTurn(StrictSchema):
         call_ids = [call.call_id for call in self.tool_calls]
         if len(call_ids) != len(set(call_ids)):
             raise ValueError("provider tool call ids must be unique")
+        if self.incomplete_reason is not None and not self.incomplete:
+            raise ValueError("incomplete_reason requires an incomplete turn")
         if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
             raise ValueError("detailed input tokens must not exceed input_tokens")
         if self.reasoning_tokens > self.output_tokens:
@@ -165,7 +172,7 @@ class OpenAIToolProvider(ToolCallingProvider):
     def __init__(
         self,
         *,
-        model_name: str,
+        model_name: str | None = None,
         client: AsyncOpenAI | None = None,
         api_key: str | None = None,
     ) -> None:
@@ -231,13 +238,18 @@ class OpenAIToolProvider(ToolCallingProvider):
         ValueError
             If the response omits authoritative token usage or carries invalid
             usage details.
+        RuntimeError
+            If the response status is ``failed`` or ``cancelled``: the model
+            produced no turn, and replaying an empty turn would nudge the model
+            and bill another request for a provider-side failure.
 
         Notes
         -----
         Responses are not stored and SDK retries are disabled so every billed
         request is represented by exactly one agent step. An ``incomplete``
-        response (the output-token ceiling interrupted generation) is surfaced
-        so the loop can stop instead of nudging a truncated turn.
+        response is surfaced with its reason so the loop can tell the
+        output-token ceiling from a content filter instead of nudging a
+        truncated turn.
         """
         response = await self._client.responses.create(
             model=self.model_name,
@@ -248,6 +260,12 @@ class OpenAIToolProvider(ToolCallingProvider):
             reasoning={"effort": self.reasoning_effort},
             store=False,
         )
+        status = getattr(response, "status", None)
+        if status in {"failed", "cancelled"}:
+            code = getattr(getattr(response, "error", None), "code", None) or "unknown"
+            raise RuntimeError(f"OpenAI response {status} ({code})")
+        incomplete = status == "incomplete"
+        reason = getattr(getattr(response, "incomplete_details", None), "reason", None)
         (
             input_tokens,
             output_tokens,
@@ -265,5 +283,8 @@ class OpenAIToolProvider(ToolCallingProvider):
             cache_write_input_tokens=cache_write_input_tokens,
             reasoning_tokens=reasoning_tokens,
             request_id=getattr(response, "id", None),
-            incomplete=getattr(response, "status", None) == "incomplete",
+            incomplete=incomplete,
+            incomplete_reason=(
+                reason if incomplete and isinstance(reason, str) and reason.strip() else None
+            ),
         )

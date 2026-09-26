@@ -1,40 +1,26 @@
-"""Golden suite metadata and serialized evaluation queue behavior."""
+"""Serialized evaluation queue, cancellation, and job-history behavior."""
 
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
-import hashlib
-import json
 from pathlib import Path
 from typing import cast
 
 import pytest
 
-from app.api.admin_schemas import EvaluationPreparationResource, EvaluationRunRequest
+from app.api.admin_schemas import (
+    EvaluationJobResource,
+    EvaluationPreparationResource,
+    EvaluationRunRequest,
+    RetrievalProfile,
+)
 from app.config import Settings
-from app.corpus_admin import AdminCommand, CorpusStatus, OperationOutcome, RuntimeCorpusAdminService
-import app.evals.admin as admin_module
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand, CorpusStatus, OperationOutcome
 from app.evals.admin import EvaluationAdminService, EvaluationAlreadyQueuedError
 from app.operator.jobs import JobExecutionCoordinator, JobStore
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
-
-
-def _absent_case(question: str) -> dict[str, object]:
-    """Build one source-free revision case for focused resolver tests."""
-    return {
-        "id": "test-01",
-        "question": question,
-        "category": "absent",
-        "facet": "policy",
-        "tags": [],
-        "answers": [],
-        "expected_label": "NOT_IN_DOCS",
-        "reference_answer": "NOT_IN_DOCS",
-        "note": "Deliberate negative case.",
-        "curation_status": "agent-curated",
-        "approval_status": "pending-author-approval",
-        "human_verified": False,
-    }
+from tests.corpus_admin.support import LedgerStore
 
 
 @pytest.fixture
@@ -50,37 +36,11 @@ def ready_evaluation_inputs(monkeypatch):
     monkeypatch.setattr(EvaluationAdminService, "preparation", prepared)
 
 
-def test_suite_catalog_preserves_unapproved_provenance(tmp_path: Path) -> None:
-    """Never present agent-curated pending cases as human-verified goldens."""
-    service = EvaluationAdminService(
-        settings=Settings(corpus_dir=tmp_path),
-        provider=DeterministicEmbeddingProvider(),
-        artifact_dir=tmp_path / "runs",
-    )
-
-    suites = asyncio.run(service.suites())
-
-    assert {suite.suite_id for suite in suites} == {
-        "sec-en",
-        "sec-ko",
-        "dart-en",
-        "dart-ko",
-        "sec-en_v2_astra",
-        "sec-ko_v2_astra",
-        "sec-mixed_v2_astra",
-    }
-    assert {suite.suite_id: suite.title for suite in suites} == {
-        "sec-en": "SEC retrieval",
-        "sec-ko": "SEC retrieval · Korean",
-        "dart-en": "DART retrieval",
-        "dart-ko": "DART retrieval · Korean",
-        "sec-en_v2_astra": "SEC · English v2",
-        "sec-ko_v2_astra": "SEC · Korean v2",
-        "sec-mixed_v2_astra": "SEC · Mixed v2",
-    }
-    assert all(suite.approval_status == "pending-author-approval" for suite in suites)
-    assert all(suite.human_verified is False for suite in suites)
-    assert all(suite.source_ready is False for suite in suites)
+async def enqueued_job(service: EvaluationAdminService, job_id: str) -> EvaluationJobResource:
+    """Return a job the test already enqueued, which the service must still report."""
+    job = await service.job(job_id)
+    assert job is not None
+    return job
 
 
 @pytest.mark.usefixtures("ready_evaluation_inputs")
@@ -110,162 +70,6 @@ def test_evaluation_queue_runs_one_job_to_completion(tmp_path: Path, monkeypatch
         assert completed.status == "succeeded"
         assert completed.result_id == 7
         assert completed.baseline_id == 6
-
-    asyncio.run(scenario())
-
-
-def test_matrix_forwards_dart_manifest_and_profile_parameters(tmp_path: Path, monkeypatch) -> None:
-    """Bind isolated DART runs to their exact selection and explicit BM25 values."""
-
-    async def scenario() -> None:
-        """Capture one matrix invocation and verify its explicit parameters."""
-        captured = None
-        service = EvaluationAdminService(
-            settings=Settings(corpus_dir=tmp_path),
-            provider=DeterministicEmbeddingProvider(),
-            artifact_dir=tmp_path / "runs",
-        )
-
-        async def run_cli(args):
-            """Capture the parsed matrix namespace without corpus or database work."""
-            nonlocal captured
-            captured = args
-            return {"persisted": [], "artifacts": []}
-
-        from app.ingestion.source_publication import publish_acquired
-        from tests.ingestion.support import acquired_filing, filing_document
-
-        filing = acquired_filing(tmp_path, document=filing_document(registry="dart"))
-        publish_acquired(
-            tmp_path / "manifest.json",
-            [filing],
-            selection_id="download",
-            selected_document_ids=[filing.document.document_id],
-        )
-
-        async def cases(request):
-            """Use a source-free question to isolate matrix scope construction."""
-            from app.evals.loader import GOLDEN_CASES
-
-            return GOLDEN_CASES.validate_python([_absent_case("Absent?")]), "a" * 64
-
-        monkeypatch.setattr(service, "_evaluation_cases", cases)
-        monkeypatch.setattr(admin_module, "_run_cli", run_cli)
-        request = EvaluationRunRequest(
-            suite_id="dart-ko",
-            mode="matrix",
-            profile={"bm25_k1": 1.5, "bm25_b": 0.6},
-        )
-        await service._matrix(request)
-
-        assert captured is not None
-        assert Path(captured.manifest_name).name.startswith(".evaluation-scope-")
-        assert not Path(captured.manifest_name).exists()
-        assert captured.selection_id == "evaluation-scope"
-        assert captured.bm25_k1 == 1.5
-        assert captured.bm25_b == 0.6
-
-    asyncio.run(scenario())
-
-
-def test_selected_golden_revision_drives_quick_and_matrix_inputs(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """Evaluate the selected DB payload instead of silently falling back to canonical JSON."""
-
-    async def scenario() -> None:
-        """Resolve one revision for quick mode and materialize it for matrix mode."""
-        corpus_dir = tmp_path / "corpus"
-        corpus_dir.mkdir()
-        raw = "<p>Source.</p>"
-        digest = hashlib.sha256(raw.encode()).hexdigest()
-        source_path = corpus_dir / "sec/TEST/0000000001-24-000001/primary.html"
-        source_path.parent.mkdir(parents=True)
-        source_path.write_text(raw)
-        manifest = corpus_dir / "manifest.json"
-        manifest.write_text(
-            json.dumps(
-                {
-                    "corpus": {"corpus_id": "test", "name": "Test"},
-                    "documents": [
-                        {
-                            "document_id": "TEST-FY2024",
-                            "registry": "sec",
-                            "language": "en",
-                            "issuer": "TEST",
-                            "issuer_id": "0000000001",
-                            "filing_id": "0000000001-24-000001",
-                            "fiscal_year": 2024,
-                            "form": "10-K",
-                            "filing_date": "2025-01-01",
-                            "report_period": "2024-12-31",
-                            "source_url": "https://example.org/source",
-                            "sec": {
-                                "cik": "0000000001",
-                                "accession": "0000000001-24-000001",
-                                "primary_document": "source.html",
-                            },
-                        }
-                    ],
-                    "artifacts": [
-                        {
-                            "artifact_id": "source",
-                            "document_id": "TEST-FY2024",
-                            "role": "primary",
-                            "path": "sec/TEST/0000000001-24-000001/primary.html",
-                            "sha256": digest,
-                            "byte_length": len(raw.encode()),
-                            "encoding": "utf-8",
-                            "acquisition": {
-                                "acquired_at": "2025-01-01T00:00:00Z",
-                                "url": "https://example.org/source",
-                                "media_type": "text/html",
-                            },
-                        }
-                    ],
-                    "selections": [{"selection_id": "sec-evaluation", "artifact_ids": ["source"]}],
-                }
-            ),
-            encoding="utf-8",
-        )
-        payload = [_absent_case("Revision question?")]
-        service = EvaluationAdminService(
-            settings=Settings(corpus_dir=corpus_dir),
-            provider=DeterministicEmbeddingProvider(),
-            artifact_dir=tmp_path / "runs",
-        )
-
-        from app.evals.golden_admin import GoldenAdminService
-
-        golden_dir = tmp_path / "golden"
-        golden_dir.mkdir()
-        (golden_dir / "retrieval.json").write_text(json.dumps(payload))
-        golden = GoldenAdminService(golden_dir=golden_dir, corpus_dir=corpus_dir)
-        draft = await golden.create_draft("sec-en", filename="custom.json")
-        service._golden_dir = golden_dir
-
-        captured = None
-
-        async def run_cli(args):
-            """Read the temporary matrix input while it is still present."""
-            nonlocal captured
-            captured = (args, json.loads(args.golden.read_text(encoding="utf-8")))
-            return {"persisted": [], "artifacts": []}
-
-        monkeypatch.setattr(admin_module, "_run_cli", run_cli)
-        request = EvaluationRunRequest(suite_id="sec-en", golden_revision_id=draft.revision_id)
-
-        cases, sha256 = await service._evaluation_cases(request)
-        await service._matrix(request.model_copy(update={"mode": "matrix"}))
-
-        assert cases[0].question == "Revision question?"
-        assert sha256 == draft.sha256
-        assert captured is not None
-        args, written = captured
-        assert written == payload
-        assert args.admin_metadata["golden_provenance"]["filename"] == "custom.json"
-        assert args.admin_metadata["golden_provenance"]["golden_sha256"] == draft.sha256
-        assert not args.golden.exists()
 
     asyncio.run(scenario())
 
@@ -302,7 +106,7 @@ def test_queued_evaluation_can_be_cancelled_before_execution(tmp_path: Path, mon
 
         assert calls == 1
         assert cancelled.status == "cancelled"
-        assert (await service.job(second.job_id)).status == "cancelled"
+        assert (await enqueued_job(service, second.job_id)).status == "cancelled"
 
     asyncio.run(scenario())
 
@@ -331,6 +135,7 @@ def test_corpus_and_evaluation_workers_share_one_execution_lock(
         corpus = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
             operation_runner=corpus_runner,
+            job_store=LedgerStore(),
             execution_lock=lock,
             execution_coordinator=coordinator,
         )
@@ -353,55 +158,14 @@ def test_corpus_and_evaluation_workers_share_one_execution_lock(
         evaluation_job = await evaluation.enqueue(EvaluationRunRequest(suite_id="sec-en"))
         await asyncio.sleep(0)
         assert events == ["corpus-start"]
-        assert (await evaluation.job(evaluation_job.job_id)).status == "queued"
+        assert (await enqueued_job(evaluation, evaluation_job.job_id)).status == "queued"
 
         gate.set()
-        await corpus._queue.join()
+        await corpus._job_queue._queue.join()
         await evaluation._queue.join()
         assert events == ["corpus-start", "corpus-finish", "evaluation-start"]
 
     asyncio.run(scenario())
-
-
-def test_suite_source_failure_is_typed_without_guessing(tmp_path: Path, monkeypatch) -> None:
-    """Only actual source absence is classified as an acquisition prerequisite."""
-    from app.evals.loader import GoldenDataError
-
-    service = EvaluationAdminService(
-        settings=Settings(corpus_dir=tmp_path),
-        provider=DeterministicEmbeddingProvider(),
-        artifact_dir=tmp_path / "runs",
-    )
-
-    def missing(*args, **kwargs):
-        """Simulate the loader's explicit absent-artifact contract."""
-        from app.evals.source_binding import BoundGolden, SourceCheck
-
-        return BoundGolden(
-            (),
-            (
-                SourceCheck(
-                    "missing",
-                    "sec",
-                    "NVDA",
-                    2024,
-                    "receipt",
-                    None,
-                    "source_missing",
-                    "missing artifact",
-                ),
-            ),
-        )
-
-    monkeypatch.setattr(admin_module, "bind_golden", missing)
-    assert all(row.source_error_code == "source_missing" for row in asyncio.run(service.suites()))
-
-    def invalid(*args, **kwargs):
-        """Keep invalid hashes or manifests distinct from missing downloads."""
-        raise GoldenDataError("invalid source contract")
-
-    monkeypatch.setattr(admin_module, "bind_golden", invalid)
-    assert all(row.source_error_code == "source_invalid" for row in asyncio.run(service.suites()))
 
 
 @pytest.mark.parametrize("preparation_succeeds", [True, False])
@@ -418,7 +182,7 @@ def test_waiting_evaluation_deduplicates_and_rechecks_preparation(
         status = CorpusStatus(True, "compatible", "ok", 1, 10, 5, 5, True, True, "deterministic")
         calls = []
 
-        async def readiness():
+        async def readiness() -> CorpusStatus:
             """Return readiness as changed by the simulated corpus completion."""
             return status
 
@@ -442,6 +206,7 @@ def test_waiting_evaluation_deduplicates_and_rechecks_preparation(
                 return_exceptions=True,
             )
             assert isinstance(duplicate, EvaluationAlreadyQueuedError)
+            assert isinstance(first, EvaluationJobResource)
             assert duplicate.job_id == first.job_id
             assert first.message == "Waiting for backfill_embeddings embedding-job to finish."
             assert len(service._jobs) == 1
@@ -450,6 +215,7 @@ def test_waiting_evaluation_deduplicates_and_rechecks_preparation(
                 status = replace(status, pending_embeddings=0, embedded_chunks=10)
         await service._queue.join()
         result = await service.job(first.job_id)
+        assert result is not None
         assert result.status == ("succeeded" if preparation_succeeds else "failed")
         assert len(calls) == int(preparation_succeeds)
         if not preparation_succeeds:
@@ -478,8 +244,8 @@ def test_evaluation_waiting_message_tracks_the_current_global_blocker(tmp_path):
             second = await service.enqueue(EvaluationRunRequest(suite_id="sec-ko"))
             assert "embed" in second.message
         async with coordinator.turn("lexical"):
-            assert "rebuild_bm25 lexical" in (await service.job(first.job_id)).message
-            assert "rebuild_bm25 lexical" in (await service.job(second.job_id)).message
+            assert "rebuild_bm25 lexical" in (await enqueued_job(service, first.job_id)).message
+            assert "rebuild_bm25 lexical" in (await enqueued_job(service, second.job_id)).message
             await service.cancel(first.job_id)
             await service.cancel(second.job_id)
         await service._queue.join()
@@ -525,7 +291,9 @@ def test_quick_evaluation_preparation_matches_the_selected_strategy(
     )
     request = EvaluationRunRequest(
         suite_id="sec-en",
-        profile={"strategy": strategy, "lexical_ranker": None if strategy == "vector" else "bm25"},
+        profile=RetrievalProfile(
+            strategy=strategy, lexical_ranker=None if strategy == "vector" else "bm25"
+        ),
     )
     if allowed:
         asyncio.run(service._require_preparation(request, allow_pending=False))

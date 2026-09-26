@@ -4,7 +4,6 @@ Both database components share one ``AsyncSession`` sequentially, native scores 
 inside their retrieval lanes, and optional reranking changes only the final hit scores.
 """
 
-import math
 import re
 from typing import Annotated, Literal, get_args
 
@@ -18,10 +17,10 @@ from app.config import (
     BM25Idf,
     LexicalRanker,
 )
-from app.retrieval.bm25 import BM25_IDF_VARIANTS, bm25_search
+from app.retrieval.bm25 import bm25_search, validate_bm25_parameters
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K, fuse_ranked_lists
-from app.retrieval.korean import lexical_plan
+from app.retrieval.korean import LEXICAL_PLANS, lexical_plan
 from app.retrieval.language import detect_query_languages
 from app.retrieval.lexical import lexical_search
 from app.retrieval.rerank import RerankProvider, rerank_hits
@@ -137,11 +136,21 @@ async def retrieve(
 
     Notes
     -----
-    The corpus language comes from ``filters.languages`` alone — never from the
-    script of the query — and selects the lexical tokenization: a single ``"ko"``
-    filter parses the query with the same n-gram tokenizer the Korean rows were
-    indexed with. A filter mixing corpus languages is rejected because one lexical
-    statement cannot parse a query under two configurations at once.
+    The corpus languages come from ``filters.languages`` alone — never from the
+    script of the query. A pinned filter runs exactly the lanes it names; an empty
+    filter is unrestricted and fans out over every language in ``LEXICAL_PLANS`` in
+    the table's declaration order, so the lane order (and the concatenated ``vector``
+    provenance) is fixed by the plan table rather than by the query. Each lexical lane
+    parses the query with the tokenizer its corpus was indexed with: the ``"ko"`` lane
+    uses the same n-gram tokenizer the Korean rows were stored through. A filter
+    naming several corpus languages runs one lexical lane per language, each with its
+    own tokenizer and text-search configuration.
+
+    Vector lanes fan out per language only when ``query_variants`` supplies a
+    translation: each corpus is then embedded with the query written in its own
+    language (its variant, or the query itself), so an unrestricted filter reaches the
+    Korean corpus with the Korean query and the English corpus with the English
+    variant. Without variants one unrestricted vector lane serves every language.
 
     The component adapters close over one ``AsyncSession`` and must remain sequential;
     concurrent use of that session is unsafe. Without a reranker, the service slices the
@@ -160,16 +169,14 @@ async def retrieve(
 
     if lexical_ranker not in LEXICAL_RANKERS:
         raise ValueError("lexical_ranker must be 'ts_rank_cd' or 'bm25'")
-    if not math.isfinite(bm25_k1) or bm25_k1 <= 0:
-        raise ValueError("bm25_k1 must be a finite positive number")
-    if not math.isfinite(bm25_b) or not 0 <= bm25_b <= 1:
-        raise ValueError("bm25_b must be a finite number between 0 and 1")
-    if bm25_idf not in BM25_IDF_VARIANTS:
-        raise ValueError("bm25_idf must be 'lucene' or 'robertson'")
+    validate_bm25_parameters(bm25_k1, bm25_b, bm25_idf, parameter_prefix="bm25_")
 
     normalized_query = normalize_query(query)
     active_filters = filters or RetrievalFilters()
-    corpus_languages = active_filters.languages or ("en",)
+    # An empty filter is unrestricted: both lanes cover every corpus language, in the
+    # declaration order of the plan table so the lane order is fixed by the table rather
+    # than by the query. A pinned filter keeps exactly the languages it names.
+    corpus_languages = active_filters.languages or tuple(LEXICAL_PLANS)
     query_languages = set(detect_query_languages(normalized_query))
 
     if strategy not in {"vector", "lexical", "hybrid"}:
@@ -243,6 +250,9 @@ async def retrieve(
         return hits
 
     if strategy in {"vector", "hybrid"} and query_variants:
+        # One lane per corpus language, each embedded with the query written in that
+        # language (its variant, or the query itself), so an unrestricted filter still
+        # reaches every corpus instead of being narrowed to the first language.
         vector_ranked = []
         for language in corpus_languages:
             lane_filters = active_filters.model_copy(update={"languages": (language,)})

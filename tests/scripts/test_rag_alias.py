@@ -103,6 +103,13 @@ def test_banner_needs_only_standard_tools(shell, tmp_path):
     assert result.stderr == ""
 
 
+def description_column(help_row: str) -> int:
+    """Return the offset where a help row's description starts after its padding."""
+    description = re.search(r"\S.*?\s{2,}(\S)", help_row)
+    assert description is not None
+    return description.start(1)
+
+
 @pytest.mark.parametrize("environment", [{}, {"NO_COLOR": ""}, {"TERM": "dumb"}])
 def test_help_color_policy_and_alignment(shell, environment):
     """TTY help uses aligned bold columns; NO_COLOR and dumb terminals stay plain."""
@@ -128,7 +135,7 @@ def test_help_color_policy_and_alignment(shell, environment):
             assert "\x1b[1m" in output and "\x1b[36;1m[START]" in output
         plain = re.sub(r"\x1b\[[0-9;]*m", "", output)
         rows = [line for line in plain.splitlines() if line.startswith("  rag-")]
-        assert len({re.search(r"\S.*?\s{2,}(\S)", line).start(1) for line in rows}) == 1
+        assert len({description_column(line) for line in rows}) == 1
     finally:
         os.close(slave)
         os.close(master)
@@ -679,12 +686,14 @@ def run_lifecycle_tty(shell, command, environment, *, answers="", interactive=Tr
         args.append("-i")
     args.extend(["-c", command])
     isolated = {**os.environ, **environment, "TERM": "xterm-256color", "PS1": "", "PS2": ""}
-    pid, master = pty.fork()
-    if pid == 0:
-        try:
-            os.execve(shell, args, isolated)
-        except OSError:
-            os._exit(127)
+    master, slave = pty.openpty()
+    try:
+        # subprocess forks in C, so a multi-threaded pytest process gets no forkpty warning;
+        # login_tty makes the slave the child's controlling terminal and its stdio.
+        child = subprocess.Popen(args, env=isolated, preexec_fn=lambda: os.login_tty(slave))
+    finally:
+        os.close(slave)
+    pid = child.pid
     status = None
     chunks = []
     ended = False
@@ -694,9 +703,7 @@ def run_lifecycle_tty(shell, command, environment, *, answers="", interactive=Tr
             os.write(master, answers.encode())
         while time.monotonic() < deadline:
             if status is None:
-                observed, code = os.waitpid(pid, os.WNOHANG)
-                if observed:
-                    status = os.waitstatus_to_exitcode(code)
+                status = child.poll()
             if select.select([master], [], [], 0.05)[0]:
                 try:
                     data = os.read(master, 65536)
@@ -719,7 +726,7 @@ def run_lifecycle_tty(shell, command, environment, *, answers="", interactive=Tr
                 os.killpg(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            os.waitpid(pid, 0)
+            child.wait()
         os.close(master)
 
 

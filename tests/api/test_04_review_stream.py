@@ -247,6 +247,7 @@ def test_stream_emits_actual_stage_transitions_without_changing_node_contract(
 
     async def review(request, on_node=None):
         """Exercise the stream's actual recorder using the shared observation boundary."""
+        assert on_node is not None
         async with stage("grade"):
             await on_node("grade", state(steps=1))
         return successful_run.model_copy(update={"request_context": stage_metadata()})
@@ -282,6 +283,7 @@ def test_stream_omits_stage_events_without_explicit_telemetry_header(
 
     async def review(request, on_node=None):
         """Run an observed stage without opting the HTTP client into new event types."""
+        assert on_node is not None
         async with stage("grade"):
             await on_node("grade", state(steps=1))
         return successful_run.model_copy(update={"request_context": stage_metadata()})

@@ -10,6 +10,7 @@ from app.llm.openai_limits import OpenAILimitsManager
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.support import load_settings
 
 
 def test_limits_expose_effective_runtime_call_caps(tmp_path) -> None:
@@ -39,10 +40,11 @@ def test_limits_expose_effective_runtime_call_caps(tmp_path) -> None:
 @pytest.mark.parametrize("public_header", [False, True])
 def test_production_blocks_admin_even_with_retained_live_configuration(tmp_path, public_header):
     """Production cannot regain administrator execution through SSH or a missing header."""
-    settings = ReleaseSettings(
-        _env_file=None,
-        DOCREVIEW_ENVIRONMENT="prod",
-        mode="runtime",
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
+        environment="prod",
+        service_mode="runtime",
         admin_mode="live",
         host="127.0.0.1",
         public_allowance_path=tmp_path / "limits.sqlite3",

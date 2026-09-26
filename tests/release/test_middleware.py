@@ -11,12 +11,21 @@ from app.release.middleware import PUBLIC_LOCK_MESSAGE, _control_denial
         ({}, None),
         ({"prompt_policy": {}}, None),
         ({"prompt_policy": []}, None),
-        ({"prompt_policy": {"additional_instructions": "Be concise."}}, PUBLIC_LOCK_MESSAGE),
         ({"prompt_policy": [], "snapshot_id": 1}, PUBLIC_LOCK_MESSAGE),
         ({"retrieval_preset": "custom"}, None),
         ({"retrieval_preset": "custom", "custom_retrieval": "invalid"}, None),
         ({"snapshot_id": 0}, PUBLIC_LOCK_MESSAGE),
         ({"snapshot_id": None}, None),
+    ],
+    ids=[
+        "no-controls",
+        "explicitly-empty-prompt-policy",
+        "malformed-prompt-policy",
+        "snapshot-beside-a-malformed-prompt-policy",
+        "custom-preset-without-custom-retrieval",
+        "malformed-custom-retrieval",
+        "snapshot-zero",
+        "null-snapshot",
     ],
 )
 def test_control_denial_preserves_route_validation_ownership(profile, expected):

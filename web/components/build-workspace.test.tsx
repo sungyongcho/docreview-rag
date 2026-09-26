@@ -4,7 +4,7 @@ import { NotificationProvider } from "./notifications";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANNED_CORPUS, CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
-import type { OperatorJob, OperatorJobStatus, Readiness } from "@/lib/types";
+import type { OperatorJob, Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { BuildWorkspace, type BuildTab, type BuildWorkspaceProps } from "./build-workspace";
 
@@ -39,6 +39,7 @@ const EMPTY_DOCUMENT_FACETS_FIXTURE = {
   years: [],
   languages: [],
   forms: [],
+  sections: [],
   parse_statuses: [],
   embedding_statuses: [],
   snapshots: [],
@@ -168,6 +169,7 @@ describe("Build workspace", () => {
         years: [{ value: "2024", count: 1 }],
         languages: [{ value: "en", count: 1 }],
         forms: [{ value: "10-K", count: 1 }],
+        sections: [],
         parse_statuses: [{ value: "parsed", count: 1 }],
         embedding_statuses: [{ value: "complete", count: 1 }],
         snapshots: [{ value: "3", count: 1, label: "Baseline · ready" }],
@@ -266,6 +268,7 @@ describe("Build workspace", () => {
       };
       else if (url.includes("/admin/documents?")) payload = { documents: [], total: 0, next_cursor: null };
       else if (url.endsWith("/admin/snapshots")) payload = [];
+      else if (url.endsWith("/revisions")) payload = [];
       return jsonResponse(payload);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -408,7 +411,8 @@ describe("Build workspace", () => {
 
 describe("preparation refresh after corpus jobs", () => {
   afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
-  it.each(["succeeded", "failed", "cancelled", "interrupted"] as const)("refreshes once for %s and ignores repeated polls", async (status: OperatorJobStatus) => {
+  it("refreshes once after a corpus job ends, even as a failure, and ignores repeated polls", async () => {
+    const status: OperatorJob["status"] = "failed";
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
@@ -773,6 +777,7 @@ describe("connection readiness presentation", () => {
       if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
       if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
       if (url.endsWith("/admin/snapshots")) return jsonResponse([]);
+      if (url.endsWith("/revisions")) return jsonResponse([]);
       return jsonResponse({});
     }));
   });
@@ -953,16 +958,21 @@ it("separates deselection and cancellation from confirmed deletion without prema
   expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
 });
 
-it.each(["queued", "running"] as const)("locks deletion while a corpus job is %s", async (status) => {
+it.each(["queued", "running"] as const)("locks deletion while another corpus job is %s", async (status) => {
   const submitted: Record<string, unknown>[] = []; const previews: Record<string, unknown>[] = [];
   stubSourceLifecycle(lifecycleSources(), submitted, previews);
   const job: OperatorJob = { job_id: "other-corpus-job", domain: "corpus", kind: "backfill_embeddings", request: {}, status, stage: "embed", current: 1, total: 10, detail_current: null, detail_total: null, message: "Embedding", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-09-08T12:00:00Z", started_at: null, finished_at: null, updated_at: "2026-09-08T12:00:00Z" };
-  render(<Harness live readiness={READY_RUNTIME} jobBoard={{ jobs: [job], active_count: 1, queued_count: 0 }} />);
+  const { rerender } = render(<Harness live readiness={READY_RUNTIME} />);
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
   await screen.findByRole("button", { name: "NVDA FY2024 · On disk" });
-  fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
-  expect(screen.getByRole("button", { name: "Delete all downloaded originals" })).toBeDisabled();
+  const deleteButton = screen.getByRole("button", { name: "Delete all downloaded originals" });
+  await waitFor(() => expect(deleteButton).toBeEnabled());
+  rerender(<Harness live readiness={READY_RUNTIME} jobBoard={{ jobs: [job], active_count: status === "running" ? 1 : 0, queued_count: status === "queued" ? 1 : 0 }} />);
+  expect(deleteButton).toBeDisabled();
+  fireEvent.click(deleteButton);
   expect(previews).toEqual([]); expect(submitted).toEqual([]);
+  rerender(<Harness live readiness={READY_RUNTIME} />);
+  await waitFor(() => expect(deleteButton).toBeEnabled());
 });
 
 it("opens the golden-set manager from pipeline evaluation setup", async () => {

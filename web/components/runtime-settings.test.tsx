@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { Readiness } from "@/lib/types";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); });
 import { RuntimeSettings, DesktopJobNotifications } from "./runtime-settings";
@@ -36,7 +36,7 @@ const READINESS: Readiness = {
       minute_reset_seconds: 42,
       day_reset_seconds: 3600,
       daily_cost_reset_at_utc: "2026-09-02T00:00:00Z",
-      scope: "single_process",
+      scope: "shared_storage",
     }), { status: 200, headers: { "content-type": "application/json" } })));
     render(<RuntimeSettings live={false} readiness={null} />);
 

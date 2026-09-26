@@ -2,7 +2,6 @@
 
 from hashlib import blake2s
 from ipaddress import ip_address
-import secrets
 from urllib.parse import urlsplit
 
 from fastapi import Request
@@ -20,7 +19,6 @@ from app.release.ai_allowance import (
     active_allowance,
     active_request_allowance,
 )
-from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 
 SECURITY_HEADERS = {
     "cache-control": "no-store",
@@ -30,6 +28,8 @@ SECURITY_HEADERS = {
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
 }
+# The routes whose POST handlers may reach an embedding or text provider.
+AI_ROUTES = frozenset({"/retrieve", "/review", "/review/stream"})
 
 
 class SecurityHeadersMiddleware:
@@ -57,17 +57,28 @@ class SecurityHeadersMiddleware:
 
 
 def client_host(request: Request, *, trust_proxy_headers: bool) -> str:
-    """Resolve one client address, trusting forwarded input only when configured."""
+    """Resolve one client address, trusting forwarded input only when configured.
+
+    Exactly one trusted proxy hop is assumed: that proxy appends the address it saw to
+    X-Forwarded-For, so only the last entry is trusted. Earlier entries come from the
+    client and would let it mint a fresh identity per request.
+    """
     direct = request.client.host if request.client is not None else "unknown"
     if not trust_proxy_headers:
         return direct
-    forwarded = request.headers.get("x-forwarded-for", "").split(",", maxsplit=1)[0].strip()
+    forwarded = request.headers.get("x-forwarded-for", "").rsplit(",", maxsplit=1)[-1].strip()
     if not forwarded:
         return direct
     try:
         return str(ip_address(forwarded))
     except ValueError:
         return direct
+
+
+def client_key(request: Request, *, trust_proxy_headers: bool, salt: bytes) -> str:
+    """Derive the keyed, non-reversible client identity the allowance ledger tracks."""
+    host = client_host(request, trust_proxy_headers=trust_proxy_headers)
+    return blake2s(host.encode("utf-8"), key=salt, digest_size=16).hexdigest()
 
 
 def _forbidden(code: str, message: str) -> JSONResponse:
@@ -132,24 +143,21 @@ def _loopback_origin(value: str) -> tuple[str, str, int] | None:
 
 
 class ReleaseGuardMiddleware(BaseHTTPMiddleware):
-    """Protect state-changing and compute-bearing requests on one public worker."""
+    """Guard public controls and meter provider-bearing requests with the shared AI allowance."""
 
     def __init__(
         self,
         app: ASGIApp,
         *,
-        limiter: InProcessRateLimiter | SharedAIAllowance,
+        allowance: SharedAIAllowance,
         trust_proxy_headers: bool,
         enforce_rate_limit: bool = True,
         public_read_only: bool = False,
         allow_local_engine: bool = True,
         local_connection_origin: str | None = None,
-        cost_limiter: DailyCostLimiter | None = None,
-        shared_allowance: SharedAIAllowance | None = None,
-        salt: bytes | None = None,
     ) -> None:
         super().__init__(app)
-        self._limiter = limiter
+        self._allowance = allowance
         self._trust_proxy_headers = trust_proxy_headers
         self._enforce_rate_limit = enforce_rate_limit
         self._public_read_only = public_read_only
@@ -157,14 +165,12 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         self._local_connection_origin = (
             _loopback_origin(local_connection_origin) if local_connection_origin else None
         )
-        self._shared_allowance = shared_allowance
-        self._cost_limiter = cost_limiter
-        self._salt = salt or secrets.token_bytes(32)
 
     def _client_key(self, request: Request) -> str:
-        """Derive a keyed, non-reversible identity for one client host."""
-        host = client_host(request, trust_proxy_headers=self._trust_proxy_headers)
-        return blake2s(host.encode("utf-8"), key=self._salt, digest_size=16).hexdigest()
+        """Key this client with the ledger's persisted salt so identities survive restarts."""
+        return client_key(
+            request, trust_proxy_headers=self._trust_proxy_headers, salt=self._allowance.salt
+        )
 
     def _local_connection_origin_allowed(self, request: Request) -> bool:
         """Admit headerless tools or explicit local browser origins, never forwarded guesses."""
@@ -208,13 +214,13 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         return None
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        """Gate one request through the public controls and the per-client rate limit.
+        """Gate one request through the public controls and the shared AI allowance.
 
         Parameters
         ----------
         request : Request
-            Incoming request; its client address is hashed with a per-process salt
-            before it is used as a limiter key.
+            Incoming request; its client address is hashed with the ledger's salt
+            before it is used as an allowance key.
         call_next : RequestResponseEndpoint
             Continuation invoked only when every guard admits the request.
 
@@ -226,8 +232,11 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
 
         Notes
         -----
-        Only state-changing methods consume the rate limit; reads pass through
-        so probes and static assets stay unmetered.
+        Only POST requests to the provider-bearing routes are metered, and the
+        per-client request slot is consumed by their first actual provider call, so
+        reads, static assets and provider-free work stay unmetered. When public
+        limits are not enforced, the loopback operator's own requests bypass the
+        allowance entirely while proxy-marked public requests stay metered.
         """
         public = self._public_read_only or request.headers.get("x-docreview-public") == "true"
         if public and (request.url.path == "/admin" or request.url.path.startswith("/admin/")):
@@ -241,83 +250,35 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
                 "origin_not_allowed",
                 "Local LLM and OpenAI cap settings require the configured local web origin.",
             )
-        if request.url.path in {"/retrieve", "/review", "/review/stream"}:
+        if request.url.path in AI_ROUTES:
             denied = await self._review_policy_response(request, public=public)
             if denied is not None:
                 return denied
+        if request.method != "POST" or request.url.path not in AI_ROUTES:
+            return await call_next(request)
+        if not self._enforce_rate_limit and not public:
+            return await call_next(request)
 
-        if self._shared_allowance is not None:
-            if request.method != "POST" or request.url.path not in {
-                "/retrieve",
-                "/review",
-                "/review/stream",
-            }:
-                return await call_next(request)
-            admission = RequestAIAllowance(self._shared_allowance, self._client_key(request))
-            token = active_allowance.set(self._shared_allowance)
-            request_token = active_request_allowance.set(admission)
-            try:
-                response = await call_next(request)
-            except AIAllowanceError as error:
-                detail = {"code": error.code, "message": str(error), "details": []}
-                if error.reset is not None:
-                    detail["reset_at"] = error.reset.isoformat()
-                response = JSONResponse(
-                    status_code=429,
-                    content={"error": detail},
-                    headers={"Retry-After": str(error.retry_after)},
-                )
-            finally:
-                active_request_allowance.reset(request_token)
-                active_allowance.reset(token)
-            if admission.decision is not None:
-                response.headers["X-RateLimit-Remaining-Minute"] = str(
-                    admission.decision.remaining_minute
-                )
-                response.headers["X-RateLimit-Remaining-Day"] = str(
-                    admission.decision.remaining_day
-                )
-            return response
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-            if not self._enforce_rate_limit and not public:
-                return await call_next(request)
-            decision = await self._limiter.check(self._client_key(request))
-            if not decision.allowed:
-                return JSONResponse(
-                    status_code=429,
-                    headers={
-                        "Retry-After": str(decision.retry_after_seconds),
-                        "X-RateLimit-Remaining-Minute": str(decision.remaining_minute),
-                        "X-RateLimit-Remaining-Day": str(decision.remaining_day),
-                    },
-                    content={
-                        "error": {
-                            "code": "rate_limited",
-                            "message": "The single-instance service request limit was reached.",
-                            "details": [],
-                        }
-                    },
-                )
-            if request.url.path in {"/review", "/review/stream"} and self._cost_limiter is not None:
-                allowed, remaining = await self._cost_limiter.reserve()
-                if not allowed:
-                    return JSONResponse(
-                        status_code=429,
-                        content={
-                            "error": {
-                                "code": "daily_cost_limit",
-                                "message": (
-                                    "The public answer budget is exhausted; use retrieval evidence "
-                                    "without an LLM answer."
-                                ),
-                                "details": [],
-                            }
-                        },
-                        headers={"X-DocReview-Daily-Cost-Remaining-USD": format(remaining, "f")},
-                    )
+        admission = RequestAIAllowance(self._allowance, self._client_key(request))
+        token = active_allowance.set(self._allowance)
+        request_token = active_request_allowance.set(admission)
+        try:
             response = await call_next(request)
-            response.headers["X-RateLimit-Remaining-Minute"] = str(decision.remaining_minute)
-            response.headers["X-RateLimit-Remaining-Day"] = str(decision.remaining_day)
-            return response
-
-        return await call_next(request)
+        except AIAllowanceError as error:
+            detail = {"code": error.code, "message": str(error), "details": []}
+            if error.reset is not None:
+                detail["reset_at"] = error.reset.isoformat()
+            response = JSONResponse(
+                status_code=429,
+                content={"error": detail},
+                headers={"Retry-After": str(error.retry_after)},
+            )
+        finally:
+            active_request_allowance.reset(request_token)
+            active_allowance.reset(token)
+        if admission.decision is not None:
+            response.headers["X-RateLimit-Remaining-Minute"] = str(
+                admission.decision.remaining_minute
+            )
+            response.headers["X-RateLimit-Remaining-Day"] = str(admission.decision.remaining_day)
+        return response

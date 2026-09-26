@@ -2,12 +2,12 @@ import { I18nProvider } from "@/lib/i18n";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { newConversation, HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile, configureBrowserStorage, readStoredValue } from "@/lib/storage";
+import { newConversation, HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, configureBrowserStorage, readStoredValue } from "@/lib/storage";
 import type { DocumentFacets, Readiness, OperatorJob } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
-import { TOUR_TARGETS } from "./onboarding";
-import { ServiceShell, terminalAnswer } from "./service-shell";
+import { tourTargets } from "./onboarding-test-support";
+import { ServiceShell } from "./service-shell";
 
 beforeEach(() => { configureBrowserStorage(undefined); window.history.replaceState(null, "", "/"); });
 
@@ -109,7 +109,7 @@ function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness
 /** One answered review in storage, so the evidence toggle exists and the welcome suggestions do not. */
 function seedAnsweredConversation() {
   saveConversations([{
-    id: "seeded", title: "NVIDIA data center", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z", profile: null,
+    id: "seeded", title: "NVIDIA data center", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z", profile: structuredClone(DEFAULT_SESSION_PROFILE),
     messages: [
       { id: "q", role: "user", text: "What drove data center revenue?" },
       {
@@ -128,9 +128,9 @@ async function flushEffects() {
   await act(async () => undefined);
 }
 
-/** Records which tour targets the shell renders right now. */
-function noteTargets(seen: Set<string>) {
-  for (const name of TOUR_TARGETS) if (document.querySelector(`[data-tour="${name}"]`)) seen.add(name);
+/** Records which of the tour's targets the shell renders right now. */
+function noteTargets(targets: readonly string[], seen: Set<string>) {
+  for (const name of targets) if (document.querySelector(`[data-tour="${name}"]`)) seen.add(name);
 }
 
 /** Public-build API stub: runtime endpoints plus the public `/snapshots` list; everything else is `{}`. */
@@ -156,7 +156,7 @@ function stubPublicApi(firstVisit = false) {
       per_minute: 5, per_day: 25, remaining_minute: 5, remaining_day: 25, max_input_tokens: 12000,
       max_output_tokens: 600, max_cost_usd: "0.04", daily_cost_usd: "1.00", remaining_daily_cost_usd: "1.00",
       retry_after_seconds: 0, minute_reset_seconds: 0, day_reset_seconds: 0,
-      daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", scope: "single_process",
+      daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", scope: "shared_storage",
     };
     else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
     else if (url.endsWith("/public/documents/facets")) payload = EMPTY_DOCUMENT_FACETS;
@@ -226,6 +226,7 @@ it.each(["en", "ko"] as const)("stores a restored interruption by its canonical 
   stubPublicApi();
   seedAnsweredConversation();
   const conversations = loadConversations();
+  const answer = conversations[0].messages[1].text;
   conversations[0].messages.push({ id: "pending", role: "assistant", text: "", pending: true });
   saveConversations(conversations);
   render(<I18nProvider><ServiceShell /></I18nProvider>);
@@ -236,27 +237,9 @@ it.each(["en", "ko"] as const)("stores a restored interruption by its canonical 
   fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: next }));
   await waitFor(() => expect(screen.getByText(next === "ko" ? INTERRUPTION_KO : INTERRUPTION_EN)).toBeVisible());
   expect(screen.queryByText(next === "ko" ? INTERRUPTION_EN : INTERRUPTION_KO)).toBeNull();
-  expect(loadConversations()[0].messages.at(-1)?.text).toBe(INTERRUPTION_EN);
-});
-
-it("reads a stored interruption notice in the current language", async () => {
-  const stored = INTERRUPTION_EN;
-  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
-  localStorage.setItem("docreview.locale", "en");
-  stubPublicApi();
-  seedAnsweredConversation();
-  const conversations = loadConversations();
-  const answer = conversations[0].messages[1].text;
-  conversations[0].messages.push({ id: "legacy", role: "assistant", text: stored });
-  saveConversations(conversations);
-  render(<I18nProvider><ServiceShell /></I18nProvider>);
-  await waitFor(() => expect(screen.getByText(INTERRUPTION_EN)).toBeVisible());
-  expect(screen.queryByText(INTERRUPTION_KO)).toBeNull();
-  fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: "ko" }));
-  await waitFor(() => expect(screen.getByText(INTERRUPTION_KO)).toBeVisible());
   // Only the app's own notice is localized; the generated answer and the stored text stay untouched.
   expect(screen.getByText(answer)).toBeVisible();
-  expect(loadConversations()[0].messages.at(-1)?.text).toBe(stored);
+  expect(loadConversations()[0].messages.at(-1)?.text).toBe(INTERRUPTION_EN);
 });
 
 it("opens a new chat from the app logo while preserving the previous conversation", async () => {
@@ -392,7 +375,9 @@ describe("composer IME handling", () => {
     cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
     const fetchMock = stubPublicApi();
     render(<ServiceShell />);
-    const input = await screen.findByPlaceholderText("Ask a question about the filing corpus") as HTMLTextAreaElement;
+    // The composer drops input until the conversations load after the capabilities request.
+    await screen.findByRole("button", { name: "New chat", pressed: true });
+    const input = screen.getByPlaceholderText("Ask a question about the filing corpus") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "삼성전자 실적" } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
     const streamCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream"));
@@ -844,45 +829,32 @@ describe("service shell", () => {
     expect(screen.getByText("Published corpus")).toBeInTheDocument();
   });
 
-  it("shows invalidated provider authentication instead of an evidence fallback", () => {
-    const answer = terminalAnswer({
-      status: "error",
-      report: null,
-      failure: {
-        code: "provider_failure",
-        status: "provider_error",
-        details: ["AuthenticationError: token_invalidated"],
-      },
-    });
-
-    expect(answer).toBe(
-      "OpenAI API authentication failed. Update the server-side API key and retry.",
-    );
-  });
 
   it("tour targets exist on the screens the tour opens", async () => {
     stubPublicApi();
     window.localStorage.removeItem(ONBOARDING_KEY);
     seedAnsweredConversation();
+    // Read the targets before the shell mounts its own tour, which would otherwise react to the helper's walk.
+    const targets = tourTargets();
     render(<ServiceShell />);
     const seen = new Set<string>();
 
     expect(await screen.findByText("Step 1 of 7")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "From filings to verified answers." })).toBeInTheDocument();
-    noteTargets(seen);
+    noteTargets(targets, seen);
 
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 2 of 7")).toBeInTheDocument();
     expect(document.querySelector(".tour-spotlight")).not.toBeNull();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 3 of 7")).toBeInTheDocument();
-    noteTargets(seen);
+    noteTargets(targets, seen);
 
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 4 of 7")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     // Back to a Build target that is absent at click time: the shell navigates first, then the spotlight lands on it.
     fireEvent.click(screen.getByText("Back"));
     expect(screen.getByText("Step 3 of 7")).toBeInTheDocument();
@@ -892,19 +864,19 @@ describe("service shell", () => {
     fireEvent.click(screen.getByText("Next"));
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 5 of 7")).toBeInTheDocument();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 6 of 7")).toBeInTheDocument();
     expect(document.querySelector(".tour-spotlight")).not.toBeNull();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     fireEvent.click(screen.getByText("Next"));
     expect(screen.getByText("Step 7 of 7")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Measure" })).toHaveAttribute("aria-pressed", "true");
-    noteTargets(seen);
+    noteTargets(targets, seen);
 
     // The answered review hides the welcome suggestions; the operator run below covers those and Operations.
-    expect(TOUR_TARGETS.filter((name) => !seen.has(name))).toEqual(["evidence-fallback", "operations"]);
+    expect(targets.filter((name) => !seen.has(name))).toEqual(["evidence-fallback", "operations"]);
 
     fireEvent.click(screen.getByText("Finish"));
     expect(readStoredValue(ONBOARDING_KEY)).toBe("done");
@@ -916,21 +888,22 @@ describe("service shell", () => {
     vi.stubEnv("NEXT_PUBLIC_OPERATOR_TOKEN", "operator-token");
     stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     window.localStorage.removeItem(ONBOARDING_KEY);
+    const targets = tourTargets();
     render(<ServiceShell />);
     const seen = new Set<string>();
 
     expect(await screen.findByText("Step 1 of 8")).toBeInTheDocument();
     for (let step = 1; step <= 7; step += 1) {
-      noteTargets(seen);
+      noteTargets(targets, seen);
       fireEvent.click(screen.getByText("Next"));
     }
     expect(screen.getByText("Step 8 of 8")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Operations" })).toHaveAttribute("aria-pressed", "true");
     expect(document.querySelector('[data-tour="operations"]')).not.toBeNull();
     expect(document.querySelector(".tour-spotlight")).not.toBeNull();
-    noteTargets(seen);
+    noteTargets(targets, seen);
     // A fresh review has no answer yet, so only the evidence toggle is missing here.
-    expect(TOUR_TARGETS.filter((name) => !seen.has(name))).toEqual(["evidence-toggle"]);
+    expect(targets.filter((name) => !seen.has(name))).toEqual(["evidence-toggle"]);
 
     fireEvent.click(screen.getByText("Finish"));
     expect(readStoredValue(ONBOARDING_KEY)).toBe("done");
@@ -1137,7 +1110,7 @@ describe("service shell", () => {
       if (url.endsWith("/review/stream")) {
         const frames = [
           'event: node\ndata: {"node":"grade","evidence_count":4,"relevant_count":2,"step_count":1}',
-          `event: report\ndata: ${JSON.stringify({ run: { run_id: "run-42", status: "budget_exceeded", report: null, failure, total_requests: 2, total_input_tokens: 2539, total_output_tokens: 589, total_time_seconds: 369.1, node_path: ["gate", "retrieve", "grade"] } })}`,
+          `event: report\ndata: ${JSON.stringify({ run_id: "run-42", status: "budget_exceeded", report: null, failure, total_requests: 2, total_input_tokens: 2539, total_output_tokens: 589, total_time_seconds: 369.1, node_path: ["gate", "retrieve", "grade"] })}`,
           "event: done\ndata: {}",
         ];
         return new Response(`${frames.join("\n\n")}\n\n`, { status: 200, headers: { "content-type": "text/event-stream" } });
@@ -1173,7 +1146,7 @@ describe("service shell", () => {
     await waitFor(() => expect(screen.getByText(/Input token ceiling:/)).toHaveTextContent("12,000"));
   });
 
-  it("renders a conversation reply without a verdict pill", async () => {
+  it("renders service guidance without a verdict pill", async () => {
     saveConversations([newConversation(DEFAULT_SESSION_PROFILE)]);
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input).replace(/\/?(\?|$)/, "$1");
@@ -1181,7 +1154,7 @@ describe("service shell", () => {
       if (url.endsWith("/review/stream")) {
         const frames = [
           'event: node\ndata: {"node":"gate","evidence_count":0,"relevant_count":0,"step_count":1}',
-          'event: report\ndata: {"run":{"status":"ok","report":{"report_kind":"conversation","answer":"Hello! Ask me about a filing.","response_source":"engine"},"failure":null,"total_requests":1}}',
+          'event: report\ndata: {"status":"ok","report":{"report_kind":"conversation","answer":"Hello! Ask me about a filing.","response_source":"canned"},"failure":null,"total_requests":1}',
           "event: done\ndata: {}",
         ];
         return new Response(`${frames.join("\n\n")}\n\n`, { status: 200, headers: { "content-type": "text/event-stream" } });
@@ -1198,7 +1171,7 @@ describe("service shell", () => {
     render(<ServiceShell />);
 
     const textarea = await screen.findByPlaceholderText("Ask a question about the filing corpus");
-    fireEvent.change(textarea, { target: { value: "hi there" } });
+    fireEvent.change(textarea, { target: { value: "How do I use DocReview?" } });
     fireEvent.keyDown(textarea, { key: "Enter" });
 
     await waitFor(() => expect(screen.getByText("Hello! Ask me about a filing.")).toBeInTheDocument());
@@ -1264,7 +1237,7 @@ it("preserves streamed messages and the submitted settings while background disc
     fireEvent.change(screen.getByLabelText("Conversation history turns"), { target: { value: "4" } });
     local = { enabled: true, protocol: "ollama", models: [{ name: "answer", selectable: true, size_bytes: null, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"], loaded: false }] };
     await act(async () => { window.dispatchEvent(new Event("online")); });
-    finish(new Response('event: report\ndata: {"run":{"run_id":"concurrency-check","status":"budget_exceeded","report":null,"failure":{"code":"budget_exceeded","resource":"iterations","limit":3,"observed":4,"blocked_node":"grade"}}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
+    finish(new Response('event: report\ndata: {"run_id":"concurrency-check","status":"budget_exceeded","report":null,"failure":{"code":"budget_exceeded","resource":"iterations","limit":3,"observed":4,"blocked_node":"grade"}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
     await waitFor(() => { expect(loadConversations()[0].messages).toHaveLength(2); expect(loadConversations()[0].messages[1].pending).toBe(false); });
     await waitFor(() => expect(loadConversations()[0].profile?.local_model).toBe("answer"));
     expect(loadConversations()[0].messages[0].text).toBe("Keep this question");
@@ -1372,7 +1345,7 @@ it("keeps confirmed routing with its submitted profile while next-request contro
     expect(submitted?.session_profile.corpus_scope).toBe("auto");
     expect(submitted?.session_profile.retrieval_preset).toBe("balanced");
     await act(async () => {
-      stream.enqueue(encoder.encode(`event: report\ndata: ${JSON.stringify({ run: { status: "error", failure: { code: "node_error", message: "Regression fixture" }, execution: { effective_settings: { resolved_scope: scope } } } })}\n\nevent: done\ndata: {}\n\n`));
+      stream.enqueue(encoder.encode(`event: report\ndata: ${JSON.stringify({ status: "error", failure: { code: "node_error", message: "Regression fixture" }, execution: { effective_settings: { resolved_scope: scope } } })}\n\nevent: done\ndata: {}\n\n`));
       stream.close();
     });
     await waitFor(() => { expect(loadConversations()[0].messages).toHaveLength(2); expect(loadConversations()[0].messages[1].pending).toBe(false); });
@@ -1472,7 +1445,7 @@ describe("in-message review lifecycle", () => {
     Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 700 });
     Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 200 });
     const reasons = label === "NOT_IN_DOCS" ? [{ code: "relevance_below_threshold", candidate_count: 3, relevant_count: 0, minimum_required: 1 }] : [];
-    await act(async () => { request.stream.enqueue(request.encoder.encode(`event: report\ndata: ${JSON.stringify({ run: { status: "ok", report: { label, answer: label === "SUPPORTED" ? "The cited result." : "NOT_IN_DOCS", reasons, citations: [] } } })}\n\nevent: done\ndata: {}\n\n`)); request.stream.close(); });
+    await act(async () => { request.stream.enqueue(request.encoder.encode(`event: report\ndata: ${JSON.stringify({ status: "ok", report: { label, answer: label === "SUPPORTED" ? "The cited result." : "NOT_IN_DOCS", rationale: "The filings do not contain direct support for this question.", reasons, citations: [] } })}\n\nevent: done\ndata: {}\n\n`)); request.stream.close(); });
     await waitFor(() => expect(loadConversations()[0].messages[1].pending).toBe(false));
     expect(document.querySelector(`[data-message-id="${request.id}"]`)).toBe(request.message);
     expect(request.message.querySelector(".review-execution-summary")).toBe(request.summary);
@@ -1515,7 +1488,7 @@ describe("in-message review lifecycle", () => {
     const originalId = loadConversations()[0].id;
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     fireEvent.change(request.input, { target: { value: "Different conversation draft" } });
-    await act(async () => { request.stream.enqueue(request.encoder.encode('event: report\ndata: {"run":{"status":"ok","report":{"report_kind":"conversation","answer":"Original conversation answer."}}}\n\nevent: done\ndata: {}\n\n')); request.stream.close(); });
+    await act(async () => { request.stream.enqueue(request.encoder.encode('event: report\ndata: {"status":"ok","report":{"report_kind":"conversation","answer":"Original conversation answer."}}\n\nevent: done\ndata: {}\n\n')); request.stream.close(); });
     await waitFor(() => expect(loadConversations().find((conversation) => conversation.id === originalId)?.messages[1].pending).toBe(false));
     const original = loadConversations().find((conversation) => conversation.id === originalId)!;
     expect(original.messages[1]).toMatchObject({ id: request.id, text: "Original conversation answer." });
@@ -1546,7 +1519,7 @@ describe("in-message review lifecycle", () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream")) {
         submitted = JSON.parse(String(init?.body));
-        return Promise.resolve(new Response('event: report\ndata: {"run":{"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed contextual answer.","citations":[]}}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
+        return Promise.resolve(new Response('event: report\ndata: {"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed contextual answer.","citations":[]}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
       }
       return ordinaryFetch(input, init);
     });
@@ -1564,7 +1537,7 @@ describe("in-message review lifecycle", () => {
     expect(screen.getByText("Re-checking selected evidence")).toBeVisible();
     fireEvent.click(within(request.summary).getByText("Execution summary"));
     await waitFor(() => expect(request.summary.open).toBe(false));
-    await act(async () => { request.stream.enqueue(request.encoder.encode('event: report\ndata: {"run":{"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed answer.","citations":[]}}}\n\nevent: done\ndata: {}\n\n')); request.stream.close(); });
+    await act(async () => { request.stream.enqueue(request.encoder.encode('event: report\ndata: {"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed answer.","citations":[]}}\n\nevent: done\ndata: {}\n\n')); request.stream.close(); });
     await waitFor(() => expect(loadConversations()[0].messages[2].pending).toBe(false));
     expect(loadConversations()[0].messages[2].id).toBe(request.id);
     expect(loadConversations()[0].messages[1].text).toBe("Data center revenue grew on Hopper demand.");
@@ -1601,9 +1574,9 @@ describe("right-side run details", () => {
     stubPublicApi();
     saveConversations([{ id: "runs", title: "Two questions", createdAt: "2026-09-07", updatedAt: "2026-09-07", profile: DEFAULT_SESSION_PROFILE, messages: [
       { id: "q1", role: "user", text: "First filing question" },
-      { id: "answer-first", role: "assistant", text: "First answer", diagnostics: [{ label: "Run ID", value: "run-first" }], execution: { node: "report", evidence: 0, relevant: 0, steps: 0, outcome: "completed" } },
+      { id: "answer-first", role: "assistant", text: "First answer", diagnostics: [{ label: "Run ID", value: "run-first" }], execution: { node: "report", observed: ["report"], completedNodes: ["report"], evidence: 0, relevant: 0, steps: 0, outcome: "completed" } },
       { id: "q2", role: "user", text: "Second filing question" },
-      { id: "answer-second", role: "assistant", text: "Second answer", diagnostics: [{ label: "Run ID", value: "run-second" }], execution: { node: "report", evidence: 0, relevant: 0, steps: 0, outcome: "completed" } },
+      { id: "answer-second", role: "assistant", text: "Second answer", diagnostics: [{ label: "Run ID", value: "run-second" }], execution: { node: "report", observed: ["report"], completedNodes: ["report"], evidence: 0, relevant: 0, steps: 0, outcome: "completed" } },
     ] }]);
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -1862,9 +1835,9 @@ it.each(["en", "ko"] as const)("localizes an untouched draft and hides only its 
   window.localStorage.setItem(ONBOARDING_KEY, "done");
   stubPublicApi();
   saveConversations([
-    { id: "untouched", title: "New review", createdAt: "2026-09-08", updatedAt: "2026-09-08", profile: null, messages: [] },
-    { id: "untouched-2", title: "New review", createdAt: "2026-09-08", updatedAt: "2026-09-08", profile: null, messages: [] },
-    { id: "started", title: "Existing question", createdAt: "2026-09-08", updatedAt: "2026-09-08", profile: null, messages: [{ id: "question", role: "user", text: "Existing question" }] },
+    { id: "untouched", title: "New review", createdAt: "2026-09-08", updatedAt: "2026-09-08", profile: structuredClone(DEFAULT_SESSION_PROFILE), messages: [] },
+    { id: "untouched-2", title: "New review", createdAt: "2026-09-08", updatedAt: "2026-09-08", profile: structuredClone(DEFAULT_SESSION_PROFILE), messages: [] },
+    { id: "started", title: "Existing question", createdAt: "2026-09-08", updatedAt: "2026-09-08", profile: structuredClone(DEFAULT_SESSION_PROFILE), messages: [{ id: "question", role: "user", text: "Existing question" }] },
   ]);
   render(<I18nProvider><ServiceShell /></I18nProvider>);
   const label = locale === "ko" ? "새 대화" : "New chat";
@@ -2072,4 +2045,33 @@ it("shares selection between steps and commits scope at step two without deletin
   expect(loadConversations()[0].pipelineDraft?.checked).not.toContain("index");
   expect(loadConversations()[0].publishedTargets).toHaveLength(11);
   view.unmount(); cleanup(); vi.unstubAllGlobals();
+});
+
+
+it.each(["dev", "prod"] as const)("preserves unsupported stored bytes before %s startup saves interrupted work", async environment => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  const { local_model: _oldField, ...incompleteProfile } = DEFAULT_SESSION_PROFILE;
+  const saved = [
+    { ...newConversation(DEFAULT_SESSION_PROFILE), id: "unsupported", profile: incompleteProfile },
+    { ...newConversation(DEFAULT_SESSION_PROFILE), id: "interrupted", messages: [{ id: "pending", role: "assistant", text: "", pending: true, execution: { node: "retrieve", evidence: 3, relevant: 0, steps: 0, observed: ["gate", "retrieve"], completedNodes: ["gate"], outcome: "running" } }] },
+  ];
+  const value = JSON.stringify(saved);
+  const raw = environment === "prod" ? JSON.stringify({ version: 2, value }) : value;
+  localStorage.setItem("docreview:conversations:v2", raw);
+  if (environment === "dev") stubLiveApi(READY_RUNTIME.corpus);
+  else stubPublicApi(true);
+  vi.resetModules();
+  const { ServiceShell: Shell } = await import("./service-shell");
+  try {
+    render(<Shell />);
+    await waitFor(() => {
+      const recovery = JSON.parse(localStorage.getItem("docreview:storage-recovery:v1")!);
+      expect(JSON.parse(recovery.value)["docreview:conversations:v2"]).toBe(raw);
+    });
+    const current = JSON.parse(localStorage.getItem("docreview:conversations:v2")!);
+    const conversations = environment === "prod" ? JSON.parse(current.value) : current;
+    expect(conversations).toHaveLength(1);
+    expect(conversations[0].id).toBe("interrupted");
+    expect(conversations[0].messages[0]).toMatchObject({ pending: false, execution: { outcome: "failed" } });
+  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); localStorage.clear(); }
 });

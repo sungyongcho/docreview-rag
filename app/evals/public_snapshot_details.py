@@ -1,13 +1,8 @@
 """Read exact public evaluation evidence without evaluation or provider work."""
 
-from collections.abc import Callable
-import hashlib
-import json
-from pathlib import Path
 from typing import Any, Literal
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ApiProblemError
 from app.api.public_snapshot_schemas import (
@@ -16,12 +11,10 @@ from app.api.public_snapshot_schemas import (
     PublicSnapshotDataset,
     PublicSnapshotEvaluation,
 )
-from app.db.models import EvalResult, EvaluationSnapshot, GoldenRevision, SnapshotChunk
-from app.evals.admin import SUITES
-from app.evals.loader import GOLDEN_CASES, golden_payload_sha256
-from app.evals.regression import _comparable_config
-from app.evals.scoring import COVERAGE_THRESHOLD
-from app.evals.snapshots import SnapshotService, _golden_sha256
+from app.db.models import EvalResult, EvaluationSnapshot, SnapshotChunk
+from app.db.session_factory import SessionFactory
+from app.evals.artifacts import EvaluationArtifacts, recorded_evaluation_cases
+from app.evals.loader import GOLDEN_CASES
 from app.evals.types import GoldenCase
 
 MAX_ARTIFACT_BYTES = 16 * 1024 * 1024
@@ -62,16 +55,15 @@ def _unavailable() -> ApiProblemError:
 class PublicSnapshotDetails:
     """Use the runtime's existing session and confined artifact boundaries."""
 
-    def __init__(self, session_factory: Callable[[], AsyncSession], snapshots: SnapshotService):
+    def __init__(self, session_factory: SessionFactory, artifacts: EvaluationArtifacts):
         self._session_factory = session_factory
-        self._snapshots = snapshots
+        self._artifacts = artifacts
 
     async def _load(
         self, snapshot_id: int
     ) -> tuple[
         EvaluationSnapshot,
         EvalResult,
-        GoldenRevision | None,
         str,
         list[GoldenCase],
         list[dict[str, Any]],
@@ -86,110 +78,39 @@ class PublicSnapshotDetails:
                     message="Published snapshot not found.",
                 )
             result = await session.get(EvalResult, snapshot.eval_result_id)
-            revision = (
-                await session.get(GoldenRevision, snapshot.golden_revision_id)
-                if snapshot.golden_revision_id is not None
-                else None
-            )
         if result is None:
             raise _unavailable()
-        digest = _golden_sha256(result.config)
+        identity = result.config.get("admin_identity")
+        digest = identity.get("golden_sha256") if isinstance(identity, dict) else None
         if not isinstance(digest, str) or len(digest) != 64:
             raise _unavailable()
         try:
-            # Limit disk work as well as the public page size. The shared reader
-            # additionally confines the file to its configured artifact directory.
-            if Path(result.raw_artifact_path).stat().st_size > MAX_ARTIFACT_BYTES:
-                raise _unavailable()
-            artifact = self._snapshots._artifact(result.raw_artifact_path)
-            artifact_config = artifact.get("config")
-            if artifact_config != result.config and artifact.get("schema_version") == 1:
-                # Version-one files omit the scoring stamp added by persist_evaluation.
-                # Reconstruct only that documented stamp; all remaining fields must match.
-                metrics = artifact.get("metrics")
-                cutoff = metrics.get("k") if isinstance(metrics, dict) else None
-                if isinstance(artifact_config, dict) and type(cutoff) is int and cutoff > 0:
-                    artifact_config = _comparable_config(
-                        artifact_config, {"k": cutoff, "coverage_threshold": COVERAGE_THRESHOLD}
-                    )
-            if artifact.get("suite") != result.suite or artifact_config != result.config:
-                raise _unavailable()
-            rows = artifact.get("cases")
-            if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
-                raise _unavailable()
-            payload = [row["golden"] for row in rows]
-            if golden_payload_sha256(payload) != digest:
-                await self._verify_bound_payload(snapshot, result, revision, digest, payload)
-            if snapshot.golden_revision_id is not None:
-                if (
-                    revision is None
-                    or revision.status != "published"
-                    or revision.sha256 != digest
-                    or golden_payload_sha256(revision.payload) != digest
-                ):
-                    raise _unavailable()
-            cases = GOLDEN_CASES.validate_python(payload)
-            if len({case.id for case in cases}) != len(cases):
+            artifact = self._artifacts.read(result.raw_artifact_path, max_bytes=MAX_ARTIFACT_BYTES)
+            rows = list(
+                recorded_evaluation_cases(
+                    artifact, suite=result.suite, config=result.config
+                ).values()
+            )
+            cases = GOLDEN_CASES.validate_python([row["golden"] for row in rows])
+            async with self._session_factory() as session:
+                sources = set(
+                    (
+                        await session.execute(
+                            select(SnapshotChunk.doc_id, SnapshotChunk.source_sha256)
+                            .where(SnapshotChunk.snapshot_id == snapshot.id)
+                            .distinct()
+                        )
+                    ).all()
+                )
+            if any(
+                (answer.doc_id, answer.source_sha256) not in sources
+                for case in cases
+                for answer in case.answers
+            ):
                 raise _unavailable()
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise _unavailable() from exc
-        return snapshot, result, revision, digest, cases, rows
-
-    async def _verify_bound_payload(
-        self,
-        snapshot: EvaluationSnapshot,
-        result: EvalResult,
-        revision: GoldenRevision | None,
-        digest: str,
-        payload: list[dict[str, Any]],
-    ) -> None:
-        """Verify historical alias binding against exact golden bytes and frozen sources."""
-        if revision is not None:
-            if revision.status != "published" or golden_payload_sha256(revision.payload) != digest:
-                raise _unavailable()
-            original = revision.payload
-        else:
-            definition = next((suite for key, suite in SUITES.items() if key == result.suite), None)
-            if definition is None:
-                raise _unavailable()
-            directory = self._snapshots._artifact_dir.parent / "golden"
-            path = (directory / definition.golden_name).resolve()
-            if path.parent != directory.resolve() or path.stat().st_size > MAX_ARTIFACT_BYTES:
-                raise _unavailable()
-            raw = path.read_bytes()
-            if hashlib.sha256(raw).hexdigest() != digest:
-                raise _unavailable()
-            original = json.loads(raw)
-        originals = GOLDEN_CASES.validate_python(original)
-        async with self._session_factory() as session:
-            sources = (
-                await session.execute(
-                    select(
-                        SnapshotChunk.doc_id,
-                        SnapshotChunk.issuer,
-                        SnapshotChunk.fiscal_year,
-                        SnapshotChunk.source_sha256,
-                    )
-                    .where(SnapshotChunk.snapshot_id == snapshot.id)
-                    .distinct()
-                )
-            ).all()
-        bound = []
-        for case in originals:
-            encoded = case.model_dump(mode="json")
-            for answer in encoded["answers"]:
-                matches = {
-                    doc_id
-                    for doc_id, issuer, year, sha in sources
-                    if answer["doc_id"] in (doc_id, f"{issuer}-FY{year}")
-                    and sha == answer["source_sha256"]
-                }
-                if len(matches) != 1:
-                    raise _unavailable()
-                answer["doc_id"] = next(iter(matches))
-            bound.append(encoded)
-        if bound != payload:
-            raise _unavailable()
+        return snapshot, result, digest, cases, rows
 
     @staticmethod
     def _page(
@@ -218,14 +139,12 @@ class PublicSnapshotDetails:
         sort: Literal["id", "question"] = "id",
     ) -> PublicSnapshotDataset:
         """Expose only exact verified question and answer fields."""
-        snapshot, result, revision, digest, cases, _ = await self._load(snapshot_id)
+        snapshot, result, digest, cases, _ = await self._load(snapshot_id)
         total, page = self._page(cases, offset=offset, limit=limit, query=query, sort=sort)
         return PublicSnapshotDataset(
             snapshot_id=snapshot.id,
             suite=result.suite,
             golden_sha256=digest,
-            revision_id=snapshot.golden_revision_id,
-            version=revision.version if revision else None,
             total=total,
             offset=offset,
             limit=limit,
@@ -245,7 +164,7 @@ class PublicSnapshotDetails:
         sort: Literal["id", "question"] = "id",
     ) -> PublicSnapshotEvaluation:
         """Expose allowlisted recorded settings and scores, never raw artifact paths."""
-        snapshot, result, _, _, cases, rows = await self._load(snapshot_id)
+        snapshot, result, _, cases, rows = await self._load(snapshot_id)
         total, page = self._page(cases, offset=offset, limit=limit, query=query, sort=sort)
         by_id = {row["golden"]["id"]: row for row in rows}
         output = []

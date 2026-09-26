@@ -69,6 +69,107 @@
         "title": "AcquisitionPairResource",
         "type": "object"
       },
+      "AdminCommand": {
+        "additionalProperties": false,
+        "description": "Validated safe operation submitted through the local administrator UI.",
+        "properties": {
+          "confirm_delete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Delete"
+          },
+          "deletion_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Token"
+          },
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Ids"
+          },
+          "expected_documents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Documents"
+          },
+          "identifiers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Identifiers",
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AdminJobKind"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest"
+          },
+          "selection_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection Id"
+          },
+          "years": {
+            "default": [],
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Years",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "AdminCommand",
+        "type": "object"
+      },
       "AdminDocumentResource": {
         "additionalProperties": false,
         "description": "One filing row with current chunk and embedding coverage.",
@@ -194,6 +295,18 @@
         ],
         "title": "AdminDocumentResource",
         "type": "object"
+      },
+      "AdminJobKind": {
+        "enum": [
+          "acquire_edgar",
+          "acquire_dart",
+          "ingest_manifest",
+          "ingest_selected",
+          "delete_sources",
+          "backfill_embeddings",
+          "rebuild_bm25"
+        ],
+        "type": "string"
       },
       "ApiError": {
         "additionalProperties": false,
@@ -428,7 +541,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -748,7 +860,7 @@
         "description": "The same corpus job snapshot returned to CLI and web clients.",
         "properties": {
           "command": {
-            "$ref": "#/components/schemas/CorpusOperationRequest"
+            "$ref": "#/components/schemas/AdminCommand"
           },
           "created_at": {
             "format": "date-time",
@@ -885,119 +997,6 @@
           "result_refs"
         ],
         "title": "CorpusJobResource",
-        "type": "object"
-      },
-      "CorpusOperationKind": {
-        "enum": [
-          "acquire_edgar",
-          "acquire_dart",
-          "ingest_manifest",
-          "ingest_selected",
-          "delete_sources",
-          "backfill_embeddings",
-          "rebuild_bm25"
-        ],
-        "type": "string"
-      },
-      "CorpusOperationRequest": {
-        "additionalProperties": false,
-        "description": "One safe corpus operation accepted by the local operator API.",
-        "properties": {
-          "confirm_delete": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Confirm Delete"
-          },
-          "deletion_token": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deletion Token"
-          },
-          "document_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Document Ids"
-          },
-          "expected_documents": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Documents"
-          },
-          "identifiers": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Identifiers",
-            "type": "array"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/CorpusOperationKind"
-          },
-          "manifest": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Manifest"
-          },
-          "selection_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selection Id"
-          },
-          "years": {
-            "default": [],
-            "items": {
-              "exclusiveMinimum": 0.0,
-              "type": "integer"
-            },
-            "title": "Years",
-            "type": "array"
-          }
-        },
-        "required": [
-          "kind"
-        ],
-        "title": "CorpusOperationRequest",
         "type": "object"
       },
       "CorpusSnapshotResource": {
@@ -2947,7 +2946,7 @@
       },
       "ExecutionData": {
         "additionalProperties": false,
-        "description": "Versioned execution envelope; absent historical fields remain explicitly null.",
+        "description": "Versioned execution envelope with explicitly optional measurements.",
         "properties": {
           "contract_version": {
             "default": 1,
@@ -3153,13 +3152,6 @@
             ],
             "title": "Local"
           },
-          "local_timings": {
-            "items": {
-              "$ref": "#/components/schemas/LocalModelTiming"
-            },
-            "title": "Local Timings",
-            "type": "array"
-          },
           "model": {
             "title": "Model",
             "type": "string"
@@ -3171,7 +3163,6 @@
                   "gate",
                   "route",
                   "retrieve",
-                  "chat",
                   "grade",
                   "check",
                   "report"
@@ -3350,7 +3341,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -3623,18 +3613,6 @@
             "title": "Filename",
             "type": "string"
           },
-          "parent_id": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Id"
-          },
           "payload": {
             "items": {
               "additionalProperties": true,
@@ -3656,8 +3634,7 @@
           "status": {
             "enum": [
               "draft",
-              "validated",
-              "published"
+              "validated"
             ],
             "title": "Status",
             "type": "string"
@@ -3669,22 +3646,15 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
-          },
-          "version": {
-            "exclusiveMinimum": 0.0,
-            "title": "Version",
-            "type": "integer"
           }
         },
         "required": [
           "revision_id",
           "filename",
           "suite_id",
-          "version",
           "status",
           "payload",
           "sha256",
-          "parent_id",
           "created_at",
           "updated_at"
         ],
@@ -4668,7 +4638,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -5508,7 +5477,7 @@
         "type": "object"
       },
       "PublicSnapshotDataset": {
-        "description": "One filtered page from the exact published golden version.",
+        "description": "One filtered page from the exact cases evaluated by a published snapshot.",
         "properties": {
           "cases": {
             "items": {
@@ -5529,17 +5498,6 @@
             "title": "Offset",
             "type": "integer"
           },
-          "revision_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revision Id"
-          },
           "snapshot_id": {
             "title": "Snapshot Id",
             "type": "integer"
@@ -5551,25 +5509,12 @@
           "total": {
             "title": "Total",
             "type": "integer"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
           }
         },
         "required": [
           "snapshot_id",
           "suite",
           "golden_sha256",
-          "revision_id",
-          "version",
           "total",
           "offset",
           "limit",
@@ -6599,7 +6544,6 @@
                 "gate",
                 "route",
                 "retrieve",
-                "chat",
                 "grade",
                 "check",
                 "report"
@@ -6847,18 +6791,6 @@
             "title": "Eval Result Id",
             "type": "integer"
           },
-          "golden_revision_id": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Golden Revision Id"
-          },
           "label": {
             "maxLength": 128,
             "minLength": 1,
@@ -6955,18 +6887,6 @@
           "eval_result": {
             "$ref": "#/components/schemas/EvalResultResource"
           },
-          "golden_revision_id": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Golden Revision Id"
-          },
           "label": {
             "title": "Label",
             "type": "string"
@@ -7014,7 +6934,6 @@
           "public",
           "corpus_fingerprint",
           "profile",
-          "golden_revision_id",
           "eval_result",
           "document_count",
           "created_at"
@@ -7370,7 +7289,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -7508,7 +7426,6 @@
               "gate",
               "route",
               "retrieve",
-              "chat",
               "grade",
               "check",
               "report"
@@ -8190,7 +8107,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CorpusOperationRequest"
+                "$ref": "#/components/schemas/AdminCommand"
               }
             }
           },

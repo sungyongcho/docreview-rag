@@ -69,11 +69,11 @@ describe("SystemStatus", () => {
     expect(panel.querySelector(".development-badge")).toHaveAttribute("aria-label", "DEV only");
     expect(within(panel).getByText("DEV")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "OpenAI model policy" }).closest("section")!.querySelector(".development-badge")).toBeNull();
-    for (const role of ["review", "routing", "intent", "chat"]) {
+    for (const role of ["review", "routing", "intent"]) {
       expect(within(panel).getByText(role)).toBeInTheDocument();
     }
     // Every served role names the same model, because the local engine has only one.
-    expect(within(panel).getAllByText("gemma4:e4b")).toHaveLength(4);
+    expect(within(panel).getAllByText("gemma4:e4b")).toHaveLength(3);
     // Embedding identity is stored per vector, so this row reports OpenAI and says why.
     const locked = document.querySelector(".policy-locked");
     expect(locked).toHaveTextContent("embedding");
@@ -121,7 +121,7 @@ describe("SystemStatus", () => {
     expect(screen.getByText(/compatible: original schema detail/)).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("original API failure");
     expect(screen.getAllByText("gpt-5.6-terra")).toHaveLength(3);
-    expect(screen.getAllByText(/user-model:original/)).toHaveLength(4);
+    expect(screen.getAllByText(/user-model:original/)).toHaveLength(3);
     expect(screen.getByRole("status")).not.toHaveTextContent("Unavailable. Check");
     expect(screen.getByRole("status")).toHaveTextContent("모델 서버에 연결할 수 없습니다.");
   });

@@ -270,7 +270,7 @@ def main() -> int:
     parser.add_argument("--json", dest="json_path", help="write the full result to this path")
     parser.add_argument("--markdown", action="store_true", help="print a Markdown table")
     args = parser.parse_args()
-    if os.environ.get("MODE", os.environ.get("DOCREVIEW_ENVIRONMENT", "dev")) == "prod":
+    if os.environ.get("MODE", "dev") == "prod":
         print("Refusing to load or run a local model in production mode.", file=sys.stderr)
         return 2
     print(

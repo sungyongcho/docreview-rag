@@ -26,6 +26,7 @@ def test_wrong_confirmation_never_stops_or_deletes(tmp_path, monkeypatch, answer
     monkeypatch.setattr("builtins.input", lambda prompt: answer)
     assert command.run(tmp_path) == "cancelled"
     assert operation.await_count == 1
+    assert operation.await_args is not None
     assert operation.await_args.args == (
         "postgresql+asyncpg://filing:filing@127.0.0.1:12345/filing",
     )
@@ -186,6 +187,7 @@ def test_real_unreadable_source_offers_quoted_owner_paths_and_one_retry(
             source.read_bytes()
         if owner_repairs:
             result = command.preview_sources(tmp_path)
+            assert result is not None
             assert set(result["files"]) == {str(source.relative_to(tmp_path / "data/corpus"))}
             assert source.read_text() == "preserve these real bytes"
         else:
@@ -385,7 +387,7 @@ def test_permission_failure_after_stop_restores_sources_and_explains_recovery(
     )
     output = capsys.readouterr().err
     assert "database and sources are unchanged" in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
 
 
 def test_api_stop_failure_also_explains_the_unchanged_data_and_recovery(
@@ -408,7 +410,7 @@ def test_api_stop_failure_also_explains_the_unchanged_data_and_recovery(
     assert operation.await_count == 1
     output = capsys.readouterr().err
     assert "database and sources are unchanged" in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
 
 
 def test_keep_sources_does_not_require_source_directory_write_access(tmp_path):

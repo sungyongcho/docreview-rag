@@ -31,9 +31,11 @@ def resolve_local_protocol(base_url: str, configured: ConfiguredLocalProtocol) -
     LocalLlmProtocol
         The protocol the provider should speak.
     """
-    if configured in {"openai_responses", "ollama"}:
-        return configured  # type: ignore[return-value]
-    return "openai_responses" if base_url.rstrip("/").endswith("/v1") else "ollama"
+    if configured == "openai_responses" or configured == "ollama":
+        return configured
+    if base_url.rstrip("/").endswith("/v1"):
+        return "openai_responses"
+    return "ollama"
 
 
 def local_provider_budget(*, max_input_tokens: int, max_output_tokens: int) -> ProviderBudget:

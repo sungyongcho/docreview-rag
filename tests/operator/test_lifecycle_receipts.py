@@ -4,8 +4,8 @@ import subprocess
 
 import pytest
 
-from app.operator.lifecycle_receipts import lifecycle_receipts
-from scripts.stack.fresh import receipt_path, write_receipt
+from app.operator.lifecycle_receipts import lifecycle_receipts, receipt_path
+from scripts.stack.fresh import write_receipt
 
 
 def test_lifecycle_receipt_is_read_only_and_uses_the_existing_path(tmp_path):

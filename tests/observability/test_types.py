@@ -52,6 +52,7 @@ def test_run_report_derives_cumulative_tokens_requests_and_iterations():
             input_tokens=40,
             output_tokens=8,
             retries=1,
+            requests=2,
         ),
     ]
 
@@ -67,13 +68,14 @@ def test_run_report_derives_cumulative_tokens_requests_and_iterations():
     assert report.steps == tuple(steps)
 
 
-def test_step_trace_counts_sent_requests_and_defaults_older_records_to_their_attempts():
-    """A refusal before the call records zero requests; older records keep retries + 1."""
+def test_step_trace_requires_explicit_sent_requests_and_preserves_unsent_refusals():
+    """Recorded counts distinguish paid attempts, unsent refusals, and unsupported traces."""
     assert step_trace().requests == 1
-    assert step_trace(retries=1).requests == 2
-    legacy = step_trace(retries=1).model_dump()
+    assert step_trace(retries=1, requests=2).requests == 2
+    legacy = step_trace(retries=1, requests=2).model_dump()
     del legacy["requests"]
-    assert StepTrace.model_validate(legacy).requests == 2
+    with pytest.raises(ValidationError, match="requests"):
+        StepTrace.model_validate(legacy)
 
     refused = step_trace(
         requests=0,

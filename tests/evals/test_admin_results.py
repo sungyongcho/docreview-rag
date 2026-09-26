@@ -1,4 +1,4 @@
-"""Artifact-reading paths of the evaluation admin service."""
+"""Stored-result reading: detail, comparison, confinement, and baseline lookup."""
 
 import asyncio
 from datetime import UTC, datetime
@@ -9,8 +9,12 @@ from typing import Any, Self, cast
 import pytest
 
 from app.config import Settings
+from app.db.models import EvalResult
 from app.evals.admin import EvaluationAdminService
+from app.evals.admin_results import compatible_baseline
+from app.evals.regression import SCORING_CONFIG_KEY
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.support import load_settings
 
 
 class _Row:
@@ -43,6 +47,10 @@ class _Session:
         """Return the stored row for one identifier."""
         return self._rows.get(row_id)
 
+    async def scalars(self, _statement: object) -> tuple[_Row, ...]:
+        """Return every stored row, newest first, ignoring the statement's filters."""
+        return tuple(sorted(self._rows.values(), key=lambda row: row.id, reverse=True))
+
 
 def _artifact(path: Path, first_rank: int | None) -> Path:
     """Write one evaluation artifact in the shape the reader expects."""
@@ -63,7 +71,7 @@ def _artifact(path: Path, first_rank: int | None) -> Path:
 def _service(tmp_path: Path, rows: dict[int, _Row]) -> EvaluationAdminService:
     """Build the service against on-disk artifacts and stored rows."""
     return EvaluationAdminService(
-        settings=Settings(corpus_dir=tmp_path, _env_file=None),
+        settings=load_settings(Settings, env_file=None, corpus_dir=tmp_path),
         provider=DeterministicEmbeddingProvider(),
         artifact_dir=tmp_path / "runs",
         session_factory=cast(Any, lambda: _Session(rows)),
@@ -81,7 +89,9 @@ def test_result_detail_reads_the_stored_artifact(tmp_path: Path) -> None:
     """
     runs = tmp_path / "runs"
     runs.mkdir()
-    row = _Row(1, _artifact(runs / "one.json", 2), {"admin_identity": "a", "_scoring": {"k": 5}})
+    row = _Row(
+        1, _artifact(runs / "one.json", 2), {"admin_identity": "a", SCORING_CONFIG_KEY: {"k": 5}}
+    )
 
     detail = asyncio.run(_service(tmp_path, {1: row}).result_detail(1))
 
@@ -102,7 +112,7 @@ def test_compare_reads_both_artifacts_on_the_compatible_path(tmp_path: Path) -> 
     """The success path is the one that reads artifacts; the guards never get there."""
     runs = tmp_path / "runs"
     runs.mkdir()
-    config = {"admin_identity": "a", "_scoring": {"k": 5}}
+    config = {"admin_identity": "a", SCORING_CONFIG_KEY: {"k": 5}}
     rows = {
         1: _Row(1, _artifact(runs / "candidate.json", 1), config),
         2: _Row(2, _artifact(runs / "baseline.json", 3), config),
@@ -125,8 +135,14 @@ def test_compare_rejects_incompatible_results_before_reading(tmp_path: Path) -> 
     runs = tmp_path / "runs"
     runs.mkdir()
     rows = {
-        1: _Row(1, _artifact(runs / "candidate.json", 1), {"admin_identity": "a", "_scoring": {}}),
-        2: _Row(2, _artifact(runs / "baseline.json", 1), {"admin_identity": "b", "_scoring": {}}),
+        1: _Row(
+            1,
+            _artifact(runs / "candidate.json", 1),
+            {"admin_identity": "a", SCORING_CONFIG_KEY: {}},
+        ),
+        2: _Row(
+            2, _artifact(runs / "baseline.json", 1), {"admin_identity": "b", SCORING_CONFIG_KEY: {}}
+        ),
     }
 
     with pytest.raises(ValueError, match="not compatible"):
@@ -137,7 +153,53 @@ def test_artifact_outside_the_configured_directory_is_refused(tmp_path: Path) ->
     """Confinement failures stay ValueError so the boundary answers 400, not 500."""
     (tmp_path / "runs").mkdir()
     outside = _artifact(tmp_path / "escaped.json", 1)
-    row = _Row(1, outside, {"admin_identity": "a", "_scoring": {}})
+    row = _Row(1, outside, {"admin_identity": "a", SCORING_CONFIG_KEY: {}})
 
     with pytest.raises(ValueError, match="outside the configured directory"):
         asyncio.run(_service(tmp_path, {1: row}).result_detail(1))
+
+
+def test_compatible_baseline_reads_the_scoring_stamp_that_persistence_writes(
+    tmp_path: Path,
+) -> None:
+    """The baseline lookup reads the key ``persist_eval_result`` stamps into the config."""
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    identity = {"golden_sha256": "a" * 64, "corpus_fingerprint": "b" * 64}
+    config = {"admin_identity": identity, SCORING_CONFIG_KEY: {"k": 5}}
+    row = _Row(1, _artifact(runs / "one.json", 1), config)
+
+    async def lookup(k: int) -> EvalResult | None:
+        """Ask for the newest baseline scored at cutoff ``k``."""
+        async with _Session({1: row}) as session:
+            return await compatible_baseline(
+                cast(Any, session),
+                suite="sec-en",
+                golden_sha256="a" * 64,
+                corpus_fingerprint="b" * 64,
+                k=k,
+            )
+
+    assert asyncio.run(lookup(5)) is row
+    assert asyncio.run(lookup(10)) is None
+
+
+def test_compare_rejects_results_scored_at_different_cutoffs(tmp_path: Path) -> None:
+    """Cutoff compatibility is read from the persisted scoring stamp."""
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    rows = {
+        1: _Row(
+            1,
+            _artifact(runs / "candidate.json", 1),
+            {"admin_identity": "a", SCORING_CONFIG_KEY: {"k": 5}},
+        ),
+        2: _Row(
+            2,
+            _artifact(runs / "baseline.json", 1),
+            {"admin_identity": "a", SCORING_CONFIG_KEY: {"k": 10}},
+        ),
+    }
+
+    with pytest.raises(ValueError, match="cutoffs are not compatible"):
+        asyncio.run(_service(tmp_path, rows).compare(1, 2))

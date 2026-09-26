@@ -12,8 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_schemas import (
-    CorpusOperationRequest,
     CorpusSnapshotResource,
+    DocumentDetailResponse,
     DocumentEmbeddingStatus,
     DocumentFacetsResponse,
     DocumentInventoryResponse,
@@ -60,23 +60,22 @@ from app.api.schemas import (
     SnapshotComparisonResponse,
     SnapshotResource,
 )
-from app.api.search_consistency import prepare_search
+from app.api.search_consistency import consistent_retrieve
 from app.config import get_settings
-from app.corpus_admin import AdminCommand, CorpusStatus, RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand, CorpusStatus
 from app.db.models import (
     Chunk,
     Document,
     EvalResult,
     OperatorJob,
     Run,
-    Trace,
 )
 from app.evals.admin import (
     EvaluationAdminService,
     EvaluationAlreadyQueuedError,
     EvaluationNotReadyError,
 )
-from app.evals.arms import make_retriever
 from app.evals.golden_admin import GoldenAdminService
 from app.evals.snapshots import SnapshotService
 from app.llm.local_connection import LocalConnectionError, LocalConnectionManager, LocalProtocol
@@ -85,8 +84,8 @@ from app.observability.usage import USAGE_KEY, merge_usage, review_usage
 from app.operator.job_history import JobHistoryService
 from app.operator.jobs import JobExecutionCoordinator, JobStore, StoredJob
 from app.operator.progress import progress_fields
-from app.retrieval.cross_encoder import CrossEncoderReranker
-from app.retrieval.service import ComponentRankings, RetrievalResult, retrieve
+from app.retrieval.cross_encoder import shared_cross_encoder
+from app.retrieval.service import RetrievalResult
 from app.retrieval.types import RetrievalFilters
 
 #: Seconds a readiness status reading may be reused between ``/ready`` calls.
@@ -269,18 +268,9 @@ class RuntimeAdminApiServices:
             document["issuer_name"] = names.get((document["registry"], document["issuer"]))
         return CorpusSnapshotResource.model_validate(snapshot)
 
-    async def document_detail(self, doc_id: str) -> dict[str, Any] | None:
+    async def document_detail(self, doc_id: str) -> DocumentDetailResponse | None:
         """Return one bounded document preview when present."""
-        await self._documents.ensure_ready()
-        detail = await self._corpus.document_detail(doc_id)
-        if detail is None:
-            return None
-        payload = asdict(detail)
-        document = payload["document"]
-        document["issuer_name"] = self._runtime.company_names().get(
-            (document["registry"], document["issuer"])
-        )
-        return payload
+        return await self._documents.document_detail(doc_id)
 
     async def documents(
         self,
@@ -368,21 +358,9 @@ class RuntimeAdminApiServices:
             }
         )
 
-    async def enqueue_corpus(self, request: CorpusOperationRequest) -> dict[str, Any]:
+    async def enqueue_corpus(self, request: AdminCommand) -> dict[str, Any]:
         """Queue one validated safe corpus operation."""
-        job = await self._corpus.enqueue(
-            AdminCommand(
-                request.kind,
-                document_ids=request.document_ids,
-                deletion_token=request.deletion_token,
-                confirm_delete=request.confirm_delete,
-                identifiers=request.identifiers,
-                years=request.years,
-                manifest=request.manifest,
-                selection_id=request.selection_id,
-                expected_documents=request.expected_documents,
-            )
-        )
+        job = await self._corpus.enqueue(request)
         return asdict(job)
 
     async def suites(self) -> tuple[GoldenSuiteResource, ...]:
@@ -448,7 +426,6 @@ class RuntimeAdminApiServices:
         return await self._snapshots.create(
             label=request.label,
             eval_result_id=request.eval_result_id,
-            golden_revision_id=request.golden_revision_id,
             public=request.public,
         )
 
@@ -567,7 +544,6 @@ class RuntimeAdminApiServices:
             request.action, request.expected_count, request.confirmation
         )
         if result.action == "delete":
-            self._corpus.forget_history(result.changed_ids)
             self._evaluations.forget_history(result.changed_ids)
         return JobHistoryResultResource(
             action=result.action,
@@ -637,30 +613,9 @@ class RuntimeAdminApiServices:
             runs = (
                 await session.execute(
                     select(
-                        Run.run_id,
                         Run.created_at,
                         Run.request_context["model_calls"].label("model_calls"),
-                        Run.request_context["provider_identity"].label("provider_identity"),
-                        Run.request_context["trace_requests"].label("trace_requests"),
                     )
-                )
-            ).all()
-            traces = (
-                await session.execute(
-                    select(
-                        Trace.run_id,
-                        Trace.step,
-                        Trace.node,
-                        Trace.model_name,
-                        Trace.api_url,
-                        Trace.retries,
-                        Trace.input_tokens,
-                        Trace.cached_input_tokens,
-                        Trace.cache_write_input_tokens,
-                        Trace.output_tokens,
-                        Trace.reasoning_tokens,
-                        Trace.estimated_cost_usd,
-                    ).order_by(Trace.run_id, Trace.step)
                 )
             ).all()
             ledgers = (
@@ -674,21 +629,9 @@ class RuntimeAdminApiServices:
                 .scalars()
                 .all()
             )
-        by_run = {}
-        for trace in traces:
-            by_run.setdefault(trace.run_id, []).append(trace)
         records = []
         for run in runs:
-            records.extend(
-                review_usage(
-                    {
-                        "model_calls": run.model_calls,
-                        "provider_identity": run.provider_identity,
-                        "trace_requests": run.trace_requests,
-                    },
-                    by_run.get(run.run_id, []),
-                )
-            )
+            records.extend(review_usage({"model_calls": run.model_calls}))
         for ledger in ledgers:
             if not isinstance(ledger, list) or any(not isinstance(row, dict) for row in ledger):
                 raise ValueError("Persisted embedding usage ledger is invalid")
@@ -770,53 +713,21 @@ class RuntimeAdminApiServices:
         filters: RetrievalFilters,
     ) -> RetrievalResult:
         """Execute one explicit profile while retaining component provenance."""
-        await prepare_search(
+        return await consistent_retrieve(
             session,
-            self._runtime.embedding_provider,
-            profile.strategy,
-            profile.lexical_ranker or "ts_rank_cd",
-            filters,
-        )
-        bm25 = profile.lexical_ranker == "bm25"
-        if profile.strategy == "hybrid":
-            return await retrieve(
-                session,
-                query,
-                provider=self._runtime.embedding_provider,
-                k=profile.k,
-                candidate_k=profile.candidate_k,
-                filters=filters,
-                rrf_k=profile.rrf_k,
-                reranker=CrossEncoderReranker() if profile.reranker else None,
-                route_by_language=profile.route_by_language,
-                lexical_ranker=profile.lexical_ranker or "ts_rank_cd",
-                bm25_k1=profile.bm25_k1,
-                bm25_b=profile.bm25_b,
-                bm25_idf=profile.bm25_idf,
-            )
-        retriever = make_retriever(
-            session,
+            query,
             strategy=profile.strategy,
             provider=self._runtime.embedding_provider,
+            k=profile.k,
             lexical_ranker=profile.lexical_ranker or "ts_rank_cd",
-            bm25_k1=profile.bm25_k1 if bm25 else None,
-            bm25_b=profile.bm25_b if bm25 else None,
-            bm25_idf=profile.bm25_idf if bm25 else None,
+            bm25_k1=profile.bm25_k1,
+            bm25_b=profile.bm25_b,
+            bm25_idf=profile.bm25_idf,
             candidate_k=profile.candidate_k,
             rrf_k=profile.rrf_k,
+            reranker=shared_cross_encoder() if profile.reranker else None,
             route_by_language=profile.route_by_language,
             filters=filters,
-        )
-        hits = tuple(await retriever(query, profile.k))
-        ids = tuple(hit.chunk_id for hit in hits)
-        return RetrievalResult(
-            candidates=hits,
-            hits=hits,
-            score_stage="rrf",
-            component_rankings=ComponentRankings(
-                vector=ids if profile.strategy == "vector" else (),
-                lexical=ids if profile.strategy == "lexical" else (),
-            ),
         )
 
     async def retrieval_preview(

@@ -33,9 +33,6 @@ const STEPS: readonly TourStep[] = [
   { title: "Run local operations", description: "System › Operations runs allowlisted verification and service commands without a shell.", targets: ["operations"], view: "system", tab: "operations", optional: "operations" },
 ] as const;
 
-/** Every `data-tour` name a step can spotlight, so a test can assert the shell renders each one. */
-export const TOUR_TARGETS: readonly string[] = [...new Set(STEPS.flatMap((item) => item.targets))];
-
 export function Onboarding({
   onClose,
   includeOperations = false,

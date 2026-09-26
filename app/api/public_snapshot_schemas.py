@@ -22,13 +22,11 @@ class PublicGoldenCase(BaseModel):
 
 
 class PublicSnapshotDataset(BaseModel):
-    """One filtered page from the exact published golden version."""
+    """One filtered page from the exact cases evaluated by a published snapshot."""
 
     snapshot_id: int
     suite: str
     golden_sha256: str
-    revision_id: int | None
-    version: int | None
     total: int
     offset: int
     limit: int

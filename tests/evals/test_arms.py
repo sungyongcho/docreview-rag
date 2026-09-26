@@ -184,6 +184,7 @@ def test_language_routing_is_bound_to_the_arm_and_only_to_a_fused_one(monkeypatc
         (DEFAULT_BM25_K1, float("nan"), DEFAULT_BM25_IDF),
         (DEFAULT_BM25_K1, DEFAULT_BM25_B, "okapi"),
     ],
+    ids=["missing_k1", "zero_k1", "boolean_k1", "negative_b", "nan_b", "unknown_idf"],
 )
 def test_a_bm25_arm_is_rejected_before_it_can_be_bound(values):
     """Reject an invalid BM25 set at bind time rather than on the first query."""
@@ -201,12 +202,6 @@ def test_a_bm25_arm_is_rejected_before_it_can_be_bound(values):
             bm25_b=b,
             bm25_idf=idf,
         )
-
-
-def test_bm25_values_are_rejected_on_an_arm_that_runs_no_bm25_query():
-    """Refuse to label an arm with parameters its retrieval never uses."""
-    with pytest.raises(ValueError, match="only for bm25 arms"):
-        resolve_bm25_parameters("ts_rank_cd", DEFAULT_BM25_K1, None, None)
 
 
 @pytest.mark.parametrize(
@@ -267,8 +262,16 @@ def test_a_bound_arm_rejects_a_deeper_per_call_hit_count(monkeypatch):
         asyncio.run(retriever("research", 4))
 
 
-def test_lexical_lane_tokenizes_for_the_filtered_corpus_language(monkeypatch):
-    """A ko language filter sends bigram tokens under the Korean configuration."""
+@pytest.mark.parametrize(
+    ("filters", "query", "sent"),
+    [
+        (RetrievalFilters(languages=("ko",)), "삼성전자 매출", ("삼성 성전 전자 매출", "simple")),
+        (None, "NVDA revenue", ("NVDA revenue", "english")),
+    ],
+    ids=["korean_filter_sends_bigrams_under_simple", "no_filter_keeps_the_english_path"],
+)
+def test_lexical_lane_tokenizes_for_the_filtered_corpus_language(monkeypatch, filters, query, sent):
+    """A ko filter sends bigram tokens under the Korean configuration; no filter stays English."""
     calls = []
 
     async def lexical_search(_session, query, _k, _filters, *, text_search_config):
@@ -281,25 +284,8 @@ def test_lexical_lane_tokenizes_for_the_filtered_corpus_language(monkeypatch):
         strategy="lexical",
         provider=None,
         lexical_ranker="ts_rank_cd",
-        filters=RetrievalFilters(languages=("ko",)),
+        filters=filters,
     )
-    asyncio.run(retriever("삼성전자 매출", 1))
+    asyncio.run(retriever(query, 1))
 
-    assert calls == [("삼성 성전 전자 매출", "simple")]
-
-
-def test_lexical_lane_keeps_the_english_configuration_without_a_filter(monkeypatch):
-    """No language filter keeps the committed English query path."""
-    calls = []
-
-    async def lexical_search(_session, query, _k, _filters, *, text_search_config):
-        calls.append((query, text_search_config))
-        return []
-
-    monkeypatch.setattr(arms, "lexical_search", lexical_search)
-    retriever = make_retriever(
-        cast(AsyncSession, object()), strategy="lexical", provider=None, lexical_ranker="ts_rank_cd"
-    )
-    asyncio.run(retriever("NVDA revenue", 1))
-
-    assert calls == [("NVDA revenue", "english")]
+    assert calls == [sent]

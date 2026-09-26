@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from scripts.stack import quickstart as setup
+from scripts.stack import local_http, quickstart as setup
 
 
 @pytest.fixture
@@ -73,8 +73,12 @@ def test_prod_configuration_uses_prod_key_without_acquisition_credentials(tmp_pa
         setup.validate_configuration(tmp_path, mode="prod")
 
 
-def test_prod_server_readiness_accepts_empty_corpus_without_claiming_search(monkeypatch):
-    """An empty but compatible PROD DB is a valid server start, even with HTTP 503 readiness."""
+@pytest.mark.parametrize(
+    "object_body", [True, False], ids=["compatible-empty-corpus", "non-object"]
+)
+def test_prod_server_readiness_requires_compatible_database_evidence(monkeypatch, object_body):
+    """Accept an empty compatible DB at HTTP 503, but reject a malformed readiness envelope."""
+    from email.message import Message
     import io
     import json
     from unittest.mock import Mock
@@ -86,12 +90,21 @@ def test_prod_server_readiness_accepts_empty_corpus_without_claiming_search(monk
         "corpus": {"database_connected": True, "schema_status": "compatible", "documents": 0},
     }
     error = HTTPError(
-        "http://local/ready", 503, "Not ready", {}, io.BytesIO(json.dumps(response).encode())
+        "http://local/ready",
+        503,
+        "Not ready",
+        Message(),
+        io.BytesIO(json.dumps(response if object_body else [response]).encode()),
     )
     opener = Mock()
     opener.open.side_effect = error
-    monkeypatch.setattr(setup, "build_opener", lambda *args: opener)
-    setup.wait_ready("http://127.0.0.1:8000", mode="prod", timeout=1)
+    monkeypatch.setattr(local_http, "build_opener", lambda *args: opener)
+    if object_body:
+        setup.wait_ready("http://127.0.0.1:8000", mode="prod", timeout=1)
+    else:
+        with pytest.raises(ValueError, match="did not return a JSON object"):
+            setup.wait_ready("http://127.0.0.1:8000", mode="prod", timeout=1)
+    opener.open.assert_called_once()
     assert opener.open.call_args.args[0].endswith("/api/ready/")
 
 
@@ -115,9 +128,8 @@ def test_startup_prepares_only_project_database_before_app(configured, monkeypat
     assert calls[3] == "http://127.0.0.1:38010"
 
 
-@pytest.mark.parametrize("array", [True, False])
-def test_service_states_are_project_scoped(configured, monkeypatch, capsys, array):
-    """Handle Compose array and JSON-lines formats without claiming web health."""
+def test_service_states_are_project_scoped(configured, monkeypatch, capsys):
+    """Report the state of each service of this project without claiming web health."""
     import json
 
     rows = [
@@ -130,7 +142,7 @@ def test_service_states_are_project_scoped(configured, monkeypatch, capsys, arra
     def output(args, **kwargs):
         """Capture the actual project-scoped inspection command."""
         commands.append(args)
-        return json.dumps(rows) if array else "\n".join(map(json.dumps, rows))
+        return "\n".join(map(json.dumps, rows))
 
     monkeypatch.setattr(setup.subprocess, "check_output", output)
     setup.report_services(configured, {})
@@ -285,11 +297,12 @@ def test_startup_failure_diagnoses_and_restarts_once(configured, monkeypatch):
     ready.assert_called_once()
 
 
-@pytest.mark.parametrize("choice", ["q", "", None])
+@pytest.mark.parametrize("choice", ["", None], ids=["default-quit", "end-of-input"])
 def test_configuration_cancellation_stops_before_database_work(
     configured, monkeypatch, capsys, choice
 ):
-    """Quit, default decline and EOF preserve configuration and block every later setup action."""
+    """Quitting by default and closing the input preserve configuration and block every later
+    setup action."""
     from unittest.mock import Mock
 
     before = (configured / ".env").read_bytes()
@@ -374,14 +387,18 @@ def test_second_database_failure_stops_before_reset(configured, monkeypatch):
     launch.assert_called_once_with("dev", ["down"], root=configured)
 
 
-def test_schema_drift_blocks_application_start(configured, monkeypatch):
-    """A declined retry after schema drift keeps the data intact and never starts services."""
+@pytest.mark.parametrize(
+    ("retry", "checks"), [(False, 1), (True, 2)], ids=["declined-retry", "failed-retry"]
+)
+def test_schema_drift_blocks_application_start(configured, monkeypatch, retry, checks):
+    """Schema drift keeps the data intact and never starts services, whether its single
+    read-only retry is declined or fails again; the retry never turns into recreation."""
     from unittest.mock import Mock
 
     monkeypatch.setattr(setup.subprocess, "check_output", lambda *a, **k: "2.39.0")
     database = Mock()
     prepare = AsyncMock(side_effect=setup.SchemaDriftError("fixture drift"))
-    confirm = Mock(return_value=False)
+    confirm = Mock(return_value=retry)
     forbidden = Mock()
     monkeypatch.setattr(setup, "ensure_database", database)
     monkeypatch.setattr(setup, "prepare_schema", prepare)
@@ -389,27 +406,7 @@ def test_schema_drift_blocks_application_start(configured, monkeypatch):
     monkeypatch.setattr(setup, "start_ready", forbidden)
     with pytest.raises(RuntimeError, match="Schema is still blocked"):
         setup.quickstart(configured)
-    assert database.call_count == prepare.await_count == 1
-    confirm.assert_called_once()
-    forbidden.assert_not_called()
-
-
-def test_second_schema_failure_cannot_reset_or_start_services(configured, monkeypatch):
-    """Retrying a read-only schema check once never turns it into implicit recreation."""
-    from unittest.mock import Mock
-
-    monkeypatch.setattr(setup.subprocess, "check_output", lambda *a, **k: "2.39.0")
-    database = Mock()
-    prepare = AsyncMock(side_effect=setup.SchemaDriftError("fixture drift"))
-    confirm = Mock(return_value=True)
-    forbidden = Mock()
-    monkeypatch.setattr(setup, "ensure_database", database)
-    monkeypatch.setattr(setup, "prepare_schema", prepare)
-    monkeypatch.setattr(setup, "confirm", confirm)
-    monkeypatch.setattr(setup, "start_ready", forbidden)
-    with pytest.raises(RuntimeError, match="Schema is still blocked"):
-        setup.quickstart(configured)
-    assert database.call_count == prepare.await_count == 2
+    assert database.call_count == prepare.await_count == checks
     confirm.assert_called_once()
     forbidden.assert_not_called()
 

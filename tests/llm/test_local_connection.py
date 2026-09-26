@@ -24,8 +24,8 @@ def metadata_server(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"models": models})
 
 
-def test_saved_connection_restart_disconnect_and_reset(tmp_path) -> None:
-    """Saved choices survive restart; explicit off stays off and reset restores startup."""
+def test_saved_connection_restart_and_disconnect(tmp_path) -> None:
+    """Saved choices survive restart and an explicit off stays off."""
     path = tmp_path / "local-settings/connection.json"
     transport = httpx.MockTransport(metadata_server)
     manager = LocalConnectionManager(
@@ -55,10 +55,6 @@ def test_saved_connection_restart_disconnect_and_reset(tmp_path) -> None:
         disabled = LocalConnectionManager(path=path, transport=transport)
         assert disabled.current.source == "disabled"
         assert (await disabled.public_state()) == {"enabled": False, "reason": "disabled"}
-        restored = await restarted.reset()
-        assert restored["source"] == "environment"
-        assert restored["base_url"] == "http://initial:11434"
-        assert LocalConnectionManager(path=path).current.source == "default"
 
     asyncio.run(exercise())
 
@@ -82,7 +78,7 @@ def test_failed_probe_and_failed_save_keep_the_existing_revision(tmp_path, monke
             """Represent a filesystem that cannot atomically commit the new settings."""
             raise OSError("private filesystem detail")
 
-        monkeypatch.setattr(connections.os, "replace", fail_replace)
+        monkeypatch.setattr("app.atomic_write.os.replace", fail_replace)
         with pytest.raises(LocalConnectionError, match="Could not save"):
             await manager.add_server("Replacement", "http://replacement")
         assert manager.current is old
@@ -123,13 +119,24 @@ def test_empty_server_is_a_valid_connection_and_changed_url_does_not_get_secret(
     asyncio.run(exercise())
 
 
-def test_corrupt_file_fails_closed_and_prod_does_not_read_or_probe(tmp_path, monkeypatch) -> None:
-    """Invalid stored settings do not fall back, and prod does not even read them."""
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "not json",
+        '{"version":1,"state":"connected","base_url":"http://saved"}',
+        '{"version":1,"state":"disabled"}',
+    ],
+)
+def test_invalid_format_fails_closed_and_prod_does_not_read_or_probe(
+    tmp_path, monkeypatch, stored
+) -> None:
+    """Invalid or retired formats stay untouched; production never reads or probes them."""
     path = tmp_path / "broken.json"
-    path.write_text("not json")
+    path.write_text(stored)
     manager = LocalConnectionManager(path=path, transport=httpx.MockTransport(metadata_server))
     assert manager.current.source == "invalid"
     assert manager.current.inventory is None
+    assert path.read_text() == stored
 
     def forbid(*args, **kwargs):
         """Fail if production accesses the connection file or model server."""
@@ -205,10 +212,17 @@ def test_saved_choice_overrides_invalid_initial_url(tmp_path) -> None:
     path.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "state": "connected",
-                "base_url": "http://saved",
-                "protocol": "ollama",
+                "selected_server_id": "saved",
+                "servers": [
+                    {
+                        "id": "saved",
+                        "name": "Saved",
+                        "base_url": "http://saved",
+                        "protocol": "ollama",
+                    }
+                ],
             }
         )
     )
@@ -226,8 +240,6 @@ def test_saved_choice_overrides_invalid_initial_url(tmp_path) -> None:
     response = asyncio.run(manager.state())
     assert "secret" not in json.dumps(response)
     assert response["initial_base_url"] == ""
-    with pytest.raises(ValueError, match="HTTP or HTTPS"):
-        asyncio.run(manager.reset())
     assert manager.current is previous
     assert path.read_bytes() == original_bytes
 
@@ -242,11 +254,12 @@ def test_invalid_initial_url_is_reported_when_no_saved_choice_exists(tmp_path) -
 def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path) -> None:
     """Real filesystem denial preserves existing configuration and explains ownership."""
     path = tmp_path / "local-llm.json"
-    path.write_text('{"version":1,"state":"disabled"}')
+    path.write_text('{"version":2,"state":"disabled","selected_server_id":"default","servers":[]}')
     path.chmod(0)
     try:
         unreadable = LocalConnectionManager(path=path)
         assert unreadable.current.source == "invalid"
+        assert unreadable.current.error is not None
         assert "not readable" in unreadable.current.error
     finally:
         path.chmod(0o600)
@@ -263,13 +276,17 @@ def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path)
         tmp_path.chmod(0o700)
 
 
-def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(tmp_path) -> None:
-    """A legacy file naming the runtime address resolves to Default without an eager migration."""
+def test_saved_initial_choice_resolves_runtime_default_without_writes(tmp_path) -> None:
+    """A saved initial choice resolves to Default without rewriting its current format."""
+    saved_choice = {
+        "version": 2,
+        "state": "initial",
+        "selected_server_id": "default",
+        "servers": [],
+    }
     initial = "http://host.docker.internal:11434"
     path = tmp_path / "connection.json"
-    path.write_text(
-        json.dumps({"version": 1, "state": "connected", "base_url": initial, "protocol": "auto"})
-    )
+    path.write_text(json.dumps(saved_choice))
     original = path.read_bytes()
     manager = LocalConnectionManager(
         initial_base_url=initial,
@@ -289,10 +306,11 @@ def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(tmp_
         }
     ]
     assert manager.current.base_url == initial
+    assert manager.current.source == "environment"
     assert path.read_bytes() == original
 
 
-def test_named_servers_survive_switch_disconnect_reset_and_restart(tmp_path) -> None:
+def test_named_servers_survive_switch_disconnect_and_restart(tmp_path) -> None:
     """Persist a named registry while Default and explicit off preserve all saved choices."""
     path = tmp_path / "connection.json"
     transport = httpx.MockTransport(metadata_server)
@@ -317,10 +335,6 @@ def test_named_servers_survive_switch_disconnect_reset_and_restart(tmp_path) -> 
         )
         assert (await restarted.state())["servers"] == second["servers"]
         assert (await restarted.state())["selected_server_id"] == desk_id
-        reset = await restarted.reset()
-        assert reset["selected_server_id"] == "default"
-        assert reset["base_url"] == "http://initial"
-        assert reset["servers"] == second["servers"]
         assert json.loads(path.read_text())["version"] == 2
         await restarted.select_server(desk_id)
         assert restarted.current.base_url == "http://desk"
@@ -363,7 +377,7 @@ def test_named_server_failures_preserve_registry_active_revision_and_file(
             """Deny only the temporary candidate file's atomic replacement."""
             raise PermissionError("private settings path")
 
-        monkeypatch.setattr(connections.os, "replace", fail_replace)
+        monkeypatch.setattr("app.atomic_write.os.replace", fail_replace)
         with pytest.raises(LocalConnectionError):
             await manager.add_server("Cannot save", "http://new")
         assert manager.current is old

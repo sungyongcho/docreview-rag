@@ -9,9 +9,10 @@ from pathlib import Path
 import subprocess
 import sys
 from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import Request
 
 from scripts.stack.environment import load_local_environment
+from scripts.stack.local_http import local_opener
 from scripts.stack.operator import LocalOperator, OperatorLifecycleError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,7 +30,7 @@ class LocalClient:
         self.base = base
         self.origin = origin
         self.token = token
-        self.opener = build_opener(ProxyHandler({}))
+        self.opener = local_opener()
 
     def request(self, path: str, body: dict | None = None) -> dict:
         """Issue one request without retrying potentially accepted mutations."""

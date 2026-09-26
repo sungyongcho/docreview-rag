@@ -4,12 +4,14 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.release.ai_allowance import SharedAIAllowance, active_allowance
-from app.retrieval.embeddings import OpenAIEmbeddingProvider
+from app.retrieval.embeddings import EmbeddingClient, OpenAIEmbeddingProvider
+from tests.support import load_settings
 
 
 def test_atomic_reservations_survive_recreation(tmp_path):
@@ -86,7 +88,7 @@ def test_embedding_is_blocked_before_openai(tmp_path):
         await ledger.reserve_amount(Decimal("1"))
         create = AsyncMock()
         provider = OpenAIEmbeddingProvider(
-            client=SimpleNamespace(embeddings=SimpleNamespace(create=create))
+            client=cast(EmbeddingClient, SimpleNamespace(embeddings=SimpleNamespace(create=create)))
         )
         token = active_allowance.set(ledger)
         try:
@@ -111,10 +113,8 @@ def test_middleware_exempts_lexical_and_reports_server_reset(tmp_path):
     app = FastAPI()
     app.add_middleware(
         ReleaseGuardMiddleware,
-        limiter=ledger,
-        shared_allowance=ledger,
+        allowance=ledger,
         trust_proxy_headers=False,
-        salt=ledger.salt,
     )
 
     @app.post("/retrieve")
@@ -221,26 +221,26 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
         embedding_provider=DeterministicEmbeddingProvider(),
         intent_classifier_enabled=True,
     )
-    runtime._scope_index_for_decision = AsyncMock(return_value=SimpleNamespace(match=lambda _: ()))
-    runtime._followup_query = lambda request: (None, request.query)
-    runtime._engine = AsyncMock(
-        return_value=(provider, ReleaseSettings(_env_file=None).provider_budget())
+    runtime._scope.manifest_index_for_decision = AsyncMock(
+        return_value=SimpleNamespace(match=lambda _: ())
+    )
+    runtime._conversation._followup_query = lambda request: (None, request.query)
+    runtime._engines.resolve_engine = AsyncMock(
+        return_value=(provider, load_settings(ReleaseSettings, env_file=None).provider_budget())
     )
     app = FastAPI()
     install_error_handlers(app)
     app.add_middleware(
         ReleaseGuardMiddleware,
-        limiter=ledger,
-        shared_allowance=ledger,
+        allowance=ledger,
         trust_proxy_headers=False,
         public_read_only=True,
-        salt=ledger.salt,
     )
 
     @app.post("/retrieve")
     async def retrieve(request: RetrieveRequest):
         """Execute the same pre-retrieval routing path as the runtime API."""
-        decision, _ = await runtime._path_decision(request)
+        decision, _ = await runtime._conversation.decide_path(request)
         return {"intent": decision.intent}
 
     payload = {
@@ -266,7 +266,7 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
 
 def test_full_openai_input_and_output_cost_is_refused_before_dispatch(tmp_path):
     """A low dollar cap blocks a large legal token request before the client or ledger changes."""
-    from app.llm.schemas import Prompt
+    from app.llm.schemas import BudgetExceeded, Prompt
     from app.release.config import ReleaseSettings
     from app.workflow.gate import RoutingClassification
 
@@ -275,7 +275,7 @@ def test_full_openai_input_and_output_cost_is_refused_before_dispatch(tmp_path):
         ledger = SharedAIAllowance(tmp_path / "preflight.sqlite3", Decimal("0.001"), 5, 25)
         provider, create = _fake_openai()
         budget = (
-            ReleaseSettings(_env_file=None)
+            load_settings(ReleaseSettings, env_file=None)
             .provider_budget()
             .model_copy(update={"max_cost_usd": Decimal("0.001")})
         )
@@ -287,6 +287,7 @@ def test_full_openai_input_and_output_cost_is_refused_before_dispatch(tmp_path):
         finally:
             active_allowance.reset(token)
         assert result.status == "budget_exceeded"
+        assert isinstance(result.refusal, BudgetExceeded)
         assert result.refusal.which == "estimated_cost_usd"
         assert result.metadata.requests == 0
         create.assert_not_awaited()
@@ -299,7 +300,7 @@ def test_openai_preflight_includes_schema_and_allows_default_small_call(tmp_path
     """Schema tokens participate in the input gate and a normal $0.01 call still fits."""
     from pydantic import BaseModel, Field
 
-    from app.llm.schemas import Prompt
+    from app.llm.schemas import BudgetExceeded, Prompt
     from app.release.config import ReleaseSettings
     from app.workflow.gate import RoutingClassification
 
@@ -312,7 +313,7 @@ def test_openai_preflight_includes_schema_and_allows_default_small_call(tmp_path
         """Compare a normal classifier with a schema-heavy request without provider I/O."""
         provider, create = _fake_openai()
         budget = (
-            ReleaseSettings(_env_file=None)
+            load_settings(ReleaseSettings, env_file=None)
             .provider_budget()
             .model_copy(
                 update={
@@ -337,6 +338,7 @@ def test_openai_preflight_includes_schema_and_allows_default_small_call(tmp_path
             active_allowance.reset(token)
         assert ordinary.status == "ok"
         assert refused.status == "budget_exceeded"
+        assert isinstance(refused.refusal, BudgetExceeded)
         assert refused.refusal.which == "input_tokens"
         assert create.await_count == 1
 
@@ -370,10 +372,8 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
     app.dependency_overrides[get_api_services] = lambda: Services()
     app.add_middleware(
         ReleaseGuardMiddleware,
-        limiter=ledger,
-        shared_allowance=ledger,
+        allowance=ledger,
         trust_proxy_headers=False,
-        salt=ledger.salt,
     )
     with TestClient(app) as client:
         response = client.post(
@@ -398,7 +398,7 @@ def test_five_visitors_fit_two_three_call_questions_with_luna(tmp_path):
 
     async def scenario():
         """Exercise actual Luna preflight with maximum output reservations and fake responses."""
-        settings = ReleaseSettings(_env_file=None, DOCREVIEW_ENVIRONMENT="prod")
+        settings = load_settings(ReleaseSettings, env_file=None, environment="prod")
         allowance = SharedAIAllowance(
             tmp_path / "visitors.sqlite3",
             settings.public_daily_cost_usd,

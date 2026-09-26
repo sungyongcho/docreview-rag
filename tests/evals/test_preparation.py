@@ -5,9 +5,9 @@ from dataclasses import replace
 
 import pytest
 
-from app.api.admin_schemas import EvaluationRunRequest
+from app.api.admin_schemas import EvaluationRunRequest, RetrievalProfile
 from app.config import Settings
-from app.corpus_admin import CorpusStatus
+from app.corpus_admin.types import CorpusStatus
 from app.evals.admin import EvaluationAdminService, EvaluationNotReadyError
 from app.evals.source_binding import BoundGolden, SourceCheck
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
@@ -80,7 +80,9 @@ def test_preparation_distinguishes_index_and_exact_source_versions(
     result = asyncio.run(
         service.preparation(
             EvaluationRunRequest(
-                suite_id="sec-en", golden_revision_id=1, profile={"lexical_ranker": "bm25"}
+                suite_id="sec-en",
+                golden_revision_id=1,
+                profile=RetrievalProfile(lexical_ranker="bm25"),
             )
         )
     )
@@ -105,6 +107,7 @@ def test_exact_parsed_source_check_on_isolated_postgres():
     if not dsn:
         live_postgres_unavailable("GOLDEN_PREFLIGHT_TEST_DSN is not configured")
     url = make_url(dsn)
+    assert url.database is not None
     assert url.host in {"127.0.0.1", "localhost"} and url.database.startswith("pipeline_test_")
 
     async def exercise():

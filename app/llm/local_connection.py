@@ -4,15 +4,13 @@ import asyncio
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 import json
-import os
 from pathlib import Path
-import tempfile
 from typing import Any, Literal
 from uuid import uuid4
 
 import httpx
-from pydantic import TypeAdapter
 
+from app.atomic_write import write_text_atomically
 from app.llm.local_diagnostics import remediation_ids
 from app.llm.local_inventory import LocalModelInventory
 from app.settings_sources import DEFAULT_LOCAL_BASE_URL
@@ -170,37 +168,36 @@ class LocalConnectionManager:
     def _load(self) -> LocalConnection:
         """Reject invalid persisted state rather than falling back to another endpoint."""
         data = json.loads(self.path.read_text())
-        if not isinstance(data, dict) or data.get("version") not in {1, 2}:
+        if not isinstance(data, dict) or data.get("version") != 2:
             raise ValueError("invalid local connection settings")
-        if data["version"] == 2:
-            rows = data.get("servers")
-            if not isinstance(rows, list):
-                raise ValueError("invalid saved local servers")
-            servers = []
-            for row in rows:
-                if (
-                    not isinstance(row, dict)
-                    or not isinstance(row.get("id"), str)
-                    or not row["id"]
-                    or row["id"] == "default"
-                    or not isinstance(row.get("name"), str)
-                    or not isinstance(row.get("base_url"), str)
-                    or row.get("protocol") not in {"auto", "ollama", "openai_responses"}
-                ):
-                    raise ValueError("invalid saved local server")
-                servers.append(
-                    LocalServer(
-                        row["id"],
-                        self._server_name(row["name"]),
-                        validate_base_url(row["base_url"]),
-                        row["protocol"],
-                    )
+        rows = data.get("servers")
+        if not isinstance(rows, list):
+            raise ValueError("invalid saved local servers")
+        servers = []
+        for row in rows:
+            if (
+                not isinstance(row, dict)
+                or not isinstance(row.get("id"), str)
+                or not row["id"]
+                or row["id"] == "default"
+                or not isinstance(row.get("name"), str)
+                or not isinstance(row.get("base_url"), str)
+                or row.get("protocol") not in {"auto", "ollama", "openai_responses"}
+            ):
+                raise ValueError("invalid saved local server")
+            servers.append(
+                LocalServer(
+                    row["id"],
+                    self._server_name(row["name"]),
+                    validate_base_url(row["base_url"]),
+                    row["protocol"],
                 )
-            if len({row.id for row in servers}) != len(servers) or len(
-                {row.name.casefold() for row in servers}
-            ) != len(servers):
-                raise ValueError("duplicate saved local server")
-            self._servers = tuple(servers)
+            )
+        if len({row.id for row in servers}) != len(servers) or len(
+            {row.name.casefold() for row in servers}
+        ) != len(servers):
+            raise ValueError("duplicate saved local server")
+        self._servers = tuple(servers)
         state = data.get("state")
         if state == "initial":
             self._selected_server_id = "default"
@@ -211,7 +208,7 @@ class LocalConnectionManager:
                 self._server(selected).id if selected is not None else "default"
             )
             return LocalConnection(None, self.initial_protocol, "disabled", None)
-        if data["version"] == 2 and state == "connected":
+        if state == "connected":
             selected_id = data.get("selected_server_id")
             if not isinstance(selected_id, str):
                 raise ValueError("invalid selected local server")
@@ -222,37 +219,20 @@ class LocalConnectionManager:
                 server.protocol,
                 self.initial_source if server.id == "default" else "saved",
             )
-        if state != "connected" or not isinstance(data.get("base_url"), str):
-            raise ValueError("invalid local connection settings")
-        protocol = TypeAdapter(LocalProtocol).validate_python(
-            data.get("protocol", "auto"), strict=True
-        )
-        normalized = validate_base_url(data["base_url"])
-        if normalized == self.initial_base_url and protocol == self.initial_protocol:
-            self._selected_server_id = "default"
-            return self._initial_connection()
-        server = LocalServer("legacy", "Saved server", normalized, protocol)
-        self._servers = (server,)
-        self._selected_server_id = server.id
-        return self._connection(normalized, protocol, "saved")
+        raise ValueError("invalid local connection settings")
 
     def _persist(self, data: dict[str, object]) -> None:
         """Atomically replace the saved choice before making it active in memory."""
-        temporary: Path | None = None
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                mode="w", dir=self.path.parent, prefix=".local-llm-", delete=False
-            ) as stream:
-                temporary = Path(stream.name)
-                # The local Compose app uses the host's primary group for host-readable settings.
-                os.fchmod(stream.fileno(), 0o640)
-                json.dump({"version": 2, **data}, stream)
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
-            temporary = None
+            # The local Compose app uses the host's primary group for host-readable settings.
+            write_text_atomically(
+                self.path,
+                json.dumps({"version": 2, **data}) + "\n",
+                mode=0o640,
+                apply_umask=False,
+                encoding=None,
+            )
         except PermissionError as error:
             raise LocalConnectionError(
                 "local_connection_save_failed",
@@ -263,9 +243,6 @@ class LocalConnectionManager:
             raise LocalConnectionError(
                 "local_connection_save_failed", "Could not save local connection settings."
             ) from error
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
 
     def _require_enabled(self) -> None:
         """Block every configuration or probe operation when running in production."""
@@ -514,14 +491,4 @@ class LocalConnectionManager:
         async with self._lock:
             self._persist(self._saved_state("disabled", self._selected_server_id))
             self._active = LocalConnection(None, self.initial_protocol, "disabled", None)
-        return await self.state()
-
-    async def reset(self) -> dict[str, Any]:
-        """Restore startup settings and let ordinary readiness report reachability."""
-        self._require_enabled()
-        async with self._lock:
-            candidate = self._initial_connection()
-            self._persist(self._saved_state("initial", "default"))
-            self._selected_server_id = "default"
-            self._active = candidate
         return await self.state()

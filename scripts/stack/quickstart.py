@@ -10,17 +10,17 @@ import re
 import subprocess
 import sys
 import time
-from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, build_opener
+from urllib.error import URLError
 
 from dotenv import dotenv_values, set_key
 
 from app.db.bootstrap import SchemaDriftError
 from app.db.startup import prepare as prepare_schema
 from scripts.diagnostics.ollama import diagnose
-from scripts.stack.__main__ import compose_command, compose_environment, run
+from scripts.stack.__main__ import compose_command, compose_environment, parse_compose_ps, run
 from scripts.stack.environment import load_local_environment
 from scripts.stack.fresh import write_receipt
+from scripts.stack.local_http import read_local_json
 from scripts.stack.prompts import SetupCancelledError, confirm, step
 from scripts.stack.terminal import activity, run_step
 
@@ -153,52 +153,36 @@ def configure(root: Path, *, mode: str = "dev") -> dict[str, str]:
 
 def wait_ready(origin: str, *, timeout: float = 180, mode: str = "dev") -> None:
     """Require actual API, database, schema, and DEV permission evidence after startup."""
-    opener = build_opener(ProxyHandler({}))
+    url = origin + (
+        "/docreview-rag/api/admin/corpus/" if mode == "dev" else "/docreview-rag/api/ready/"
+    )
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            with opener.open(
-                origin
-                + (
-                    "/docreview-rag/api/admin/corpus/"
-                    if mode == "dev"
-                    else "/docreview-rag/api/ready/"
-                ),
-                timeout=5,
-            ) as response:
-                snapshot = json.load(response)
-            if mode == "prod":
-                corpus = snapshot.get("corpus", {})
-                if (
-                    snapshot.get("environment") == "prod"
-                    and corpus.get("database_connected")
-                    and corpus.get("schema_status") == "compatible"
-                ):
-                    return
-            state = snapshot["status"] if mode == "dev" else {}
-            if (
-                state.get("database_connected")
-                and state.get("schema_status") == "compatible"
-                and state.get("writable")
-            ):
-                if state["provider"] != "openai":
-                    raise ValueError(
-                        "The running API is not using OpenAI embeddings. "
-                        "Check effective configuration."
-                    )
-                return
-        except HTTPError as error:
-            if mode == "prod" and error.code == 503:
-                snapshot = json.load(error)
-                corpus = snapshot.get("corpus", {})
-                if (
-                    snapshot.get("environment") == "prod"
-                    and corpus.get("database_connected")
-                    and corpus.get("schema_status") == "compatible"
-                ):
-                    return
+            # PROD readiness answers 503 while degraded; its body still carries the evidence.
+            snapshot = read_local_json(url, timeout=5, accept=(503,) if mode == "prod" else ())
         except URLError, TimeoutError, ConnectionError:
-            pass
+            time.sleep(2)
+            continue
+        if mode == "prod":
+            corpus = snapshot.get("corpus", {})
+            if (
+                snapshot.get("environment") == "prod"
+                and corpus.get("database_connected")
+                and corpus.get("schema_status") == "compatible"
+            ):
+                return
+        state = snapshot["status"] if mode == "dev" else {}
+        if (
+            state.get("database_connected")
+            and state.get("schema_status") == "compatible"
+            and state.get("writable")
+        ):
+            if state["provider"] != "openai":
+                raise ValueError(
+                    "The running API is not using OpenAI embeddings. Check effective configuration."
+                )
+            return
         time.sleep(2)
     raise RuntimeError(
         "DEV readiness was not confirmed. Use rag-dev logs -f app and rag-dev doctor; "
@@ -208,16 +192,13 @@ def wait_ready(origin: str, *, timeout: float = 180, mode: str = "dev") -> None:
 
 def report_services(root: Path, environment: dict[str, str], *, mode: str = "dev") -> None:
     """Report only this project's service state, without exposing container configuration."""
-    output = subprocess.check_output(
-        compose_command(root, mode, ["ps", "--all", "--format", "json"]),
-        cwd=root,
-        env=environment,
-        text=True,
-    ).strip()
-    rows = (
-        json.loads(output)
-        if output.startswith("[")
-        else [json.loads(line) for line in output.splitlines() if line.strip()]
+    rows = parse_compose_ps(
+        subprocess.check_output(
+            compose_command(root, mode, ["ps", "--all", "--format", "json"]),
+            cwd=root,
+            env=environment,
+            text=True,
+        )
     )
     services = {row["Service"]: row for row in rows}
     for name in ("db", "app", "web"):

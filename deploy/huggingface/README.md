@@ -19,4 +19,4 @@ tags:
 
 This file is the metadata template for a separate Hugging Face Docker Space repository.
 The default container serves the static service shell with deterministic public fixtures. See
-`docs/en/m7-deployment/` in the source repository before copying or publishing these assets.
+`deploy/docker-compose.md` in the source repository before copying or publishing these assets.

@@ -4,11 +4,14 @@ import asyncio
 from decimal import Decimal
 import sys
 from types import SimpleNamespace
+from typing import cast
 
 from pydantic import ValidationError
 import pytest
 
-from app.agent.decompose import QueryDecomposition, make_decomposed_retriever
+from app.db.session_factory import SessionFactory
+from app.evals.decompose import QueryDecomposition, make_decomposed_retriever
+from app.evals.types import Decomposition
 from app.llm.schemas import ProviderBudget, TokenPricing
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.agent.support import FakeSessionFactory
@@ -64,17 +67,20 @@ def test_decomposed_retriever_gathers_per_sub_question_sessions_and_fuses(monkey
     monkeypatch.setattr(module, "retrieve", fake_retrieve)
     factory = FakeSessionFactory()
     retriever = make_decomposed_retriever(
-        factory,
+        cast(SessionFactory, factory),
         llm_provider=provider,
         provider_budget=budget(),
         embedding_provider=DeterministicEmbeddingProvider(),
     )
-    with caplog.at_level("WARNING", logger="app.agent.decompose"):
-        hits = asyncio.run(retriever("How did revenue change between 2023 and 2024?", 2))
+    with caplog.at_level("WARNING", logger="app.evals.decompose"):
+        result = asyncio.run(retriever("How did revenue change between 2023 and 2024?", 2))
 
     assert sorted(queries) == ["What was 2023 revenue?", "What was 2024 revenue?"]
     assert not any("fell back" in record.getMessage() for record in caplog.records)
-    assert [item.chunk_id for item in hits] == [2, 1]
+    assert [item.chunk_id for item in result.hits] == [2, 1]
+    assert result.decomposition == Decomposition(
+        sub_questions=("What was 2023 revenue?", "What was 2024 revenue?"), fallback_status=None
+    )
     assert len(factory.sessions) == 2
     assert all(session.closed for session in factory.sessions)
     assert all(not session.in_transaction() for session in factory.sessions)
@@ -93,14 +99,17 @@ def test_decomposed_retriever_logs_a_degraded_decomposition(monkeypatch, caplog)
     module = sys.modules[make_decomposed_retriever.__module__]
     monkeypatch.setattr(module, "retrieve", fake_retrieve)
     retriever = make_decomposed_retriever(
-        FakeSessionFactory(),
+        cast(SessionFactory, FakeSessionFactory()),
         llm_provider=refusing,
         provider_budget=budget(),
         embedding_provider=DeterministicEmbeddingProvider(),
     )
 
-    with caplog.at_level("WARNING", logger="app.agent.decompose"):
-        hits = asyncio.run(retriever(original, 1))
+    with caplog.at_level("WARNING", logger="app.evals.decompose"):
+        result = asyncio.run(retriever(original, 1))
 
-    assert [item.chunk_id for item in hits] == [1]
+    assert [item.chunk_id for item in result.hits] == [1]
+    assert result.decomposition == Decomposition(
+        sub_questions=(original,), fallback_status="schema_rejected"
+    )
     assert any("fell back" in record.getMessage() for record in caplog.records)

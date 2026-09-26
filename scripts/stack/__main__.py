@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+from typing import Any
 
 from scripts.stack.environment import LocalEnvironmentError, load_local_environment
 from scripts.stack.operator import LocalOperator, OperatorLifecycleError
@@ -39,6 +41,26 @@ def compose_environment(mode: str, bindings: dict[str, str]) -> dict[str, str]:
             "HOST_GID": environment.get("HOST_GID", str(os.getgid())),
         }
     )
+
+
+def parse_compose_ps(output: str) -> list[dict[str, Any]]:
+    """Parse ``docker compose ps --format json`` output into service rows.
+
+    Newer Compose releases print one JSON object per line and older ones a single
+    JSON array; both shapes, blank lines included, read alike so every caller sees
+    the service state through the same parser.
+    """
+    text = output.strip()
+    if not text:
+        return []
+    rows = (
+        json.loads(text)
+        if text.startswith("[")
+        else [json.loads(line) for line in text.splitlines() if line.strip()]
+    )
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise ValueError("compose ps output is not a list of service objects")
+    return rows
 
 
 def compose_command(root: Path, mode: str, arguments: list[str]) -> list[str]:

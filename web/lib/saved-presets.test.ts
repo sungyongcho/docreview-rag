@@ -5,6 +5,7 @@ import { conversationSettingsError, loadSavedPresets, savePreset } from "./saved
 beforeEach(() => localStorage.clear());
 describe("saved retrieval presets", () => {
   it("updates only the named entry and leaves conversation defaults and prior copies unchanged", () => {
+    const conversationDefaults = structuredClone(DEFAULT_SESSION_PROFILE);
     const first = { id: "first", name: "Research", retrieval: { ...DEFAULT_PROFILE, k: 8 } };
     savePreset(first);
     savePreset({ id: "second", name: "Brief", retrieval: DEFAULT_PROFILE });
@@ -12,7 +13,7 @@ describe("saved retrieval presets", () => {
     savePreset({ ...first, retrieval: { ...first.retrieval, k: 10 } });
     expect(loadSavedPresets().map(p => [p.name, p.retrieval.k])).toEqual([["Research", 10], ["Brief", 5]]);
     expect(copy.k).toBe(8);
-    expect(DEFAULT_SESSION_PROFILE.retrieval_preset).toBe("balanced");
+    expect(DEFAULT_SESSION_PROFILE).toEqual(conversationDefaults);
   });
   it("rejects duplicate names, incompatible strategies and malformed storage without overwriting data", () => {
     savePreset({ id: "one", name: "Research", retrieval: DEFAULT_PROFILE });

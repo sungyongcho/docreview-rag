@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPresets } from "@/lib/use-saved-presets";
 import { useI18n } from "@/lib/i18n";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type ReviewSessionDraft } from "@/lib/types";
 import "./retrieval-preset-explanation.css";
@@ -16,8 +17,9 @@ const FIELDS = [
 /** Derive preset values and differences from the canonical request profiles. */
 export function RetrievalPresetExplanation({ profile }: { profile: ReviewSessionDraft }) {
   const { t } = useI18n();
-  const effective = resolvedRetrievalProfile(profile);
-  const baseline = resolvedRetrievalProfile({ ...DEFAULT_SESSION_PROFILE, retrieval_preset: "balanced" });
+  const { builtins } = useSavedPresets();
+  const effective = resolvedRetrievalProfile(profile, builtins);
+  const baseline = resolvedRetrievalProfile(DEFAULT_SESSION_PROFILE, builtins);
   function display(value: unknown) { return typeof value === "boolean" ? t(value ? "Enabled" : "Disabled") : value == null ? t("None") : String(value); }
   return <details className="request-preview-disclosure retrieval-preset-explanation"><summary>{t("Preset parameters and changes")}</summary><p className="preset-explanation-note">{t("Values are compared with Balanced. Wider retrieval can add latency; it does not guarantee a more accurate answer.")}</p><dl className="preset-parameter-grid">{FIELDS.map(([key, label, description]) => {
     const inactive = (key === "rrf_k" || key === "reranker") && effective.strategy !== "hybrid" || key === "lexical_ranker" && effective.strategy === "vector";

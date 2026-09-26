@@ -23,7 +23,8 @@ from pydantic import BaseModel, ConfigDict
 from app.observability.persistence import redact_sensitive_text
 from app.operator.commands import COMMANDS, CommandTarget, OperatorCommand
 from app.operator.lifecycle_receipts import LifecycleReceipt, lifecycle_receipts
-from app.operator.wipe import WipeError, WipeService, diagnose_wipe_error
+from app.operator.wipe import WipeService
+from app.operator.wipe_errors import WipeError, diagnose_wipe_error
 
 type JobStatus = Literal["running", "succeeded", "failed", "cancelled", "timed_out"]
 

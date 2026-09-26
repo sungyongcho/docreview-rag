@@ -6,7 +6,6 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import Callable, Sequence
 import hashlib
 import hmac
-import json
 import time
 from typing import Annotated, Self
 
@@ -14,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 from pydantic.functional_validators import model_validator
 
 from app.api.review_profile import ResolvedRetrievalProfile
+from app.canonical_json import canonical_json
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
 Clock = Callable[[], float]
@@ -85,20 +85,9 @@ class EvidenceSelection(StrictEvidenceModel):
         return self
 
 
-def _canonical_json(value: object) -> bytes:
-    """Serialize one signing value without whitespace or key-order ambiguity."""
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-
-
 def _sha256(value: object) -> str:
     """Return the canonical JSON SHA-256 for one request-bound value."""
-    return hashlib.sha256(_canonical_json(value)).hexdigest()
+    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _b64encode(value: bytes) -> str:
@@ -161,7 +150,7 @@ class CandidateSnapshotCodec:
                 for hit in candidates
             ),
         )
-        payload = _canonical_json(snapshot.model_dump(mode="json"))
+        payload = canonical_json(snapshot.model_dump(mode="json")).encode("utf-8")
         signature = hmac.digest(self._secret, payload, "sha256")
         return f"{_b64encode(payload)}.{_b64encode(signature)}", snapshot
 

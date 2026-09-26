@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import type { OperatorJob, OperatorJobBoard } from "@/lib/types";
 import { overallJobPercent } from "@/lib/pipeline";
 
-export const JOB_COPY: Record<string, { label: string; purpose: string }> = {
+const JOB_COPY: Record<string, { label: string; purpose: string }> = {
   acquire_edgar: { label: "Acquire SEC filings", purpose: "Download missing EDGAR filings into the corpus." },
   acquire_dart: { label: "Acquire DART filings", purpose: "Download missing Korean business reports." },
   ingest_manifest: { label: "Ingest manifest", purpose: "Parse filings and replace the active retrieval corpus." },

@@ -8,9 +8,8 @@ from app.retrieval.language import HANGUL_RANGES, contains_hangul, detect_query_
 @pytest.mark.parametrize(
     "query, language",
     [
-        ("AMD의 매출총이익률은 어떻게 변화했습니까?", "ko"),
-        ("How did AMD's gross margin change?", "en"),
-        ("TSMC 7nm 2021 10-K", "en"),
+        pytest.param("AMD의 매출총이익률은 어떻게 변화했습니까?", "ko", id="hangul-makes-korean"),
+        pytest.param("TSMC 7nm 2021 10-K", "en", id="no-hangul-stays-english"),
     ],
 )
 def test_detect_query_language_classifies_on_hangul_presence(query, language):

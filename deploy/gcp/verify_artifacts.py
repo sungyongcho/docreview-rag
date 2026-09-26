@@ -8,6 +8,7 @@ import json
 from pathlib import Path, PurePosixPath
 import shutil
 import tarfile
+from typing import IO
 
 EVALUATIONS = (
     "20260909T185659Z-admin-dart-ko.json",
@@ -24,6 +25,23 @@ def digest(path: Path) -> str:
     """Hash a file without loading the database dump into memory."""
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def _member_file(archive: tarfile.TarFile, member: str | tarfile.TarInfo) -> IO[bytes]:
+    """Open one regular archive member, refusing entries that have no file content."""
+    source = archive.extractfile(member)
+    if source is None:
+        name = member if isinstance(member, str) else member.name
+        raise ValueError(f"Archive entry is not a regular file: {name}")
+    return source
+
+
+def _sha256(source: IO[bytes]) -> str:
+    """Hash a stream in bounded chunks."""
+    digest = hashlib.sha256()
+    while chunk := source.read(1 << 20):
+        digest.update(chunk)
+    return digest.hexdigest()
 
 
 def validate_artifacts(root: Path) -> dict:
@@ -54,7 +72,8 @@ def validate_artifacts(root: Path) -> dict:
             ):
                 raise ValueError(f"Unsafe or duplicate archive entry: {member.name}")
             names.add(member.name)
-        manifest = json.load(archive.extractfile("corpus/manifest.json"))
+        with _member_file(archive, "corpus/manifest.json") as manifest_file:
+            manifest = json.load(manifest_file)
         expected_scope = {
             (issuer, year)
             for issuer, years in (
@@ -83,8 +102,8 @@ def validate_artifacts(root: Path) -> dict:
                 raise ValueError("The archive contains a source outside the public portfolio")
             name = f"corpus/{artifact['path']}"
             expected_names.add(name)
-            with archive.extractfile(name) as source:
-                actual = hashlib.file_digest(source, "sha256").hexdigest()
+            with _member_file(archive, name) as source:
+                actual = _sha256(source)
             if (
                 actual != artifact["sha256"]
                 or archive.getmember(name).size != artifact["byte_length"]
@@ -110,7 +129,7 @@ def extract_artifacts(root: Path, destination: Path) -> None:
         for member in archive.getmembers():
             target = destination / member.name
             target.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
-            with archive.extractfile(member) as source, target.open("xb") as output:
+            with _member_file(archive, member) as source, target.open("xb") as output:
                 shutil.copyfileobj(source, output)
             target.chmod(0o640)
     for name in EVALUATIONS:

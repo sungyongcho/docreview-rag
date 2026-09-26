@@ -246,26 +246,13 @@ def report_to_records(
     return run, traces
 
 
-def stored_step_requests(
-    request_context: Mapping[str, object] | None, *, step: int, retries: int
-) -> int:
-    """Return the requests one stored step sent.
-
-    Trace rows carry no request column. A step that sent fewer requests than it made
-    attempts (a refusal before the call) records its count under ``trace_requests`` in
-    the run context, keyed by step; every other row keeps one request per attempt.
-    """
-    recorded = (request_context or {}).get("trace_requests", {})
-    value = recorded.get(str(step)) if isinstance(recorded, Mapping) else None
-    if isinstance(value, bool) or not isinstance(value, int):
-        return retries + 1
-    return value
-
-
 def record_to_step(
     trace: Trace, *, request_context: Mapping[str, object] | None = None
 ) -> StepTrace:
     """Rebuild one stored trace row as the strict step it was recorded from."""
+    counts = (request_context or {}).get("trace_requests", {})
+    if not isinstance(counts, Mapping):
+        raise ValueError("stored trace request counts must be an object")
     metadata = (request_context or {}).get("trace_local_timings", {})
     timings = metadata.get(str(trace.step), []) if isinstance(metadata, Mapping) else []
     return StepTrace(
@@ -282,7 +269,8 @@ def record_to_step(
         request_time_ms=trace.request_time_ms,
         llm_output=trace.llm_output,
         retries=trace.retries,
-        requests=stored_step_requests(request_context, step=trace.step, retries=trace.retries),
+        # The current storage format records only counts that differ from retries + 1.
+        requests=counts.get(str(trace.step), trace.retries + 1),
         error=trace.error,
         local_timings=tuple(LocalModelTiming.model_validate(value) for value in timings),
     )

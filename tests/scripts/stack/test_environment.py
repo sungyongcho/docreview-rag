@@ -1,5 +1,6 @@
 """Host-facing local launcher environment validation."""
 
+import ipaddress
 from pathlib import Path
 
 import pytest
@@ -15,9 +16,11 @@ def _environment(tmp_path: Path, text: str = "", *, mode: str = "dev") -> dict[s
 
 
 def test_defaults_are_complete_and_loopback_bound(tmp_path: Path) -> None:
-    """Use the documented defaults when no dotenv values are present."""
-    assert _environment(tmp_path) == DEFAULTS | {"MODE": "dev"}
-    assert DEFAULTS["DOCREVIEW_LOCAL_HOST"] == "127.0.0.1"
+    """Use the documented defaults when no dotenv values are present, bound to loopback."""
+    values = _environment(tmp_path)
+
+    assert values == DEFAULTS | {"MODE": "dev"}
+    assert ipaddress.ip_address(values["DOCREVIEW_LOCAL_HOST"]).is_loopback
 
 
 def test_custom_dev_ports_and_host_are_preserved(tmp_path: Path) -> None:

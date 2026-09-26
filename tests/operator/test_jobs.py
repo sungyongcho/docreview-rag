@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import Settings, get_settings
-from app.corpus_admin import AdminCommand, OperationOutcome, RuntimeCorpusAdminService
+from app.corpus_admin.runtime import RuntimeCorpusAdminService
+from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.db.models import OperatorJob
 from app.ingestion.progress import OperationProgress
 from app.operator.jobs import JobExecutionCoordinator, JobStore, ProgressPersister
@@ -135,6 +136,10 @@ async def _exercise() -> tuple[bool, str]:
                 corpus.job_id,
                 evaluation.job_id,
             } <= {job.job_id for job in await store.list()}
+            evaluations = await store.list(domain="evaluation")
+            assert evaluation.job_id in {job.job_id for job in evaluations}
+            assert corpus.job_id not in {job.job_id for job in evaluations}
+            assert all(job.domain == "evaluation" for job in evaluations)
         finally:
             await transaction.rollback()
         return True, ""
@@ -182,11 +187,9 @@ async def _exercise_corpus_worker(tmp_path) -> tuple[bool, str]:
         try:
             created = await service.enqueue(AdminCommand("rebuild_bm25"))
             created_id = created.job_id
-            await service._queue.join()
+            await service._job_queue._queue.join()
             await asyncio.sleep(0.1)
-            board = await service.jobs()
             persisted = await store.get(created.job_id)
-            assert board.history[0].status == "succeeded"
             assert persisted is not None
             assert persisted.status == "succeeded"
             assert persisted.current == 2

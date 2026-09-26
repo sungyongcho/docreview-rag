@@ -1,5 +1,6 @@
 """Small deterministic records shared by seed tests."""
 
+from datetime import date
 from pathlib import Path
 
 from app.ingestion import seed
@@ -32,8 +33,8 @@ def sample_source(doc_id: str) -> FilingSource:
         filing_id=accession,
         fiscal_year=int(year),
         form="10-K",
-        filing_date=f"{year}-02-21",
-        report_period=f"{year}-01-28",
+        filing_date=date(int(year), 2, 21),
+        report_period=date(int(year), 1, 28),
         source_url=url,
         sec=SecMetadata(cik=cik, accession=accession, primary_document=f"{doc_id}.html"),
     )

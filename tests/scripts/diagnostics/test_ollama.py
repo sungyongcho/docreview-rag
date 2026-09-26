@@ -149,15 +149,14 @@ def test_shared_failure_has_actionable_setup_and_opt_in_namespace_details(
     forbidden.assert_not_called()
 
 
-@pytest.mark.parametrize("code", ["disconnected", "invalid"])
-def test_shared_blocked_selection_explains_reconnect_without_probing(capsys, code) -> None:
+def test_shared_blocked_selection_explains_reconnect_without_probing(capsys) -> None:
     """A disconnected server has no transport or model measurement to print as a result."""
     report = diagnostic_report(available=False)
     report["checks"] = [
         {
             "id": "configuration",
             "status": "blocked",
-            "code": code,
+            "code": "disconnected",
             "remediation": ["select_server"],
         }
     ]

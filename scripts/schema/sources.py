@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import stat
 
+from app.atomic_write import write_text_atomically
 from app.ingestion.manifest import Manifest
 from app.ingestion.source_catalog import default_acquisition_draft
 from app.ingestion.source_selection import DRAFT_NAME
@@ -173,17 +174,14 @@ class SourceReset:
     def save(self, phase: str) -> None:
         """Atomically persist recovery evidence before further filesystem work."""
         self.state["phase"] = phase
-        temporary = self.journal / "journal.tmp"
-        with temporary.open("w") as output:
-            json.dump(self.state, output, indent=2)
-            output.flush()
-            os.fsync(output.fileno())
-        temporary.replace(self.journal / "journal.json")
-        descriptor = os.open(self.journal, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        write_text_atomically(
+            self.journal / "journal.json",
+            json.dumps(self.state, indent=2),
+            mode=0o666,
+            apply_umask=True,
+            encoding=None,
+            fsync_directory=True,
+        )
 
     def stage(self) -> None:
         """Exclude concurrent acquisition while staging the approved source reset."""

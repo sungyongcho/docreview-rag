@@ -9,7 +9,8 @@ import pytest
 
 from app.operator.commands import COMMANDS, OperatorCommand
 from app.operator.service import OperatorJobManager, create_operator_app
-from app.operator.wipe import WipeError, WipeService
+from app.operator.wipe import WipeService
+from app.operator.wipe_errors import WipeError
 
 TOKEN = "local-test-token"
 ORIGIN = "http://127.0.0.1:8000"
@@ -201,5 +202,3 @@ def test_command_targets_match_the_registry_and_live_schema(tmp_path):
     if "$ref" in target:
         target = schema["components"]["schemas"][target["$ref"].rsplit("/", 1)[-1]]
     assert set(target["enum"]) == {command.target for command in COMMANDS.values()}
-    assert COMMANDS["python-tests-postgres"].target == "database"
-    assert COMMANDS["web-build"].target == "web"

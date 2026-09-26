@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.retrieval import embeddings
 from tests.retrieval.support import RecordingSession
+from tests.support import load_settings
 
 IDENTITY = embeddings.DeterministicEmbeddingProvider().identity
 
@@ -259,8 +260,9 @@ assert created == ["direct-key", "factory-key"]
 def test_settings_require_nonblank_api_key_for_openai_provider():
     """Reject an OpenAI provider configured with a blank API key."""
     with pytest.raises(ValidationError, match="MODE-selected OpenAI key slot"):
-        Settings(
-            _env_file=None,
+        load_settings(
+            Settings,
+            env_file=None,
             embedding_provider="openai",
             OPENAI_API_KEY_LOCAL=SecretStr("   "),
         )
@@ -396,7 +398,9 @@ def test_openai_batches_provider_limits_without_splitting_inputs(texts):
                 [FakeEmbeddingData(index, [1.0] * 384) for index in reversed(range(len(inputs)))]
             )
 
-    provider = embeddings.OpenAIEmbeddingProvider(client=SimpleNamespace(embeddings=Resource()))
+    provider = embeddings.OpenAIEmbeddingProvider(
+        client=cast(embeddings.EmbeddingClient, SimpleNamespace(embeddings=Resource()))
+    )
     vectors = asyncio.run(provider.embed_documents(texts))
     assert len(vectors) == len(texts)
     assert len(requests) == 2

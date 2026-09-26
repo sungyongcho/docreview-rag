@@ -526,21 +526,12 @@ a.runtime-mode-badge:focus-visible {
   color: var(--good);
 }
 
-.use-evidence {
-  margin: 10px;
-}
-
 .trace {
   overflow: auto;
   margin: 10px 0 0;
   color: var(--muted);
   font-size: 11px;
   white-space: pre-wrap;
-}
-
-.thinking {
-  padding: 18px 0;
-  color: var(--muted);
 }
 
 .composer-wrap {
@@ -551,48 +542,6 @@ a.runtime-mode-badge:focus-visible {
   border-top: 1px solid var(--border);
   background: var(--surface);
   padding: 9px max(16px, calc((100% - 820px) / 2)) 18px;
-}
-
-.profile-chip {
-  width: fit-content;
-  margin: 0 0 7px 10px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.settings-drawer {
-  position: fixed;
-  z-index: 40;
-  top: 0;
-  right: 0;
-  width: min(390px, 92vw);
-  height: 100vh;
-  padding: 22px;
-  display: grid;
-  align-content: start;
-  gap: 16px;
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: -18px 0 45px #0007;
-}
-
-.settings-drawer label {
-  display: grid;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.settings-drawer input,
-.settings-drawer select {
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-2);
-  color: var(--text);
-  padding: 9px;
 }
 
 .settings-scrim {
@@ -971,16 +920,11 @@ a.runtime-mode-badge:focus-visible {
   text-decoration: underline;
 }
 
-.drawer-heading,
 .page-badges {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 9px;
-}
-
-.drawer-heading h2 {
-  margin: 4px 0 0;
 }
 
 .composer {
@@ -1179,8 +1123,7 @@ a.runtime-mode-badge:focus-visible {
 }
 
 .surface h2,
-.empty-state h2,
-.docs-grid h2 {
+.empty-state h2 {
   margin: 0 0 12px;
   font-size: 16px;
   font-weight: 580;
@@ -1277,20 +1220,6 @@ textarea[aria-invalid="true"] {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
-}
-
-.metric-table>div {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 76px;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-
-.metric-table em {
-  font-style: normal;
-  text-align: right;
 }
 
 .case-row,
@@ -3442,8 +3371,7 @@ textarea[aria-invalid="true"] {
 
   .suggestions,
   .profile-grid,
-  .metric-grid,
-  .docs-grid {
+  .metric-grid {
     grid-template-columns: 1fr;
   }
 
@@ -3500,13 +3428,6 @@ textarea[aria-invalid="true"] {
   margin-bottom: 14px;
   color: var(--muted);
   font-size: 13px;
-}
-
-.runtime-strip .runtime-items {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 0;
 }
 
 .runtime-strip .sep,
@@ -3749,17 +3670,6 @@ textarea[aria-invalid="true"] {
   margin: 0;
 }
 
-.manifest-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 0;
-  border-top: 1px solid var(--border);
-  font-size: 13px;
-}
-
 @media (max-width: 640px) {
   .stage-card {
     grid-template-columns: 1fr;
@@ -3845,14 +3755,6 @@ textarea[aria-invalid="true"] {
 
 .run-workspace {
   align-items: start;
-}
-
-.run-results {
-  min-width: 0;
-}
-
-.run-results .job-row {
-  align-items: center;
 }
 
 .run-workspace details>summary {
@@ -4088,12 +3990,6 @@ select.chip {
   border-color: var(--accent);
 }
 
-.review-progress-prefix,
-.review-progress-label {
-  color: var(--text);
-  font-size: 13px;
-}
-
 .review-progress-counts {
   color: var(--muted);
   font-size: 11px;
@@ -4172,24 +4068,6 @@ select.chip {
 .evidence-hit.excluded p {
   color: var(--muted);
   text-decoration: line-through;
-}
-
-.evidence .use-evidence {
-  margin: 12px 13px;
-}
-
-.trace-details {
-  margin-top: 10px;
-}
-
-.trace-details summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.trace-details .trace {
-  margin-top: 6px;
 }
 
 @media (max-width: 640px) {
@@ -4387,10 +4265,6 @@ select.chip {
   font-size: 11px;
 }
 
-.trace-details .button {
-  margin-top: 10px;
-}
-
 /* A job's error code glossed into a sentence, above the message the job itself wrote. */
 .job-detail .job-error {
   margin: 10px 0 0;
@@ -4555,24 +4429,6 @@ select.chip {
   background: var(--surface);
 }
 
-.pipeline-graph {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  grid-template-rows: repeat(2, 94px);
-  gap: 26px 24px;
-  padding: 20px 0;
-}
-
-.pipeline-edges {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  color: var(--muted);
-  pointer-events: none;
-}
-
 .pipeline-node {
   z-index: 1;
   display: grid;
@@ -4646,17 +4502,6 @@ select.chip {
 
 .pipeline-node.evaluate {
   grid-area: 1/5;
-}
-
-.pipeline-outcomes {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  align-items: center;
-  color: var(--muted);
-  font-size: 12px;
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
 }
 
 .pipeline-execution {
@@ -4747,10 +4592,6 @@ select.chip {
 
 .workflow-tabs {
   gap: 6px;
-}
-
-.workflow-tabs .workflow-settings {
-  margin-left: auto;
 }
 
 .workflow-section-heading {
@@ -4980,16 +4821,6 @@ select.chip {
 }
 
 @media (max-width:900px) {
-  .pipeline-graph {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-    gap: 12px;
-  }
-
-  .pipeline-edges {
-    display: none;
-  }
-
   .pipeline-node:is(.filings, .index, .embeddings, .lexical, .ask, .answer_model, .evaluate) {
     grid-area: auto;
     min-height: 90px;
@@ -5006,10 +4837,6 @@ select.chip {
 @media (max-width:640px) {
   .workflow-tabs {
     flex-wrap: wrap;
-  }
-
-  .workflow-tabs .workflow-settings {
-    margin-left: 0;
   }
 
   .composer-controls {
