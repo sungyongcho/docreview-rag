@@ -56,6 +56,8 @@ def test_section_title_falls_back_across_registries_without_a_name():
     assert section_title("") is None
 
 
-def test_registry_section_codes_never_overlap():
-    """The registry-less fallback is only sound while EDGAR and DART codes stay disjoint."""
-    assert not set(CANONICAL) & set(DART_PARTS)
+def test_registry_less_lookup_gives_every_code_its_own_registry_title():
+    """The fallback takes the first registry that knows a code, so no code may know two."""
+    for registry, codes in (("sec", CANONICAL), ("dart", DART_PARTS)):
+        for code in codes:
+            assert section_title(code) == section_title(code, registry), (registry, code)
