@@ -29,6 +29,7 @@ from app.api.review_profile import (
     public_custom_retrieval_violation,
     resolve_retrieval_profile,
 )
+from app.api.run_records import RunRecords
 from app.api.schemas import (
     CandidateComponentRank,
     DocumentResource,
@@ -51,7 +52,7 @@ from app.config import (
     LexicalRanker,
     get_settings,
 )
-from app.db.models import Chunk, Document, EvalResult, EvaluationSnapshot, Run, Trace
+from app.db.models import Chunk, Document, EvaluationSnapshot, Run, Trace
 from app.db.queries import join_current_parse
 from app.evals.snapshots import SnapshotService
 from app.ingestion.company_names import CompanyNames, read_company_names
@@ -62,7 +63,6 @@ from app.llm.provider import LLMProvider
 from app.llm.schemas import ProviderBudget
 from app.observability.persistence import (
     persist_run_records,
-    record_to_step,
     records_to_report,
     report_to_records,
 )
@@ -344,6 +344,7 @@ class RuntimeApiServices(ApiServices):
         self._query_routing_enabled = query_routing_enabled
         self._allow_custom_prompt_policy = allow_custom_prompt_policy
         self._snapshots = SnapshotService(session_factory=session_factory)
+        self._run_records = RunRecords(session_factory)
         self._allow_snapshot_query = allow_snapshot_query
 
     @property
@@ -1091,53 +1092,17 @@ class RuntimeApiServices(ApiServices):
                     raise
                 return await persist(report)
 
-    async def _trace_rows(self, session: AsyncSession, run_id: str) -> tuple[Trace, ...]:
-        """Read this run's traces in recorded step order."""
-        rows = await session.scalars(
-            select(Trace).where(Trace.run_id == run_id).order_by(Trace.step)
-        )
-        return tuple(rows)
-
     async def get_run(self, run_id: str) -> RunReport | None:
         """Load one run and ordered traces without executing workflow code."""
-        async with translate_runtime_errors():
-            async with self._session_factory() as session:
-                run = await session.get(Run, run_id)
-                if run is None:
-                    return None
-                traces = await self._trace_rows(session, run_id)
-                return records_to_report(run, traces)
+        return await self._run_records.get_run(run_id)
 
     async def get_traces(self, run_id: str) -> Sequence[StepTrace] | None:
         """Load ordered traces only when their parent run exists."""
-        async with translate_runtime_errors():
-            async with self._session_factory() as session:
-                run = await session.get(Run, run_id)
-                if run is None:
-                    return None
-                traces = await self._trace_rows(session, run_id)
-                return tuple(
-                    record_to_step(trace, request_context=run.request_context) for trace in traces
-                )
+        return await self._run_records.get_traces(run_id)
 
     async def list_eval_results(self, limit: int) -> Sequence[EvalResultResource]:
         """Load newest evaluation records through their strict public schema."""
-        statement = select(EvalResult).order_by(EvalResult.created_at.desc(), EvalResult.id.desc())
-        async with translate_runtime_errors():
-            async with self._session_factory() as session:
-                rows = tuple(await session.scalars(statement.limit(limit)))
-        return tuple(
-            EvalResultResource(
-                result_id=row.id,
-                suite=row.suite,
-                # JSONB deserializes to JSON values; the ORM annotation is wider.
-                config=cast("JsonObject", row.config),
-                metrics={name: float(value) for name, value in row.metrics.items()},
-                raw_artifact_path=row.raw_artifact_path,
-                created_at=row.created_at,
-            )
-            for row in rows
-        )
+        return await self._run_records.list_eval_results(limit)
 
     async def list_snapshots(self, *, public_only: bool) -> Sequence[SnapshotResource]:
         """Return immutable evaluation snapshots through the shared DB boundary."""
