@@ -120,7 +120,7 @@ def test_path_failure_records_stage_zero_and_recent_running_job(tmp_path, monkey
         embedding_provider=DeterministicEmbeddingProvider(), corpus_root=tmp_path
     )
     with record_stages() as recorder, pytest.raises(ApiProblemError) as captured:
-        asyncio.run(service._path_decision(RetrieveRequest(query="NVDA revenue")))
+        asyncio.run(service._conversation.decide_path(RetrieveRequest(query="NVDA revenue")))
     assert captured.value.error.failed_stage == "path"
     assert captured.value.error.corpus_job == {
         "job_id": "admin-source",
@@ -132,7 +132,9 @@ def test_path_failure_records_stage_zero_and_recent_running_job(tmp_path, monkey
     ]
     valid_manifest().write(tmp_path / "manifest.json")
     with record_stages() as recovered:
-        decision, _ = asyncio.run(service._path_decision(RetrieveRequest(query="NVDA revenue")))
+        decision, _ = asyncio.run(
+            service._conversation.decide_path(RetrieveRequest(query="NVDA revenue"))
+        )
     assert decision.intent == "document_review"
     assert recovered.events[0].display_stage == "path" and recovered.events[0].status == "completed"
 

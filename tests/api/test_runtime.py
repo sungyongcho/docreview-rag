@@ -405,7 +405,7 @@ def test_followups_reach_retrieval_with_replaced_scope(classified_service, query
     from app.workflow.gate import ConversationTurn
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     events = []
 
     async def observe(event):
@@ -456,7 +456,7 @@ def test_known_company_questions_reach_retrieval_without_classifier(
     from app.observability.stages import record_stages
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     events = []
 
     async def observe(event):
@@ -487,7 +487,7 @@ def test_exact_greetings_use_fixed_guidance_without_classifier(classified_servic
     from app.api.schemas import RetrieveRequest
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     prepared = asyncio.run(service.retrieve(RetrieveRequest(query=query)))
     path = prepared.path_decision
     assert path["intent"] == "service_help"
@@ -510,7 +510,7 @@ def test_server_enforces_history_bounds(routing_service):
             ConversationTurn(role="assistant", text="Prior answer"),
         ),
     )
-    _, path = asyncio.run(routing_service._path_decision(request))
+    _, path = asyncio.run(routing_service._conversation.decide_path(request))
     assert path["history_turns"] == 1
     assert path["matched_rule"] != "filing_followup"
     assert path["retrieval_query"] == request.query
@@ -523,7 +523,7 @@ def test_zero_history_bound_prevents_implicit_inheritance(classified_service):
     from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -564,7 +564,7 @@ def test_casual_input_does_not_inherit_filing_scope(routing_service, query):
         query=query, conversation_history=(ConversationTurn(role="user", text="NVDA revenue"),)
     )
     try:
-        _, path = asyncio.run(routing_service._path_decision(request))
+        _, path = asyncio.run(routing_service._conversation.decide_path(request))
     except ApiProblemError as failure:
         assert failure.error.code == "unsupported_request"
         rejected = failure.error.path_decision
@@ -592,7 +592,7 @@ def test_scope_stops_before_retrieval_with_action(classified_service, profile, c
     from app.api.schemas import RetrieveRequest
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     with pytest.raises(ApiProblemError) as failure:
         asyncio.run(
             service.retrieve(RetrieveRequest(query="NVDA revenue", session_profile=profile))
@@ -665,7 +665,7 @@ def test_unique_company_selection_anchors_short_finance_questions(
     from app.observability.stages import record_stages
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     events = []
 
     async def observe(event):
@@ -697,7 +697,7 @@ def test_explicit_language_filter_still_empties_anchored_document_scope(classifi
     from app.api.schemas import RetrieveRequest
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     with pytest.raises(ApiProblemError) as failure:
         asyncio.run(
             service.retrieve(
@@ -722,7 +722,7 @@ def test_vague_question_with_multiple_selected_companies_is_rejected(classified_
     from app.api.schemas import RetrieveRequest
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -753,7 +753,7 @@ def test_unknown_selected_document_id_cannot_establish_a_unique_anchor(classifie
     from app.api.schemas import RetrieveRequest
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -936,7 +936,7 @@ def test_review_preserves_original_question_across_search_rewriting(
 
     async def exercise():
         """Use the real scope resolver with a separately rewritten retrieval question."""
-        _, path = await service._path_decision(request)
+        _, path = await service._conversation.decide_path(request)
         path = {**path, "retrieval_query": "What drove NVIDIA revenue growth in 2024?"}
         await service._review(request, on_node=None, retrieval_override=None, path=path)
 
@@ -1186,7 +1186,7 @@ def test_explicit_corpus_wide_scope_keeps_every_language(classified_service, end
     from app.observability.stages import record_stages
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     events = []
 
     async def observe(event):
@@ -1301,7 +1301,7 @@ def test_mixed_prior_turn_cannot_anchor_a_followup(classified_service):
     from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -1339,7 +1339,7 @@ def test_classifier_all_without_corpus_wide_cue_is_clarified(classified_service,
     from app.api.schemas import RetrieveRequest
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -1368,7 +1368,7 @@ def test_roleplay_overrides_previous_filing_context(classified_service):
     from app.workflow.gate import ConversationTurn
 
     service, _, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     with pytest.raises(ApiProblemError) as failure:
         asyncio.run(
             service.retrieve(
@@ -1393,7 +1393,7 @@ def test_restatement_after_unresolved_prior_cannot_inherit_scope(classified_serv
     from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",
@@ -1434,7 +1434,7 @@ def test_restatement_with_new_unknown_target_never_inherits_prior_issuer(classif
     from app.workflow.gate import ConversationTurn
 
     service, responses, prompts = classified_service
-    assert service._intent_classifier_enabled is True
+    assert service._conversation._classifier_enabled is True
     responses.append(
         {
             "intent": "document_review",

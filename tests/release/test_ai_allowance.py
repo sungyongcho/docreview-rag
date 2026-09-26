@@ -222,7 +222,7 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
     runtime._scope.manifest_index_for_decision = AsyncMock(
         return_value=SimpleNamespace(match=lambda _: ())
     )
-    runtime._followup_query = lambda request: (None, request.query)
+    runtime._conversation._followup_query = lambda request: (None, request.query)
     runtime._engines.resolve_engine = AsyncMock(
         return_value=(provider, ReleaseSettings(_env_file=None).provider_budget())
     )
@@ -238,7 +238,7 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
     @app.post("/retrieve")
     async def retrieve(request: RetrieveRequest):
         """Execute the same pre-retrieval routing path as the runtime API."""
-        decision, _ = await runtime._path_decision(request)
+        decision, _ = await runtime._conversation.decide_path(request)
         return {"intent": decision.intent}
 
     payload = {
