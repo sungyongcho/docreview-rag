@@ -81,7 +81,7 @@ from app.evals.snapshots import SnapshotService
 from app.llm.local_connection import LocalConnectionError, LocalConnectionManager, LocalProtocol
 from app.llm.openai_limits import CEILING_ENV_KEYS, OpenAILimitsError, OpenAILimitsManager
 from app.observability.usage import USAGE_KEY, merge_usage, review_usage
-from app.operator.job_history import JobHistoryService
+from app.operator.job_history import ARCHIVE_KEY, JobHistoryService
 from app.operator.jobs import JobExecutionCoordinator, JobStore, StoredJob
 from app.operator.progress import progress_fields
 from app.retrieval.cross_encoder import shared_cross_encoder
@@ -543,8 +543,6 @@ class RuntimeAdminApiServices:
         result = await self._job_history.apply(
             request.action, request.expected_count, request.confirmation
         )
-        if result.action == "delete":
-            self._evaluations.forget_history(result.changed_ids)
         return JobHistoryResultResource(
             action=result.action,
             changed_count=len(result.changed_ids),
@@ -561,21 +559,25 @@ class RuntimeAdminApiServices:
         await self._corpus.recover_jobs()
         await self._evaluations.recover_jobs()
         rows = await self._job_store.list(limit=100)
-        queued = sorted(
-            (job for job in rows if job.status == "queued"), key=lambda job: job.created_at
-        )
-        positions = {job.job_id: index for index, job in enumerate(queued, start=1)}
+        positions = await self._job_store.queue_positions()
         resources = tuple(self._operator_resource(job, positions) for job in rows)
         return OperatorJobsResponse(
             jobs=resources,
             active_count=sum(job.status == "running" for job in rows),
-            queued_count=len(queued),
+            queued_count=sum(job.status == "queued" for job in rows),
         )
 
     async def operator_job(self, job_id: str) -> OperatorJobResource | None:
         """Return one persisted job with its current queue position."""
-        board = await self.operator_jobs()
-        return next((job for job in board.jobs if job.job_id == job_id), None)
+        await self._corpus.recover_jobs()
+        await self._evaluations.recover_jobs()
+        job = await self._job_store.get(job_id)
+        if job is None or (
+            job.result_refs.get(ARCHIVE_KEY) is True and job.status not in {"queued", "running"}
+        ):
+            return None
+        positions = await self._job_store.queue_positions() if job.status == "queued" else {}
+        return self._operator_resource(job, positions)
 
     async def retry_operator_job(self, job_id: str) -> OperatorJobResource:
         """Dispatch an explicit retry to the job's owning domain."""

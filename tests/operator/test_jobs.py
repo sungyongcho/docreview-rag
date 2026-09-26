@@ -101,18 +101,22 @@ async def _exercise() -> tuple[bool, str]:
         )
         store = JobStore(session_factory=factory)
         try:
+            queued_at = datetime(2026, 9, 1, tzinfo=UTC)
             corpus = await store.create(
                 job_id="admin-test-persist",
                 domain="corpus",
                 kind="backfill_embeddings",
                 request_json={"identifiers": [], "years": []},
+                created_at=queued_at,
             )
             evaluation = await store.create(
                 job_id="eval-test-persist",
                 domain="evaluation",
                 kind="quick",
                 request_json={"suite_id": "sec-en"},
+                created_at=queued_at,
             )
+            assert await store.queue_positions() == {corpus.job_id: 1, evaluation.job_id: 2}
             running = await store.put(
                 corpus.job_id,
                 status="running",
@@ -126,12 +130,14 @@ async def _exercise() -> tuple[bool, str]:
                 finished_at=None,
             )
             assert running.current == 4
+            assert await store.queue_positions() == {evaluation.job_id: 1}
             assert await store.interrupt_incomplete("corpus") == (corpus.job_id,)
             interrupted = await store.get(corpus.job_id)
             assert interrupted is not None
             assert interrupted.status == "interrupted"
             cancelled = await store.cancel(evaluation.job_id)
             assert cancelled.status == "cancelled"
+            assert await store.queue_positions() == {}
             assert {
                 corpus.job_id,
                 evaluation.job_id,

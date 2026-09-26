@@ -20,6 +20,10 @@ Failed and interrupted jobs offer **Retry as new job** when the server supports 
 
 Selecting a historical job shows its actual target, progress and result; it is not work started for the guide.
 
+A saved job remains readable by its exact ID after it leaves the recent 100-job list.
+Archived completed jobs remain hidden until restored. Restoring evaluation history takes
+effect on the next list refresh without restarting the application.
+
 <!-- details: status-visuals | Reading status colors and motion -->
 Green completion marks require confirmed readiness or completion. A pulse/spinner indicates actual execution, red indicates failure, amber identifies a missing prerequisite, and neutral means unknown or uncollected. Reduced-motion preferences stop repetitive animation without removing the status text.
 <!-- /details -->

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 
+from app.operator.job_history import ARCHIVE_KEY
 from app.operator.jobs import JobDomain, JobStatus, JobStore, StoredJob
 
 
@@ -96,14 +97,35 @@ class LedgerStore(JobStore):
         """Return one row."""
         return self.rows.get(job_id)
 
+    async def queue_positions(self) -> dict[str, int]:
+        """Return the pending queue independently of the bounded history page."""
+        queued = sorted(
+            (row for row in self.rows.values() if row.status == "queued"),
+            key=lambda row: (row.created_at, row.job_id),
+        )
+        return {row.job_id: position for position, row in enumerate(queued, start=1)}
+
     async def list(
-        self, *, domain: JobDomain | None = None, limit: int = 100
+        self,
+        *,
+        domain: JobDomain | None = None,
+        limit: int = 100,
+        include_archived: bool = False,
     ) -> tuple[StoredJob, ...]:
         """Return newest-first rows."""
         rows = sorted(
             self.rows.values(), key=lambda row: (row.created_at, row.job_id), reverse=True
         )
-        return tuple(row for row in rows if domain is None or row.domain == domain)[:limit]
+        return tuple(
+            row
+            for row in rows
+            if (domain is None or row.domain == domain)
+            and (
+                include_archived
+                or row.result_refs.get(ARCHIVE_KEY) is not True
+                or row.status in {"queued", "running"}
+            )
+        )[:limit]
 
     async def interrupt_incomplete(self, domain: JobDomain) -> tuple[str, ...]:
         """Nothing is stale in a fresh in-memory ledger."""

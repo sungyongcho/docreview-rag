@@ -11,12 +11,15 @@ from app.corpus_admin.types import CorpusStatus
 from app.evals.admin import EvaluationAdminService, EvaluationNotReadyError
 from app.evals.source_binding import BoundGolden, SourceCheck
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.corpus_admin.support import LedgerStore
 
 
 def test_missing_sources_block_job_registration(tmp_path):
     """An empty corpus yields actionable requirements without a failed queued job."""
     service = EvaluationAdminService(
-        settings=Settings(corpus_dir=tmp_path), provider=DeterministicEmbeddingProvider()
+        settings=Settings(corpus_dir=tmp_path),
+        provider=DeterministicEmbeddingProvider(),
+        job_store=LedgerStore(),
     )
 
     async def exercise():

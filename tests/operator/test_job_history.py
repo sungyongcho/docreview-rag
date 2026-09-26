@@ -72,6 +72,59 @@ async def seed(factory: async_sessionmaker[AsyncSession]) -> None:
 
 
 @pytest.mark.live_postgres
+def test_restored_evaluation_is_visible_without_restarting_its_service(tmp_path: Path) -> None:
+    """Read restored evaluation history from PostgreSQL in the already running service."""
+    from app.api.admin_schemas import EvaluationRunRequest
+    from app.config import Settings
+    from app.evals.admin import EvaluationAdminService
+    from app.retrieval.embeddings import DeterministicEmbeddingProvider
+
+    async def scenario() -> None:
+        """Archive before service startup, then restore through the real history owner."""
+        async with isolated_factory() as factory:
+            store = JobStore(session_factory=factory)
+            request = EvaluationRunRequest(suite_id="sec-en")
+            created = await store.create(
+                job_id="restored-evaluation",
+                domain="evaluation",
+                kind="quick",
+                request_json=request.model_dump(mode="json"),
+            )
+            await store.put(
+                created.job_id,
+                status="failed",
+                stage="failed",
+                current=2,
+                total=3,
+                detail_current=None,
+                detail_total=None,
+                message="Recorded evaluation failure",
+                started_at=created.created_at,
+                finished_at=datetime.now(UTC),
+                error_code="evaluation_failed",
+            )
+            history = JobHistoryService(factory, tmp_path / "backups")
+            await history.apply("archive", 1)
+            evaluations = EvaluationAdminService(
+                settings=Settings(corpus_dir=tmp_path),
+                session_factory=factory,
+                provider=DeterministicEmbeddingProvider(),
+                job_store=store,
+            )
+            assert (await evaluations.jobs()).jobs == ()
+            await history.apply("restore", 1)
+            restored = (await evaluations.jobs()).jobs
+            assert len(restored) == 1
+            assert restored[0].job_id == created.job_id
+            assert restored[0].request == request
+            assert restored[0].status == "failed"
+            assert (restored[0].current, restored[0].total) == (2, 3)
+            assert restored[0].message == "Recorded evaluation failure"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.live_postgres
 def test_archive_restore_and_backed_up_delete(tmp_path: Path) -> None:
     """Archive visibility, restore it, then back up complete terminal rows before deletion."""
 

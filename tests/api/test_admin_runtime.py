@@ -102,6 +102,10 @@ def test_operator_board_reads_persisted_history_and_global_queue_actions(
 
     async def scenario():
         """Populate the ledger without workers, then exercise the real board and lookup."""
+        from dataclasses import replace
+
+        from app.operator.job_history import ARCHIVE_KEY
+
         store = LedgerStore()
         started = datetime(2026, 9, 1, tzinfo=UTC)
         ingest = command_payload(AdminCommand("ingest_selected", document_ids=("filing-a",)))
@@ -202,6 +206,25 @@ def test_operator_board_reads_persisted_history_and_global_queue_actions(
         assert await fresh.operator_job("failed-evaluation") == board.jobs[5]
         assert await fresh.operator_job("missing") is None
         assert store.puts == ["succeeded", "failed", "failed", "failed", "interrupted", "running"]
+
+        for index in range(100):
+            row = await store.create(
+                job_id=f"recent-{index}",
+                domain="corpus",
+                kind="ingest_selected",
+                request_json=ingest,
+                created_at=started + timedelta(days=1, minutes=index),
+            )
+            store.rows[row.job_id] = replace(row, status="succeeded", stage="succeeded")
+        assert len((await fresh.operator_jobs()).jobs) == 100
+        assert await fresh.operator_job("history-success") == historical
+        assert await fresh.operator_job("queued-corpus") == board.jobs[0]
+
+        failed = store.rows["failed-evaluation"]
+        store.rows[failed.job_id] = replace(failed, result_refs={ARCHIVE_KEY: True})
+        assert await fresh.operator_job(failed.job_id) is None
+        store.rows[failed.job_id] = failed
+        assert await fresh.operator_job(failed.job_id) == board.jobs[5]
 
     asyncio.run(scenario())
 

@@ -96,9 +96,9 @@ class ProgressPersister:
     ) -> bool:
         """Flush progress, then write the terminal state, retrying transient failures.
 
-        Returns whether the terminal write landed. The caller keeps its in-memory
-        state either way; ``False`` means the ledger lags until a restart marks the
-        job interrupted. Later progress writes for the job are ignored.
+        Returns whether the terminal write landed. ``False`` means the last stored
+        state remains authoritative; unfinished records become interrupted on restart.
+        Later progress writes for the job are ignored.
         """
         self._closed.add(job_id)
         await self.flush(job_id)
@@ -332,6 +332,17 @@ class JobStore:
         async with self._session_factory() as session:
             row = await session.get(OperatorJob, job_id)
         return self._stored(row) if row is not None else None
+
+    async def queue_positions(self) -> dict[str, int]:
+        """Read the whole pending queue in the coordinator's timestamp and ID order."""
+        statement = (
+            select(OperatorJob.job_id)
+            .where(OperatorJob.status == "queued")
+            .order_by(OperatorJob.created_at, OperatorJob.job_id)
+        )
+        async with self._session_factory() as session:
+            job_ids = tuple(await session.scalars(statement))
+        return {job_id: position for position, job_id in enumerate(job_ids, start=1)}
 
     async def list(
         self, *, domain: JobDomain | None = None, limit: int = 100, include_archived: bool = False
