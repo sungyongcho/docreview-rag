@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
+import app.llm.provider as provider_module
 from app.llm.provider import (
     LLMProvider,
     OpenAILLMProvider,
@@ -23,6 +24,7 @@ from app.llm.schemas import (
     SchemaRejected,
     TokenPricing,
 )
+from app.release.ai_allowance import SharedAIAllowance, active_allowance
 from tests.llm.support import DeterministicLLMProvider, TickClock, raw
 
 
@@ -558,3 +560,33 @@ def test_openai_preflight_refusal_records_its_projection_in_metadata():
     assert result.refusal.projected_input_tokens > 100
     assert result.metadata.requests == 0
     assert result.metadata.projected_input_tokens == result.refusal.projected_input_tokens
+
+
+def test_missing_tokenizer_is_a_pre_call_refusal_that_sent_nothing(monkeypatch, tmp_path):
+    """Under the shared allowance the cost preflight needs the tokenizer; without it the
+    call is refused before dispatch, sending nothing and naming the local cause."""
+    monkeypatch.setattr(
+        provider_module, "estimate_prompt_tokens", lambda prompt, *, model_name: None
+    )
+    responses = UnreachableResponses()
+    provider = OpenAILLMProvider(
+        model_name="gpt-5.6-terra",
+        client=SimpleNamespace(responses=responses),
+        clock=TickClock(),
+    )
+    ledger = SharedAIAllowance(tmp_path / "limits.sqlite3", Decimal("1"), 5, 25)
+    token = active_allowance.set(ledger)
+    try:
+        result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
+    finally:
+        active_allowance.reset(token)
+
+    assert responses.calls == []
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert result.metadata.requests == 0
+    assert result.refusal.attempts == 0
+    assert "tokenizer" in result.refusal.message
+    assert result.metadata.raw_outputs == ()
+    assert result.metadata.llm_output == ""
+    assert result.metadata.request_time_ms == 0

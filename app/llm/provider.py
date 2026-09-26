@@ -43,6 +43,14 @@ class _OpenAIPreflightError(ValueError):
         self.failure = failure
 
 
+class _OpenAIPreflightUnavailableError(ValueError):
+    """Refuse before dispatch because a local precondition of the preflight is missing.
+
+    Nothing was sent, so the refusal counts no request and carries no raw output; the
+    message names the precondition rather than a provider fault.
+    """
+
+
 class _ResponsesAPI(Protocol):
     """Injected Responses surface used by the OpenAI adapter and offline fakes."""
 
@@ -313,6 +321,16 @@ class LLMProvider(ABC):
                         }
                     ),
                     projected=error.failure.projected_input_tokens,
+                )
+            except _OpenAIPreflightUnavailableError as error:
+                # A local precondition failed before dispatch: no request went out, so no
+                # empty raw output and no request time are recorded against the provider.
+                return failed(
+                    ProviderRefusal(
+                        status="provider_error",
+                        message=str(error),
+                        attempts=len(raw_outputs),
+                    )
                 )
             except Exception as error:
                 elapsed_ms = (self._clock() - started) / 1_000_000
@@ -643,7 +661,10 @@ class OpenAILLMProvider(LLMProvider):
         )
         if projected is None:
             if active_allowance.get() is not None:
-                raise ValueError("OpenAI cost preflight requires the model tokenizer")
+                raise _OpenAIPreflightUnavailableError(
+                    "OpenAI cost preflight requires the model tokenizer, which is unavailable; "
+                    "the request was not sent"
+                )
             reservation = budget.max_cost_usd
         else:
             projected += 128  # Conservative extra room for provider framing around the schema.

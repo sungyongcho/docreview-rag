@@ -370,7 +370,9 @@ class ProviderRefusal(StrictSchema):
 
     status: Literal["provider_refused", "provider_error"]
     message: NonBlank
-    attempts: Annotated[StrictInt, Field(ge=1, le=2)]
+    #: Requests actually sent; zero when a local precondition of the call refused it
+    #: before anything reached the provider.
+    attempts: Annotated[StrictInt, Field(ge=0, le=2)]
 
 
 type CompletionFailure = SchemaRejected | BudgetExceeded | ProviderRefusal

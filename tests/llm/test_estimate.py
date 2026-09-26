@@ -5,6 +5,7 @@ import tiktoken
 import app.llm.estimate as estimate
 from app.llm.estimate import (
     FRAMING_TOKENS,
+    RETRY_AFTER_S,
     estimate_prompt_tokens,
     prompt_encoding,
 )
@@ -38,7 +39,8 @@ def test_encoding_names_resolve_from_model_tables_without_loading_tokenizer_data
 
 
 def test_recognized_models_reach_the_same_guarded_loader_as_unknown_ones(monkeypatch):
-    """An uncached encoding for a known OpenAI model is skipped once and never retried."""
+    """An uncached encoding for a known OpenAI model is skipped and not retried within
+    the back-off."""
     loads: list[str] = []
 
     def unavailable(name):
@@ -47,10 +49,42 @@ def test_recognized_models_reach_the_same_guarded_loader_as_unknown_ones(monkeyp
         raise OSError(f"{name} is not cached")
 
     monkeypatch.setattr(estimate, "_encoding", unavailable)
-    monkeypatch.setattr(estimate, "_unavailable", set())
+    monkeypatch.setattr(estimate, "_failed_at", {})
     prompt = Prompt(system="s", user="u")
 
     assert estimate_prompt_tokens(prompt, model_name="text-embedding-3-large") is None
     assert estimate_prompt_tokens(prompt, model_name="text-embedding-3-large") is None
     assert estimate_prompt_tokens(prompt, model_name="gemma4:e4b") is None
     assert loads == ["cl100k_base", "o200k_base"]
+
+
+def test_tokenizer_load_is_retried_once_the_back_off_has_elapsed(monkeypatch):
+    """A transient load failure pauses the projection for the back-off interval only; the
+    next call after it loads the encoding again instead of staying disabled for the process."""
+    loads: list[str] = []
+    cached = False
+
+    def loader(name):
+        """Fail until the encoding is 'downloaded', recording every attempt."""
+        loads.append(name)
+        if not cached:
+            raise OSError(f"{name} is not cached")
+        return tiktoken.get_encoding(name)
+
+    monkeypatch.setattr(estimate, "_encoding", loader)
+    monkeypatch.setattr(estimate, "_failed_at", {})
+    prompt = Prompt(system="s", user="u")
+    encoding = tiktoken.get_encoding("o200k_base")
+    expected = len(encoding.encode("s")) + len(encoding.encode("u")) + FRAMING_TOKENS
+    started = 1_000.0
+
+    assert estimate_prompt_tokens(prompt, model_name="gemma4:e4b", clock=lambda: started) is None
+    cached = True
+    within = started + RETRY_AFTER_S - 1
+    assert estimate_prompt_tokens(prompt, model_name="gemma4:e4b", clock=lambda: within) is None
+    assert loads == ["o200k_base"], "no retry within the back-off"
+    elapsed = started + RETRY_AFTER_S
+    projected = estimate_prompt_tokens(prompt, model_name="gemma4:e4b", clock=lambda: elapsed)
+    assert projected == expected
+    assert loads == ["o200k_base", "o200k_base"]
+    assert "o200k_base" not in estimate._failed_at, "a successful load clears the back-off"
