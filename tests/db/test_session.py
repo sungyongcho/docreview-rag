@@ -17,20 +17,21 @@ def test_engine_uses_the_configured_database_url() -> None:
 def test_committed_rows_stay_readable_after_the_session_closes() -> None:
     """Sessions share the process engine and never expire what they commit.
 
-    An expired attribute on a closed session needs a reload that async callers cannot
-    run, so reading a committed row afterwards would raise instead of returning it.
+    An expired attribute needs a reload that a closed session cannot run, so an expiring
+    factory would make committed rows unreadable once their session closes.
     """
     corpus = Corpus(corpus_id="one", name="One")
     # A detached row becomes persistent on add, so the commit needs no database.
     make_transient_to_detached(corpus)
 
-    async def commit_row() -> None:
-        """Commit the row through one session from the shared factory."""
+    async def commit_row():
+        """Commit the row through one factory session and return the engine it used."""
         async with Session() as session:
-            assert session.bind is engine
             session.add(corpus)
             await session.commit()
+            return session.bind
 
-    asyncio.run(commit_row())
+    bind = asyncio.run(commit_row())
 
+    assert bind is engine
     assert corpus.name == "One"
