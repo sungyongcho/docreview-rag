@@ -362,6 +362,15 @@ class RuntimeApiServices(ApiServices):
         return read_company_names(self._corpus_root or get_settings().corpus_dir)
 
     @property
+    def corpus_root(self) -> Path | None:
+        """Expose the injected corpus directory; ``None`` means the settings directory applies.
+
+        Services composed next to this runtime must read the same corpus, and a read-only
+        property lets them do that without reaching into private state.
+        """
+        return self._corpus_root
+
+    @property
     def local_inventory(self) -> LocalModelInventory | None:
         """Expose current discovery for readiness while request work captures its own copy."""
         return self._engines.local_inventory
