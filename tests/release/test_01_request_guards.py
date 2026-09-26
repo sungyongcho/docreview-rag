@@ -17,7 +17,7 @@ from app.release.middleware import (
     SecurityHeadersMiddleware,
     client_host,
 )
-from app.release.secrets import REDACTION, SecretRedactionFilter, install_secret_redaction
+from app.release.secrets import REDACTION, SecretRedactor, install_secret_redaction
 
 
 def _guarded_app(
@@ -258,7 +258,7 @@ def test_server_secret_is_redacted_before_log_formatting() -> None:
         exc_info=None,
     )
 
-    assert SecretRedactionFilter((secret,)).filter(record)
+    SecretRedactor((secret,)).redact(record)
     assert record.getMessage() == f"provider failed for {REDACTION}"
     assert secret not in record.getMessage()
     trace_secret = "sk-never-trace-this"
@@ -276,7 +276,7 @@ def test_server_secret_is_redacted_before_log_formatting() -> None:
         exc_info=exception,
     )
 
-    assert SecretRedactionFilter((trace_secret,)).filter(exception_record)
+    SecretRedactor((trace_secret,)).redact(exception_record)
     formatted = logging.Formatter().format(exception_record)
     assert exception_record.getMessage() == "provider failed"
     assert f"RuntimeError: provider rejected {REDACTION}" in formatted

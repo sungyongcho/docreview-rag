@@ -15,7 +15,7 @@ def redact_text(value: str, secrets: tuple[str, ...]) -> str:
     return redacted
 
 
-class SecretRedactionFilter(logging.Filter):
+class SecretRedactor:
     """Redact configured secrets from one record in place, keeping its formatting contract.
 
     The message template and each argument are redacted separately, so a formatter that
@@ -25,7 +25,6 @@ class SecretRedactionFilter(logging.Filter):
     """
 
     def __init__(self, secrets: tuple[str, ...]) -> None:
-        super().__init__()
         self.secrets = tuple(dict.fromkeys(secret for secret in secrets if secret))
 
     def _redact_value(self, value: object) -> object:
@@ -43,10 +42,10 @@ class SecretRedactionFilter(logging.Filter):
         redacted = redact_text(rendered, self.secrets)
         return value if redacted == rendered else redacted
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def redact(self, record: logging.LogRecord) -> None:
         """Redact the message, arguments, traceback and stack text of one record."""
         if not self.secrets:
-            return True
+            return
         record.msg = self._redact_value(record.msg)
         if isinstance(record.args, Mapping):
             record.args = {key: self._redact_value(value) for key, value in record.args.items()}
@@ -59,22 +58,19 @@ class SecretRedactionFilter(logging.Filter):
             record.exc_text = redact_text(record.exc_text, self.secrets)
         if record.stack_info:
             record.stack_info = redact_text(record.stack_info, self.secrets)
-        return True
 
 
 class SecretRedactingRecordFactory:
     """Create each log record through the previous factory, then redact it in place."""
 
-    def __init__(
-        self, base: Callable[..., logging.LogRecord], redaction: SecretRedactionFilter
-    ) -> None:
+    def __init__(self, base: Callable[..., logging.LogRecord], redactor: SecretRedactor) -> None:
         self.base = base
-        self.redaction = redaction
+        self.redactor = redactor
 
     def __call__(self, *args: object, **kwargs: object) -> logging.LogRecord:
         """Build the record exactly as the previous factory would, then redact it."""
         record = self.base(*args, **kwargs)
-        self.redaction.filter(record)
+        self.redactor.redact(record)
         return record
 
 
@@ -95,11 +91,13 @@ def install_secret_redaction(secrets: tuple[str, ...]) -> None:
     ``logging.LogRecord``, or text written to a stream without logging. A repeated call
     adds its secrets to the installed factory instead of wrapping it again.
     """
-    redaction = SecretRedactionFilter(secrets)
-    if not redaction.secrets:
+    nonblank = tuple(secret for secret in secrets if secret)
+    if not nonblank:
         return
     current = logging.getLogRecordFactory()
     if isinstance(current, SecretRedactingRecordFactory):
-        current.redaction = SecretRedactionFilter((*current.redaction.secrets, *redaction.secrets))
+        # Extend the installed factory rather than wrap it, so each record is redacted once.
+        current.redactor = SecretRedactor((*current.redactor.secrets, *nonblank))
     else:
-        logging.setLogRecordFactory(SecretRedactingRecordFactory(current, redaction))
+        factory = SecretRedactingRecordFactory(current, SecretRedactor(nonblank))
+        logging.setLogRecordFactory(factory)
