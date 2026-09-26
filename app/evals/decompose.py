@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Callable, Sequence
 import logging
 from typing import TYPE_CHECKING, Annotated, NamedTuple, Self
 
@@ -19,9 +19,9 @@ from app.retrieval.types import ChunkHit
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from app.evals.arms import Retriever
     from app.llm.provider import LLMProvider
 
-type Retriever = Callable[[str, int], Awaitable[Sequence[ChunkHit]]]
 type SessionFactory = Callable[[], AsyncSession]
 
 _LOGGER = logging.getLogger(__name__)

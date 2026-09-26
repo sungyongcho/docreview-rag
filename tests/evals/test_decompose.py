@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from pydantic import ValidationError
 import pytest
 
-from app.agent.decompose import QueryDecomposition, make_decomposed_retriever
+from app.evals.decompose import QueryDecomposition, make_decomposed_retriever
 from app.llm.schemas import ProviderBudget, TokenPricing
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.agent.support import FakeSessionFactory
@@ -69,7 +69,7 @@ def test_decomposed_retriever_gathers_per_sub_question_sessions_and_fuses(monkey
         provider_budget=budget(),
         embedding_provider=DeterministicEmbeddingProvider(),
     )
-    with caplog.at_level("WARNING", logger="app.agent.decompose"):
+    with caplog.at_level("WARNING", logger="app.evals.decompose"):
         hits = asyncio.run(retriever("How did revenue change between 2023 and 2024?", 2))
 
     assert sorted(queries) == ["What was 2023 revenue?", "What was 2024 revenue?"]
@@ -99,7 +99,7 @@ def test_decomposed_retriever_logs_a_degraded_decomposition(monkeypatch, caplog)
         embedding_provider=DeterministicEmbeddingProvider(),
     )
 
-    with caplog.at_level("WARNING", logger="app.agent.decompose"):
+    with caplog.at_level("WARNING", logger="app.evals.decompose"):
         hits = asyncio.run(retriever(original, 1))
 
     assert [item.chunk_id for item in hits] == [1]

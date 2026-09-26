@@ -242,9 +242,9 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     Database and provider modules load only here, so ``--help`` and the pure
     comparison helpers stay independent of runtime configuration.
     """
-    from app.agent.decompose import make_decomposed_retriever
     from app.config import get_settings
     from app.db.session import Session
+    from app.evals.decompose import make_decomposed_retriever
     from app.retrieval.embeddings import get_embedding_provider
     from app.retrieval.service import retrieve
     from app.retrieval.types import ChunkHit
