@@ -72,13 +72,13 @@ def test_corrupt_and_changed_files_debounce_without_rereading_unchanged(store: P
     with patch.object(Path, "read_text", side_effect=AssertionError("unchanged files reread")):
         assert store.catalog(changed.presets_version).unchanged
     (store.directory / "research.json").write_text('{"invalid":')
-    corrupt = store.catalog(force=True)
+    corrupt = store.refresh()
     assert [e.file for e in corrupt.errors] == ["research.json"]
     assert len(corrupt.presets) == 3
     (store.directory / "research.json").write_text(custom(k=9).model_dump_json())
-    assert not store.catalog(force=True).errors
+    assert not store.refresh().errors
     (store.directory / "research.json").unlink()
-    assert len(store.catalog(force=True).presets) == 3
+    assert len(store.refresh().presets) == 3
 
 
 def test_atomic_failure_preserves_previous_bytes(store: PresetStore):
