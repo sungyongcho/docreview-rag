@@ -5,7 +5,7 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web ./
 COPY docs/TUTORIAL /docs/TUTORIAL
-COPY docs/DEVELOPMENT_STORY_OUTLINE.md /docs/DEVELOPMENT_STORY_OUTLINE.md
+COPY docs/DEVELOPMENT_STORY.en.md docs/DEVELOPMENT_STORY.ko.md /docs/
 ENV NEXT_PUBLIC_API_BASE_URL="" \
 	NEXT_PUBLIC_ADMIN_MODE=canned
 RUN npm run build
