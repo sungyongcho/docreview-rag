@@ -171,6 +171,7 @@ def test_experiment_schema_preserves_golden_snapshot_and_document_identity():
     golden = GoldenRevision.__table__
     snapshot = EvaluationSnapshot.__table__
     membership = SnapshotDocument.__table__
+    assert isinstance(membership, Table)
 
     assert {"suite_id", "version", "status", "payload", "sha256"} <= set(golden.columns.keys())
     assert {
@@ -184,6 +185,7 @@ def test_experiment_schema_preserves_golden_snapshot_and_document_identity():
     assert set(membership.primary_key.columns.keys()) == {"snapshot_id", "doc_id"}
     assert not membership.columns.doc_id.foreign_keys
     assert membership.columns.source_sha256.nullable is False
+    assert isinstance(SnapshotChunk.__table__, Table)
     assert set(SnapshotChunk.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "chunk_id",
@@ -202,19 +204,23 @@ def test_experiment_schema_preserves_golden_snapshot_and_document_identity():
         "content_tsv",
         "embedding",
     } <= set(SnapshotChunk.__table__.columns.keys())
+    assert isinstance(SnapshotChunkTerm.__table__, Table)
     assert set(SnapshotChunkTerm.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "chunk_id",
         "lexeme",
     }
+    assert isinstance(SnapshotChunkLength.__table__, Table)
     assert set(SnapshotChunkLength.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "chunk_id",
     }
+    assert isinstance(SnapshotBM25CorpusStat.__table__, Table)
     assert set(SnapshotBM25CorpusStat.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "language",
     }
+    assert isinstance(SnapshotLexemeStat.__table__, Table)
     assert set(SnapshotLexemeStat.__table__.primary_key.columns.keys()) == {
         "snapshot_id",
         "language",
@@ -225,6 +231,7 @@ def test_experiment_schema_preserves_golden_snapshot_and_document_identity():
 def test_operator_job_schema_persists_queue_progress_and_result_provenance():
     """Persist corpus and evaluation work across application restarts."""
     table = OperatorJob.__table__
+    assert isinstance(table, Table)
     assert {
         "job_id",
         "domain",
