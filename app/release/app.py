@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.admin_runtime import READINESS_STATUS_MAX_AGE_S, RuntimeAdminApiServices
-from app.api.app import create_api_app
+from app.api.app import DEV_SURFACE, LIVE_ADMIN_SURFACE, PROD_SURFACE, create_api_app
 from app.api.review_profile import PromptPolicy
 from app.api.runtime import RuntimeApiServices
 from app.config import Settings
@@ -260,13 +260,13 @@ def create_release_app(
         if active_settings.admin_enabled and active_services is not None
         else None
     )
-    application = create_api_app(
-        active_services,
-        admin_services,
-        enable_reset=active_settings.admin_enabled,
-        enable_docs_execution=active_settings.environment != "prod",
-        include_admin_schema=active_settings.environment == "prod",
-    )
+    if active_settings.environment == "prod":
+        surface = PROD_SURFACE
+    elif active_settings.admin_enabled:
+        surface = LIVE_ADMIN_SURFACE
+    else:
+        surface = DEV_SURFACE
+    application = create_api_app(active_services, admin_services, surface=surface)
     # One ledger meters every mode: per-client request windows plus the UTC-day cost cap,
     # charged by each actual provider call rather than by a flat per-request reservation.
     allowance = SharedAIAllowance(
