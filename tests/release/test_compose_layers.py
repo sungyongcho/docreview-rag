@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from app.release.config import ReleaseSettings
+from tests.support import load_settings
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -81,8 +82,9 @@ def test_the_production_overlay_environment_refuses_the_local_engine(monkeypatch
     for key, value in compose("docker-compose.prod.yml")["services"]["app"]["environment"].items():
         monkeypatch.setenv(key, str(value))
 
-    settings = ReleaseSettings(
-        _env_file=None,
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
         LOCAL_LLM_BASE_URL="http://ollama:11434",
     )
 

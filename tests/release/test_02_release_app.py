@@ -25,6 +25,7 @@ from app.retrieval.embeddings import (
 )
 from app.workflow.types import WorkflowReport
 from tests.llm.support import DeterministicLLMProvider
+from tests.support import load_settings
 
 
 def _run_report() -> RunReport:
@@ -138,8 +139,9 @@ def test_public_readiness_publishes_counts_and_withholds_only_write_access(
         """Supply private corpus status without accessing a database or provider."""
         return {"status": status, "documents": [{"issuer_name": "PRIVATE_COMPANY_FIXTURE"}]}
 
-    settings = ReleaseSettings(
-        _env_file=None,
+    settings = load_settings(
+        ReleaseSettings,
+        env_file=None,
         DOCREVIEW_ENVIRONMENT=environment,
         admin_mode=admin_mode,
         mode="runtime",
@@ -297,7 +299,7 @@ def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypat
         )
 
     services = build_runtime_services(
-        ReleaseSettings(mode="runtime", _env_file=None),
+        load_settings(ReleaseSettings, mode="runtime", env_file=None),
         provider_factory=provider_factory,
     )
 
@@ -312,7 +314,7 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> 
     for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
         monkeypatch.delenv(name, raising=False)
 
-    services = build_runtime_services(ReleaseSettings(mode="runtime", _env_file=None))
+    services = build_runtime_services(load_settings(ReleaseSettings, mode="runtime", env_file=None))
 
     assert "openai" not in services._llm_providers
     assert "openai" not in services._provider_budgets
@@ -337,15 +339,16 @@ def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
     """Expose administrator routes and developer controls, and lift only the public request
     limits, in explicit loopback live mode."""
     with TestClient(
-        create_release_app(ReleaseSettings(admin_mode="off", _env_file=None))
+        create_release_app(load_settings(ReleaseSettings, admin_mode="off", env_file=None))
     ) as client:
         hidden_paths = set(client.get("/openapi.json").json()["paths"])
 
-    live_settings = ReleaseSettings(
+    live_settings = load_settings(
+        ReleaseSettings,
         mode="runtime",
         admin_mode="live",
         host="127.0.0.1",
-        _env_file=None,
+        env_file=None,
     )
     live = create_release_app(
         live_settings,
@@ -368,10 +371,11 @@ def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
 
 def test_capabilities_and_limit_peek_reflect_release_mode_without_consuming_slots() -> None:
     """Expose mode controls, the public policy and the allowance without spending it."""
-    settings = ReleaseSettings(
+    settings = load_settings(
+        ReleaseSettings,
         rate_limit_per_minute=2,
         rate_limit_per_day=3,
-        _env_file=None,
+        env_file=None,
     )
     with TestClient(create_release_app(settings)) as client:
         capabilities = client.get("/capabilities")
@@ -414,12 +418,13 @@ def test_release_uses_configured_embedding_identity_and_credential_slot(
 
     monkeypatch.setattr(release_app, "get_embedding_provider", embedding_factory)
     services = build_runtime_services(
-        ReleaseSettings(
+        load_settings(
+            ReleaseSettings,
             mode="runtime",
             MODE=environment,
             OPENAI_API_KEY_LOCAL="sk-development-fixture",
             OPENAI_API_KEY_PROD="sk-production-fixture",
-            _env_file=None,
+            env_file=None,
         )
     )
 
@@ -465,7 +470,9 @@ def test_runtime_readiness_default_probe_shares_admin_status_and_keeps_the_paylo
         """Return the same status through the injection seam."""
         return {"status": asdict(status)}
 
-    settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1", _env_file=None)
+    settings = load_settings(
+        ReleaseSettings, mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
+    )
     with TestClient(
         create_release_app(
             settings,
@@ -510,7 +517,9 @@ def test_bm25_missing_is_normal_preparation_after_embeddings_finish():
             }
         }
 
-    settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1", _env_file=None)
+    settings = load_settings(
+        ReleaseSettings, mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
+    )
     with TestClient(
         create_release_app(
             settings,
@@ -551,7 +560,7 @@ def test_readiness_reports_update_without_hiding_existing_counts():
             }
 
         app = create_release_app(
-            ReleaseSettings(mode="runtime", host="127.0.0.1", _env_file=None),
+            load_settings(ReleaseSettings, mode="runtime", host="127.0.0.1", env_file=None),
             services=runtime,
             readiness_probe=probe,
         )

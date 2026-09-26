@@ -8,14 +8,16 @@ import pytest
 from app.llm.local_inventory import LocalModelInventory
 from app.release.app import _local_engine_readiness
 from app.release.config import ReleaseSettings
+from tests.support import load_settings
 
 
 def settings_for(monkeypatch: pytest.MonkeyPatch, environment: str) -> ReleaseSettings:
     """Build runtime settings using only a server URL under the given MODE."""
     monkeypatch.setenv("DOCREVIEW_MODE", "runtime")
     monkeypatch.setenv("MODE", environment)
-    return ReleaseSettings(
-        _env_file=None,
+    return load_settings(
+        ReleaseSettings,
+        env_file=None,
         LOCAL_LLM_BASE_URL="http://ollama:11434",
     )
 
@@ -55,7 +57,9 @@ def test_development_probes_and_reports_the_model_it_found(monkeypatch) -> None:
     assert result["model"] == "gemma4:e4b"
     assert result["protocol"] == "ollama"
     assert result["checked_at"]
-    assert result["models"][0]["capabilities"] == ("completion",)
+    models = result["models"]
+    assert isinstance(models, tuple)
+    assert models[0]["capabilities"] == ("completion",)
     assert set(seen) == {
         "http://ollama:11434/api/tags",
         "http://ollama:11434/api/show",
