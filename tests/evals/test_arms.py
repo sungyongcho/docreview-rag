@@ -184,6 +184,7 @@ def test_language_routing_is_bound_to_the_arm_and_only_to_a_fused_one(monkeypatc
         (DEFAULT_BM25_K1, float("nan"), DEFAULT_BM25_IDF),
         (DEFAULT_BM25_K1, DEFAULT_BM25_B, "okapi"),
     ],
+    ids=["missing_k1", "zero_k1", "boolean_k1", "negative_b", "nan_b", "unknown_idf"],
 )
 def test_a_bm25_arm_is_rejected_before_it_can_be_bound(values):
     """Reject an invalid BM25 set at bind time rather than on the first query."""
