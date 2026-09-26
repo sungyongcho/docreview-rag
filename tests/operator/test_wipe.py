@@ -43,11 +43,13 @@ def test_confirmation_rejects_changed_expired_and_duplicate_previews(tmp_path, m
         with pytest.raises(WipeError, match="changed"):
             await service.start(preview["token"], preview["confirmation"])
         preview = await service.preview()
+        assert service._preview is not None
         service._preview["expires"] = 0
         with pytest.raises(WipeError, match="expired"):
             await service.start(preview["token"], preview["confirmation"])
         preview = await service.preview()
         await service.start(preview["token"], preview["confirmation"])
+        assert service._task is not None
         await service._task
         with pytest.raises(WipeError, match="missing"):
             await service.start(preview["token"], preview["confirmation"])
@@ -215,6 +217,7 @@ volumes:
             preview = await service.preview()
             assert preview["target"]["tables"]["wipe_probe"] == 1
             await service.start(preview["token"], preview["confirmation"])
+            assert service._task is not None
             await service._task
             assert service.result()["status"] == "succeeded", service.result()
             after = await service.inspect()
@@ -335,6 +338,7 @@ def test_failed_hold_is_released_before_any_stop_and_restart_keeps_evidence(tmp_
     async def request(_container, action, payload=None):
         """Acquire a lease on a replacement worker to exercise the real identity rejection."""
         events.append(action)
+        assert payload is not None
         return {"lease": payload["lease"], "instance": "new-worker"}
 
     monkeypatch.setattr(service.commands, "run", run)
