@@ -49,7 +49,7 @@ def quick_retriever(
             route_by_language=profile.route_by_language,
             filters=filters,
         )
-    reranker = CrossEncoderReranker()
+    reranker = CrossEncoderReranker.shared()
 
     async def run(query: str, k: int) -> list[Any]:
         """Retrieve and rerank one query with the bound profile."""
