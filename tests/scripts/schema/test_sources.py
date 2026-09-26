@@ -92,7 +92,7 @@ def test_cleanup_failure_reports_database_commit_and_retains_journal(
     assert recreate.run(tmp_path) == "incomplete"
     output = capsys.readouterr().err
     assert "DB committed" in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
     journal = tmp_path / "data/.schema-recreate-journal/journal.json"
     assert json.loads(journal.read_text())["phase"] == "database_committed_source_cleanup_pending"
     with pytest.raises(ValueError, match="Unfinished"):
@@ -135,7 +135,7 @@ def test_uncertain_database_outcome_retains_durable_recovery_evidence(
     output = capsys.readouterr().err
     assert "Database outcome is unconfirmed" in output
     assert "database and sources are unchanged" not in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
     assert (corpus / "manifest.json").read_bytes() == original
     journal = tmp_path / "data/.schema-recreate-journal/journal.json"
     assert (
@@ -240,7 +240,7 @@ def test_failed_source_rollback_preserves_journal_and_reports_unconfirmed_recove
     output = capsys.readouterr().err
     assert "rollback could not be confirmed" in output
     assert "database and sources are unchanged" not in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
     assert (tmp_path / "data/.schema-recreate-journal/journal.json").exists()
 
 

@@ -385,7 +385,7 @@ def test_permission_failure_after_stop_restores_sources_and_explains_recovery(
     )
     output = capsys.readouterr().err
     assert "database and sources are unchanged" in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
 
 
 def test_api_stop_failure_also_explains_the_unchanged_data_and_recovery(
@@ -408,7 +408,7 @@ def test_api_stop_failure_also_explains_the_unchanged_data_and_recovery(
     assert operation.await_count == 1
     output = capsys.readouterr().err
     assert "database and sources are unchanged" in output
-    assert "rag-dev up -d" in output
+    assert "rag-dev compose up -d" in output
 
 
 def test_keep_sources_does_not_require_source_directory_write_access(tmp_path):

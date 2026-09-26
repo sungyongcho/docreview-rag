@@ -126,6 +126,7 @@ def test_development_mounts_source_and_keeps_browser_dependencies_separate() -> 
         "NEXT_PUBLIC_OPERATOR_TOKEN",
         "DOCREVIEW_API_UPSTREAM",
         "DOCREVIEW_LOCAL_HOST",
+        "DOCREVIEW_SCREENSHOT_MODE",
     }
     assert web["environment"]["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag/api"
     assert web["environment"]["DOCREVIEW_API_UPSTREAM"] == "http://app:8000"
@@ -138,8 +139,16 @@ def test_development_mounts_source_and_keeps_browser_dependencies_separate() -> 
     prod = compose("docker-compose.prod.yml")
     assert prod["services"]["web"]["volumes"] == web["volumes"]
     assert prod["services"]["app"]["command"] == dev["services"]["app"]["command"]
-    assert {v["target"] for v in prod["services"]["app"]["volumes"]} == {"/app/data", "/app/app"}
-    assert set(prod["volumes"]) == {"pg_data", "web_node_modules", "web_next"}
+    # The base data mount stays; the local-prod overlay adds its own corpus, evaluation
+    # and runtime directories and a separate database volume.
+    assert {v["target"] for v in prod["services"]["app"]["volumes"]} == {
+        "/app/app",
+        "/app/data",
+        "/app/data/corpus",
+        "/app/data/eval_runs",
+        "/app/data/runtime",
+    }
+    assert set(prod["volumes"]) == {"prod_pg_data", "web_node_modules", "web_next"}
     assert prod["services"]["web"]["environment"]["NEXT_PUBLIC_ADMIN_MODE"] == "canned"
     assert prod["services"]["web"]["environment"]["NEXT_PUBLIC_OPERATOR_TOKEN"] == ""
     assert not prod["services"]["app"].get("extra_hosts")
