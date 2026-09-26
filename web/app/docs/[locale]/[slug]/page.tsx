@@ -6,9 +6,9 @@ const routedDocuments = [...DOCUMENTS, developmentStoryDocument("ko"), developme
 
 export const dynamicParams = false;
 
-/** Existing root and CLI pages retain their URLs; the registry supplies every other route. */
+/** The locale root pages (no slug) have their own routes; the registry supplies every slugged route. */
 export function generateStaticParams() {
-  return routedDocuments.filter((document) => document.slug && document.id !== "cli").map(({ locale, slug }) => ({ locale, slug }));
+  return routedDocuments.filter((document) => document.slug).map(({ locale, slug }) => ({ locale, slug }));
 }
 
 type Parameters = { params: Promise<{ locale: string; slug: string }> };
@@ -17,7 +17,10 @@ export async function generateMetadata({ params }: Parameters) {
   const { locale, slug } = await params;
   const document = routedDocuments.find((item) => item.locale === locale && item.slug === slug);
   if (!document) notFound();
-  return { title: `${document.title} | DocReview RAG`, description: document.summary };
+  const title = `${document.title} | DocReview RAG`;
+  // The CLI reference used to be a static page that kept the site-wide description; keep its head unchanged.
+  if (document.id === "cli") return { title };
+  return { title, description: document.summary };
 }
 
 export default async function Page({ params }: Parameters) {
