@@ -276,9 +276,9 @@ export type PublicSnapshotEvaluation = components["schemas"]["PublicSnapshotEval
 
 export type AdminDocumentPage = components["schemas"]["DocumentInventoryResponse"];
 
-export type OperatorJobStatus = "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
-
 export type OperatorJob = components["schemas"]["OperatorJobResource"];
+
+export type OperatorJobStatus = OperatorJob["status"];
 
 export type OperatorJobBoard = components["schemas"]["OperatorJobsResponse"];
 
