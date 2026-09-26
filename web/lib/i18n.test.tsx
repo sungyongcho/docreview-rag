@@ -23,6 +23,95 @@ function TestScreen() {
   return <><LanguageSwitch /><h1>{t("Build")}</h1><textarea aria-label="User question" defaultValue="Keep my original question" /></>;
 }
 
+/** Web directories whose strings can reach `t`. */
+const UI_DIRECTORIES = ["app", "components", "lib"];
+/**
+ * Server code and served data whose messages, identifiers and values the UI displays through `t`,
+ * such as golden-case facets and preset labels. Downloaded filings under data/corpus never reach `t`.
+ */
+const SERVER_DIRECTORIES = ["../app", "../schemas", "../scripts", "../data/golden", "../data/presets"];
+/** Stands for a computed value inside a string the UI builds. */
+const ANY_TEXT = "(.+)";
+
+function sourceFiles(directories: string[], extension: RegExp): string[] {
+  const files: string[] = [];
+  for (const directory of directories) {
+    for (const name of readdirSync(directory, { recursive: true }) as string[]) {
+      if (!extension.test(name)) continue;
+      // Tests may quote retired copy, and the catalog itself is what this check audits.
+      if (/\.(test|spec)\./.test(name) || name.endsWith("messages-ko.ts")) continue;
+      files.push(join(directory, name));
+    }
+  }
+  return files;
+}
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isStringConcatenation(node: ts.Node): node is ts.BinaryExpression {
+  return ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken;
+}
+
+/** Initializers of the file's named values, so a message composed from other constants can be read in full. */
+function fileConstants(tree: ts.SourceFile): Map<string, ts.Expression> {
+  const constants = new Map<string, ts.Expression>();
+  function visit(node: ts.Node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) constants.set(node.name.text, node.initializer);
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  return constants;
+}
+
+/**
+ * Regular-expression parts for a string-building expression: literal text stays, named constants are
+ * read through, and any other computed value matches any text.
+ */
+function builtStringParts(node: ts.Node, constants: Map<string, ts.Expression>, resolving = new Set<string>()): string[] {
+  const parts = (child: ts.Node) => builtStringParts(child, constants, resolving);
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [escapeRegExp(node.text)];
+  if (ts.isParenthesizedExpression(node)) return parts(node.expression);
+  if (isStringConcatenation(node)) return [...parts(node.left), ...parts(node.right)];
+  if (ts.isTemplateExpression(node)) {
+    const result = [escapeRegExp(node.head.text)];
+    for (const span of node.templateSpans) result.push(...parts(span.expression), escapeRegExp(span.literal.text));
+    return result;
+  }
+  // Same-named values in different scopes could point at each other; stop instead of looping.
+  if (!ts.isIdentifier(node) || resolving.has(node.text)) return [ANY_TEXT];
+  const constant = constants.get(node.text);
+  if (!constant) return [ANY_TEXT];
+  return builtStringParts(constant, constants, new Set([...resolving, node.text]));
+}
+
+/** Every text the UI can pass to `t`: literal strings, strings it builds, and text the server sends. */
+function reachableUiText() {
+  const texts: string[] = [];
+  const builtStrings: RegExp[] = [];
+  for (const file of sourceFiles(UI_DIRECTORIES, /\.(tsx?|mjs)$/)) {
+    const tree = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const constants = fileConstants(tree);
+    function visit(node: ts.Node) {
+      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isJsxText(node)) texts.push(node.text);
+      if (ts.isTemplateExpression(node) || isStringConcatenation(node)) {
+        const parts = builtStringParts(node, constants);
+        const literalText = parts.filter((part) => part !== ANY_TEXT).join("");
+        // A pattern with almost no literal text would match every entry and hide real leftovers.
+        if (literalText.trim().length >= 3) builtStrings.push(new RegExp(`^${parts.join("")}$`, "s"));
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(tree);
+  }
+  for (const file of sourceFiles(UI_DIRECTORIES, /\.json$/)) texts.push(readFileSync(file, "utf8"));
+  for (const file of sourceFiles(SERVER_DIRECTORIES, /\.(py|json)$/)) texts.push(readFileSync(file, "utf8"));
+  const joined = texts.join("\n");
+  // The UI prints API identifiers such as `stable_hit` with spaces before translating them.
+  return { corpus: `${joined}\n${joined.replaceAll("_", " ")}`, builtStrings };
+}
+
 describe("Korean and English UI", () => {
   it("changes interface language without rewriting user content and follows another tab", () => {
     localStorage.setItem(LOCALE_KEY, "ko");
@@ -79,6 +168,12 @@ describe("Korean and English UI", () => {
       ANSWER_MODEL_HINT,
     ];
     expect([...new Set(messages.filter((message) => !(message in KO)))]).toEqual([]);
+  });
+
+  it("keeps only Korean entries whose English text the UI can still show", () => {
+    const { corpus, builtStrings } = reachableUiText();
+    const isReachable = (english: string) => corpus.includes(english) || builtStrings.some((pattern) => pattern.test(english));
+    expect(Object.keys(KO).filter((english) => !isReachable(english))).toEqual([]);
   });
 
   it("translates generated counts, dependencies and model status without changing identifiers", () => {
