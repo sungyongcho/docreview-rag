@@ -266,6 +266,7 @@ describe("Build workspace", () => {
       };
       else if (url.includes("/admin/documents?")) payload = { documents: [], total: 0, next_cursor: null };
       else if (url.endsWith("/admin/snapshots")) payload = [];
+      else if (url.endsWith("/revisions")) payload = [];
       return jsonResponse(payload);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -773,6 +774,7 @@ describe("connection readiness presentation", () => {
       if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
       if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
       if (url.endsWith("/admin/snapshots")) return jsonResponse([]);
+      if (url.endsWith("/revisions")) return jsonResponse([]);
       return jsonResponse({});
     }));
   });

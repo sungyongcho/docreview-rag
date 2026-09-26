@@ -53,7 +53,7 @@ describe("Measure workspace", () => {
     stubFetch((url) => {
       if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
       if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
-      if (url.endsWith("/admin/golden/sec-en/revisions")) return [];
+      if (url.endsWith("/revisions")) return [];
       if (url.endsWith("/admin/golden/sec-en/canonical")) return {
         suite_id: "sec-en",
         filename: "retrieval.json",
@@ -400,6 +400,7 @@ describe("evaluation run refetch keyed on evaluation jobs", () => {
     const fetchMock = stubFetch((url) => {
       if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
       if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
+      if (url.endsWith("/revisions")) return [];
       return {};
     });
     const corpusJob: OperatorJob = { job_id: "corpus-progress", domain: "corpus", kind: "ingest_manifest", request: {}, status: "running", stage: "parse", current: 1, total: 9, detail_current: null, detail_total: null, message: "Parsing", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-09-01T12:00:00Z", started_at: "2026-09-01T12:00:01Z", finished_at: null, updated_at: "2026-09-01T12:00:02Z" };
