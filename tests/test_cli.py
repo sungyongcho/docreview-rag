@@ -16,6 +16,7 @@ from sqlalchemy.exc import OperationalError
 
 from app import cli
 from app.config import Settings, get_settings
+from tests.support import load_settings
 
 
 class ErrorDetail(TypedDict):
@@ -149,7 +150,7 @@ def test_provider_override_revalidates_the_openai_key_guard(monkeypatch, tmp_pat
         "OPENAI_API_KEY_PROD",
     ):
         monkeypatch.delenv(name, raising=False)
-    base = Settings(_env_file=None)
+    base = load_settings(Settings, env_file=None)
 
     with pytest.raises(ValidationError, match="MODE-selected OpenAI key slot is required"):
         cli._provider_settings(base, "openai")
