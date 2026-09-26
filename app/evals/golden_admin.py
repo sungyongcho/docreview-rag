@@ -139,8 +139,6 @@ class GoldenAdminService:
             json.dumps(envelope, ensure_ascii=False, indent=2) + "\n",
             mode=0o600,
             apply_umask=True,
-            fsync_file=True,
-            fsync_directory=False,
             encoding=None,
         )
         return self._read_user(path)

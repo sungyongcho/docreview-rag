@@ -18,9 +18,8 @@ def test_replacement_publishes_exact_text_without_a_temporary_sibling(tmp_path):
         '{"name": "코퍼스"}\n',
         mode=0o600,
         apply_umask=True,
-        fsync_file=True,
-        fsync_directory=True,
         encoding="utf-8",
+        fsync_directory=True,
     )
 
     assert path.read_bytes() == '{"name": "코퍼스"}\n'.encode()
@@ -46,9 +45,8 @@ def test_mode_is_exact_or_narrowed_by_the_process_umask(
             "{}",
             mode=mode,
             apply_umask=apply_umask,
-            fsync_file=False,
-            fsync_directory=False,
             encoding=None,
+            fsync_file=False,
         )
     finally:
         os.umask(previous)
@@ -57,13 +55,15 @@ def test_mode_is_exact_or_narrowed_by_the_process_umask(
 
 
 @pytest.mark.parametrize(
-    ("fsync_file", "fsync_directory", "synced"),
-    [(False, False, []), (True, False, ["file"]), (True, True, ["file", "directory"])],
+    ("durability", "synced"),
+    [
+        pytest.param({"fsync_file": False}, [], id="no-sync"),
+        pytest.param({}, ["file"], id="default-syncs-the-file-only"),
+        pytest.param({"fsync_directory": True}, ["file", "directory"], id="file-then-directory"),
+    ],
 )
-def test_only_the_requested_file_and_directory_syncs_run(
-    tmp_path, monkeypatch, fsync_file, fsync_directory, synced
-):
-    """Each durability flag adds exactly its own fsync, the file before the directory."""
+def test_only_the_requested_file_and_directory_syncs_run(tmp_path, monkeypatch, durability, synced):
+    """Defaults sync only the file; explicit flags preserve file-before-directory order."""
     calls = []
     real_fsync = os.fsync
 
@@ -81,9 +81,8 @@ def test_only_the_requested_file_and_directory_syncs_run(
         "{}",
         mode=0o600,
         apply_umask=True,
-        fsync_file=fsync_file,
-        fsync_directory=fsync_directory,
         encoding=None,
+        **durability,
     )
 
     assert calls == synced
@@ -105,9 +104,8 @@ def test_failed_rename_keeps_prior_bytes_and_removes_the_temporary_file(tmp_path
             "new",
             mode=0o600,
             apply_umask=True,
-            fsync_file=True,
-            fsync_directory=True,
             encoding="utf-8",
+            fsync_directory=True,
         )
 
     assert path.read_text() == "old"

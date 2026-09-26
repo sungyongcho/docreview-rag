@@ -11,9 +11,9 @@ def write_text_atomically(
     *,
     mode: int,
     apply_umask: bool,
-    fsync_file: bool,
-    fsync_directory: bool,
     encoding: str | None,
+    fsync_file: bool = True,
+    fsync_directory: bool = False,
 ) -> None:
     """Publish complete text at ``path`` with one rename over the previous file.
 
@@ -32,13 +32,15 @@ def write_text_atomically(
     apply_umask : bool
         When true, the process umask narrows ``mode`` exactly as it does for ``open``.
         When false, the file gets exactly ``mode`` whatever the umask is.
-    fsync_file : bool
-        Flush the written text to stable storage before the rename, so a crash cannot
-        leave the new name pointing at incomplete data.
-    fsync_directory : bool
-        Flush the directory after the rename, so the replacement itself survives a crash.
     encoding : str | None
         Text encoding. ``None`` selects the same default encoding that ``open`` uses.
+    fsync_file : bool, optional
+        Flush the written text to stable storage before the rename, so a crash cannot
+        leave the new name pointing at incomplete data. On by default.
+    fsync_directory : bool, optional
+        Flush the directory after the rename, so the replacement itself survives a crash.
+        Off by default: without it a crash can at worst undo the replacement, which
+        most callers accept.
 
     Raises
     ------

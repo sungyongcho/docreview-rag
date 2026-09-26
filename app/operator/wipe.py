@@ -354,8 +354,6 @@ class WipeService:
             json.dumps(progress),
             mode=0o600,
             apply_umask=True,
-            fsync_file=True,
-            fsync_directory=False,
             encoding=None,
         )
 

@@ -245,8 +245,6 @@ class LocalConnectionManager:
                 json.dumps({"version": 2, **data}) + "\n",
                 mode=0o640,
                 apply_umask=False,
-                fsync_file=True,
-                fsync_directory=False,
                 encoding=None,
             )
         except PermissionError as error:

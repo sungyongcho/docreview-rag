@@ -187,8 +187,6 @@ class PresetStore:
                 saved.model_dump_json(indent=2) + "\n",
                 mode=0o600,
                 apply_umask=True,
-                fsync_file=True,
-                fsync_directory=False,
                 encoding=None,
             )
             self.refresh()

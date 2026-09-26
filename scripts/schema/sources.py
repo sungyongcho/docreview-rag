@@ -179,9 +179,8 @@ class SourceReset:
             json.dumps(self.state, indent=2),
             mode=0o666,
             apply_umask=True,
-            fsync_file=True,
-            fsync_directory=True,
             encoding=None,
+            fsync_directory=True,
         )
 
     def stage(self) -> None:

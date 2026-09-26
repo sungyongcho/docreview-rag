@@ -256,7 +256,5 @@ class Manifest(Contract):
             self.model_dump_json(indent=2) + "\n",
             mode=0o664,
             apply_umask=False,
-            fsync_file=True,
-            fsync_directory=False,
             encoding="utf-8",
         )

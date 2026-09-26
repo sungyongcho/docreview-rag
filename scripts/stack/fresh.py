@@ -50,9 +50,8 @@ def write_receipt(root: Path, command: str, **values: object) -> None:
         json.dumps({"command": command, "updated": time.time(), **values}, indent=2),
         mode=0o666,
         apply_umask=True,
-        fsync_file=False,
-        fsync_directory=False,
         encoding=None,
+        fsync_file=False,
     )
 
 

@@ -149,9 +149,8 @@ class JobHistoryService:
             json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False),
             mode=0o600,
             apply_umask=True,
-            fsync_file=True,
-            fsync_directory=True,
             encoding="utf-8",
+            fsync_directory=True,
         )
         return backup_id
 
