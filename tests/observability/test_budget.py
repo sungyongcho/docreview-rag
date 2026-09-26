@@ -146,7 +146,10 @@ def test_zero_budget_refuses_the_first_node_and_negative_budgets_are_invalid():
 
     assert result is not None
     assert result.status == "budget_exceeded"
-    assert result.report["reason"]["resource"] == "iterations"
+    assert result.report is not None
+    reason = result.report["reason"]
+    assert isinstance(reason, dict)
+    assert reason["resource"] == "iterations"
     with pytest.raises(ValidationError):
         Budget(max_input_tokens=-1)
     with pytest.raises(ValidationError):

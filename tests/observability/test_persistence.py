@@ -171,9 +171,11 @@ def test_local_timing_round_trips_through_existing_jsonb_context() -> None:
     assert records_to_report(run, traces).steps[0].local_timings == (timing,)
     assert record_to_step(traces[0], request_context=run.request_context).local_timings == (timing,)
     assert record_to_step(traces[0]).local_timings == ()
-    assert run.request_context["trace_local_timings"]["1"] == [
-        {"attempt": 2, "load_duration_ms": 1.5, "eval_count": 3}
-    ]
+    context = run.request_context
+    assert context is not None
+    stored_timings = context["trace_local_timings"]
+    assert isinstance(stored_timings, dict)
+    assert stored_timings["1"] == [{"attempt": 2, "load_duration_ms": 1.5, "eval_count": 3}]
 
 
 def test_sent_requests_round_trip_through_existing_jsonb_context() -> None:

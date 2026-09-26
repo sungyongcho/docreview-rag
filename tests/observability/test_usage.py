@@ -4,12 +4,14 @@ import asyncio
 from decimal import Decimal
 import os
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from sqlalchemy import MetaData, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.admin_runtime import RuntimeAdminApiServices
+from app.api.runtime import RuntimeApiServices
 from app.db.models import Base, OperatorJob, Trace
 from app.observability.usage import (
     USAGE_KEY,
@@ -86,7 +88,8 @@ def test_model_calls_include_gate_without_double_counting_the_same_trace():
             },
         ],
     }
-    rows = merge_usage(review_usage(context, [trace]))
+    # Merged rows hold plain JSON values; read them untyped to sum and parse them.
+    rows: list[dict[str, Any]] = merge_usage(review_usage(context, [trace]))
     assert sum(row["requests"] for row in rows) == 2
     assert sum(row["input_tokens"] for row in rows) == 30
     assert sum(Decimal(row["estimated_cost_usd"]) for row in rows) == Decimal("0.03")
@@ -220,9 +223,11 @@ def test_live_usage_includes_archived_cli_batches_and_matches_provider_subtotals
                 ledger = (await session.execute(select(OperatorJob))).scalar_one()
                 assert ledger.kind == "embedding_usage"
                 assert ledger.result_refs["__history_archived"] is True
-                assert ledger.result_refs[USAGE_KEY][0]["input_tokens"] == 100
+                usage_entries = ledger.result_refs[USAGE_KEY]
+                assert isinstance(usage_entries, list)
+                assert usage_entries[0]["input_tokens"] == 100
             service = object.__new__(RuntimeAdminApiServices)
-            service._runtime = SimpleNamespace(session_factory=factory)
+            service._runtime = cast(RuntimeApiServices, SimpleNamespace(session_factory=factory))
             usage = await service.usage()
             assert usage.runs == 1 and usage.requests == 3 and usage.input_tokens == 130
             assert usage.estimated_cost_usd == Decimal("0.030013")
@@ -258,7 +263,7 @@ def test_partial_model_calls_keep_unmatched_historical_traces():
         output_tokens=2,
         estimated_cost_usd=Decimal("0.007"),
     )
-    records = merge_usage(
+    records: list[dict[str, Any]] = merge_usage(
         review_usage(
             {
                 "model_calls": [
@@ -323,7 +328,10 @@ def test_direct_backfill_keeps_charged_cli_usage_when_vector_storage_fails(monke
             monkeypatch.setattr(embeddings, "_missing_batch", missing)
             monkeypatch.setattr(embeddings, "_store_batch", reject_store)
             provider = embeddings.OpenAIEmbeddingProvider(
-                client=SimpleNamespace(embeddings=SimpleNamespace(create=create)),
+                client=cast(
+                    embeddings.EmbeddingClient,
+                    SimpleNamespace(embeddings=SimpleNamespace(create=create)),
+                ),
                 credential_slot="dev",
             )
             async with factory() as session:
@@ -334,8 +342,10 @@ def test_direct_backfill_keeps_charged_cli_usage_when_vector_storage_fails(monke
                 assert (
                     row.kind == "embedding_usage" and row.result_refs["__history_archived"] is True
                 )
-                assert row.result_refs[USAGE_KEY][0]["input_tokens"] == 17
-                assert row.result_refs[USAGE_KEY][0]["unreported_input_requests"] == 0
+                usage_entries = row.result_refs[USAGE_KEY]
+                assert isinstance(usage_entries, list)
+                assert usage_entries[0]["input_tokens"] == 17
+                assert usage_entries[0]["unreported_input_requests"] == 0
         await engine.dispose()
 
     asyncio.run(scenario())
