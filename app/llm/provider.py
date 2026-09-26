@@ -209,8 +209,6 @@ class LLMProvider(ABC):
 
         Raises
         ------
-        TypeError
-            If the boundary values do not use the declared strict types.
         ValueError
             If the injected clock moves backwards.
         AIAllowanceError
@@ -219,16 +217,9 @@ class LLMProvider(ABC):
 
         Notes
         -----
-        Provider exceptions become typed results. Only invalid caller contracts, a
-        non-monotonic clock and a denied shared allowance escape this boundary.
+        Provider exceptions become typed results. Only a non-monotonic clock and a
+        denied shared allowance escape this boundary.
         """
-        if not isinstance(prompt, Prompt):
-            raise TypeError("prompt must be a Prompt value")
-        if not isinstance(schema, type) or not issubclass(schema, BaseModel):
-            raise TypeError("schema must be a Pydantic model class")
-        if not isinstance(budget, ProviderBudget):
-            raise TypeError("budget must be a ProviderBudget value")
-
         current_prompt = prompt
         raw_outputs: list[str] = []
         local_timings: list[LocalModelTiming] = []

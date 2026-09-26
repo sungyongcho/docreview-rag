@@ -266,7 +266,8 @@ async def run_workflow(
     Raises
     ------
     TypeError
-        If the request or provider violate the caller contract.
+        If the retriever returns something other than a ``RetrievalResult`` of
+        ``ChunkHit`` values.
     ValueError
         If the clock is non-finite or moves backwards.
     AIAllowanceError
@@ -282,11 +283,6 @@ async def run_workflow(
     allowance denial escape. Observer exceptions propagate instead of becoming node
     failures.
     """
-    if not isinstance(request, WorkflowRequest):
-        raise TypeError("request must be a WorkflowRequest")
-    if not isinstance(provider, LLMProvider):
-        raise TypeError("provider must implement LLMProvider")
-
     state = initial_state(request)
     started = validate_elapsed_seconds(clock())
 

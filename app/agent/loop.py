@@ -260,8 +260,6 @@ async def run_agent(
     ------
     ValueError
         If the question is blank.
-    TypeError
-        If registry, provider, or budget does not satisfy its declared contract.
 
     Notes
     -----
@@ -277,15 +275,9 @@ async def run_agent(
     ``KEEP_OUTPUT_EXCHANGES`` exchanges are compacted out of the replay to keep
     input tokens linear in run length.
     """
-    if not isinstance(question, str) or not question.strip():
+    if not question.strip():
         raise ValueError("question must not be blank")
-    if not isinstance(registry, ToolRegistry):
-        raise TypeError("registry must be a ToolRegistry")
-    if not isinstance(provider, ToolCallingProvider):
-        raise TypeError("provider must implement ToolCallingProvider")
     limits = budget or AgentBudget()
-    if not isinstance(limits, AgentBudget):
-        raise TypeError("budget must be an AgentBudget")
     system_prompt = build_instructions(registry)
 
     tool_specs = [*registry.specs(), final_answer_spec()]

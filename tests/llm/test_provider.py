@@ -209,18 +209,6 @@ def test_explicit_usage_and_cost_budgets_fail_closed(budget_changes, response_ch
     assert result.parsed is None
 
 
-def test_provider_boundary_rejects_untyped_prompt_budget_and_mock_responses():
-    """Reject untyped prompts, budgets, and responses at the boundary."""
-    with pytest.raises(TypeError):
-        DeterministicLLMProvider([valid_output()])
-
-    provider = DeterministicLLMProvider([raw(valid_output())])
-    with pytest.raises(TypeError):
-        asyncio.run(provider.complete({"system": "s", "user": "u"}, AnswerDecision, budget()))
-    with pytest.raises(TypeError):
-        asyncio.run(provider.complete(prompt(), AnswerDecision, {"max_output_tokens": 10}))
-
-
 class FakeResponses:
     """Record one request and return a scenario-owned response."""
 
