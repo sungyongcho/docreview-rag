@@ -17,6 +17,7 @@ import time
 from urllib.parse import urlparse
 from uuid import uuid4
 
+from app.operator.lifecycle_receipts import receipt_path
 from scripts.stack.operator import LocalOperator
 from scripts.stack.prompts import confirm
 from scripts.stack.terminal import activity, run_step
@@ -37,12 +38,6 @@ VOLUMES = {"pg_data", "prod_pg_data", "web_next", "web_node_modules"}
 def git(root: Path, *args: str) -> str:
     """Read this worktree's Git state without executing shell substitutions."""
     return subprocess.check_output(["git", "-C", str(root), *args], text=True)
-
-
-def receipt_path(root: Path, command: str) -> Path:
-    """Store receipts outside the deletion set in the current worktree's Git directory."""
-    path = Path(git(root, "rev-parse", "--git-path", f"docreview-receipts/{command}.json").strip())
-    return path if path.is_absolute() else root / path
 
 
 def write_receipt(root: Path, command: str, **values: object) -> None:

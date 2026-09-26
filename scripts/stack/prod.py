@@ -16,6 +16,7 @@ from urllib.request import ProxyHandler, build_opener
 
 from dotenv import dotenv_values
 
+from app.operator.lifecycle_receipts import receipt_path
 from deploy.gcp.verify_artifacts import (
     EVALUATIONS,
     digest,
@@ -24,7 +25,7 @@ from deploy.gcp.verify_artifacts import (
     validate_database,
 )
 from scripts.stack.environment import load_local_environment
-from scripts.stack.fresh import docker_inventory, receipt_path, write_receipt
+from scripts.stack.fresh import docker_inventory, write_receipt
 
 
 def storage(root: Path) -> Path:

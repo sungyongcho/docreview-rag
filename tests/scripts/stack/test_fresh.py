@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.operator.lifecycle_receipts import receipt_path
 from scripts.stack import fresh
 
 
@@ -104,7 +105,7 @@ def test_environment_reset_preserves_dirty_and_untracked_source_work(checkout, c
         assert (checkout / name).exists()
     for name in (".venv", "web/node_modules", "web/.next", ".pytest_cache", "data/corpus/sec"):
         assert not (checkout / name).exists()
-    assert json.loads(fresh.receipt_path(checkout, "start-fresh").read_text())["restarted"] is False
+    assert json.loads(receipt_path(checkout, "start-fresh").read_text())["restarted"] is False
     assert fresh.status(checkout, "start-fresh") == 0
     output = capsys.readouterr().out
     assert "files," in output and "bytes" in output and "1." in output
@@ -126,7 +127,7 @@ def test_cancel_every_nonuppercase_gate_without_file_or_docker_writes(
     monkeypatch.setattr(fresh, "run_step", run)
     assert fresh.start_fresh(checkout) == 0
     assert (checkout / ".env").exists() and (checkout / ".venv/bin/python").exists()
-    assert not fresh.receipt_path(checkout, "start-fresh").exists()
+    assert not receipt_path(checkout, "start-fresh").exists()
     assert not (checkout / "data/browser-reset.json").exists()
     assert "nothing changed" in capsys.readouterr().out
 
@@ -383,7 +384,7 @@ def test_post_preview_inode_change_records_failure_without_restart(checkout, mon
     assert target.stat().st_ino != initial_inode
     assert target.read_text() == "concurrent source"
     assert not (checkout / ".venv/bin/python").exists()
-    receipt = json.loads(fresh.receipt_path(checkout, "start-fresh").read_text())
+    receipt = json.loads(receipt_path(checkout, "start-fresh").read_text())
     assert receipt["status"] == "failed"
     assert receipt["error"] == "ValueError"
     assert "files" not in receipt["completed"]
