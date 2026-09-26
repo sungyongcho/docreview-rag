@@ -324,12 +324,19 @@ def test_provider_failure_does_not_expose_exception_secrets():
     """Report a provider failure as a typed result naming the exception type, and keep a
     credential inside the exception message out of it."""
 
+    from decimal import Decimal
+
+    from app.llm.schemas import TokenPricing
+
     class SecretProvider(ToolCallingProvider):
         """Provider whose failure carries a secret that must not escape."""
 
         provider_name = "test"
         model_name = "test-model"
         api_url = "test://provider"
+        pricing = TokenPricing(
+            input_per_million_usd=Decimal("1"), output_per_million_usd=Decimal("1")
+        )
 
         async def turn(
             self,
@@ -474,3 +481,28 @@ def test_malformed_evidence_extractor_becomes_an_observation():
 
     assert result.status == "ok"
     assert "evidence extraction failed" in (result.steps[0].observations[0].error or "")
+
+
+def test_zero_cost_ceiling_with_a_zero_priced_provider_is_not_exhausted():
+    """Mirror ProviderBudget.exhausted_by: a free provider never exhausts a zero cost ceiling."""
+    from decimal import Decimal
+
+    turns = [turn(tool_calls=(call("final_answer", answer_arguments(label="NOT_IN_DOCS")),))]
+
+    result, provider = run_loop(turns, budget=AgentBudget(max_total_cost_usd=Decimal("0")))
+
+    assert result.status == "ok", (result.status, result.failure)
+    assert len(provider.requests) == 1
+
+
+def test_content_filter_cutoff_is_a_provider_failure_not_a_budget_stop():
+    """A turn the provider cut off for a content filter is not reported as the token ceiling."""
+    turns = [turn(output_text="", incomplete=True, incomplete_reason="content_filter")]
+
+    result, provider = run_loop(turns)
+
+    assert result.status == "provider_error"
+    assert "content_filter" in (result.failure or "")
+    assert "output-token ceiling" not in (result.failure or "")
+    assert result.iterations == 1
+    assert len(provider.requests) == 1

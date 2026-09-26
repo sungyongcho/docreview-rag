@@ -93,7 +93,7 @@ def test_search_filings_uses_the_configured_default_k(monkeypatch):
 
 
 def test_fetch_chunk_returns_the_stored_row_and_rejects_missing_ids():
-    """Return the stored chunk within the body cap, and name a missing id as an error."""
+    """Return the whole stored chunk, and name a missing id as an error."""
     chunk = SimpleNamespace(
         id=7,
         doc_id="NVDA-FY2024",
@@ -113,7 +113,8 @@ def test_fetch_chunk_returns_the_stored_row_and_rejects_missing_ids():
     (session,) = factory.sessions
     assert session.requested_ids == [7]
     assert output["doc_id"] == "NVDA-FY2024"
-    assert len(output["body"]) <= 4_000
+    # The tool promises the chunk in full: a 9,000-character body is returned whole.
+    assert output["body"] == chunk.body
     assert evidence_ids(tool, output) == (7,)
     assert session.closed
 
@@ -172,3 +173,35 @@ def test_query_embedding_cache_embeds_each_distinct_text_once():
     assert cache.identity == inner.identity
     assert cache.max_input_tokens == inner.max_input_tokens
     assert cache.count_input_tokens("two words") == inner.count_input_tokens("two words")
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments", "field"),
+    [
+        ("search_filings", {"query": "revenue", "issuers": [""]}, "issuers"),
+        ("search_filings", {"query": "revenue", "fiscal_years": [0]}, "fiscal_years"),
+        ("search_filings", {"query": "revenue", "forms": ["x" * 17]}, "forms"),
+        ("search_filings", {"query": "   "}, "query"),
+        (
+            "compare_years",
+            {"query": "revenue", "issuer": "NVDA", "fiscal_years": [0, 2024]},
+            "fiscal_years",
+        ),
+        (
+            "compare_years",
+            {"query": "   ", "issuer": "NVDA", "fiscal_years": [2023, 2024]},
+            "query",
+        ),
+    ],
+)
+def test_filter_violations_are_reported_as_invalid_arguments(name, arguments, field):
+    """A schema-shaped call the retrieval contract rejects names the field instead of hiding it."""
+    from app.agent.registry import execute_tool
+
+    registry = build_default_registry(FakeSessionFactory())
+
+    outcome = asyncio.run(execute_tool(registry, name, arguments))
+
+    assert outcome.error is not None
+    assert outcome.error.startswith(f"invalid arguments for {name}:"), outcome.error
+    assert field in outcome.error

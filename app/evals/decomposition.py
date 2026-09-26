@@ -193,7 +193,11 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--suite", default="m9-decomposition-v1")
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN_PATH)
     parser.add_argument("--artifact-dir", type=Path, default=Path("data/eval_runs"))
-    parser.add_argument("--model", default="gpt-5.6-terra")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Policy-approved decomposition model; defaults to the role's policy default.",
+    )
     parser.add_argument("-k", type=positive_int, default=5)
     parser.add_argument("--candidate-k", type=positive_int, default=20)
     parser.add_argument("--rrf-k", type=positive_int, default=DEFAULT_RRF_K)
@@ -203,7 +207,9 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parsed
 
 
-def decomposition_boundary(model_name: str) -> tuple[OpenAILLMProvider, ProviderBudget]:
+def decomposition_boundary(
+    model_name: str | None,
+) -> tuple[OpenAILLMProvider, ProviderBudget]:
     """Build the paid decomposition provider and the budget one question may spend.
 
     The SDK is imported here rather than at module scope so importing this module
@@ -285,7 +291,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
             decomposed_config={
                 **shared_config,
                 "strategy": "decomposed",
-                "decomposition_model": args.model,
+                "decomposition_model": llm_provider.model_name,
             },
             suite=args.suite,
             artifact_dir=args.artifact_dir,

@@ -64,8 +64,11 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="gpt-5.6-terra",
-        help="Policy-approved OpenAI model for --provider openai.",
+        default=None,
+        help=(
+            "Policy-approved OpenAI model for --provider openai; "
+            "defaults to the agent role's policy default."
+        ),
     )
     parser.add_argument(
         "--max-cost-usd",
@@ -154,28 +157,47 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     -----
     Database and retrieval modules load only after argument parsing, so ``--help`` and
     package imports remain independent of runtime configuration. Tools open one
-    session per call from the process session factory.
+    session per call from the process session factory, and the pool behind it is
+    released on every exit path, as ``app/cli.py`` does.
+
+    Raises
+    ------
+    SystemExit
+        If ``--provider openai`` is selected but the MODE-selected key slot is
+        empty; the slot rule never falls back to another environment's credential.
     """
     from app.agent.builtin_tools import build_default_registry
     from app.agent.loop import run_agent
     from app.agent.provider import OpenAIToolProvider, ToolCallingProvider
     from app.agent.types import AgentBudget
-    from app.db.session import Session
+    from app.config import get_settings
+    from app.db.session import Session, engine
     from app.retrieval.embeddings import get_embedding_provider
 
-    registry = build_default_registry(
-        Session,
-        embedding_provider=get_embedding_provider(),
-        search_k=args.k,
-    )
     openai_provider: OpenAIToolProvider | None = None
     provider: ToolCallingProvider
     if args.provider == "openai":
-        openai_provider = OpenAIToolProvider(model_name=args.model)
+        # The key travels through Settings exactly as it does for every other
+        # OpenAI client: MODE selects the slot and a missing slot never falls back.
+        settings = get_settings()
+        if settings.openai_api_key is None:
+            raise SystemExit(
+                "--provider openai requires the MODE-selected OpenAI key slot "
+                "(OPENAI_API_KEY_LOCAL for MODE=dev, OPENAI_API_KEY_PROD for MODE=prod)"
+            )
+        openai_provider = OpenAIToolProvider(
+            model_name=args.model,
+            api_key=settings.openai_api_key.get_secret_value(),
+        )
         provider = openai_provider
     else:
         provider = _demo_provider(args.question, args.k)
     try:
+        registry = build_default_registry(
+            Session,
+            embedding_provider=get_embedding_provider(),
+            search_k=args.k,
+        )
         result = await run_agent(
             args.question,
             registry=registry,
@@ -188,6 +210,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     finally:
         if openai_provider is not None:
             await openai_provider.aclose()
+        await engine.dispose()
     return result.model_dump(mode="json")
 
 
@@ -195,14 +218,17 @@ async def _serve_mcp() -> None:
     """Serve the registry tools over MCP stdio with per-call sessions."""
     from app.agent.builtin_tools import build_default_registry
     from app.agent.mcp_server import serve_stdio
-    from app.db.session import Session
+    from app.db.session import Session, engine
     from app.retrieval.embeddings import get_embedding_provider
 
-    registry = build_default_registry(
-        Session,
-        embedding_provider=get_embedding_provider(),
-    )
-    await serve_stdio(registry)
+    try:
+        registry = build_default_registry(
+            Session,
+            embedding_provider=get_embedding_provider(),
+        )
+        await serve_stdio(registry)
+    finally:
+        await engine.dispose()
 
 
 def main(argv: Sequence[str] | None = None) -> None:

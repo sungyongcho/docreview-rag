@@ -159,3 +159,34 @@ def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
     )
     asyncio.run(injected.aclose())
     assert closed == [True]
+
+
+def test_openai_adapter_reports_failed_responses_and_the_incomplete_reason():
+    """A failed reply is a provider failure, and a cut-off reply names why it stopped."""
+    failed = SimpleNamespace(
+        id="resp-failed",
+        status="failed",
+        error=SimpleNamespace(code="server_error", message="The server had an error."),
+        incomplete_details=None,
+        output_text="",
+        output=(),
+        usage=SimpleNamespace(input_tokens=30, output_tokens=0),
+    )
+    provider, responses = openai_provider(failed)
+    with pytest.raises(RuntimeError, match="failed"):
+        asyncio.run(provider.turn("instructions", [], [], max_output_tokens=16))
+    assert len(responses.calls) == 1
+
+    filtered = SimpleNamespace(
+        id="resp-filtered",
+        status="incomplete",
+        error=None,
+        incomplete_details=SimpleNamespace(reason="content_filter"),
+        output_text="",
+        output=(),
+        usage=SimpleNamespace(input_tokens=30, output_tokens=2),
+    )
+    provider, _ = openai_provider(filtered)
+    result = asyncio.run(provider.turn("instructions", [], [], max_output_tokens=16))
+    assert result.incomplete is True
+    assert result.incomplete_reason == "content_filter"
