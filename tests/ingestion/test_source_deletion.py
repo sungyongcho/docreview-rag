@@ -108,7 +108,7 @@ def test_queue_requires_fresh_confirmation_and_cannot_retry_deletion(tmp_path):
         )
         (tmp_path / catalog.artifacts[0].path).write_text("changed after preview")
         job = await service.enqueue(command)
-        await service._queue.join()
+        await service._job_queue._queue.join()
         assert (await service.jobs()).history[0].status == "failed"
         with pytest.raises(ValueError, match="cannot be retried"):
             await service.retry(job.job_id)

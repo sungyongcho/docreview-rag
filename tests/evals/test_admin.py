@@ -147,7 +147,7 @@ def test_corpus_and_evaluation_workers_share_one_execution_lock(
         assert (await evaluation.job(evaluation_job.job_id)).status == "queued"
 
         gate.set()
-        await corpus._queue.join()
+        await corpus._job_queue._queue.join()
         await evaluation._queue.join()
         assert events == ["corpus-start", "corpus-finish", "evaluation-start"]
 

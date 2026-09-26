@@ -223,11 +223,11 @@ def test_ingest_selected_job_uses_existing_manifest_job_contract(tmp_path):
                 document_ids=selected_document_ids(tmp_path, ("NVDA",), (2024,)),
             )
         )
-        await service._queue.join()
+        await service._job_queue._queue.join()
         assert job.command.kind == "ingest_manifest"
         assert job.command.manifest and job.command.selection_id
         await service.retry(job.job_id)
-        await service._queue.join()
+        await service._job_queue._queue.join()
         assert calls[0] == calls[1]
         assert service._operations._resolve_manifest(job.command.manifest).exists()
 

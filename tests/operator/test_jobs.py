@@ -183,7 +183,7 @@ async def _exercise_corpus_worker(tmp_path) -> tuple[bool, str]:
         try:
             created = await service.enqueue(AdminCommand("rebuild_bm25"))
             created_id = created.job_id
-            await service._queue.join()
+            await service._job_queue._queue.join()
             await asyncio.sleep(0.1)
             board = await service.jobs()
             persisted = await store.get(created.job_id)
