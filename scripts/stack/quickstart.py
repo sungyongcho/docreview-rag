@@ -18,7 +18,7 @@ from dotenv import dotenv_values, set_key
 from app.db.bootstrap import SchemaDriftError
 from app.db.startup import prepare as prepare_schema
 from scripts.diagnostics.ollama import diagnose
-from scripts.stack.__main__ import compose_command, compose_environment, run
+from scripts.stack.__main__ import compose_command, compose_environment, parse_compose_ps, run
 from scripts.stack.environment import load_local_environment
 from scripts.stack.fresh import write_receipt
 from scripts.stack.prompts import SetupCancelledError, confirm, step
@@ -208,16 +208,13 @@ def wait_ready(origin: str, *, timeout: float = 180, mode: str = "dev") -> None:
 
 def report_services(root: Path, environment: dict[str, str], *, mode: str = "dev") -> None:
     """Report only this project's service state, without exposing container configuration."""
-    output = subprocess.check_output(
-        compose_command(root, mode, ["ps", "--all", "--format", "json"]),
-        cwd=root,
-        env=environment,
-        text=True,
-    ).strip()
-    rows = (
-        json.loads(output)
-        if output.startswith("[")
-        else [json.loads(line) for line in output.splitlines() if line.strip()]
+    rows = parse_compose_ps(
+        subprocess.check_output(
+            compose_command(root, mode, ["ps", "--all", "--format", "json"]),
+            cwd=root,
+            env=environment,
+            text=True,
+        )
     )
     services = {row["Service"]: row for row in rows}
     for name in ("db", "app", "web"):

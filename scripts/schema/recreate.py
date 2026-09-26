@@ -26,7 +26,7 @@ from scripts.schema.sources import (
     check_source_write_access,
     source_preview,
 )
-from scripts.stack.__main__ import compose_command, compose_environment
+from scripts.stack.__main__ import compose_command, compose_environment, parse_compose_ps
 from scripts.stack.environment import load_local_environment
 from scripts.stack.prompts import confirm
 
@@ -49,12 +49,7 @@ def local_target(root: Path) -> tuple[dict, dict[str, str]]:
     command = (
         docker + compose_command(root, "dev", ["ps", "--all", "--format", "json", "db", "app"])[1:]
     )
-    output = subprocess.check_output(command, cwd=root, env=environment, text=True).strip()
-    rows = (
-        json.loads(output)
-        if output.startswith("[")
-        else [json.loads(row) for row in output.splitlines()]
-    )
+    rows = parse_compose_ps(subprocess.check_output(command, cwd=root, env=environment, text=True))
     databases = [row for row in rows if row["Service"] == "db"]
     if len(databases) != 1:
         raise ValueError("Start this checkout's DB first: rag-dev compose up -d db")
