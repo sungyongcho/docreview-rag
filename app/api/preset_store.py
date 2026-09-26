@@ -64,18 +64,16 @@ def effective_catalog(catalog: PresetCatalog, server: ServerBM25) -> PresetCatal
     """Present each preset with the BM25 values a request selecting it applies."""
     if not catalog.presets:
         return catalog
-    presets = [
-        preset.model_copy(
-            update={
-                "retrieval": (
-                    with_server_bm25_for_builtin(preset.retrieval, server)
-                    if preset.builtin
-                    else with_server_bm25(preset.retrieval, server)
-                )
-            }
-        )
-        for preset in catalog.presets
-    ]
+
+    def as_applied(preset: StoredPreset) -> StoredPreset:
+        """Return the preset with the BM25 values a request selecting it would use."""
+        if preset.builtin:
+            retrieval = with_server_bm25_for_builtin(preset.retrieval, server)
+        else:
+            retrieval = with_server_bm25(preset.retrieval, server)
+        return preset.model_copy(update={"retrieval": retrieval})
+
+    presets = [as_applied(preset) for preset in catalog.presets]
     return catalog.model_copy(update={"presets": presets})
 
 

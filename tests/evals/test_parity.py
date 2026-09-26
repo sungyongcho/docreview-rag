@@ -278,7 +278,8 @@ def test_native_korean_corpus_orients_the_ratio_toward_the_foreign_slice():
 
     assessment = assess_parity(en_eval, ko_eval, native_language="ko")
 
-    gated = {result.metric: result for result in assessment.metrics}["recall_at_k"]
+    by_metric = {result.metric: result for result in assessment.metrics}
+    gated = by_metric["recall_at_k"]
     assert gated.ratio == pytest.approx(0.5)
     assert assessment.native_language == "ko"
     assert not assessment.passed

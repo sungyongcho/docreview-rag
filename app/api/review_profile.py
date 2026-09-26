@@ -193,6 +193,8 @@ _BUILTIN_BM25: Final[Mapping[str, object]] = {
     "bm25_b": DEFAULT_BM25_B,
     "bm25_idf": DEFAULT_BM25_IDF,
 }
+# The BM25 fields every retrieval plan carries, in their declaration order.
+_BM25_FIELDS: Final = tuple(_BUILTIN_BM25)
 
 
 def _inherit_server_bm25[P: BaseModel](
@@ -231,7 +233,7 @@ def with_server_bm25[P: BaseModel](retrieval: P, server: ServerBM25 | None = Non
     A request or file states a value by supplying it, and a stated value wins. A
     shipped built-in preset goes through ``with_server_bm25_for_builtin`` instead.
     """
-    unstated = [name for name in _BUILTIN_BM25 if name not in retrieval.model_fields_set]
+    unstated = [name for name in _BM25_FIELDS if name not in retrieval.model_fields_set]
     return _inherit_server_bm25(retrieval, server, unstated)
 
 
@@ -273,11 +275,10 @@ def resolve_retrieval_profile(
         )
     if selected is None:
         raise ValueError("retrieval preset settings are missing")
-    selected = (
-        with_server_bm25_for_builtin(selected, server)
-        if builtin
-        else with_server_bm25(selected, server)
-    )
+    if builtin:
+        selected = with_server_bm25_for_builtin(selected, server)
+    else:
+        selected = with_server_bm25(selected, server)
     return ResolvedRetrievalProfile(
         preset=profile.retrieval_preset,
         **selected.model_dump(mode="python"),
