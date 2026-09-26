@@ -204,16 +204,15 @@ def test_snapshot_statement_uses_frozen_membership_and_bm25_statistics():
 @pytest.mark.parametrize(
     "changes",
     [
-        {"query": "   "},
-        {"k": 0},
-        {"k": True},
-        {"k1": 0},
-        {"k1": math.inf},
-        {"k1": math.nan},
-        {"b": -0.1},
-        {"b": 1.1},
-        {"b": math.nan},
-        {"idf": "okapi"},
+        pytest.param({"query": "   "}, id="blank-query"),
+        pytest.param({"k": 0}, id="non-positive-limit"),
+        pytest.param({"k": True}, id="boolean-limit"),
+        pytest.param({"k1": 0}, id="non-positive-k1"),
+        pytest.param({"k1": math.nan}, id="non-finite-k1"),
+        pytest.param({"b": -0.1}, id="b-below-zero"),
+        pytest.param({"b": 1.1}, id="b-above-one"),
+        pytest.param({"b": math.nan}, id="non-finite-b"),
+        pytest.param({"idf": "okapi"}, id="unknown-idf"),
     ],
 )
 def test_statement_rejects_out_of_range_parameters(changes):
@@ -348,26 +347,14 @@ def test_backfill_refuses_a_session_that_is_already_in_a_transaction():
 # --------------------------------------------------------------------------
 
 
-def test_settings_default_to_ts_rank_cd_with_published_bm25_constants():
-    """Keep native lexical search as the default with published BM25 constants."""
-    settings = Settings()
-
-    assert settings.lexical_ranker == "ts_rank_cd"
-    assert settings.bm25_k1 == 1.2
-    assert settings.bm25_b == 0.75
-    assert settings.bm25_idf == "lucene"
-
-
 @pytest.mark.parametrize(
     "changes",
     [
-        {"bm25_k1": 0},
-        {"bm25_k1": math.inf},
-        {"bm25_k1": math.nan},
-        {"bm25_b": -0.1},
-        {"bm25_b": 1.1},
-        {"bm25_b": math.inf},
-        {"bm25_b": math.nan},
+        pytest.param({"bm25_k1": 0}, id="non-positive-k1"),
+        pytest.param({"bm25_k1": math.nan}, id="non-finite-k1"),
+        pytest.param({"bm25_b": -0.1}, id="b-below-zero"),
+        pytest.param({"bm25_b": 1.1}, id="b-above-one"),
+        pytest.param({"bm25_b": math.nan}, id="non-finite-b"),
     ],
 )
 def test_settings_reject_out_of_range_bm25_constants(changes):

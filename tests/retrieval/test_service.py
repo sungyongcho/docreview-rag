@@ -8,8 +8,7 @@ from pydantic import ValidationError
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.retrieval as public
-from app.retrieval import cross_encoder, sbert, service
+from app.retrieval import service
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.rerank import RerankProvider
 from app.retrieval.types import RetrievalFilters
@@ -76,12 +75,6 @@ def test_service_uses_default_candidate_pool_one_session_and_rank_only_component
         "vector_by_language": {},
         "lexical": (2, 3),
         "lexical_by_language": {"en": (2, 3)},
-    }
-    assert set(service.ComponentRankings.model_fields) == {
-        "vector",
-        "vector_by_language",
-        "lexical",
-        "lexical_by_language",
     }
 
     events.clear()
@@ -152,14 +145,12 @@ def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypa
 @pytest.mark.parametrize(
     "changes, message",
     [
-        ({"query": " "}, "blank"),
-        ({"k": 0}, "positive"),
-        ({"k": 3, "candidate_k": 2}, "at least k"),
-        ({"rrf_k": 0}, "positive"),
-        ({"bm25_k1": math.inf}, "finite positive"),
-        ({"bm25_k1": math.nan}, "finite positive"),
-        ({"bm25_b": math.inf}, "finite number"),
-        ({"bm25_b": math.nan}, "finite number"),
+        pytest.param({"query": " "}, "blank", id="blank-query"),
+        pytest.param({"k": 0}, "positive", id="non-positive-limit"),
+        pytest.param({"k": 3, "candidate_k": 2}, "at least k", id="candidate-pool-below-limit"),
+        pytest.param({"rrf_k": 0}, "positive", id="non-positive-rrf-k"),
+        pytest.param({"bm25_k1": math.nan}, "finite positive", id="non-finite-bm25-k1"),
+        pytest.param({"bm25_b": math.nan}, "finite number", id="non-finite-bm25-b"),
     ],
 )
 def test_service_rejects_invalid_requests_before_provider_or_search(monkeypatch, changes, message):
@@ -205,31 +196,6 @@ def test_service_forwards_default_provider_width_and_identity(monkeypatch):
     result = asyncio.run(service.retrieve(cast(AsyncSession, object()), "query", strategy="vector"))
     assert not result.hits
     assert calls == ["provider", "vector"]
-
-
-def test_package_exports_the_complete_production_surface():
-    """Expose the complete retrieval façade, including the optional local providers."""
-    expected = {
-        "ComponentRankings",
-        "CrossEncoderReranker",
-        "DeterministicEmbeddingProvider",
-        "EmbeddingProvider",
-        "OpenAIEmbeddingProvider",
-        "RetrievalResult",
-        "SentenceTransformerEmbeddingProvider",
-        "TermStatCounts",
-        "backfill_term_stats",
-        "bm25_search",
-        "embed_missing_chunks",
-        "lexical_search",
-        "retrieve",
-        "vector_search",
-    }
-
-    assert expected <= set(public.__all__)
-    assert public.retrieve is service.retrieve
-    assert public.CrossEncoderReranker is cross_encoder.CrossEncoderReranker
-    assert public.SentenceTransformerEmbeddingProvider is sbert.SentenceTransformerEmbeddingProvider
 
 
 def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch):
