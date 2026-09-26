@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from starlette.types import Receive, Scope, Send
 
-from app.api.deps import Services
+from app.api.dependencies import RuntimeDependency
 from app.api.errors import ApiProblemError
 from app.api.review.evidence import EvidenceSelection
 from app.api.review.schemas import (
@@ -81,7 +81,7 @@ def _sse(event: str, data: str) -> str:
 )
 async def review_stream(
     request: ReviewRequest,
-    services: Services,
+    services: RuntimeDependency,
     telemetry: Annotated[Literal["stages"] | None, Header(alias="X-DocReview-Telemetry")] = None,
 ) -> StreamingResponse:
     """Stream node progress and one secret-safe terminal result.

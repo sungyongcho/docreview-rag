@@ -4,7 +4,8 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import Services
+from app.api.dependencies import PortfolioReaderDependency, RuntimeDependency
+from app.api.documents.portfolio import PublicPortfolioPreparation
 from app.api.documents.schemas import (
     DocumentDetailResponse,
     DocumentEmbeddingStatus,
@@ -17,9 +18,16 @@ from app.api.review.schemas import DocumentListResponse, ErrorResponse
 router = APIRouter(tags=["documents"])
 
 
+@router.get("/public/portfolio/preparation", response_model=PublicPortfolioPreparation)
+async def preparation(reader: PortfolioReaderDependency) -> PublicPortfolioPreparation:
+    """Expose only fixed company-year aggregate readiness, never unpublished content."""
+    async with translate_runtime_errors():
+        return await reader.read()
+
+
 @router.get("/public/documents", response_model=DocumentInventoryResponse)
 async def document_inventory(
-    services: Services,
+    services: RuntimeDependency,
     query: str = "",
     registry: str = "",
     issuer: str = "",
@@ -61,7 +69,9 @@ async def document_inventory(
 
 
 @router.get("/public/documents/facets", response_model=DocumentFacetsResponse)
-async def document_facets(services: Services, registry: str = "") -> DocumentFacetsResponse:
+async def document_facets(
+    services: RuntimeDependency, registry: str = ""
+) -> DocumentFacetsResponse:
     """Return live registry, issuer, year, language, form, and status facets."""
     async with translate_runtime_errors():
         return await services.published_documents.document_facets(registry=registry)
@@ -72,7 +82,7 @@ async def document_facets(services: Services, registry: str = "") -> DocumentFac
     response_model=DocumentDetailResponse,
     responses={404: {"model": ErrorResponse}},
 )
-async def document_detail(doc_id: str, services: Services) -> DocumentDetailResponse:
+async def document_detail(doc_id: str, services: RuntimeDependency) -> DocumentDetailResponse:
     """Return bounded metadata and chunk previews for one document."""
     async with translate_runtime_errors():
         detail = await services.published_documents.document_detail(doc_id)
@@ -86,7 +96,7 @@ async def document_detail(doc_id: str, services: Services) -> DocumentDetailResp
     response_model=DocumentListResponse,
     responses={503: {"model": ErrorResponse}},
 )
-async def list_documents(services: Services) -> DocumentListResponse:
+async def list_documents(services: RuntimeDependency) -> DocumentListResponse:
     """Return the deterministic collection of ingested filings."""
     documents = tuple(await services.list_documents())
     return DocumentListResponse(documents=documents)

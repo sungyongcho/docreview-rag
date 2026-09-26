@@ -9,7 +9,7 @@ from fastapi import APIRouter
 from pydantic import Field, StrictBool
 from sqlalchemy import select
 
-from app.api.admin_deps import AdminServices
+from app.api.dependencies import AdminDependency
 from app.api.errors import translate_runtime_errors
 from app.contracts.validation import NonNegativeInt, StrictSchema
 from app.db.models import OperatorJob, Run
@@ -163,7 +163,7 @@ async def usage_summary(session_factory: SessionFactory) -> UsageResponse:
 
 
 @router.get("/usage", response_model=UsageResponse)
-async def provider_usage(services: AdminServices) -> UsageResponse:
+async def provider_usage(services: AdminDependency) -> UsageResponse:
     """Return locally persisted token and estimated-cost totals."""
     async with translate_runtime_errors():
         return await usage_summary(services.runtime.session_factory)

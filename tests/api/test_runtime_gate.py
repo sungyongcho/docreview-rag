@@ -14,9 +14,9 @@ import pytest
 from starlette.requests import ClientDisconnect
 
 from app.api.app import DEV_SURFACE, LIVE_ADMIN_SURFACE, create_api_app
-from app.api.dependencies import AdminDependencies
-from app.api.deps import ApiServices
+from app.api.composition import AdminServices
 from app.api.review.evidence import EvidenceSelection
+from app.api.review.runtime import RuntimeApiServices
 from app.api.review.schemas import ReviewRequest
 from app.api.review.streaming import review_stream
 from app.api.runtime_gate import RuntimeResetGate, RuntimeResetMiddleware
@@ -26,7 +26,7 @@ def test_control_requires_dev_opt_in_loopback_and_private_token(tmp_path, monkey
     """Expose no control on ordinary apps and reject unauthenticated loopback requests."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     for surface, admin in (
-        (DEV_SURFACE, cast(AdminDependencies, object())),
+        (DEV_SURFACE, cast(AdminServices, object())),
         (LIVE_ADMIN_SURFACE, None),
     ):
         app = create_api_app(admin_services=admin, surface=surface)
@@ -34,9 +34,7 @@ def test_control_requires_dev_opt_in_loopback_and_private_token(tmp_path, monkey
             assert client.get("/_internal/reset/activity").status_code == 404
         assert not list(tmp_path.glob("docreview-runtime-gate-*.json"))
 
-    app = create_api_app(
-        admin_services=cast(AdminDependencies, object()), surface=LIVE_ADMIN_SURFACE
-    )
+    app = create_api_app(admin_services=cast(AdminServices, object()), surface=LIVE_ADMIN_SURFACE)
     with TestClient(app, client=("127.0.0.1", 1000)) as client:
         files = list(tmp_path.glob("docreview-runtime-gate-*.json"))
         assert len(files) == 1
@@ -63,9 +61,7 @@ def test_control_requires_dev_opt_in_loopback_and_private_token(tmp_path, monkey
 def test_hold_blocks_admission_and_requires_exact_release(tmp_path, monkeypatch):
     """Keep read liveness accessible while mutations and DB reads wait for exact release."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    app = create_api_app(
-        admin_services=cast(AdminDependencies, object()), surface=LIVE_ADMIN_SURFACE
-    )
+    app = create_api_app(admin_services=cast(AdminServices, object()), surface=LIVE_ADMIN_SURFACE)
 
     @app.get("/health")
     async def health():
@@ -139,7 +135,7 @@ def test_stream_remains_active_until_cancelled_producer_cleanup_finishes(failure
             ReviewRequest(
                 query="Revenue?", evidence_selection=EvidenceSelection(candidate_token="test")
             ),
-            cast(ApiServices, Services()),
+            cast(RuntimeApiServices, Services()),
         )
         wrapped = RuntimeResetMiddleware(response, gate)
         scope = {

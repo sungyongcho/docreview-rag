@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import cast
 
-from app.api.dependencies import AdminDependencies
+from app.api.composition import AdminServices
 from app.corpus_admin.types import AdminCommand, AdminJob
 
 
@@ -53,9 +53,9 @@ def write_scope_manifest(root, documents):
     return root
 
 
-def _admin(**owners: object) -> AdminDependencies:
+def _admin(**owners: object) -> AdminServices:
     """Supply only the domain services exercised by one route scenario."""
-    return cast(AdminDependencies, SimpleNamespace(**owners))
+    return cast(AdminServices, SimpleNamespace(**owners))
 
 
 def _corpus_job(request: AdminCommand, job_id: str = "corpus-1") -> AdminJob:

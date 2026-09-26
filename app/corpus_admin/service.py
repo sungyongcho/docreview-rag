@@ -67,11 +67,6 @@ class RuntimeCorpusAdminService:
         """Return the gate that holds searches off while jobs rewrite search data."""
         return self._job_queue.corpus_access
 
-    @corpus_access.setter
-    def corpus_access(self, corpus_access: CorpusAccess) -> None:
-        """Share another gate, such as the one the API's searches already use."""
-        self._job_queue.corpus_access = corpus_access
-
     async def status(self, *, max_age_s: float = 0.0) -> CorpusStatus:
         """Return the operational status alone, without document rows or file scans.
 

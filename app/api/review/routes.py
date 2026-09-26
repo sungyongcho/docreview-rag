@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Response
 
-from app.api.deps import Services
+from app.api.dependencies import RuntimeDependency
 from app.api.errors import not_found
 from app.api.review.schemas import (
     ErrorResponse,
@@ -52,7 +52,7 @@ STATUS_CODES = {
 async def review_query(
     request: ReviewRequest,
     response: Response,
-    services: Services,
+    services: RuntimeDependency,
 ) -> RunResponse:
     """Complete one guarded workflow and return its terminal run resource."""
     result = RunResponse.from_run_report(await services.review(request))
@@ -66,7 +66,9 @@ async def review_query(
     response_model=RetrieveResponse,
     responses={400: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
-async def retrieve_evidence(request: RetrieveRequest, services: Services) -> RetrieveResponse:
+async def retrieve_evidence(
+    request: RetrieveRequest, services: RuntimeDependency
+) -> RetrieveResponse:
     """Return source-cited ranked evidence for one validated query."""
     return await services.retrieve(request)
 
@@ -80,7 +82,7 @@ RunPath = Annotated[str, Path(pattern=RUN_ID_PATTERN)]
     response_model=RunResponse,
     responses={404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
-async def get_run(run_id: RunPath, services: Services) -> RunResponse:
+async def get_run(run_id: RunPath, services: RuntimeDependency) -> RunResponse:
     """Return one persisted run without executing it again."""
     result = await services.get_run(run_id)
     if result is None:
@@ -94,7 +96,7 @@ async def get_run(run_id: RunPath, services: Services) -> RunResponse:
     response_model=TraceListResponse,
     responses={404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
-async def list_traces(run_id: RunPath, services: Services) -> TraceListResponse:
+async def list_traces(run_id: RunPath, services: RuntimeDependency) -> TraceListResponse:
     """Return ordered raw provider traces for one persisted run."""
     traces = await services.get_traces(run_id)
     if traces is None:

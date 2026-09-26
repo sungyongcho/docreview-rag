@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from openai import AsyncOpenAI
 import pytest
 
-from app.api.deps import get_api_services
+from app.api.dependencies import get_api_services
 from app.api.review.profiles import PromptPolicy
 from app.api.review.runtime import RuntimeApiServices
 from app.corpus_admin.service import RuntimeCorpusAdminService

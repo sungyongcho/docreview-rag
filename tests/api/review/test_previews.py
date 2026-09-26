@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 
-from app.api.dependencies import create_admin_services
+from app.api.composition import create_admin_services
 from app.api.review.previews import _retrieval_preview, _review_preview
 from app.api.review.runtime import RuntimeApiServices
 from app.db.session_factory import SessionFactory
@@ -18,7 +18,7 @@ def test_preview_strategies_use_the_shared_search_contract(monkeypatch, hit, str
     from contextlib import asynccontextmanager
 
     from app.api.review.previews import RetrievalPreviewRequest
-    from app.retrieval.search import service as retrieval, service as search_consistency
+    from app.retrieval.search import service as retrieval
 
     calls = []
 
@@ -41,7 +41,7 @@ def test_preview_strategies_use_the_shared_search_contract(monkeypatch, hit, str
         """Provide the session seam consumed by the isolated search components."""
         yield None
 
-    monkeypatch.setattr(search_consistency, "prepare_search", prepare)
+    monkeypatch.setattr(retrieval, "prepare_search", prepare)
     monkeypatch.setattr(retrieval, "vector_search", vector_search)
     monkeypatch.setattr(retrieval, "lexical_search", lexical_search)
     services = create_admin_services(

@@ -360,7 +360,7 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
     from fastapi.testclient import TestClient
 
     from app.api.app import create_api_app
-    from app.api.deps import get_api_services
+    from app.api.dependencies import get_api_services
     from app.release.ai_allowance import reserve_openai
     from app.release.middleware import ReleaseGuardMiddleware
 

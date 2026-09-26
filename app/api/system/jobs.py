@@ -11,8 +11,8 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse
 from pydantic import StrictBool
 
-from app.api.admin_deps import AdminServices
-from app.api.dependencies import AdminDependencies
+from app.api.composition import AdminServices
+from app.api.dependencies import AdminDependency
 from app.api.errors import ApiProblemError, not_found, translate_runtime_errors
 from app.api.review.schemas import ErrorResponse
 from app.contracts.validation import NonNegativeInt, PositiveInt, StrictSchema
@@ -92,7 +92,7 @@ READINESS_STATUS_MAX_AGE_S = 2.0
 READINESS_STATUS_MAX_AGE_BUSY_S = 10.0
 
 
-async def _readiness_status(dependencies: AdminDependencies) -> CorpusStatus:
+async def _readiness_status(dependencies: AdminServices) -> CorpusStatus:
     """Return corpus status for ``/ready``, reusing a recent reading longer while a job runs.
 
     A queued or running corpus or evaluation job already loads the database and the
@@ -141,13 +141,13 @@ def _operator_resource(job: StoredJob, queue_positions: dict[str, int]) -> Opera
     )
 
 
-async def _job_history_summary(dependencies: AdminDependencies) -> JobHistorySummaryResource:
+async def _job_history_summary(dependencies: AdminServices) -> JobHistorySummaryResource:
     """Read history counts without changing records or running jobs."""
     return JobHistorySummaryResource(**asdict(await dependencies.history.summary()))
 
 
 async def _manage_job_history(
-    dependencies: AdminDependencies, request: JobHistoryRequest
+    dependencies: AdminServices, request: JobHistoryRequest
 ) -> JobHistoryResultResource:
     """Archive, restore or back up and delete only reviewed terminal history."""
     result = await dependencies.history.apply(
@@ -161,12 +161,12 @@ async def _manage_job_history(
     )
 
 
-def _job_history_backup(dependencies: AdminDependencies, backup_id: str) -> Path:
+def _job_history_backup(dependencies: AdminServices, backup_id: str) -> Path:
     """Resolve only an owned private backup for an authenticated download."""
     return dependencies.history.backup_path(backup_id)
 
 
-async def _operator_jobs(dependencies: AdminDependencies) -> OperatorJobsResponse:
+async def _operator_jobs(dependencies: AdminServices) -> OperatorJobsResponse:
     """Return the persistent unified corpus and evaluation job board."""
     await dependencies.corpus.recover_jobs()
     await dependencies.evaluations.recover_jobs()
@@ -180,7 +180,7 @@ async def _operator_jobs(dependencies: AdminDependencies) -> OperatorJobsRespons
     )
 
 
-async def _operator_job(dependencies: AdminDependencies, job_id: str) -> OperatorJobResource | None:
+async def _operator_job(dependencies: AdminServices, job_id: str) -> OperatorJobResource | None:
     """Return one persisted job with its current queue position."""
     await dependencies.corpus.recover_jobs()
     await dependencies.evaluations.recover_jobs()
@@ -193,7 +193,7 @@ async def _operator_job(dependencies: AdminDependencies, job_id: str) -> Operato
     return _operator_resource(job, positions)
 
 
-async def _retry_operator_job(dependencies: AdminDependencies, job_id: str) -> OperatorJobResource:
+async def _retry_operator_job(dependencies: AdminServices, job_id: str) -> OperatorJobResource:
     """Dispatch an explicit retry to the job's owning domain."""
     stored = await dependencies.jobs.get(job_id)
     if stored is None:
@@ -210,7 +210,7 @@ async def _retry_operator_job(dependencies: AdminDependencies, job_id: str) -> O
     return resource
 
 
-async def _cancel_operator_job(dependencies: AdminDependencies, job_id: str) -> OperatorJobResource:
+async def _cancel_operator_job(dependencies: AdminServices, job_id: str) -> OperatorJobResource:
     """Dispatch a safe cancellation to the job's owning domain."""
     stored = await dependencies.jobs.get(job_id)
     if stored is None:
@@ -226,7 +226,7 @@ async def _cancel_operator_job(dependencies: AdminDependencies, job_id: str) -> 
 
 
 @router.get("/jobs/history", response_model=JobHistorySummaryResource)
-async def job_history_summary(services: AdminServices) -> JobHistorySummaryResource:
+async def job_history_summary(services: AdminDependency) -> JobHistorySummaryResource:
     """Read protected active and terminal history counts."""
     async with translate_runtime_errors():
         return await _job_history_summary(services)
@@ -234,7 +234,7 @@ async def job_history_summary(services: AdminServices) -> JobHistorySummaryResou
 
 @router.post("/jobs/history", response_model=JobHistoryResultResource)
 async def manage_job_history(
-    request: JobHistoryRequest, services: AdminServices
+    request: JobHistoryRequest, services: AdminDependency
 ) -> JobHistoryResultResource:
     """Apply one explicitly confirmed terminal-history operation."""
     try:
@@ -253,7 +253,7 @@ async def manage_job_history(
 
 
 @router.get("/jobs/history/backups/{backup_id}", response_class=FileResponse)
-async def job_history_backup(backup_id: str, services: AdminServices) -> FileResponse:
+async def job_history_backup(backup_id: str, services: AdminDependency) -> FileResponse:
     """Download an owned backup without exposing arbitrary filesystem paths."""
     try:
         path = _job_history_backup(services, backup_id)
@@ -265,7 +265,7 @@ async def job_history_backup(backup_id: str, services: AdminServices) -> FileRes
 
 
 @router.get("/jobs", response_model=OperatorJobsResponse)
-async def operator_jobs(services: AdminServices) -> OperatorJobsResponse:
+async def operator_jobs(services: AdminDependency) -> OperatorJobsResponse:
     """Return the persistent unified corpus and evaluation job board."""
     async with translate_runtime_errors():
         return await _operator_jobs(services)
@@ -274,7 +274,7 @@ async def operator_jobs(services: AdminServices) -> OperatorJobsResponse:
 @router.get(
     "/jobs/{job_id}", response_model=OperatorJobResource, responses={404: {"model": ErrorResponse}}
 )
-async def operator_job(job_id: str, services: AdminServices) -> OperatorJobResource:
+async def operator_job(job_id: str, services: AdminDependency) -> OperatorJobResource:
     """Return one persisted operator job by identity."""
     job = await _operator_job(services, job_id)
     if job is None:
@@ -283,14 +283,14 @@ async def operator_job(job_id: str, services: AdminServices) -> OperatorJobResou
 
 
 @router.post("/jobs/{job_id}/retry", response_model=OperatorJobResource)
-async def retry_operator_job(job_id: str, services: AdminServices) -> OperatorJobResource:
+async def retry_operator_job(job_id: str, services: AdminDependency) -> OperatorJobResource:
     """Create a new queued job from failed or interrupted request provenance."""
     async with translate_runtime_errors():
         return await _retry_operator_job(services, job_id)
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=OperatorJobResource)
-async def cancel_operator_job(job_id: str, services: AdminServices) -> OperatorJobResource:
+async def cancel_operator_job(job_id: str, services: AdminDependency) -> OperatorJobResource:
     """Cancel queued work or cooperatively cancel a supported running corpus job."""
     async with translate_runtime_errors():
         return await _cancel_operator_job(services, job_id)

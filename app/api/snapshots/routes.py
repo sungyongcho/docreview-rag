@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import Services
+from app.api.dependencies import RuntimeDependency
 from app.api.errors import translate_runtime_errors
 from app.evals.contracts import SnapshotComparisonResponse, SnapshotListResponse
 
@@ -13,7 +13,7 @@ SnapshotId = Annotated[int, Query(gt=0)]
 
 
 @router.get("", response_model=SnapshotListResponse)
-async def list_snapshots(services: Services) -> SnapshotListResponse:
+async def list_snapshots(services: RuntimeDependency) -> SnapshotListResponse:
     """Return only ready snapshots explicitly published by an operator."""
     async with translate_runtime_errors():
         snapshots = await services.list_snapshots(public_only=True)
@@ -22,7 +22,7 @@ async def list_snapshots(services: Services) -> SnapshotListResponse:
 
 @router.get("/compare", response_model=SnapshotComparisonResponse)
 async def compare_snapshots(
-    services: Services,
+    services: RuntimeDependency,
     baseline_id: SnapshotId,
     candidate_id: SnapshotId,
 ) -> SnapshotComparisonResponse:

@@ -1,4 +1,4 @@
-"""Production database composition for synchronous M5 HTTP resources."""
+"""Retrieval and review execution over application-owned database and provider resources."""
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequence
 from contextlib import asynccontextmanager
@@ -12,7 +12,6 @@ from pydantic import JsonValue, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import ApiServices
 from app.api.documents.catalog import DocumentCatalog
 from app.api.errors import ApiProblemError, bad_request, translate_runtime_errors, unavailable
 from app.api.review.engines import ReviewEngines
@@ -298,11 +297,11 @@ def _selection_record(selection: EvidenceSelection | None) -> JsonObject | None:
     }
 
 
-class RuntimeApiServices(ApiServices):
+class RuntimeApiServices:
     """Compose API resources over one session per synchronous request.
 
-    Retrieval defaults to the deterministic provider unless one is injected. Review is
-    fail-closed until the provider and budget registries carry an engine's provider and
+    Retrieval uses the explicitly supplied embedding provider. Review is fail-closed
+    until the provider and budget registries carry an engine's provider and
     its explicit budget; construction never creates the process database engine or
     starts a paid call.
     """

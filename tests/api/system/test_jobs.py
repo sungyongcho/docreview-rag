@@ -10,14 +10,12 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.api.app import create_api_app
-from app.api.dependencies import create_admin_services
-from app.api.review.runtime import RuntimeApiServices
 from app.api.system.jobs import _operator_job, _operator_jobs, _readiness_status
 from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand, CorpusStatus
 from app.evals.admin.service import EvaluationAdminService
+from app.operator.jobs.execution import JobExecutionCoordinator
 from app.operator.jobs.store import JobDomain, JobStatus
-from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from tests.api.support import _admin
 
 
@@ -190,10 +188,7 @@ class _RecordingCorpus:
 def test_readiness_status_extends_max_age_while_a_job_is_registered() -> None:
     """Readiness reuses a reading for 2 s normally and 10 s while a job holds or awaits its turn."""
     corpus = _RecordingCorpus()
-    services = create_admin_services(
-        runtime=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-        corpus=cast(RuntimeCorpusAdminService, corpus),
-    )
+    services = _admin(corpus=corpus, coordinator=JobExecutionCoordinator())
 
     async def scenario() -> None:
         """Read readiness idle, with a registered job, and after its cancellation."""

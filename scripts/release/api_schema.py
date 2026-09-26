@@ -5,15 +5,13 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from app.api.app import COMMON_ERROR_RESPONSES, create_api_app
-from app.api.routing import admin_router
+from app.api.app import PROD_SURFACE, create_api_app
 from app.operator.local.app import create_operator_app
 
 
 def export_schema() -> str:
     """Build the complete API schema without starting providers or a database."""
-    application = create_api_app()
-    application.include_router(admin_router, responses=COMMON_ERROR_RESPONSES)
+    application = create_api_app(surface=PROD_SURFACE)
     return json.dumps(application.openapi(), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
 
 

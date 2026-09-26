@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.api.app import create_api_app
-from app.api.deps import get_api_services
 from app.api.documents.catalog import DocumentCatalog
 from app.api.documents.portfolio import PublicPortfolioReader
 from app.api.errors import ApiProblemError
@@ -126,7 +125,6 @@ def test_catalog_pages_are_counted_and_overflow_is_not_truncated():
 def test_public_route_has_exact_schema_and_no_canned_success():
     """The metadata route exists independently of the protected document catalog."""
     application = create_api_app()
-    application.dependency_overrides[get_api_services] = lambda: object()
     with TestClient(application) as client:
         response = client.get("/public/portfolio/preparation")
     assert response.status_code == 503

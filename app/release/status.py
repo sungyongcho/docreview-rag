@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
-from app.api.dependencies import AdminDependencies
+from app.api.composition import AdminServices
 from app.api.review.profiles import PromptPolicy
 from app.api.review.runtime import RuntimeApiServices
 from app.api.system.jobs import READINESS_STATUS_MAX_AGE_S, _readiness_status
@@ -187,7 +187,7 @@ def install_status_routes(
     application: FastAPI,
     active_settings: ReleaseSettings,
     active_services: RuntimeApiServices | None,
-    admin_services: AdminDependencies | None,
+    admin_services: AdminServices | None,
     allowance: SharedAIAllowance,
 ) -> None:
     """Mount read-only status handlers over the application's existing services."""

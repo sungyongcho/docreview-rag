@@ -2,11 +2,11 @@
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Path, Query
 
+from app.api.dependencies import SnapshotDetailsDependency
 from app.api.errors import translate_runtime_errors, unavailable
 from app.evals.contracts import PublicSnapshotDataset, PublicSnapshotEvaluation
-from app.evals.snapshots.evidence import PublicSnapshotDetails
 
 router = APIRouter(prefix="/public/snapshots", tags=["snapshots"])
 SnapshotId = Annotated[int, Path(gt=0)]
@@ -15,18 +15,10 @@ Limit = Annotated[int, Query(ge=1, le=100)]
 Search = Annotated[str, Query(max_length=200)]
 
 
-def get_snapshot_details() -> PublicSnapshotDetails | None:
-    """Require the publication reader composed with the runtime's stored artifacts."""
-    return None
-
-
-SnapshotDetails = Annotated[PublicSnapshotDetails | None, Depends(get_snapshot_details)]
-
-
 @router.get("/{snapshot_id}/dataset", response_model=PublicSnapshotDataset)
 async def dataset(
     snapshot_id: SnapshotId,
-    details: SnapshotDetails,
+    details: SnapshotDetailsDependency,
     offset: Offset = 0,
     limit: Limit = 50,
     query: Search = "",
@@ -47,7 +39,7 @@ async def dataset(
 @router.get("/{snapshot_id}/evaluation", response_model=PublicSnapshotEvaluation)
 async def evaluation(
     snapshot_id: SnapshotId,
-    details: SnapshotDetails,
+    details: SnapshotDetailsDependency,
     offset: Offset = 0,
     limit: Limit = 50,
     query: Search = "",

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.api.app import create_api_app
-from app.api.dependencies import AdminDependencies
+from app.api.composition import AdminServices
 from app.api.review.presets import BUILTIN_IDS, DEFAULT_PRESET_DIRECTORY, PresetStore, StoredPreset
 from app.api.review.profiles import ReviewSessionProfile, resolve_retrieval_profile
 from app.retrieval.search.profiles import RetrievalProfile, ServerBM25
@@ -110,7 +110,7 @@ def test_admin_api_validation_and_production_boundary(store: PresetStore):
         TestClient(
             create_api_app(
                 admin_services=cast(
-                    AdminDependencies,
+                    AdminServices,
                     SimpleNamespace(runtime=SimpleNamespace(bm25_parameters=ServerBM25())),
                 )
             )
@@ -163,7 +163,7 @@ def test_catalog_and_resolution_present_the_effective_bm25_values(store: PresetS
         TestClient(
             create_api_app(
                 admin_services=cast(
-                    AdminDependencies,
+                    AdminServices,
                     SimpleNamespace(runtime=SimpleNamespace(bm25_parameters=server)),
                 )
             )

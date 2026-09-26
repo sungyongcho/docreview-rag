@@ -8,8 +8,8 @@ from typing import Any, Literal, Self
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.api.admin_deps import AdminServices
-from app.api.dependencies import AdminDependencies
+from app.api.composition import AdminServices
+from app.api.dependencies import AdminDependency
 from app.api.errors import ApiProblemError, translate_runtime_errors, unavailable
 from app.llm.local.connection import (
     ConnectionSource,
@@ -152,7 +152,7 @@ class LocalDiagnosticsResponse(BaseModel):
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-def _local_connection(dependencies: AdminDependencies) -> LocalConnectionManager:
+def _local_connection(dependencies: AdminServices) -> LocalConnectionManager:
     """Require an enabled developer connection manager, including on SSH admin routes."""
     connection = dependencies.runtime.local_connection
     if connection is None or not connection.enabled:
@@ -164,13 +164,13 @@ def _local_connection(dependencies: AdminDependencies) -> LocalConnectionManager
     return connection
 
 
-async def _local_connection_state(dependencies: AdminDependencies) -> dict[str, Any]:
+async def _local_connection_state(dependencies: AdminServices) -> dict[str, Any]:
     """Read the active endpoint and model information for developer settings."""
     return await _local_connection(dependencies).state()
 
 
 async def _update_local_connection(
-    dependencies: AdminDependencies,
+    dependencies: AdminServices,
     action: Literal["disconnect", "add", "select"],
     base_url: str = "",
     protocol: LocalProtocol = "auto",
@@ -190,7 +190,7 @@ async def _update_local_connection(
         raise unavailable(error.code, str(error)) from error
 
 
-def _openai_limits(dependencies: AdminDependencies) -> OpenAILimitsManager:
+def _openai_limits(dependencies: AdminServices) -> OpenAILimitsManager:
     """Require the Dev-only per-call cap manager; production keeps the ceiling."""
     limits = dependencies.runtime.openai_limits
     if limits is None or not limits.enabled:
@@ -203,7 +203,7 @@ def _openai_limits(dependencies: AdminDependencies) -> OpenAILimitsManager:
 
 
 def _openai_limits_payload(
-    dependencies: AdminDependencies, limits: OpenAILimitsManager
+    dependencies: AdminServices, limits: OpenAILimitsManager
 ) -> dict[str, Any]:
     """Add the environment keys and file path the web tells the user about."""
     return {
@@ -213,13 +213,13 @@ def _openai_limits_payload(
     }
 
 
-def _openai_limits_state(dependencies: AdminDependencies) -> dict[str, Any]:
+def _openai_limits_state(dependencies: AdminServices) -> dict[str, Any]:
     """Read effective and ceiling per-call caps without changing them."""
     return _openai_limits_payload(dependencies, _openai_limits(dependencies))
 
 
 async def _update_openai_limits(
-    dependencies: AdminDependencies,
+    dependencies: AdminServices,
     *,
     max_input_tokens: int,
     max_output_tokens: int,
@@ -240,7 +240,7 @@ async def _update_openai_limits(
     return _openai_limits_payload(dependencies, limits)
 
 
-async def _reset_openai_limits(dependencies: AdminDependencies) -> dict[str, Any]:
+async def _reset_openai_limits(dependencies: AdminServices) -> dict[str, Any]:
     """Delete the saved caps so the ceiling applies again."""
     limits = _openai_limits(dependencies)
     try:
@@ -250,7 +250,7 @@ async def _reset_openai_limits(dependencies: AdminDependencies) -> dict[str, Any
     return _openai_limits_payload(dependencies, limits)
 
 
-async def _prepare_local_model(dependencies: AdminDependencies, model: str) -> dict[str, Any]:
+async def _prepare_local_model(dependencies: AdminServices, model: str) -> dict[str, Any]:
     """Prepare the selected server's installed model under the developer-only guard."""
     try:
         return await _local_connection(dependencies).prepare_model(model)
@@ -259,7 +259,7 @@ async def _prepare_local_model(dependencies: AdminDependencies, model: str) -> d
 
 
 async def _diagnose_local_connection(
-    dependencies: AdminDependencies,
+    dependencies: AdminServices,
     *,
     server_id: str | None = None,
     base_url: str | None = None,
@@ -272,14 +272,14 @@ async def _diagnose_local_connection(
 
 
 @router.get("/local-llm/connection", response_model=LocalConnectionResponse)
-async def local_connection_state(services: AdminServices) -> dict[str, Any]:
+async def local_connection_state(services: AdminDependency) -> dict[str, Any]:
     """Return private connection settings without changing the selected endpoint."""
     async with translate_runtime_errors():
         return await _local_connection_state(services)
 
 
 @router.post("/local-llm/disconnect", response_model=LocalConnectionResponse)
-async def disconnect_local_llm(services: AdminServices) -> dict[str, Any]:
+async def disconnect_local_llm(services: AdminDependency) -> dict[str, Any]:
     """Save explicit disconnection so environment defaults cannot reactivate it."""
     async with translate_runtime_errors():
         return await _update_local_connection(services, "disconnect")
@@ -287,7 +287,7 @@ async def disconnect_local_llm(services: AdminServices) -> dict[str, Any]:
 
 @router.post("/local-llm/servers", response_model=LocalConnectionResponse)
 async def register_local_server(
-    request: LocalServerRequest, services: AdminServices
+    request: LocalServerRequest, services: AdminDependency
 ) -> dict[str, Any]:
     """Register and select a verified named server while preserving prior choices on failure."""
     async with translate_runtime_errors():
@@ -298,7 +298,7 @@ async def register_local_server(
 
 @router.post("/local-llm/select", response_model=LocalConnectionResponse)
 async def select_local_server(
-    request: LocalServerSelectionRequest, services: AdminServices
+    request: LocalServerSelectionRequest, services: AdminDependency
 ) -> dict[str, Any]:
     """Verify and select a saved endpoint or Default without accepting a new URL."""
     async with translate_runtime_errors():
@@ -307,7 +307,7 @@ async def select_local_server(
 
 @router.post("/local-llm/prepare", response_model=LocalConnectionResponse)
 async def prepare_local_model(
-    request: LocalModelPrepareRequest, services: AdminServices
+    request: LocalModelPrepareRequest, services: AdminDependency
 ) -> dict[str, Any]:
     """Load one installed model without generating an answer or changing connection settings."""
     async with translate_runtime_errors():
@@ -316,7 +316,7 @@ async def prepare_local_model(
 
 @router.post("/local-llm/diagnostics", response_model=LocalDiagnosticsResponse)
 async def diagnose_local_server(
-    request: LocalDiagnosticsRequest, services: AdminServices
+    request: LocalDiagnosticsRequest, services: AdminDependency
 ) -> dict[str, Any]:
     """Inspect bounded metadata without modifying the active connection or loading a model."""
     async with translate_runtime_errors():
@@ -329,7 +329,7 @@ async def diagnose_local_server(
 
 
 @router.get("/openai/limits", response_model=OpenAILimitsResponse)
-async def openai_limits_state(services: AdminServices) -> dict[str, Any]:
+async def openai_limits_state(services: AdminDependency) -> dict[str, Any]:
     """Return the effective OpenAI per-call caps and the ceiling they may not exceed."""
     async with translate_runtime_errors():
         return _openai_limits_state(services)
@@ -337,7 +337,7 @@ async def openai_limits_state(services: AdminServices) -> dict[str, Any]:
 
 @router.post("/openai/limits", response_model=OpenAILimitsResponse)
 async def save_openai_limits(
-    request: OpenAILimitsRequest, services: AdminServices
+    request: OpenAILimitsRequest, services: AdminDependency
 ) -> dict[str, Any]:
     """Save lower working caps for Dev; raising the ceiling stays a .env change."""
     async with translate_runtime_errors():
@@ -350,7 +350,7 @@ async def save_openai_limits(
 
 
 @router.post("/openai/limits/reset", response_model=OpenAILimitsResponse)
-async def reset_openai_limits(services: AdminServices) -> dict[str, Any]:
+async def reset_openai_limits(services: AdminDependency) -> dict[str, Any]:
     """Remove the saved working caps so the ceiling applies again."""
     async with translate_runtime_errors():
         return await _reset_openai_limits(services)

@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from app.api.composition import create_admin_services
 from app.api.errors import ApiProblemError
 from app.api.review.runtime import RuntimeApiServices
 from app.operator.corpus_access import CorpusAccess, CorpusUpdatingError
@@ -73,8 +74,9 @@ def test_failed_writer_reopens_admission_and_runtime_returns_typed_error():
 
     async def exercise():
         runtime = RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
+        services = create_admin_services(runtime=runtime)
         with pytest.raises(ValueError, match="failed update"):
-            async with runtime.corpus_access.update():
+            async with services.corpus.corpus_access.update():
                 with pytest.raises(ApiProblemError) as captured:
                     async with runtime.search_access():
                         pytest.fail("Search entered during update")

@@ -6,16 +6,28 @@ from typing import Any, Final
 from fastapi import APIRouter, FastAPI
 from fastapi.openapi.utils import get_openapi
 
-from app.api.admin_deps import get_admin_services
-from app.api.dependencies import AdminDependencies
-from app.api.deps import ApiServices, get_api_services
+from app.api.composition import AdminServices
+from app.api.corpus import routes as corpus
+from app.api.dependencies import (
+    get_admin_services,
+    get_api_services,
+    get_portfolio_reader,
+    get_snapshot_details,
+)
+from app.api.documents import admin as document_admin, routes as documents
 from app.api.documents.portfolio import PublicPortfolioReader
-from app.api.documents.preparation import get_portfolio_reader, router as public_portfolio_router
 from app.api.errors import install_error_handlers
+from app.api.evaluations import results, routes as evaluations
+from app.api.review import preset_routes, previews, routes as review, streaming
+from app.api.review.runtime import RuntimeApiServices
 from app.api.review.schemas import ErrorResponse
-from app.api.routing import admin_router, api_router
 from app.api.runtime_gate import RuntimeResetGate, install_reset_gate
-from app.api.snapshots.details import get_snapshot_details, router as public_snapshot_details_router
+from app.api.snapshots import (
+    admin as snapshot_admin,
+    details as snapshot_details_routes,
+    routes as snapshots,
+)
+from app.api.system import jobs, settings, usage
 from app.evals.snapshots.evidence import PublicSnapshotDetails
 
 COMMON_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -51,20 +63,34 @@ DEV_SURFACE: Final = ApiSurface(reset_gate=False, docs_execution=True, admin_sch
 LIVE_ADMIN_SURFACE: Final = ApiSurface(reset_gate=True, docs_execution=True, admin_schema=False)
 PROD_SURFACE: Final = ApiSurface(reset_gate=False, docs_execution=False, admin_schema=True)
 
+admin_router = APIRouter()
+for feature in (
+    corpus,
+    document_admin,
+    evaluations,
+    snapshot_admin,
+    jobs,
+    usage,
+    previews,
+    settings,
+    preset_routes,
+):
+    admin_router.include_router(feature.router)
+
 
 def create_api_app(
-    services: ApiServices | None = None,
-    admin_services: AdminDependencies | None = None,
+    services: RuntimeApiServices | None = None,
+    admin_services: AdminServices | None = None,
     *,
     surface: ApiSurface = DEV_SURFACE,
     portfolio_reader: PublicPortfolioReader | None = None,
     snapshot_details: PublicSnapshotDetails | None = None,
 ) -> FastAPI:
-    """Create the M5 application without starting external services.
+    """Create the HTTP application without starting external services.
 
     Parameters
     ----------
-    services : ApiServices | None
+    services : RuntimeApiServices | None
         Optional injected implementation used for every resource route.
     surface : ApiSurface
         The reset gate and documentation behaviour this application exposes.
@@ -97,9 +123,8 @@ def create_api_app(
     if snapshot_details is not None:
         app.dependency_overrides[get_snapshot_details] = lambda: snapshot_details
     install_error_handlers(app)
-    app.include_router(api_router, responses=COMMON_ERROR_RESPONSES)
-    app.include_router(public_snapshot_details_router, responses=COMMON_ERROR_RESPONSES)
-    app.include_router(public_portfolio_router, responses=COMMON_ERROR_RESPONSES)
+    for feature in (documents, review, results, snapshots, streaming, snapshot_details_routes):
+        app.include_router(feature.router, responses=COMMON_ERROR_RESPONSES)
     if services is not None:
         app.dependency_overrides[get_api_services] = lambda: services
     if admin_services is not None:

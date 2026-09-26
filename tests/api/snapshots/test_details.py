@@ -3,15 +3,13 @@
 from fastapi.testclient import TestClient
 
 from app.api.app import create_api_app
-from app.api.deps import get_api_services
+from app.api.dependencies import get_snapshot_details
 from app.api.errors import ApiProblemError
-from app.api.snapshots import details as public_snapshot_details
 
 
 def test_query_bounds_and_contract():
     """No provider or database is needed to validate page and search bounds."""
     application = create_api_app()
-    application.dependency_overrides[get_api_services] = lambda: object()
     with TestClient(application) as client:
         for suffix in (
             "?limit=101",
@@ -28,7 +26,7 @@ def test_query_bounds_and_contract():
         assert response.json()["error"]["code"] == "snapshot_evidence_unavailable"
 
 
-def test_missing_snapshot_safe_envelope(monkeypatch):
+def test_missing_snapshot_safe_envelope():
     """Expected publication failures preserve their domain status on both routes."""
 
     class MissingEvidence:
@@ -43,8 +41,7 @@ def test_missing_snapshot_safe_envelope(monkeypatch):
         evaluation = dataset
 
     application = create_api_app()
-    application.dependency_overrides[public_snapshot_details.get_snapshot_details] = MissingEvidence
-    application.dependency_overrides[get_api_services] = lambda: object()
+    application.dependency_overrides[get_snapshot_details] = MissingEvidence
     with TestClient(application) as client:
         for resource in ("dataset", "evaluation"):
             response = client.get(f"/public/snapshots/1/{resource}")

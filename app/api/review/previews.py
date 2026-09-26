@@ -7,8 +7,8 @@ from typing import Annotated, Literal
 from fastapi import APIRouter
 from pydantic import Field
 
-from app.api.admin_deps import AdminServices
-from app.api.dependencies import AdminDependencies
+from app.api.composition import AdminServices
+from app.api.dependencies import AdminDependency
 from app.api.errors import translate_runtime_errors
 from app.api.review.profiles import ReviewSessionProfile
 from app.api.review.runtime import _routed_query_variants
@@ -57,7 +57,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 async def _retrieval_preview(
-    dependencies: AdminDependencies, request: RetrievalPreviewRequest
+    dependencies: AdminServices, request: RetrievalPreviewRequest
 ) -> RetrievalPreviewResponse:
     """Return evidence and component ranks for one session-scoped profile."""
     profile = with_server_bm25(request.profile, dependencies.runtime.bm25_parameters)
@@ -84,7 +84,7 @@ async def _retrieval_preview(
 
 
 async def _review_preview(
-    dependencies: AdminDependencies, request: ReviewPreviewRequest
+    dependencies: AdminServices, request: ReviewPreviewRequest
 ) -> ReviewPreviewResponse:
     """Run an evidence-checked review through one explicit retrieval profile."""
     profile = with_server_bm25(request.profile, dependencies.runtime.bm25_parameters)
@@ -114,7 +114,7 @@ async def _review_preview(
 
 @router.post("/retrieval/preview", response_model=RetrievalPreviewResponse)
 async def retrieval_preview(
-    request: RetrievalPreviewRequest, services: AdminServices
+    request: RetrievalPreviewRequest, services: AdminDependency
 ) -> RetrievalPreviewResponse:
     """Execute one query through an explicit session-scoped retrieval profile."""
     async with translate_runtime_errors():
@@ -123,7 +123,7 @@ async def retrieval_preview(
 
 @router.post("/review/preview", response_model=ReviewPreviewResponse)
 async def review_preview(
-    request: ReviewPreviewRequest, services: AdminServices
+    request: ReviewPreviewRequest, services: AdminDependency
 ) -> ReviewPreviewResponse:
     """Run one evidence-checked review through an explicit retrieval profile."""
     async with translate_runtime_errors():

@@ -10,11 +10,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.app import DEV_SURFACE, LIVE_ADMIN_SURFACE, PROD_SURFACE, create_api_app
-from app.api.dependencies import create_admin_services
+from app.api.composition import create_admin_services, runtime_settings
 from app.api.documents.catalog import DocumentCatalog
 from app.api.documents.portfolio import PublicPortfolioReader
 from app.api.review.runtime import RuntimeApiServices
-from app.config import get_settings
 from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.evals.snapshots.evidence import PublicSnapshotDetails
 from app.release.ai_allowance import SharedAIAllowance
@@ -53,16 +52,11 @@ def create_release_app(
     portfolio_reader = None
     snapshot_details = None
     if active_services is not None:
-        corpus_settings = get_settings()
-        if active_services.corpus_root is not None:
-            corpus_settings = corpus_settings.model_copy(
-                update={"corpus_dir": active_services.corpus_root}
-            )
         corpus = (
             admin_services.corpus
             if admin_services is not None
             else RuntimeCorpusAdminService(
-                settings=corpus_settings,
+                settings=runtime_settings(active_services),
                 session_factory=active_services.session_factory,
                 embedding_provider=active_services.embedding_provider,
                 corpus_access=active_services.corpus_access,

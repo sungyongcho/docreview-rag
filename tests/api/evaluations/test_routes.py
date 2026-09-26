@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.api.app import create_api_app
-from app.api.dependencies import create_admin_services
 from app.api.evaluations.routes import _enqueue_evaluation, _evaluation_jobs
 from app.api.review.runtime import RuntimeApiServices
 from app.evals.admin.service import EvaluationAdminService
@@ -123,7 +122,6 @@ def test_golden_canonical_route_is_read_only_and_typed():
 
 def test_evaluation_preparation_and_submission_share_a_typed_blocker(tmp_path):
     """Missing sources produce read-only readiness and a 409 without any registered job."""
-    from app.api.review.runtime import RuntimeApiServices
     from app.config import Settings
     from app.evals.admin.service import EvaluationAdminService
     from tests.corpus_admin.support import LedgerStore
@@ -134,10 +132,7 @@ def test_evaluation_preparation_and_submission_share_a_typed_blocker(tmp_path):
         provider=DeterministicEmbeddingProvider(),
         job_store=store,
     )
-    services = create_admin_services(
-        runtime=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
-        evaluations=evaluations,
-    )
+    services = _admin(evaluations=evaluations)
     with TestClient(create_api_app(admin_services=services)) as client:
         request = {"suite_id": "dart-ko", "mode": "quick"}
         preparation = client.post("/admin/evaluations/preparation", json=request)

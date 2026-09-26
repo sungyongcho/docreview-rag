@@ -8,10 +8,10 @@ from typing import cast
 import pytest
 from starlette.requests import ClientDisconnect
 
-from app.api.deps import ApiServices
 from app.api.errors import ApiProblemError
 from app.api.review import streaming as stream_module
 from app.api.review.evidence import EvidenceSelection
+from app.api.review.runtime import RuntimeApiServices
 from app.api.review.schemas import RetrieveResponse, ReviewRequest
 from app.observability.types import build_run_report
 from app.workflow.types import NodeError
@@ -206,7 +206,7 @@ def test_stream_send_failure_cancels_the_review_task():
             ReviewRequest(
                 query="Revenue?", evidence_selection=EvidenceSelection(candidate_token="test")
             ),
-            cast(ApiServices, services),
+            cast(RuntimeApiServices, services),
         )
         scope = {
             "type": "http",

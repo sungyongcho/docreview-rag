@@ -9,8 +9,8 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter
 from pydantic import BeforeValidator, Field, StrictBool, StrictInt
 
-from app.api.admin_deps import AdminServices
-from app.api.dependencies import AdminDependencies
+from app.api.composition import AdminServices
+from app.api.dependencies import AdminDependency
 from app.api.errors import translate_runtime_errors
 from app.api.review.schemas import ErrorResponse
 from app.contracts.validation import NonNegativeInt, StrictSchema, tuple_from_json_array
@@ -195,7 +195,7 @@ class CorpusJobResource(StrictSchema):
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-async def _corpus_snapshot(dependencies: AdminDependencies) -> CorpusSnapshotResource:
+async def _corpus_snapshot(dependencies: AdminServices) -> CorpusSnapshotResource:
     """Return one JSON-ready live corpus and index snapshot."""
     snapshot = asdict(await dependencies.corpus.snapshot())
     names = dependencies.runtime.company_names()
@@ -205,7 +205,7 @@ async def _corpus_snapshot(dependencies: AdminDependencies) -> CorpusSnapshotRes
 
 
 async def _source_deletion_preview(
-    dependencies: AdminDependencies, request: SourceDeletionRequest
+    dependencies: AdminServices, request: SourceDeletionRequest
 ) -> SourceDeletionPreviewResource:
     """Return the read-only source plan used by the confirmation dialog."""
     preview = await dependencies.corpus.preview_source_deletion(request.document_ids)
@@ -214,7 +214,7 @@ async def _source_deletion_preview(
     )
 
 
-async def _enqueue_corpus(dependencies: AdminDependencies, request: AdminCommand) -> dict[str, Any]:
+async def _enqueue_corpus(dependencies: AdminServices, request: AdminCommand) -> dict[str, Any]:
     """Queue one validated safe corpus operation."""
     job = await dependencies.corpus.enqueue(request)
     return asdict(job)
@@ -223,7 +223,7 @@ async def _enqueue_corpus(dependencies: AdminDependencies, request: AdminCommand
 @router.get(
     "/corpus", response_model=CorpusSnapshotResource, responses={503: {"model": ErrorResponse}}
 )
-async def corpus_snapshot(services: AdminServices) -> CorpusSnapshotResource:
+async def corpus_snapshot(services: AdminDependency) -> CorpusSnapshotResource:
     """Return live corpus, schema, index, manifest, and document state."""
     async with translate_runtime_errors():
         return await _corpus_snapshot(services)
@@ -231,7 +231,7 @@ async def corpus_snapshot(services: AdminServices) -> CorpusSnapshotResource:
 
 @router.post("/corpus/sources/deletion-preview", response_model=SourceDeletionPreviewResource)
 async def source_deletion_preview(
-    request: SourceDeletionRequest, services: AdminServices
+    request: SourceDeletionRequest, services: AdminDependency
 ) -> SourceDeletionPreviewResource:
     """Inspect exact acquired originals without deleting or changing their selection."""
     async with translate_runtime_errors():
@@ -241,7 +241,7 @@ async def source_deletion_preview(
 @router.post(
     "/corpus/jobs", response_model=CorpusJobResource, responses={400: {"model": ErrorResponse}}
 )
-async def enqueue_corpus(request: AdminCommand, services: AdminServices) -> dict[str, Any]:
+async def enqueue_corpus(request: AdminCommand, services: AdminDependency) -> dict[str, Any]:
     """Queue one safe corpus acquisition, ingest, or indexing operation."""
     async with translate_runtime_errors():
         return await _enqueue_corpus(services, request)

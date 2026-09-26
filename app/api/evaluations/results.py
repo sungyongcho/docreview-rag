@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import Services
+from app.api.dependencies import RuntimeDependency
 from app.api.review.schemas import ErrorResponse, EvalListResponse
 
 router = APIRouter(tags=["eval"])
@@ -17,7 +17,7 @@ Limit = Annotated[int, Query(ge=1, le=100)]
     responses={503: {"model": ErrorResponse}},
 )
 async def list_eval_results(
-    services: Services,
+    services: RuntimeDependency,
     limit: Limit = 20,
 ) -> EvalListResponse:
     """Return the newest persisted retrieval evaluation results."""

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from app.api.admin_deps import AdminServices
+from app.api.dependencies import AdminDependency
 from app.api.errors import ApiProblemError, not_found
 from app.api.review.presets import PresetCatalog, StoredPreset, effective_catalog, preset_store
 from app.config import get_settings
@@ -20,14 +20,14 @@ def _require_preset_dev() -> None:
 
 
 @router.get("/presets", response_model=PresetCatalog)
-def list_presets(services: AdminServices, version: str | None = None) -> PresetCatalog:
+def list_presets(services: AdminDependency, version: str | None = None) -> PresetCatalog:
     """Read a debounced catalog or return only its unchanged version."""
     _require_preset_dev()
     return effective_catalog(preset_store.catalog(version), services.runtime.bm25_parameters)
 
 
 @router.put("/presets", response_model=StoredPreset)
-def put_preset(preset: StoredPreset, services: AdminServices) -> StoredPreset:
+def put_preset(preset: StoredPreset, services: AdminDependency) -> StoredPreset:
     """Atomically create or update one custom DEV preset."""
     _require_preset_dev()
     try:
@@ -49,7 +49,7 @@ def put_preset(preset: StoredPreset, services: AdminServices) -> StoredPreset:
 
 
 @router.delete("/presets", response_model=PresetCatalog)
-def delete_preset(services: AdminServices, id: str = Query(min_length=1)) -> PresetCatalog:
+def delete_preset(services: AdminDependency, id: str = Query(min_length=1)) -> PresetCatalog:
     """Delete one custom DEV preset after the UI obtains confirmation."""
     _require_preset_dev()
     try:

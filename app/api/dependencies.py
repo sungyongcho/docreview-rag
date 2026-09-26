@@ -1,72 +1,43 @@
-"""Application-owned domain services shared by administrator routes."""
+"""FastAPI dependency declarations for application-owned services."""
 
-from dataclasses import dataclass
+from typing import Annotated
 
-from app.api.documents.catalog import DocumentCatalog
+from fastapi import Depends
+
+from app.api.composition import AdminServices
+from app.api.documents.portfolio import PublicPortfolioReader
+from app.api.errors import unavailable
 from app.api.review.runtime import RuntimeApiServices
-from app.config import get_settings
-from app.corpus_admin.service import RuntimeCorpusAdminService
-from app.evals.admin.service import EvaluationAdminService
-from app.evals.golden.store import GoldenAdminService
-from app.evals.snapshots.service import SnapshotService
-from app.operator.jobs.execution import JobExecutionCoordinator
-from app.operator.jobs.history import JobHistoryService
-from app.operator.jobs.store import JobStore
+from app.evals.snapshots.evidence import PublicSnapshotDetails
 
 
-@dataclass(frozen=True, slots=True)
-class AdminDependencies:
-    """Hold the domain owners an administrator request actually needs."""
-
-    runtime: RuntimeApiServices
-    documents: DocumentCatalog
-    corpus: RuntimeCorpusAdminService
-    evaluations: EvaluationAdminService
-    golden: GoldenAdminService
-    snapshots: SnapshotService
-    jobs: JobStore
-    history: JobHistoryService
-    coordinator: JobExecutionCoordinator
+def get_api_services() -> RuntimeApiServices:
+    """Require the runtime installed by the application factory."""
+    raise unavailable("service_unavailable", "API services are not configured.")
 
 
-def create_admin_services(
-    *,
-    runtime: RuntimeApiServices,
-    corpus: RuntimeCorpusAdminService | None = None,
-    evaluations: EvaluationAdminService | None = None,
-) -> AdminDependencies:
-    """Compose the shared ledger and execution turn before accepting admin requests."""
-    jobs = JobStore(session_factory=runtime.session_factory)
-    coordinator = JobExecutionCoordinator()
-    corpus = corpus or RuntimeCorpusAdminService(
-        session_factory=runtime.session_factory,
-        embedding_provider=runtime.embedding_provider,
-        job_store=jobs,
-        corpus_access=runtime.corpus_access,
-        execution_coordinator=coordinator,
+def get_admin_services() -> AdminServices:
+    """Require administrator services explicitly enabled on this application."""
+    raise unavailable(
+        "admin_unavailable",
+        "Administrator services are not configured on this surface.",
     )
-    corpus.corpus_access = runtime.corpus_access
-    evaluations = evaluations or EvaluationAdminService(
-        corpus_status=corpus.status,
-        session_factory=runtime.session_factory,
-        job_store=jobs,
-        execution_coordinator=coordinator,
+
+
+def get_portfolio_reader() -> PublicPortfolioReader:
+    """Require an explicitly composed source of measured preparation counts."""
+    raise unavailable(
+        "portfolio_preparation_unavailable",
+        "Portfolio preparation counts require a runtime service.",
     )
-    return AdminDependencies(
-        runtime,
-        DocumentCatalog(
-            runtime.session_factory,
-            public_only=False,
-            company_names=runtime.company_names,
-            embedding_identity=runtime.embedding_provider.identity,
-        ),
-        corpus,
-        evaluations,
-        GoldenAdminService(),
-        SnapshotService(session_factory=runtime.session_factory),
-        jobs,
-        JobHistoryService(
-            runtime.session_factory, get_settings().corpus_dir.parent / "job-history-backups"
-        ),
-        coordinator,
-    )
+
+
+def get_snapshot_details() -> PublicSnapshotDetails | None:
+    """Let the route validate pagination before reporting an unavailable reader."""
+    return None
+
+
+RuntimeDependency = Annotated[RuntimeApiServices, Depends(get_api_services)]
+AdminDependency = Annotated[AdminServices, Depends(get_admin_services)]
+PortfolioReaderDependency = Annotated[PublicPortfolioReader, Depends(get_portfolio_reader)]
+SnapshotDetailsDependency = Annotated[PublicSnapshotDetails | None, Depends(get_snapshot_details)]

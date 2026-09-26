@@ -9,8 +9,8 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from sqlalchemy import select
 
-from app.api.admin_deps import AdminServices
-from app.api.dependencies import AdminDependencies
+from app.api.composition import AdminServices
+from app.api.dependencies import AdminDependency
 from app.api.errors import ApiProblemError, not_found, translate_runtime_errors
 from app.api.review.schemas import ErrorResponse, ValidationIssue
 from app.db.models import EvalResult
@@ -38,7 +38,7 @@ ResultId = Annotated[int, Query(gt=0)]
 
 
 async def _enqueue_evaluation(
-    dependencies: AdminDependencies, request: EvaluationRunRequest
+    dependencies: AdminServices, request: EvaluationRunRequest
 ) -> EvaluationJobResource:
     """Queue one quick or matrix evaluation."""
     try:
@@ -56,7 +56,7 @@ async def _enqueue_evaluation(
         ) from error
 
 
-async def _evaluation_jobs(dependencies: AdminDependencies) -> EvaluationJobsResponse:
+async def _evaluation_jobs(dependencies: AdminServices) -> EvaluationJobsResponse:
     """Return newest-first evaluation job state."""
     board = await dependencies.evaluations.jobs()
     ids = {result_id for job in board.jobs for result_id in job.result_ids}
@@ -90,7 +90,7 @@ async def _evaluation_jobs(dependencies: AdminDependencies) -> EvaluationJobsRes
 
 @router.post("/evaluations/preparation", response_model=EvaluationPreparationResource)
 async def evaluation_preparation(
-    request: EvaluationRunRequest, services: AdminServices
+    request: EvaluationRunRequest, services: AdminDependency
 ) -> EvaluationPreparationResource:
     """Check source and retrieval prerequisites without queueing or generating anything."""
     async with translate_runtime_errors():
@@ -98,7 +98,7 @@ async def evaluation_preparation(
 
 
 @router.get("/evaluations/suites", response_model=tuple[GoldenSuiteResource, ...])
-async def evaluation_suites(services: AdminServices) -> tuple[GoldenSuiteResource, ...]:
+async def evaluation_suites(services: AdminDependency) -> tuple[GoldenSuiteResource, ...]:
     """Return golden suite provenance and source readiness."""
     async with translate_runtime_errors():
         return await services.evaluations.suites()
@@ -106,7 +106,7 @@ async def evaluation_suites(services: AdminServices) -> tuple[GoldenSuiteResourc
 
 @router.get("/golden/{suite_id}/canonical", response_model=GoldenCanonicalResource)
 async def golden_canonical(
-    suite_id: GoldenSuiteId, services: AdminServices
+    suite_id: GoldenSuiteId, services: AdminDependency
 ) -> GoldenCanonicalResource:
     """Return validated read-only canonical cases for one suite."""
     async with translate_runtime_errors():
@@ -115,7 +115,7 @@ async def golden_canonical(
 
 @router.get("/golden/{suite_id}/revisions", response_model=tuple[GoldenRevisionResource, ...])
 async def golden_revisions(
-    suite_id: GoldenSuiteId, services: AdminServices
+    suite_id: GoldenSuiteId, services: AdminDependency
 ) -> tuple[GoldenRevisionResource, ...]:
     """Return newest-first revisions for one golden suite."""
     async with translate_runtime_errors():
@@ -124,7 +124,7 @@ async def golden_revisions(
 
 @router.post("/golden/{suite_id}/drafts", response_model=GoldenRevisionResource)
 async def create_golden_draft(
-    suite_id: GoldenSuiteId, request: GoldenDraftRequest, services: AdminServices
+    suite_id: GoldenSuiteId, request: GoldenDraftRequest, services: AdminDependency
 ) -> GoldenRevisionResource:
     """Create a draft from canonical JSON or one selected parent."""
     async with translate_runtime_errors():
@@ -160,7 +160,7 @@ async def golden_input_errors() -> AsyncIterator[None]:
     "/golden/revisions/{revision_id}/cases/{case_id}", response_model=GoldenRevisionResource
 )
 async def replace_golden_case(
-    revision_id: int, case_id: str, request: GoldenCaseUpdateRequest, services: AdminServices
+    revision_id: int, case_id: str, request: GoldenCaseUpdateRequest, services: AdminDependency
 ) -> GoldenRevisionResource:
     """Replace one case using an expected draft digest."""
     async with translate_runtime_errors(), golden_input_errors():
@@ -173,7 +173,7 @@ async def replace_golden_case(
     "/golden/revisions/{revision_id}/cases/{case_id}/delete", response_model=GoldenRevisionResource
 )
 async def delete_golden_case(
-    revision_id: int, case_id: str, request: GoldenRevisionActionRequest, services: AdminServices
+    revision_id: int, case_id: str, request: GoldenRevisionActionRequest, services: AdminDependency
 ) -> GoldenRevisionResource:
     """Remove one question from a draft using an expected draft digest."""
     async with translate_runtime_errors(), golden_input_errors():
@@ -184,7 +184,7 @@ async def delete_golden_case(
 
 @router.post("/golden/revisions/{revision_id}/delete", response_model=GoldenRevisionResource)
 async def delete_golden_revision(
-    revision_id: int, request: GoldenRevisionActionRequest, services: AdminServices
+    revision_id: int, request: GoldenRevisionActionRequest, services: AdminDependency
 ) -> GoldenRevisionResource:
     """Delete one user dataset file using an expected draft digest."""
     async with translate_runtime_errors(), golden_input_errors():
@@ -195,7 +195,7 @@ async def delete_golden_revision(
 
 @router.post("/golden/revisions/{revision_id}/validate", response_model=GoldenRevisionResource)
 async def validate_golden_revision(
-    revision_id: int, request: GoldenRevisionActionRequest, services: AdminServices
+    revision_id: int, request: GoldenRevisionActionRequest, services: AdminDependency
 ) -> GoldenRevisionResource:
     """Validate one exact draft against corpus source bytes."""
     async with translate_runtime_errors(), golden_input_errors():
@@ -204,7 +204,7 @@ async def validate_golden_revision(
 
 @router.post("/evaluations/runs", response_model=EvaluationJobResource)
 async def enqueue_evaluation(
-    request: EvaluationRunRequest, services: AdminServices
+    request: EvaluationRunRequest, services: AdminDependency
 ) -> EvaluationJobResource:
     """Queue one quick live-index or isolated matrix evaluation."""
     async with translate_runtime_errors():
@@ -212,7 +212,7 @@ async def enqueue_evaluation(
 
 
 @router.get("/evaluations/runs", response_model=EvaluationJobsResponse)
-async def evaluation_runs(services: AdminServices) -> EvaluationJobsResponse:
+async def evaluation_runs(services: AdminDependency) -> EvaluationJobsResponse:
     """Return newest-first evaluation job state."""
     return await _evaluation_jobs(services)
 
@@ -223,7 +223,7 @@ async def evaluation_runs(services: AdminServices) -> EvaluationJobsResponse:
     responses={404: {"model": ErrorResponse}},
 )
 async def evaluation_result(
-    result_id: int, services: AdminServices
+    result_id: int, services: AdminDependency
 ) -> EvaluationResultDetailResponse:
     """Return absolute metrics and bounded case details for one result."""
     async with translate_runtime_errors():
@@ -235,7 +235,7 @@ async def evaluation_result(
 
 @router.get("/evaluations/compare", response_model=EvaluationComparisonResponse)
 async def compare_evaluations(
-    services: AdminServices, candidate_id: ResultId, baseline_id: ResultId
+    services: AdminDependency, candidate_id: ResultId, baseline_id: ResultId
 ) -> EvaluationComparisonResponse:
     """Return metrics and per-case changes between compatible artifacts."""
     async with translate_runtime_errors():
