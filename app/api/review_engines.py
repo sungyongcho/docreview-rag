@@ -1,11 +1,11 @@
 """Resolve each request's review engine and pin a local one for the whole request."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
-from app.api.errors import ApiProblemError, bad_request, unavailable
+from app.api.errors import bad_request, unavailable
 from app.api.review_profile import ReviewSessionProfile
 from app.api.schemas import RetrieveRequest, ReviewRequest
 from app.llm.local import LocalLLMProvider
@@ -50,6 +50,10 @@ class ReviewEngines:
         Whether this deployment serves the local engine at all.
     local_timeout_s : float
         Request timeout for a local provider opened by a request.
+    validate_profile : Callable[[ReviewSessionProfile], None]
+        The request's session-control gate. It runs again before a local model is pinned,
+        so an engine resolved outside the request boundary still refuses a profile the
+        deployment does not admit.
     """
 
     def __init__(
@@ -62,6 +66,7 @@ class ReviewEngines:
         openai_limits: OpenAILimitsManager | None,
         allow_local_engine: bool,
         local_timeout_s: float,
+        validate_profile: Callable[[ReviewSessionProfile], None],
     ) -> None:
         self._llm_providers = llm_providers
         self._provider_budgets = provider_budgets
@@ -70,6 +75,7 @@ class ReviewEngines:
         self._openai_limits = openai_limits
         self._allow_local_engine = allow_local_engine
         self._local_timeout_s = local_timeout_s
+        self._validate_profile = validate_profile
         self._local_request: ContextVar[_LocalRequest | None] = ContextVar(
             "local_request", default=None
         )
@@ -82,15 +88,6 @@ class ReviewEngines:
         if self._local_connection is not None:
             return self._local_connection.current.inventory
         return self._local_inventory
-
-    def reject_disabled_engine(self, profile: ReviewSessionProfile) -> None:
-        """Refuse the local engine where this deployment disables it."""
-        if profile.engine == "local" and not self._allow_local_engine:
-            raise ApiProblemError(
-                status_code=403,
-                code="disabled_in_prod",
-                message="Local LLM is disabled in production.",
-            )
 
     @asynccontextmanager
     async def pin_request(self) -> AsyncIterator[None]:
@@ -122,7 +119,7 @@ class ReviewEngines:
         """Pin one discovered model without replacing an explicit unavailable selection."""
         if profile.engine != "local":
             return profile
-        self.reject_disabled_engine(profile)
+        self._validate_profile(profile)
         context = self._local_request.get()
         if context is not None and context.model is not None:
             return profile.model_copy(update={"local_model": context.model})

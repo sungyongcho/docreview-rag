@@ -393,6 +393,7 @@ class RuntimeApiServices(ApiServices):
         self._provider_budgets = dict(provider_budgets or {})
         self.local_connection = local_connection
         self.openai_limits = openai_limits
+        self._allow_local_engine = allow_local_engine
         if (
             local_inventory is not None or local_connection is not None and local_connection.enabled
         ) and "local" not in self._provider_budgets:
@@ -405,6 +406,7 @@ class RuntimeApiServices(ApiServices):
             openai_limits=openai_limits,
             allow_local_engine=allow_local_engine,
             local_timeout_s=local_timeout_s,
+            validate_profile=self._validate_session_profile,
         )
         self._retrieval_service = retrieval_service
         self._workflow_service = workflow_service
@@ -486,7 +488,12 @@ class RuntimeApiServices(ApiServices):
 
     def _validate_session_profile(self, profile: ReviewSessionProfile) -> None:
         """Reject developer controls before either retrieval or any model classification."""
-        self._engines.reject_disabled_engine(profile)
+        if profile.engine == "local" and not self._allow_local_engine:
+            raise ApiProblemError(
+                status_code=403,
+                code="disabled_in_prod",
+                message="Local LLM is disabled in production.",
+            )
         if not self._allow_custom_prompt_policy:
             if profile.prompt_policy != type(profile.prompt_policy)():
                 raise ApiProblemError(
