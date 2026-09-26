@@ -7,7 +7,7 @@ import math
 import subprocess
 import sys
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 from pydantic import SecretStr, ValidationError
 import pytest
@@ -258,12 +258,13 @@ assert created == ["direct-key", "factory-key"]
 
 def test_settings_require_nonblank_api_key_for_openai_provider():
     """Reject an OpenAI provider configured with a blank API key."""
+    # `_env_file` and the key-slot alias are init options the synthesized signature omits.
+    init_options: dict[str, Any] = {
+        "_env_file": None,
+        "OPENAI_API_KEY_LOCAL": SecretStr("   "),
+    }
     with pytest.raises(ValidationError, match="MODE-selected OpenAI key slot"):
-        Settings(
-            _env_file=None,
-            embedding_provider="openai",
-            OPENAI_API_KEY_LOCAL=SecretStr("   "),
-        )
+        Settings(embedding_provider="openai", **init_options)
 
 
 def test_provider_factory_uses_validated_settings_without_network_access():
@@ -396,7 +397,9 @@ def test_openai_batches_provider_limits_without_splitting_inputs(texts):
                 [FakeEmbeddingData(index, [1.0] * 384) for index in reversed(range(len(inputs)))]
             )
 
-    provider = embeddings.OpenAIEmbeddingProvider(client=SimpleNamespace(embeddings=Resource()))
+    provider = embeddings.OpenAIEmbeddingProvider(
+        client=cast(embeddings.EmbeddingClient, SimpleNamespace(embeddings=Resource()))
+    )
     vectors = asyncio.run(provider.embed_documents(texts))
     assert len(vectors) == len(texts)
     assert len(requests) == 2

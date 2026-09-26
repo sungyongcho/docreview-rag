@@ -133,6 +133,7 @@ async def _exercise_live_postgres(database_url: URL, tmp_path: Path) -> tuple[bo
                 )
             ).first()
             await session.commit()
+            assert row is not None
             pending = PendingEmbedding(row.id, row.index_text, row.index_text_sha256)
             different = replace(
                 provider.identity, tokenizer=provider.identity.tokenizer + ":different"
