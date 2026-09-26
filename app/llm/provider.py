@@ -213,11 +213,14 @@ class LLMProvider(ABC):
             If the boundary values do not use the declared strict types.
         ValueError
             If the injected clock moves backwards.
+        AIAllowanceError
+            If the shared OpenAI allowance denies the call before dispatch; propagated so
+            the API can answer 429.
 
         Notes
         -----
-        Provider exceptions become typed results. Only invalid caller contracts and a
-        non-monotonic clock escape this boundary.
+        Provider exceptions become typed results. Only invalid caller contracts, a
+        non-monotonic clock and a denied shared allowance escape this boundary.
         """
         if not isinstance(prompt, Prompt):
             raise TypeError("prompt must be a Prompt value")
