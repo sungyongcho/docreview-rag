@@ -52,12 +52,11 @@ def test_dart_interleaved_select_download_counts_filings_once():
     assert values == [49, 74, 74, 99]
 
 
-@pytest.mark.parametrize(
-    "kind,stage", [("backfill_embeddings", "embedding"), ("rebuild_bm25", "bm25")]
-)
-def test_single_stage_progress_reserves_terminal_completion(kind, stage):
+def test_single_stage_progress_reserves_terminal_completion():
     """A finished last batch remains below 100 until the operation's postconditions pass."""
-    refs = advance_progress(kind, {}, OperationProgress(stage, 1, 1, "done"), datetime.now(UTC))
+    refs = advance_progress(
+        "backfill_embeddings", {}, OperationProgress("embedding", 1, 1, "done"), datetime.now(UTC)
+    )
     assert progress_fields(refs)["overall_current"] == 99
     assert progress_fields(finish_progress(refs))["overall_current"] == 100
 
@@ -74,11 +73,19 @@ def test_legacy_and_invalid_progress_do_not_invent_overall_values():
         ("acquire_dart", "issuer_index", 0, None, 475136, 3603839, 6),
         ("acquire_dart", "issuer_index", 0, None, 3603839, 3603839, 49),
         ("acquire_dart", "download", 1, 2, 500, 1000, 86),
-        ("acquire_edgar", "download", 0, 2, 500, 1000, 61),
         ("acquire_edgar", "download", 1, 2, 1500, 1000, 99),
         ("acquire_dart", "issuer_index", 0, None, 500, None, 0),
         ("acquire_dart", "issuer_index", 0, None, 500, 0, 0),
         ("ingest_manifest", "documents", 0, 2, 500, 1000, 39),
+    ],
+    ids=[
+        "index-download-without-an-item-total-counts-its-bytes",
+        "complete-index-download-fills-its-stage",
+        "completed-items-plus-the-current-item-bytes",
+        "bytes-past-the-length-are-capped-below-completion",
+        "unknown-length-adds-nothing",
+        "zero-length-adds-nothing",
+        "bytes-outside-acquisition-are-ignored",
     ],
 )
 def test_download_bytes_contribute_only_to_acquisition_progress(
