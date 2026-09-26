@@ -3,9 +3,7 @@
 from datetime import UTC, datetime
 import hashlib
 import json
-import os
 from pathlib import Path
-import tempfile
 from threading import RLock
 import time
 from typing import Annotated
@@ -19,6 +17,7 @@ from app.api.review_profile import (
     with_server_bm25,
     with_server_bm25_for_builtin,
 )
+from app.atomic_write import write_text_atomically
 
 BUILTIN_IDS = frozenset({"balanced", "korean", "accuracy"})
 DEFAULT_PRESET_DIRECTORY = Path(__file__).resolve().parents[2] / "data" / "presets"
@@ -183,19 +182,15 @@ class PresetStore:
             saved = preset.model_copy(
                 update={"name": preset.name.strip(), "updated_at": datetime.now(UTC).isoformat()}
             )
-            temporary = None
-            try:
-                with tempfile.NamedTemporaryFile(
-                    mode="w", dir=self.directory, prefix=".preset-", delete=False
-                ) as stream:
-                    temporary = Path(stream.name)
-                    stream.write(saved.model_dump_json(indent=2) + "\n")
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(temporary, target)
-            finally:
-                if temporary is not None:
-                    temporary.unlink(missing_ok=True)
+            write_text_atomically(
+                target,
+                saved.model_dump_json(indent=2) + "\n",
+                mode=0o600,
+                apply_umask=True,
+                fsync_file=True,
+                fsync_directory=False,
+                encoding=None,
+            )
             self.refresh()
             return saved
 

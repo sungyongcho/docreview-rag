@@ -9,11 +9,11 @@ import json
 import os
 from pathlib import Path
 import re
-import tempfile
 
 from pydantic import ValidationError
 
 from app.api.admin_schemas import GoldenCanonicalResource, GoldenRevisionResource, GoldenSuiteId
+from app.atomic_write import write_text_atomically
 from app.config import get_settings
 from app.evals.artifacts import read_strict_json
 from app.evals.drafts import (
@@ -134,17 +134,15 @@ class GoldenAdminService:
             "checked_sha256": item.sha256 if item.status == "validated" else None,
             "cases": list(item.payload),
         }
-        descriptor, temporary = tempfile.mkstemp(prefix=".dataset-", dir=self._golden_dir)
-        try:
-            with os.fdopen(descriptor, "w") as handle:
-                json.dump(envelope, handle, ensure_ascii=False, indent=2)
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        write_text_atomically(
+            path,
+            json.dumps(envelope, ensure_ascii=False, indent=2) + "\n",
+            mode=0o600,
+            apply_umask=True,
+            fsync_file=True,
+            fsync_directory=False,
+            encoding=None,
+        )
         return self._read_user(path)
 
     async def list(self, suite_id: GoldenSuiteId) -> tuple[GoldenRevisionResource, ...]:

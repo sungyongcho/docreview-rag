@@ -85,7 +85,7 @@ def test_atomic_failure_preserves_previous_bytes(store: PresetStore):
     """A failed replacement leaves the previous valid preset and no temporary file."""
     store.save(custom())
     before = (store.directory / "research.json").read_bytes()
-    with patch("app.api.preset_store.os.replace", side_effect=OSError("disk unavailable")):
+    with patch("app.atomic_write.os.replace", side_effect=OSError("disk unavailable")):
         with pytest.raises(OSError):
             store.save(custom(k=8))
     assert (store.directory / "research.json").read_bytes() == before
