@@ -218,25 +218,6 @@ def canonical_config(config: Mapping[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
-def _comparable_config(config: Mapping[str, Any], scoring: Mapping[str, float]) -> dict[str, Any]:
-    """Return the canonical config stamped with the scoring settings behind the metrics.
-
-    Two runs are comparable only when they measured the same thing, and the metric
-    values depend on the top-k cutoff and the relevance threshold as much as on the
-    retriever. Writing and reading both stamp through here, so a run scored under
-    different settings simply stops matching instead of producing a silent false
-    regression. ``SuiteScore.parameters`` supplies the mapping.
-
-    The stamp covers scoring only. Everything else that moves a metric — the
-    retriever, and above all the chunk configuration, since relevance rises with
-    chunk width — has to be in ``config``, or two different experiments will be
-    compared as if one were the other's baseline.
-    """
-    if SCORING_CONFIG_KEY in config:
-        raise ValueError(f"config must not define the reserved {SCORING_CONFIG_KEY!r} key")
-    return canonical_config({**config, SCORING_CONFIG_KEY: dict(scoring)})
-
-
 def _validated_metrics(metrics: Mapping[str, float]) -> dict[str, float]:
     """Return metric values a later regression comparison can actually gate on.
 
@@ -290,7 +271,6 @@ async def persist_eval_result(
     config: Mapping[str, Any],
     metrics: Mapping[str, float],
     raw_artifact_path: str | Path,
-    scoring: Mapping[str, float],
     created_at: datetime | None = None,
 ) -> EvalResult:
     """Flush one validated result without committing the caller's transaction.
@@ -304,17 +284,14 @@ async def persist_eval_result(
         Nonblank suite name grouping comparable runs.
 
     config : Mapping[str, Any]
-        Run configuration stored in canonical JSON form.
+        Complete evaluated configuration, including the scoring settings already
+        recorded in the raw artifact, stored in canonical JSON form.
 
     metrics : Mapping[str, float]
         Finite metric values for the run, including every gated metric.
 
     raw_artifact_path : str | Path
         Nonblank pointer to the run's evidence artifact.
-
-    scoring : Mapping[str, float]
-        Scoring settings the metrics depend on, from ``SuiteScore.parameters``.
-        They are stamped into the stored config and define comparability.
 
     created_at : datetime | None
         Optional explicit timestamp; must be timezone-aware when given.
@@ -336,7 +313,7 @@ async def persist_eval_result(
     """
     values: dict[str, Any] = {
         "suite": _validated_suite(suite),
-        "config": _comparable_config(config, scoring),
+        "config": canonical_config(config),
         "metrics": _validated_metrics(metrics),
         "raw_artifact_path": _artifact_path(raw_artifact_path),
     }
@@ -358,7 +335,6 @@ async def latest_comparable_baseline(
     *,
     suite: str,
     config: Mapping[str, Any],
-    scoring: Mapping[str, float],
 ) -> EvalResult | None:
     """Return the newest row with the same suite, config, and scoring settings.
 
@@ -371,12 +347,8 @@ async def latest_comparable_baseline(
         Suite name the baseline must match exactly.
 
     config : Mapping[str, Any]
-        Configuration compared in canonical JSON form, so key order and
-        whitespace differences never split comparable baselines.
-
-    scoring : Mapping[str, float]
-        Scoring settings of the current run, stamped exactly as they were at
-        write time so a baseline measured differently cannot match.
+        Complete evaluated configuration, including scoring settings, compared in
+        canonical JSON form so key order never splits comparable baselines.
 
     Returns
     -------
@@ -392,7 +364,7 @@ async def latest_comparable_baseline(
         select(EvalResult)
         .where(
             EvalResult.suite == _validated_suite(suite),
-            EvalResult.config == _comparable_config(config, scoring),
+            EvalResult.config == canonical_config(config),
         )
         .order_by(EvalResult.created_at.desc(), EvalResult.id.desc())
         .limit(1)

@@ -1,8 +1,33 @@
 """Dotenv-first application and release settings tests."""
 
+import pytest
+
 from app.config import Settings
 from app.release.config import ReleaseSettings
 from tests.support import load_settings
+
+
+@pytest.mark.parametrize("settings_type", [Settings, ReleaseSettings])
+def test_explicit_provider_settings_survive_revalidation(settings_type):
+    """An explicit prod selection keeps its credential and blocks local inference."""
+    values = {
+        "environment": "prod",
+        "openai_api_key_dev": "unused-local-key",
+        "openai_api_key_prod": "selected-prod-key",
+        "local_llm_base_url": "http://configured-model:11434",
+    }
+    if settings_type is ReleaseSettings:
+        values["service_mode"] = "runtime"
+    settings = load_settings(settings_type, env_file=None, **values)
+    restored = load_settings(settings_type, env_file=None, **settings.model_dump())
+    for current in (settings, restored):
+        assert current.environment == "prod"
+        assert current.openai_api_key is not None
+        assert current.openai_api_key.get_secret_value() == "selected-prod-key"
+        assert current.openai_key_slot == "prod"
+        assert current.local_llm_enabled is False
+        if isinstance(current, ReleaseSettings):
+            assert current.openai_enabled is True
 
 
 def test_process_environment_remains_the_fallback_without_dotenv(monkeypatch, tmp_path):
@@ -104,7 +129,7 @@ def test_process_mode_and_connection_override_dotenv_without_changing_key_order(
         assert settings.openai_api_key is not None
         assert settings.openai_api_key.get_secret_value() == "dotenv-secret"
     release = load_settings(ReleaseSettings, env_file=env_file)
-    assert release.mode == "runtime"
+    assert release.service_mode == "runtime"
     assert release.admin_mode == "readonly"
 
 

@@ -2,35 +2,29 @@
 
 Readiness polls, the administrator header and the document table all ask the same
 question: is the schema usable, and how much of the corpus is indexed? One status
-probe answers it, and the snapshot and document detail build on that probe so the
-three views never disagree.
+probe answers it, and the snapshot builds on that probe so status and document
+counts share the same reading.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
 import os
 from pathlib import Path
 import time
 
-from sqlalchemy import Row, func, inspect, select
+from sqlalchemy import func, inspect, select
 
 from app.corpus_admin.context import CorpusAdminContext
 from app.corpus_admin.types import (
-    CHUNK_PREVIEW_CHARS,
-    CHUNK_PREVIEW_LIMIT,
     AdminDocument,
-    ChunkPreview,
     CorpusSnapshot,
     CorpusStatus,
-    DocumentDetail,
     ManifestIssuer,
     ManifestSummary,
     ProcessingSelectionSummary,
     SchemaStatus,
-    SnapshotMembership,
 )
 from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility
 from app.db.models import (
@@ -39,17 +33,12 @@ from app.db.models import (
     Chunk,
     ChunkEmbedding,
     Document,
-    EvaluationSnapshot,
     OperatorJob,
-    SnapshotDocument,
 )
 from app.db.queries import join_current_parse
 from app.ingestion.manifest import Manifest
 from app.ingestion.source_selection import acquisition_draft, source_inventory
 from app.retrieval.embeddings import matching_embedding
-
-#: One grouped chunk count: kind, item, provider, model, dimensions, tokenizer, chunks.
-type _BreakdownRow = Row[tuple[str, str | None, str, str, int, str, int]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,17 +54,6 @@ class _StatusProbe:
     bm25_ready: bool
     observed_at: float
     bm25_rebuild_recorded: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class _ChunkBreakdown:
-    """Chunk counts of one document by kind, filing item and embedding identity."""
-
-    text_chunks: int
-    table_chunks: int
-    embedded_chunks: int
-    item_counts: tuple[dict[str, object], ...]
-    embedding_identities: tuple[dict[str, object], ...]
 
 
 def _matches(
@@ -123,71 +101,8 @@ def _manifest_issuers(manifest: Manifest) -> tuple[ManifestIssuer, ...]:
     return tuple(issuers[key] for key in sorted(issuers))
 
 
-def _chunk_breakdown(rows: Sequence[_BreakdownRow]) -> _ChunkBreakdown:
-    """Total grouped chunk counts; rows without an embedding have no provider."""
-    text_chunks = 0
-    table_chunks = 0
-    embedded_chunks = 0
-    item_totals: dict[str, int] = {}
-    embedding_totals: dict[tuple[str, str, int, str], int] = {}
-    for row in rows:
-        count = int(row[6])
-        if row.kind == "text":
-            text_chunks += count
-        if row.kind == "table":
-            table_chunks += count
-        item = row.item or "unsectioned"
-        item_totals[item] = item_totals.get(item, 0) + count
-        if row.provider is None:
-            continue
-        embedded_chunks += count
-        identity = (str(row.provider), str(row.model), int(row.dimensions), str(row.tokenizer))
-        embedding_totals[identity] = embedding_totals.get(identity, 0) + count
-    return _ChunkBreakdown(
-        text_chunks=text_chunks,
-        table_chunks=table_chunks,
-        embedded_chunks=embedded_chunks,
-        item_counts=tuple(
-            {"item": item, "count": count} for item, count in sorted(item_totals.items())
-        ),
-        embedding_identities=tuple(
-            {
-                "provider": identity[0],
-                "model": identity[1],
-                "dimensions": identity[2],
-                "tokenizer": identity[3],
-                "count": count,
-            }
-            for identity, count in sorted(embedding_totals.items())
-        ),
-    )
-
-
-def _chunk_preview(chunk: Chunk) -> ChunkPreview:
-    """Show one chunk with its citation and a body cut to the preview length."""
-    return ChunkPreview(
-        chunk_id=chunk.id,
-        ordinal=chunk.ordinal,
-        citation=chunk.citation,
-        span=f"chars {chunk.start_char}-{chunk.end_char}",
-        source_sha256=chunk.source_sha256,
-        body=chunk.body[:CHUNK_PREVIEW_CHARS],
-    )
-
-
-def _snapshot_membership(snapshot: EvaluationSnapshot) -> SnapshotMembership:
-    """Describe one evaluation snapshot that contains the selected document."""
-    return SnapshotMembership(
-        snapshot_id=snapshot.id,
-        label=snapshot.label,
-        status=snapshot.status,
-        public=snapshot.public,
-        created_at=snapshot.created_at,
-    )
-
-
 class CorpusInspector:
-    """Probe corpus status and project live snapshots and document detail.
+    """Probe corpus status and project live snapshots.
 
     Parameters
     ----------
@@ -473,83 +388,3 @@ class CorpusInspector:
             acquisition_draft=acquisition_draft(self._context.corpus_root),
             documents=filtered,
         )
-
-    async def document_detail(self, doc_id: str) -> DocumentDetail | None:
-        """Load one live document and no more than five bounded chunk bodies."""
-        document = await self._live_document(doc_id)
-        if document is None:
-            return None
-        async with self._context.session_factory() as session:
-            chunks = tuple(
-                await session.scalars(
-                    select(Chunk)
-                    .where(Chunk.doc_id == doc_id)
-                    .order_by(Chunk.ordinal)
-                    .limit(CHUNK_PREVIEW_LIMIT)
-                )
-            )
-            breakdown_rows = (
-                await session.execute(
-                    select(
-                        Chunk.kind,
-                        Chunk.item,
-                        ChunkEmbedding.provider,
-                        ChunkEmbedding.model,
-                        ChunkEmbedding.dimensions,
-                        ChunkEmbedding.tokenizer,
-                        func.count(func.distinct(Chunk.id)),
-                    )
-                    .outerjoin(
-                        ChunkEmbedding,
-                        matching_embedding(self._context.embedding_provider.identity),
-                    )
-                    .where(Chunk.doc_id == doc_id)
-                    .group_by(
-                        Chunk.kind,
-                        Chunk.item,
-                        ChunkEmbedding.provider,
-                        ChunkEmbedding.model,
-                        ChunkEmbedding.dimensions,
-                        ChunkEmbedding.tokenizer,
-                    )
-                )
-            ).all()
-            memberships = tuple(
-                (
-                    await session.execute(
-                        select(EvaluationSnapshot)
-                        .join(
-                            SnapshotDocument,
-                            SnapshotDocument.snapshot_id == EvaluationSnapshot.id,
-                        )
-                        .where(
-                            SnapshotDocument.doc_id == doc_id,
-                            SnapshotDocument.source_sha256 == document.source_sha256,
-                        )
-                        .order_by(
-                            EvaluationSnapshot.created_at.desc(), EvaluationSnapshot.id.desc()
-                        )
-                    )
-                ).scalars()
-            )
-        breakdown = _chunk_breakdown(breakdown_rows)
-        return DocumentDetail(
-            document,
-            tuple(_chunk_preview(chunk) for chunk in chunks),
-            text_chunks=breakdown.text_chunks,
-            table_chunks=breakdown.table_chunks,
-            embedded_chunks=breakdown.embedded_chunks,
-            item_counts=breakdown.item_counts,
-            embedding_identities=breakdown.embedding_identities,
-            snapshot_memberships=tuple(_snapshot_membership(snapshot) for snapshot in memberships),
-        )
-
-    async def _live_document(self, doc_id: str) -> AdminDocument | None:
-        """Find one document in a fresh snapshot, or nothing when the schema is unusable."""
-        snapshot = await self.snapshot()
-        if not snapshot.status.database_connected or snapshot.status.schema_status != "compatible":
-            return None
-        for document in snapshot.documents:
-            if document.doc_id == doc_id:
-                return document
-        return None

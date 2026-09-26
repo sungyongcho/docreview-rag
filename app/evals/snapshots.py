@@ -24,7 +24,6 @@ from app.db.models import (
     Document,
     EvalResult,
     EvaluationSnapshot,
-    GoldenRevision,
     LexemeStat,
     SnapshotBM25CorpusStat,
     SnapshotChunk,
@@ -35,7 +34,8 @@ from app.db.models import (
 )
 from app.db.queries import join_current_parse
 from app.db.session_factory import SessionFactory
-from app.evals.artifacts import read_strict_json
+from app.evals.artifacts import EvaluationArtifacts, recorded_evaluation_cases
+from app.evals.identity import EVALUATED_GOLDEN_KEY
 from app.evals.index_identity import index_fingerprint
 from app.evals.suites import SUITES
 from app.operator.jobs import _default_session_factory
@@ -59,27 +59,6 @@ def _hash_rows(rows: list[tuple[object, ...]]) -> str:
     """Hash deterministic JSON tuples without depending on database row order."""
     encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"), default=str).encode()
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _golden_sha256(config: dict[str, object]) -> object:
-    """Read the canonical golden identity a quick evaluation recorded."""
-    identity = config.get("admin_identity")
-    return identity.get("golden_sha256") if isinstance(identity, dict) else None
-
-
-def _cases_by_id(payload: dict[str, object]) -> dict[str, dict[str, object]]:
-    """Index persisted artifact case objects by their golden case ID."""
-    cases = payload.get("cases")
-    if not isinstance(cases, list):
-        return {}
-    indexed: dict[str, dict[str, object]] = {}
-    for item in cases:
-        if not isinstance(item, dict) or not isinstance(item.get("golden"), dict):
-            continue
-        case_id = item["golden"].get("id")
-        if isinstance(case_id, str):
-            indexed[case_id] = item
-    return indexed
 
 
 def _evaluated_embedding(config: dict[str, object]) -> EmbeddingIdentity:
@@ -108,35 +87,9 @@ class SnapshotService:
         artifact_dir: Path | None = None,
     ) -> None:
         self._session_factory = session_factory
-        self._artifact_dir = (
+        self.artifacts = EvaluationArtifacts(
             artifact_dir or Path(__file__).resolve().parents[2] / "data" / "eval_runs"
-        ).resolve()
-
-    def _artifact(self, raw: str) -> dict[str, object]:
-        """Read one persisted artifact confined to the configured evaluation directory."""
-        path = Path(raw).resolve()
-        if path.parent != self._artifact_dir:
-            raise ValueError("evaluation artifact is outside the configured directory")
-        payload = read_strict_json(path, error=ValueError)
-        if not isinstance(payload, dict):
-            raise ValueError("evaluation artifact root must be an object")
-        return payload
-
-    def _public_artifact(self, raw: str) -> dict[str, object]:
-        """Confine and bound public artifact reads before constructing a comparison."""
-        try:
-            path = Path(raw).resolve()
-            if path.parent != self._artifact_dir:
-                raise _public_comparison_unavailable()
-            if path.stat().st_size > PUBLIC_COMPARE_MAX_ARTIFACT_BYTES:
-                raise _public_comparison_unavailable()
-            payload = self._artifact(str(path))
-            cases = payload.get("cases", [])
-            if not isinstance(cases, list) or len(cases) > PUBLIC_COMPARE_MAX_CASES:
-                raise _public_comparison_unavailable()
-            return payload
-        except (OSError, ValueError) as exc:
-            raise _public_comparison_unavailable() from exc
+        )
 
     async def _existing(self, eval_result_id: int) -> SnapshotResource | None:
         """Read the snapshot already bound to this result using a fresh transaction."""
@@ -156,7 +109,6 @@ class SnapshotService:
         *,
         label: str,
         eval_result_id: int,
-        golden_revision_id: int | None,
         public: bool,
     ) -> SnapshotResource:
         """Return an existing snapshot on retry without changing its label or visibility."""
@@ -167,7 +119,6 @@ class SnapshotService:
             return await self._create(
                 label=label,
                 eval_result_id=eval_result_id,
-                golden_revision_id=golden_revision_id,
                 public=public,
             )
         except IntegrityError as error:
@@ -186,7 +137,6 @@ class SnapshotService:
         *,
         label: str,
         eval_result_id: int,
-        golden_revision_id: int | None,
         public: bool,
     ) -> SnapshotResource:
         """Freeze current document and embedding identity around one eval result."""
@@ -195,15 +145,11 @@ class SnapshotService:
             result = await session.get(EvalResult, eval_result_id)
             if result is None:
                 raise ValueError("evaluation result does not exist")
-            golden = (
-                await session.get(GoldenRevision, golden_revision_id)
-                if golden_revision_id is not None
-                else None
+            recorded_evaluation_cases(
+                self.artifacts.read(result.raw_artifact_path),
+                suite=result.suite,
+                config=result.config,
             )
-            if golden_revision_id is not None and (golden is None or golden.status != "published"):
-                raise ValueError("snapshot golden revision must be published")
-            if golden is not None and _golden_sha256(result.config) != golden.sha256:
-                raise ValueError("evaluation result does not match the selected golden revision")
             embedding_identity = _evaluated_embedding(result.config)
             documents = tuple(
                 await session.scalars(
@@ -246,7 +192,6 @@ class SnapshotService:
                 public=public,
                 corpus_fingerprint=current_fingerprint,
                 profile=dict(result.config),
-                golden_revision_id=golden_revision_id,
                 eval_result_id=result.id,
             )
             session.add(snapshot)
@@ -444,8 +389,8 @@ class SnapshotService:
             }
         before = results[baseline.eval_result_id]
         after = results[candidate.eval_result_id]
-        before_golden = baseline.golden_revision_id or _golden_sha256(before.config)
-        after_golden = candidate.golden_revision_id or _golden_sha256(after.config)
+        before_golden = before.config.get(EVALUATED_GOLDEN_KEY)
+        after_golden = after.config.get(EVALUATED_GOLDEN_KEY)
         comparable = before.suite == after.suite and before_golden == after_golden
         names = sorted(set(before.metrics) | set(after.metrics))
         metrics = tuple(
@@ -461,9 +406,26 @@ class SnapshotService:
             )
             for name in names
         )
-        artifact_reader = self._public_artifact if public_only else self._artifact
-        before_cases = _cases_by_id(artifact_reader(before.raw_artifact_path))
-        after_cases = _cases_by_id(artifact_reader(after.raw_artifact_path))
+        limits = (
+            {"max_bytes": PUBLIC_COMPARE_MAX_ARTIFACT_BYTES, "max_cases": PUBLIC_COMPARE_MAX_CASES}
+            if public_only
+            else {}
+        )
+        try:
+            before_cases = recorded_evaluation_cases(
+                self.artifacts.read(before.raw_artifact_path, **limits),
+                suite=before.suite,
+                config=before.config,
+            )
+            after_cases = recorded_evaluation_cases(
+                self.artifacts.read(after.raw_artifact_path, **limits),
+                suite=after.suite,
+                config=after.config,
+            )
+        except (OSError, ValueError) as error:
+            if public_only:
+                raise _public_comparison_unavailable() from error
+            raise
         common_ids = sorted(set(before_cases) & set(after_cases))
         cases: list[SnapshotCaseComparison] = []
         for case_id in common_ids:
@@ -542,7 +504,6 @@ class SnapshotService:
                 "public": snapshot.public,
                 "corpus_fingerprint": snapshot.corpus_fingerprint,
                 "profile": snapshot.profile,
-                "golden_revision_id": snapshot.golden_revision_id,
                 "eval_result": {
                     "result_id": result.id,
                     "suite": result.suite,

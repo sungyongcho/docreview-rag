@@ -19,7 +19,7 @@ from app.evals.loader import encode_golden_payload
 from app.evals.run import run_matrix
 from app.evals.source_binding import matrix_scope
 from app.evals.suites import SUITES
-from app.evals.types import GoldenCase
+from app.evals.types import EvaluationRetrieval, GoldenCase
 from app.retrieval.cross_encoder import shared_cross_encoder
 from app.retrieval.embeddings import EmbeddingProvider
 from app.retrieval.service import retrieve
@@ -51,7 +51,7 @@ def quick_retriever(
         )
     reranker = shared_cross_encoder()
 
-    async def run(query: str, k: int) -> list[Any]:
+    async def run(query: str, k: int) -> EvaluationRetrieval:
         """Retrieve and rerank one query with the bound profile."""
         result = await retrieve(
             session,
@@ -68,7 +68,7 @@ def quick_retriever(
             bm25_b=profile.bm25_b,
             bm25_idf=profile.bm25_idf,
         )
-        return list(result.hits)
+        return EvaluationRetrieval(hits=result.hits)
 
     return run
 

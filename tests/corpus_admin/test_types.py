@@ -30,7 +30,7 @@ from app.corpus_admin.types import AdminCommand
                 selection_id="selected",
                 expected_documents=0,
             ),
-            "expected_documents must be positive",
+            "Input should be greater than 0",
             id="ingestion-expecting-zero-documents",
         ),
     ],

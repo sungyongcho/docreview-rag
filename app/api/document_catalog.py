@@ -78,11 +78,6 @@ class DocumentCatalog:
         except SchemaDriftError as error:
             raise unavailable("schema_not_ready", str(error)) from None
 
-    async def ensure_ready(self) -> None:
-        """Expose the same gate to adapters that use a separate document-detail serializer."""
-        async with self._session_factory() as session:
-            await self._require_schema(session)
-
     def _snapshot_filters(self) -> tuple[ColumnElement[bool], ...]:
         """Restrict the public surface to explicitly published ready snapshots."""
         return (
@@ -442,7 +437,7 @@ class DocumentCatalog:
         )
 
     async def document_detail(self, doc_id: str) -> DocumentDetailResponse | None:
-        """Load a bounded published document preview without reading private corpus state."""
+        """Load a bounded preview under this catalog's exact source visibility policy."""
         async with self._session_factory() as session:
             await self._require_schema(session)
             document = await session.scalar(
@@ -532,7 +527,9 @@ class DocumentCatalog:
             source_length=document.current_parse.structure.source_length,
             source_sha256=document.current_parse.structure.source_sha256,
             issuer_name=self._company_names().get((document.registry, document.issuer)),
-            source_url=public_source_url(document.source_url),
+            source_url=public_source_url(document.source_url)
+            if self._public_only
+            else document.source_url,
             chunk_count=sum(int(row[6]) for row in rows),
         )
         return DocumentDetailResponse.model_validate(

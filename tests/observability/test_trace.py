@@ -17,6 +17,7 @@ def provider_metadata(**overrides):
         "estimated_cost_usd": Decimal("0.0000092"),
         "request_time_ms": 4.5,
         "retries": 1,
+        "requests": 2,
         "request_ids": ("req_1", "req_2"),
         "llm_output": "not json",
         "raw_outputs": ("{}", "not json"),
@@ -61,6 +62,7 @@ def test_provider_results_map_to_traces_with_canonical_refusal_json_or_no_error(
             refusal=None,
             metadata=provider_metadata(
                 retries=0,
+                requests=1,
                 request_ids=("req_1",),
                 llm_output="{}",
                 raw_outputs=("{}",),

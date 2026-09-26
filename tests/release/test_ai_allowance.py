@@ -398,7 +398,7 @@ def test_five_visitors_fit_two_three_call_questions_with_luna(tmp_path):
 
     async def scenario():
         """Exercise actual Luna preflight with maximum output reservations and fake responses."""
-        settings = load_settings(ReleaseSettings, env_file=None, DOCREVIEW_ENVIRONMENT="prod")
+        settings = load_settings(ReleaseSettings, env_file=None, environment="prod")
         allowance = SharedAIAllowance(
             tmp_path / "visitors.sqlite3",
             settings.public_daily_cost_usd,

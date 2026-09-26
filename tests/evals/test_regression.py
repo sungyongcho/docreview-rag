@@ -149,25 +149,9 @@ def test_persisted_runs_must_carry_metrics_the_gate_can_read(run_metrics, messag
             persist_eval_result(
                 cast(AsyncSession, object()),
                 suite="retrieval-v1",
-                config={"k": 5},
+                config={"k": 5, "scoring": SCORING},
                 metrics=run_metrics,
                 raw_artifact_path="data/eval_runs/rejected.json",
-                scoring=SCORING,
-            )
-        )
-
-
-def test_a_config_cannot_shadow_the_reserved_scoring_stamp():
-    """Reject a config that would overwrite the scoring settings defining comparability."""
-    with pytest.raises(ValueError, match="reserved 'scoring' key"):
-        asyncio.run(
-            persist_eval_result(
-                cast(AsyncSession, object()),
-                suite="retrieval-v1",
-                config={"scoring": {"k": 99}},
-                metrics=metrics(),
-                raw_artifact_path="data/eval_runs/rejected.json",
-                scoring=SCORING,
             )
         )
 
@@ -200,6 +184,7 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
         config: dict[str, Any] = {
             "provider": "deterministic",
             "retriever": {"k": 5, "kind": "hybrid"},
+            "scoring": SCORING,
         }
 
         async with AsyncSession(bind=connection, expire_on_commit=False) as session:
@@ -209,25 +194,26 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
                 config=config,
                 metrics=metrics(),
                 raw_artifact_path="data/eval_runs/first.json",
-                scoring=SCORING,
                 created_at=started,
             )
             await persist_eval_result(
                 session,
                 suite="retrieval-v1",
-                config={"retriever": {"kind": "vector", "k": 5}},
+                config={"retriever": {"kind": "vector", "k": 5}, "scoring": SCORING},
                 metrics=metrics(mrr=0.7),
                 raw_artifact_path="data/eval_runs/not-comparable.json",
-                scoring=SCORING,
                 created_at=started + timedelta(minutes=2),
             )
             latest = await persist_eval_result(
                 session,
                 suite="retrieval-v1",
-                config={"retriever": {"kind": "hybrid", "k": 5}, "provider": "deterministic"},
+                config={
+                    "retriever": {"kind": "hybrid", "k": 5},
+                    "provider": "deterministic",
+                    "scoring": SCORING,
+                },
                 metrics=metrics(mrr=0.61, latency_ms=12.5),
                 raw_artifact_path="data/eval_runs/latest.json",
-                scoring=SCORING,
                 created_at=started + timedelta(minutes=1),
             )
             first_id, latest_id = first.id, latest.id
@@ -239,13 +225,11 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
                 session,
                 suite="retrieval-v1",
                 config=config,
-                scoring=SCORING,
             )
             other_cutoff = await latest_comparable_baseline(
                 session,
                 suite="retrieval-v1",
-                config=config,
-                scoring={**SCORING, "k": 20},
+                config={**config, "scoring": {**SCORING, "k": 20}},
             )
 
             assert first_id is not None

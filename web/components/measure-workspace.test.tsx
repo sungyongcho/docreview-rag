@@ -272,7 +272,7 @@ describe("evaluation preparation boundaries", () => {
 
   it("keeps unsaved draft edits when a dataset switch is declined and can recover incomplete JSON", async () => {
     const question = { id: "draft-01", question: "Original question", category: "simple_lookup", facet: "factual", answers: [], reference_answer: "Original answer" };
-    const revision = { filename: "custom.json", revision_id: 7, suite_id: "sec-en", version: 1, status: "draft", payload: [question], sha256: "b".repeat(64), parent_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
+    const revision = { filename: "custom.json", revision_id: 7, suite_id: "sec-en", status: "draft", payload: [question], sha256: "b".repeat(64), created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
     const fetchMock = stubFetch((url) => {
       if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
       if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
@@ -301,7 +301,7 @@ describe("evaluation preparation boundaries", () => {
 
   it("saves an incomplete question before restoring the list", async () => {
     const question = { id: "draft-01", question: "Original question", category: null, expected_label: null, answers: [] };
-    let revision = { filename: "custom.json", revision_id: 7, suite_id: "sec-en", version: 1, status: "draft", payload: [question], sha256: "b".repeat(64), completion: {} };
+    let revision = { filename: "custom.json", revision_id: 7, suite_id: "sec-en", status: "draft", payload: [question], sha256: "b".repeat(64), completion: {} };
     const fetchMock = stubFetch((url, init) => {
       if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
       if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
@@ -342,7 +342,7 @@ describe("evaluation preparation boundaries", () => {
   });
 
   it.each([false, true])("opens snapshot cards and preserves comparison behavior (live=%s)", async (live) => {
-    const snapshots = [1, 2, 3].map((id) => ({ snapshot_id: id, label: `Snapshot ${id}`, status: "ready", public: true, corpus_fingerprint: String(id).repeat(64), profile: DEFAULT_PROFILE, golden_revision_id: id, eval_result: { result_id: id, suite: "sec-en", config: { k: 5, golden_provenance: { filename: "retrieval.json", dataset_id: "builtin:sec-en" } }, metrics: { mrr: 0.5 }, created_at: "2026-09-01T00:00:00Z" }, document_count: 29, created_at: "2026-09-01T00:00:00Z" }));
+    const snapshots = [1, 2, 3].map((id) => ({ snapshot_id: id, label: `Snapshot ${id}`, status: "ready", public: true, corpus_fingerprint: String(id).repeat(64), profile: DEFAULT_PROFILE, eval_result: { result_id: id, suite: "sec-en", config: { k: 5, golden_provenance: { filename: "retrieval.json", dataset_id: "builtin:sec-en" } }, metrics: { mrr: 0.5 }, created_at: "2026-09-01T00:00:00Z" }, document_count: 29, created_at: "2026-09-01T00:00:00Z" }));
     stubFetch((url) => {
       if (url.includes("/snapshots/compare")) return { baseline_id: 1, candidate_id: 2, directly_comparable: false, warning: "Golden source hashes differ.", metrics: [{ name: "mrr", baseline: 0.5, candidate: 0.7, delta: null }], common_case_count: 0, cases: [] };
       if (url.endsWith("/admin/snapshots")) return snapshots;
@@ -410,7 +410,7 @@ describe("evaluation run refetch keyed on evaluation jobs", () => {
     );
     const { rerender } = render(view([corpusJob]));
     const runsCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs")).length;
-    await waitFor(() => expect(runsCalls()).toBeGreaterThan(0));
+    await waitFor(() => expect(runsCalls()).toBe(1));
     await act(async () => undefined);
     const before = runsCalls();
     rerender(view([{ ...corpusJob, current: 2, updated_at: "2026-09-01T12:00:03Z" }]));
@@ -450,7 +450,7 @@ it("keeps the presets tab available in production without DEV defaults", () => {
 });
 
 it("creates a named empty JSON dataset beside the selector without a publication step", async () => {
-  const created = { filename: "my-eval.json", revision_id: 77, suite_id: "sec-en", version: 1, status: "draft", payload: [], sha256: "b".repeat(64), parent_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
+  const created = { filename: "my-eval.json", revision_id: 77, suite_id: "sec-en", status: "draft", payload: [], sha256: "b".repeat(64), created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
   const fetchMock = stubFetch((url) => {
     if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
     if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
@@ -489,7 +489,9 @@ it.each([true, false])("shows snapshot progress and a truthful terminal button s
   expect(pending).toBeDisabled();
   expect(pending).toHaveAttribute("aria-busy", "true");
   fireEvent.click(pending);
-  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/snapshots") && init?.method === "POST")).toHaveLength(1);
+  const snapshotRequests = fetchMock.mock.calls.filter(([url, init]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/snapshots") && init?.method === "POST");
+  expect(snapshotRequests).toHaveLength(1);
+  expect(JSON.parse(String(snapshotRequests[0][1]?.body))).toEqual({ label: "testing", eval_result_id: 113, public: false });
   await act(async () => finish(new Response(JSON.stringify(success ? { snapshot_id: 1, label: "testing", status: "ready", public: false, document_count: 7, profile: {}, eval_result: { result_id: 113, suite: "sec-en", config: {}, metrics: {} } } : { error: { code: "snapshot_failed", message: "Snapshot failed." } }), { status: success ? 200 : 500, headers: { "content-type": "application/json" } })));
   if (success) {
     expect(screen.getByRole("button", { name: "Snapshot saved" })).toHaveClass("saved");
@@ -503,7 +505,7 @@ it.each([true, false])("shows snapshot progress and a truthful terminal button s
 
 it("opens the existing snapshot from an evaluated result without another save request", async () => {
   cleanup(); window.localStorage.clear();
-  const stored = { snapshot_id: 12, label: "Known search state", status: "ready", public: false, corpus_fingerprint: "a".repeat(64), profile: { retrieval_profile: { ...DEFAULT_PROFILE, k: 7 } }, golden_revision_id: null, eval_result: { result_id: 113, suite: "sec-en", config: { retrieval_profile: { ...DEFAULT_PROFILE, k: 7 } }, metrics: {}, created_at: "2026-09-08T00:00:00Z" }, document_count: 7, created_at: "2026-09-08T00:00:00Z" };
+  const stored = { snapshot_id: 12, label: "Known search state", status: "ready", public: false, corpus_fingerprint: "a".repeat(64), profile: { retrieval_profile: { ...DEFAULT_PROFILE, k: 7 } }, eval_result: { result_id: 113, suite: "sec-en", config: { retrieval_profile: { ...DEFAULT_PROFILE, k: 7 } }, metrics: {}, created_at: "2026-09-08T00:00:00Z" }, document_count: 7, created_at: "2026-09-08T00:00:00Z" };
   const fetchMock = stubFetch(url => {
     if (url.endsWith("/admin/snapshots")) return [stored];
     if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
@@ -569,7 +571,7 @@ it("filters run history by file and status, searches settings, and sorts without
 
 it("filters saved snapshots using recorded dataset filenames", async () => {
   cleanup(); window.localStorage.clear();
-  const snapshots = ["dart-en", "dart-ko"].map((suite, index) => ({ snapshot_id: index + 1, label: `Saved ${suite}`, status: "ready", public: false, corpus_fingerprint: "a".repeat(64), profile: DEFAULT_PROFILE, golden_revision_id: null, eval_result: { result_id: index + 1, suite, config: {}, metrics: {}, created_at: "2026-09-08T10:00:00Z" }, document_count: 7, created_at: "2026-09-08T10:00:00Z" }));
+  const snapshots = ["dart-en", "dart-ko"].map((suite, index) => ({ snapshot_id: index + 1, label: `Saved ${suite}`, status: "ready", public: false, corpus_fingerprint: "a".repeat(64), profile: DEFAULT_PROFILE, eval_result: { result_id: index + 1, suite, config: {}, metrics: {}, created_at: "2026-09-08T10:00:00Z" }, document_count: 7, created_at: "2026-09-08T10:00:00Z" }));
   stubFetch(url => url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/admin/snapshots") ? snapshots : []);
   render(<Host live initialTab="snapshots" />);
   await screen.findByText("Saved dart-ko");
@@ -608,7 +610,7 @@ it("saves evaluation defaults explicitly without changing current inputs or chat
 it("keeps verdicts consistent and explains missing source evidence before sending a save", async () => {
   cleanup(); window.localStorage.clear();
   const question = { id: "draft-01", question: "Question?", category: "absent", facet: "factual", answers: [], reference_answer: "NOT_IN_DOCS", expected_label: "NOT_IN_DOCS", note: "Review this", tags: [], curation_status: "user-authored", approval_status: "pending-author-approval", human_verified: false };
-  const revision = { filename: "test.json", revision_id: 7, suite_id: "sec-en", version: 1, status: "draft", payload: [question], sha256: "b".repeat(64), parent_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
+  const revision = { filename: "test.json", revision_id: 7, suite_id: "sec-en", status: "draft", payload: [question], sha256: "b".repeat(64), created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
   stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : url.endsWith("/sec-en/revisions") ? [revision] : url.endsWith("/canonical") ? { filename: "retrieval.json", suite_id: "sec-en", payload: [], sha256: "a".repeat(64) } : []);
   render(<Host live initialTab="golden" />);
   await screen.findByRole("option", { name: "test.json" });

@@ -4,7 +4,7 @@ import { NotificationProvider } from "./notifications";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANNED_CORPUS, CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
-import type { OperatorJob, OperatorJobStatus, Readiness } from "@/lib/types";
+import type { OperatorJob, Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { BuildWorkspace, type BuildTab, type BuildWorkspaceProps } from "./build-workspace";
 
@@ -412,7 +412,7 @@ describe("Build workspace", () => {
 describe("preparation refresh after corpus jobs", () => {
   afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
   it("refreshes once after a corpus job ends, even as a failure, and ignores repeated polls", async () => {
-    const status: OperatorJobStatus = "failed";
+    const status: OperatorJob["status"] = "failed";
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });

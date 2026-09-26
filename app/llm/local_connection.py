@@ -9,7 +9,6 @@ from typing import Any, Literal
 from uuid import uuid4
 
 import httpx
-from pydantic import TypeAdapter
 
 from app.atomic_write import write_text_atomically
 from app.llm.local_diagnostics import remediation_ids
@@ -169,37 +168,36 @@ class LocalConnectionManager:
     def _load(self) -> LocalConnection:
         """Reject invalid persisted state rather than falling back to another endpoint."""
         data = json.loads(self.path.read_text())
-        if not isinstance(data, dict) or data.get("version") not in {1, 2}:
+        if not isinstance(data, dict) or data.get("version") != 2:
             raise ValueError("invalid local connection settings")
-        if data["version"] == 2:
-            rows = data.get("servers")
-            if not isinstance(rows, list):
-                raise ValueError("invalid saved local servers")
-            servers = []
-            for row in rows:
-                if (
-                    not isinstance(row, dict)
-                    or not isinstance(row.get("id"), str)
-                    or not row["id"]
-                    or row["id"] == "default"
-                    or not isinstance(row.get("name"), str)
-                    or not isinstance(row.get("base_url"), str)
-                    or row.get("protocol") not in {"auto", "ollama", "openai_responses"}
-                ):
-                    raise ValueError("invalid saved local server")
-                servers.append(
-                    LocalServer(
-                        row["id"],
-                        self._server_name(row["name"]),
-                        validate_base_url(row["base_url"]),
-                        row["protocol"],
-                    )
+        rows = data.get("servers")
+        if not isinstance(rows, list):
+            raise ValueError("invalid saved local servers")
+        servers = []
+        for row in rows:
+            if (
+                not isinstance(row, dict)
+                or not isinstance(row.get("id"), str)
+                or not row["id"]
+                or row["id"] == "default"
+                or not isinstance(row.get("name"), str)
+                or not isinstance(row.get("base_url"), str)
+                or row.get("protocol") not in {"auto", "ollama", "openai_responses"}
+            ):
+                raise ValueError("invalid saved local server")
+            servers.append(
+                LocalServer(
+                    row["id"],
+                    self._server_name(row["name"]),
+                    validate_base_url(row["base_url"]),
+                    row["protocol"],
                 )
-            if len({row.id for row in servers}) != len(servers) or len(
-                {row.name.casefold() for row in servers}
-            ) != len(servers):
-                raise ValueError("duplicate saved local server")
-            self._servers = tuple(servers)
+            )
+        if len({row.id for row in servers}) != len(servers) or len(
+            {row.name.casefold() for row in servers}
+        ) != len(servers):
+            raise ValueError("duplicate saved local server")
+        self._servers = tuple(servers)
         state = data.get("state")
         if state == "initial":
             self._selected_server_id = "default"
@@ -210,7 +208,7 @@ class LocalConnectionManager:
                 self._server(selected).id if selected is not None else "default"
             )
             return LocalConnection(None, self.initial_protocol, "disabled", None)
-        if data["version"] == 2 and state == "connected":
+        if state == "connected":
             selected_id = data.get("selected_server_id")
             if not isinstance(selected_id, str):
                 raise ValueError("invalid selected local server")
@@ -221,19 +219,7 @@ class LocalConnectionManager:
                 server.protocol,
                 self.initial_source if server.id == "default" else "saved",
             )
-        if state != "connected" or not isinstance(data.get("base_url"), str):
-            raise ValueError("invalid local connection settings")
-        protocol = TypeAdapter(LocalProtocol).validate_python(
-            data.get("protocol", "auto"), strict=True
-        )
-        normalized = validate_base_url(data["base_url"])
-        if normalized == self.initial_base_url and protocol == self.initial_protocol:
-            self._selected_server_id = "default"
-            return self._initial_connection()
-        server = LocalServer("legacy", "Saved server", normalized, protocol)
-        self._servers = (server,)
-        self._selected_server_id = server.id
-        return self._connection(normalized, protocol, "saved")
+        raise ValueError("invalid local connection settings")
 
     def _persist(self, data: dict[str, object]) -> None:
         """Atomically replace the saved choice before making it active in memory."""

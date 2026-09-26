@@ -21,6 +21,7 @@ from app.evals.crosslingual_arms import (
     make_crosslingual_retriever,
 )
 from app.evals.identity import artifact_filename
+from app.evals.types import EvaluationRetrieval
 from app.llm.provider import LLMProvider
 from app.llm.schemas import ProviderBudget
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
@@ -164,7 +165,7 @@ def test_handling_selects_the_query_path_through_one_shared_retriever(monkeypatc
             provider=DeterministicEmbeddingProvider(),
         )
         hits = asyncio.run(retriever("AMD의 매출은?", 5))
-        assert [candidate.chunk_id for candidate in hits] == [1]
+        assert [candidate.chunk_id for candidate in hits.hits] == [1]
 
     # A direct arm never routes, whatever the environment says: it is the "before"
     # measurement the routed arm is compared against.
@@ -182,7 +183,7 @@ def test_translated_handling_rewrites_the_query_and_records_what_it_sent(monkeyp
         async def retriever(query: str, k: int):
             """Record the query and return one relevant hit."""
             seen.append(query)
-            return [hit(1, start=100)]
+            return EvaluationRetrieval(hits=(hit(1, start=100),))
 
         return retriever
 
@@ -250,7 +251,7 @@ def test_every_arm_pins_its_corpus_language_filter(monkeypatch):
 
         async def run(_query, _k):
             """Return no hits for the filter-binding assertion."""
-            return ()
+            return EvaluationRetrieval(hits=())
 
         return run
 

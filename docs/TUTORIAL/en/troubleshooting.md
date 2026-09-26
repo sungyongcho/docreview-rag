@@ -144,7 +144,7 @@ execution turn, then measures again as soon as the job ends. A schema change mad
 the application can therefore show up to that many seconds late; every write path checks
 the schema afresh. `python -m scripts.diagnostics.readiness --base-url http://127.0.0.1:8001 --ingest tutorial`
 records `/health` and `/ready` latency before, during and after one ingest job against an
-isolated stack.
+isolated stack. It follows that job's persisted record and stops with an error if the record cannot be read. Degraded `/ready` responses (503) remain latency samples; unexpected HTTP failures are counted separately.
 
 The job board behind **Build → Jobs** and the top-bar job counter polls every second while
 work runs, every five seconds when idle and every fifteen seconds in a hidden tab. A failed

@@ -661,7 +661,7 @@ const SYSTEM: HelpTopic[] = [
     id: "system.local-policy", capability: "can_configure_local_llm",
     title: "Local model policy",
     body: [
-      "What the local engine serves when a session selects it: answers and citation checks, query translation, intent classification and casual replies.",
+      "What the local engine serves when a session selects it: answers and citation checks, query translation and intent classification.",
       "Changing the local answer server does not change the embedding provider. Stored vectors retain the identity of the model that produced them.",
       "The panel refreshes automatically every 30 seconds while visible, showing connection state, installed models and their capabilities. Unavailable selections cannot receive questions.",
     ],

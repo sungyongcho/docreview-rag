@@ -20,6 +20,7 @@ from app.corpus_admin.types import AdminCommand, CorpusStatus, OperationOutcome
 from app.evals.admin import EvaluationAdminService, EvaluationAlreadyQueuedError
 from app.operator.jobs import JobExecutionCoordinator, JobStore
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.corpus_admin.support import LedgerStore
 
 
 @pytest.fixture
@@ -134,6 +135,7 @@ def test_corpus_and_evaluation_workers_share_one_execution_lock(
         corpus = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
             operation_runner=corpus_runner,
+            job_store=LedgerStore(),
             execution_lock=lock,
             execution_coordinator=coordinator,
         )

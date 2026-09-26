@@ -115,7 +115,7 @@ async def lexical_candidate_coverage(
     empty: list[str] = []
     total = 0
     for case in sorted(cases, key=lambda item: item.id):
-        hits = await retriever(case.question, candidate_k)
+        hits = (await retriever(case.question, candidate_k)).hits
         total += len(hits)
         if not hits:
             empty.append(case.id)

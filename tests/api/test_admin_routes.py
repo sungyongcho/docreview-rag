@@ -5,12 +5,12 @@ from decimal import Decimal
 from typing import cast
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.admin_schemas import (
     AdminDocumentResource,
     CorpusJobResource,
-    CorpusOperationRequest,
     DocumentFacetsResponse,
     DocumentFacetValue,
     DocumentInventoryResponse,
@@ -24,9 +24,10 @@ from app.api.admin_schemas import (
     UsageResponse,
 )
 from app.api.app import create_api_app
+from app.corpus_admin.types import AdminCommand
 
 
-def _corpus_job(request: CorpusOperationRequest, job_id: str = "corpus-1") -> CorpusJobResource:
+def _corpus_job(request: AdminCommand, job_id: str = "corpus-1") -> CorpusJobResource:
     """Return one complete shared job resource for route contract tests."""
     return CorpusJobResource(
         job_id=job_id,
@@ -345,15 +346,71 @@ def test_ingestion_route_requires_and_forwards_explicit_selection():
                 "kind": "ingest_manifest",
                 "manifest": "manifest.json",
                 "selection_id": "selected",
+                "document_ids": ["filing-a"],
+                "years": [2024],
+                "expected_documents": 1,
             },
         )
         schema = client.get("/openapi.json").json()
     assert invalid.status_code == 422
     assert valid.status_code == 200
+    assert isinstance(received[0], AdminCommand)
     assert received[0].selection_id == "selected"
+    assert received[0].document_ids == ("filing-a",)
+    assert received[0].years == (2024,)
+    assert valid.json()["command"]["document_ids"] == ["filing-a"]
     assert schema["paths"]["/admin/corpus"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]["$ref"].endswith("CorpusSnapshotResource")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"kind": "delete_sources"},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": False},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": "true"},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": 1},
+        {
+            "kind": "delete_sources",
+            "deletion_token": "preview",
+            "confirm_delete": True,
+            "identifiers": ["NVDA"],
+        },
+        {"kind": "rebuild_bm25", "deletion_token": "preview", "confirm_delete": True},
+        {"kind": "acquire_edgar", "identifiers": ["NVDA"], "years": [1800]},
+        {"kind": "acquire_dart", "identifiers": ["unsupported"], "years": [2024]},
+        {"kind": "acquire_edgar", "identifiers": [], "years": [2024]},
+        {"kind": "acquire_edgar", "identifiers": ["NVDA"], "years": ["2024"]},
+        {"kind": "acquire_edgar", "identifiers": ["NVDA"], "years": [True]},
+        {"kind": "ingest_selected", "document_ids": ["filing-a", "filing-a"]},
+        {"kind": "ingest_selected", "document_ids": []},
+        {"kind": "ingest_selected", "document_ids": None},
+        {"kind": "ingest_selected", "document_ids": [1]},
+        {"kind": "ingest_selected", "document_ids": ["filing-a"], "years": [0]},
+        {"kind": "rebuild_bm25", "document_ids": ["filing-a"]},
+        {"kind": "rebuild_bm25", "expected_documents": 0},
+        {"kind": "rebuild_bm25", "expected_documents": True},
+        {"kind": "rebuild_bm25", "unknown": True},
+    ],
+)
+def test_corpus_route_rejects_invalid_commands_before_enqueue(payload):
+    """The current command boundary rejects unsafe scope and scalar coercion over HTTP."""
+    services = FakeAdminServices()
+    received = []
+
+    async def enqueue(request):
+        """Expose any accidental dispatch of a rejected command."""
+        received.append(request)
+        return _corpus_job(request)
+
+    services.enqueue_corpus = enqueue
+    with TestClient(
+        create_api_app(admin_services=cast(RuntimeAdminApiServices, services))
+    ) as client:
+        response = client.post("/admin/corpus/jobs", json=payload)
+    assert response.status_code == 422
+    assert received == []
 
 
 def test_history_routes_validate_scope_and_translate_conflicts(tmp_path) -> None:

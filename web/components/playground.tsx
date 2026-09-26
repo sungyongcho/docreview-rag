@@ -12,7 +12,7 @@ import { ApiError, previewRetrieval, previewReview, retrieveEvidence } from "@/l
 import { DEFAULT_SESSION_PROFILE, type CustomRetrievalProfile } from "@/lib/types";
 import { DevLockedButton } from "@/components/dev-locked-button";
 import { failureMessage } from "@/lib/pipeline";
-import type { EvidenceHit, RetrievalProfile } from "@/lib/types";
+import type { EvidenceHit, RetrievalProfile, ReviewRun } from "@/lib/types";
 import { ProfileFields } from "@/components/profile-fields";
 import { useNotifications } from "@/components/notifications";
 
@@ -82,22 +82,18 @@ function toRetrievalPreview(value: Record<string, unknown>): RetrievalPreview {
 }
 
 /** Flatten `/admin/review/preview` into the report label, answer, citations, or failure. */
-function toReviewSummary(payload: Record<string, unknown>): ReviewSummary {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = typeof root.report === "object" && root.report !== null ? root.report as Record<string, unknown> : null;
-  const failure = typeof root.failure === "object" && root.failure !== null ? root.failure as Record<string, unknown> : null;
+function toReviewSummary(run: ReviewRun): ReviewSummary {
+  const { report, failure } = run;
   if (report) {
     return {
-      label: String(report.label ?? report.report_kind ?? "report"),
-      answer: typeof report.answer === "string" ? report.answer : null,
-      citations: Array.isArray(report.citations)
-        ? report.citations.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
-        : [],
+      label: "label" in report ? report.label : report.report_kind,
+      answer: report.answer,
+      citations: "citations" in report ? report.citations : [],
       failure: null,
     };
   }
   return {
-    label: String(root.status ?? "failed"),
+    label: run.status,
     answer: null,
     citations: [],
     // The same sentence the review workspace shows, so one failure does not read two ways.
@@ -147,7 +143,7 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
     setBusy("review");
     setLimitation(null);
     try {
-      setReview(toReviewSummary(await previewReview(question.trim(), profile)));
+      setReview(toReviewSummary((await previewReview(question.trim(), profile)).run));
       setShown("review");
     } catch (reason) {
       if (showLimitation(reason)) return;

@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPresets } from "@/lib/use-saved-presets";
 import { applyProdPolicy, newProdProfile } from "@/lib/prod-profile";
 import { usePublishedCorpus } from "@/lib/use-published-corpus";
 import { effectivePublishedProfile, publicTargetIds, pinPublicTargets, createPublicTargets } from "@/lib/published-scope";
@@ -78,6 +79,7 @@ export function ServiceShell() {
 }
 
 function ServiceSession() {
+  const { builtins } = useSavedPresets();
   const { confirm, confirmationDialog } = useConfirmation();
   const { t } = useI18n();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -205,7 +207,7 @@ function ServiceSession() {
         const target = parseNavigationUrl(window.location.href, initial.map((item) => item.id), remembered.id);
         const selected = target?.view === "review" ? initial.find((item) => item.id === target.conversationId) ?? remembered : remembered;
         setActiveId(selected.id);
-        setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
+        setProfile(selected.profile);
         const position = window.history.state?.docreviewNavigation?.position;
         navigationPosition.current = Number.isSafeInteger(position) ? position : 0;
         if (target) {
@@ -245,7 +247,7 @@ function ServiceSession() {
     const loaded = restoreInterruptedConversations(loadConversations());
     const next = loaded.length ? loaded : [newConversation(loadDefaultProfile())];
     const selected = next.find(item => item.id === loadActiveConversation()) ?? next[0];
-    setConversations(next); setActiveId(selected.id); setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
+    setConversations(next); setActiveId(selected.id); setProfile(selected.profile);
   }), []);
 
   const active = useMemo(
@@ -284,7 +286,7 @@ function ServiceSession() {
     if (!targetId) return;
     const reset = { doc_ids: [], registries: [], issuers: [], fiscal_years: [] };
     setConversations((current) => saveConversations(current.map((conversation) => conversation.id === targetId
-      ? { ...conversation, publishedTargets: createPublicTargets(publicCorpus.documents, targets ?? publicCorpus.documents.filter((doc) => ids.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...reset }, updatedAt: new Date().toISOString() }
+      ? { ...conversation, publishedTargets: createPublicTargets(publicCorpus.documents, targets ?? publicCorpus.documents.filter((doc) => ids.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))), profile: { ...conversation.profile, ...reset }, updatedAt: new Date().toISOString() }
       : conversation)));
   }
   /** Keep pipeline experiments separate from the committed search scope. */
@@ -302,15 +304,15 @@ function ServiceSession() {
   }
 
   const latestEvidenceId = active?.messages.filter((message) => message.evidence?.length).at(-1)?.id ?? null;
-  const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt, jobs: operatorJobs.board.jobs });
+  const banner = composerBanner({ builtins, readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt, jobs: operatorJobs.board.jobs });
   const compatibilityIssue = adminLive ? profileCompatibilityIssue(activeSessionProfile, permissions) : null;
   const localIssue = localAllowed ? localModelIssue(activeSessionProfile, runtimeHealth.readiness) : null;
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
   const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
-  const settingsValidationError = conversationSettingsError(activeSessionProfile);
+  const settingsValidationError = conversationSettingsError(activeSessionProfile, builtins);
   const sendBlocked = (!adminLive && !publicPolicy) || publicScopeBlocked || settingsValidationError !== null || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
   const { busy, activeReview, submit, reviewSelectedEvidence, markEvidence } = useReviewRequests({
-    active, activeId, fallbackProfile: profile, sessionProfile: activeSessionProfile, localModel, sendBlocked, developer: adminLive, view, query, setQuery,
+    active, activeId, sessionProfile: activeSessionProfile, localModel, sendBlocked, developer: adminLive, view, query, setQuery,
     setConversations, reviewAbort, onReviewStarted: (target) => { lastReview.current = target; followReview.current = true; },
     setDailyBudgetResetAt: setResetAt, checkRuntimeHealth: runtimeHealth.check,
   });
@@ -319,8 +321,8 @@ function ServiceSession() {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
     const targetId = active.id;
     setConversations((current) => saveConversations(current.map((conversation) => {
-      if (conversation.id !== targetId || conversation.profile?.local_model) return conversation;
-      return { ...conversation, profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), local_model: localModel } };
+      if (conversation.id !== targetId || conversation.profile.local_model) return conversation;
+      return { ...conversation, profile: { ...conversation.profile, local_model: localModel } };
     })));
   }, [active?.id, activeSessionProfile.engine, activeSessionProfile.local_model, localModel, localAllowed, compatibilityIssue]);
 
@@ -390,7 +392,7 @@ function ServiceSession() {
     if (normalized.view === "review" && normalized.conversationId) {
       setActiveId(normalized.conversationId);
       const selected = conversations.find((conversation) => conversation.id === normalized.conversationId);
-      if (selected) setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
+      if (selected) setProfile(selected.profile);
     }
     setView(normalized.view);
     return true;
@@ -433,7 +435,7 @@ function ServiceSession() {
         const restored = conversations.find((item) => item.id === entry.conversationId);
         if (restored) {
           setActiveId(restored.id);
-          setProfile(restored.profile ?? DEFAULT_SESSION_PROFILE);
+          setProfile(restored.profile);
         }
         setConversationTab(entry.conversationTab);
       } else if (nextPosition < origin.position) {
@@ -515,12 +517,12 @@ function ServiceSession() {
 
   function createReview(confirmed = false) {
     if (!confirmed && view === "measure" && unsavedGolden && goldenLeaveGuard.current) { goldenLeaveGuard.current(() => createReview(true)); return; }
-    const reusable = [active, ...conversations].find(item => item && item.messages.length === 0 && !profileCompatibilityIssue(item.profile ?? DEFAULT_SESSION_PROFILE, permissions));
+    const reusable = [active, ...conversations].find(item => item && item.messages.length === 0 && !profileCompatibilityIssue(item.profile, permissions));
     const conversation = reusable ?? newConversation(adminLive && permissions?.environment === "dev" ? undefined : newProdProfile(publicPolicy ?? undefined));
     if (reusable && activeId === reusable.id && view === "review") return;
     if (!reusable) persist([conversation, ...conversations]);
     setActiveId(conversation.id);
-    setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE);
+    setProfile(conversation.profile);
     navigate({ view: "review", conversationId: conversation.id }, true);
   }
 
@@ -563,7 +565,7 @@ function ServiceSession() {
     setProfile((current) => ({ ...current, ...update }));
     if (targetId) setConversations((current) => saveConversations(current.map((conversation) =>
       conversation.id === targetId
-        ? { ...conversation, ...(dimensionsChanged ? { publishedTargets: createPublicTargets(publicCorpus.documents, publicCorpus.documents.filter((doc) => selection?.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))) } : {}), updatedAt: new Date().toISOString(), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...update } }
+        ? { ...conversation, ...(dimensionsChanged ? { publishedTargets: createPublicTargets(publicCorpus.documents, publicCorpus.documents.filter((doc) => selection?.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))) } : {}), updatedAt: new Date().toISOString(), profile: { ...conversation.profile, ...update } }
         : conversation,
     )));
   }
@@ -576,7 +578,7 @@ function ServiceSession() {
     const storedProfile = snapshot.profile.retrieval_profile;
     const retrieval = storedProfile && typeof storedProfile === "object"
       ? storedProfile as RetrievalProfile
-      : resolvedRetrievalProfile(active?.profile ?? profile);
+      : resolvedRetrievalProfile(active?.profile ?? profile, builtins);
     const next = {
       ...(active?.profile ?? profile),
       snapshot_id: snapshot.snapshot_id,
@@ -809,7 +811,7 @@ function ServiceSession() {
           readiness={runtimeHealth.readiness}
           healthKind={runtimeHealth.kind}
           connectionPending={runtimeHealth.waiting}
-          profile={resolvedRetrievalProfile(activeSessionProfile)}
+          profile={resolvedRetrievalProfile(activeSessionProfile, builtins)}
           jobBoard={operatorJobs.board}
           jobsLoading={operatorJobs.loading}
           jobsStale={operatorJobs.stale}
@@ -834,7 +836,7 @@ function ServiceSession() {
           environment={permissions?.environment}
           live={adminBuild && permissions?.can_run_evaluation === true}
           ready={runtimeHealth.kind === "healthy"}
-          profile={resolvedRetrievalProfile(activeSessionProfile)}
+          profile={resolvedRetrievalProfile(activeSessionProfile, builtins)}
           publicProfile={activeSessionProfile}
           publicScopeBlocked={publicScopeBlocked}
           onProfileChange={updateLabProfile}

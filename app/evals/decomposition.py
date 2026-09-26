@@ -20,6 +20,7 @@ from app.evals.retrieval_eval import (
     evaluate_retriever,
     write_evaluation_artifact,
 )
+from app.evals.types import EvaluationRetrieval
 from app.retrieval.hybrid import DEFAULT_RRF_K
 
 if TYPE_CHECKING:
@@ -247,13 +248,12 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     from app.evals.decompose import make_decomposed_retriever
     from app.retrieval.embeddings import get_embedding_provider
     from app.retrieval.service import retrieve
-    from app.retrieval.types import ChunkHit
 
     cases = load_golden_cases(args.golden)
     embedding_provider = get_embedding_provider()
     settings = get_settings()
 
-    async def baseline_retriever(question: str, k: int) -> Sequence[ChunkHit]:
+    async def baseline_retriever(question: str, k: int) -> EvaluationRetrieval:
         """Retrieve one question without decomposition, over its own session."""
         async with Session() as session:
             result = await retrieve(
@@ -264,7 +264,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                 candidate_k=args.candidate_k,
                 rrf_k=args.rrf_k,
             )
-            return result.hits
+            return EvaluationRetrieval(hits=result.hits)
 
     llm_provider, provider_budget = decomposition_boundary(args.model)
     shared_config = {

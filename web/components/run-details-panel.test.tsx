@@ -7,7 +7,7 @@ import { RunDetailsPanel } from "./run-details-panel";
 const first: ChatMessage = {
   id: "first123-message-id", role: "assistant", text: "The answer stays in the conversation.",
   question: "How did the company revenue change across these fiscal years?",
-  execution: { node: "report", evidence: 2, relevant: 1, steps: 4, outcome: "completed", elapsedMs: 1250 },
+  execution: { node: "report", observed: ["report"], completedNodes: ["report"], evidence: 2, relevant: 1, steps: 4, outcome: "completed", elapsedMs: 1250 },
   performance: { total_elapsed_ms: 1200, model_calls: [], effective_settings: { engine: "openai", model: "gpt-example", retrieval_applicable: true, provider_budget_source: "server_configuration" } },
   trace: "gate → retrieve → grade → report",
 };

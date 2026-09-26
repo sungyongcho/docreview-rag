@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -12,7 +13,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
-from app.db.models import Base, Chunk, ChunkEmbedding, EvalResult, GoldenRevision, SnapshotChunk
+from app.db.models import Base, Chunk, ChunkEmbedding, EvalResult, SnapshotChunk
+from app.evals.identity import EVALUATED_GOLDEN_KEY, evaluated_golden_sha256
 from app.evals.index_identity import index_fingerprint
 from app.evals.snapshots import SnapshotService, _evaluated_embedding
 from app.ingestion.chunk import compose_index_text
@@ -37,6 +39,38 @@ def _artifact(question: str, rank: int | None) -> dict[str, object]:
             }
         ]
     }
+
+
+@pytest.mark.parametrize("tamper", ["missing_identity", "question"])
+def test_snapshot_creation_rejects_changed_evidence_before_copying_corpus(tmp_path, tamper):
+    """Freeze only the evaluated cases, refusing legacy or changed artifacts before writes."""
+    path = tmp_path / "evaluation.json"
+    payload = _artifact("Original question?", 1)
+    config = {
+        EVALUATED_GOLDEN_KEY: evaluated_golden_sha256(
+            [{"id": "case-1", "question": "Original question?"}]
+        )
+    }
+    if tamper == "missing_identity":
+        config = {}
+    else:
+        payload = _artifact("Changed question?", 1)
+    path.write_text(json.dumps({**payload, "suite": "snapshot-test", "config": config}))
+    original_bytes = path.read_bytes()
+    session = AsyncMock()
+    session.__aenter__.return_value = session
+    session.get.return_value = EvalResult(
+        id=1, suite="snapshot-test", config=config, metrics={}, raw_artifact_path=str(path)
+    )
+    session.add = Mock(side_effect=AssertionError("must not create snapshot rows"))
+    service = SnapshotService(session_factory=lambda: session, artifact_dir=tmp_path)
+    with pytest.raises(ValueError, match="recorded golden cases"):
+        asyncio.run(service._create(label="Changed", eval_result_id=1, public=False))
+    session.scalars.assert_not_called()
+    session.execute.assert_not_called()
+    session.add.assert_not_called()
+    session.commit.assert_not_called()
+    assert path.read_bytes() == original_bytes
 
 
 async def _exercise(tmp_path) -> tuple[bool, str]:
@@ -109,6 +143,9 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
             )
             config = {
                 "strategy": "hybrid",
+                EVALUATED_GOLDEN_KEY: evaluated_golden_sha256(
+                    [{"id": "case-1", "question": "Original question?"}]
+                ),
                 "embedding": {
                     "provider": "test",
                     "model": "allowed-before-snapshot",
@@ -120,9 +157,6 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
             baseline_path = tmp_path / "snapshot-first.json"
             candidate_path = tmp_path / "snapshot-second.json"
             changed_path = tmp_path / "snapshot-changed.json"
-            baseline_path.write_text(json.dumps(_artifact("Original question?", 2)))
-            candidate_path.write_text(json.dumps(_artifact("Original question?", 1)))
-            changed_path.write_text(json.dumps(_artifact("Revised question?", None)))
             first = EvalResult(
                 suite="snapshot-test",
                 config=config,
@@ -139,6 +173,9 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                 suite="snapshot-test",
                 config={
                     **config,
+                    EVALUATED_GOLDEN_KEY: evaluated_golden_sha256(
+                        [{"id": "case-1", "question": "Revised question?"}]
+                    ),
                     "admin_identity": {
                         "corpus_fingerprint": fingerprint,
                         "golden_sha256": "c" * 64,
@@ -153,40 +190,35 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                 metrics={"mrr": 0.4},
                 raw_artifact_path=str(baseline_path),
             )
+            for result, path, question, rank in (
+                (first, baseline_path, "Original question?", 2),
+                (second, candidate_path, "Original question?", 1),
+                (changed, changed_path, "Revised question?", None),
+            ):
+                path.write_text(
+                    json.dumps(
+                        {
+                            **_artifact(question, rank),
+                            "suite": result.suite,
+                            "config": result.config,
+                        }
+                    )
+                )
             session.add_all((first, second, changed, stale))
             await session.commit()
             await session.refresh(first)
             await session.refresh(second)
             await session.refresh(changed)
-            mismatched_golden = GoldenRevision(
-                suite_id="snapshot-mismatch-test",
-                version=1,
-                status="published",
-                payload=[],
-                sha256="b" * 64,
-            )
-            session.add(mismatched_golden)
-            await session.commit()
-            await session.refresh(mismatched_golden)
         service = SnapshotService(session_factory=factory, artifact_dir=tmp_path)
         try:
-            with pytest.raises(ValueError, match="does not match"):
-                await service.create(
-                    label="Mismatched golden",
-                    eval_result_id=first.id,
-                    golden_revision_id=mismatched_golden.id,
-                    public=False,
-                )
             baseline = await service.create(
                 label="Baseline",
                 eval_result_id=first.id,
-                golden_revision_id=None,
                 public=True,
             )
             candidate = await service.create(
                 label="Candidate",
                 eval_result_id=second.id,
-                golden_revision_id=None,
                 public=True,
             )
             concurrent = await asyncio.gather(
@@ -194,7 +226,6 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                     service.create(
                         label="Changed golden",
                         eval_result_id=changed.id,
-                        golden_revision_id=None,
                         public=True,
                     )
                     for _ in range(2)
@@ -205,7 +236,6 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
             repeated = await service.create(
                 label="Do not rename",
                 eval_result_id=first.id,
-                golden_revision_id=None,
                 public=False,
             )
             assert repeated.snapshot_id == baseline.snapshot_id
@@ -273,7 +303,6 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                 await service.create(
                     label="Stale evaluation",
                     eval_result_id=stale.id,
-                    golden_revision_id=None,
                     public=False,
                 )
             comparison = await service.compare(
@@ -325,7 +354,6 @@ def test_snapshot_resource_carries_the_built_in_suite_title(suite, title):
         public=True,
         corpus_fingerprint="b" * 64,
         profile={},
-        golden_revision_id=None,
         created_at=recorded,
     )
     result = EvalResult(
@@ -392,7 +420,5 @@ def test_snapshot_does_not_mask_unrelated_integrity_errors(monkeypatch):
     monkeypatch.setattr(service, "_existing", absent)
     monkeypatch.setattr(service, "_create", broken)
     with pytest.raises(IntegrityError) as captured:
-        asyncio.run(
-            service.create(label="test", eval_result_id=1, golden_revision_id=None, public=False)
-        )
+        asyncio.run(service.create(label="test", eval_result_id=1, public=False))
     assert captured.value is failure

@@ -53,9 +53,14 @@ class WipeService:
             raise WipeError("Reset audit path must not be a symbolic link")
         if self._audit.exists():
             recorded = json.loads(self._audit.read_text())
-            # An audit file without the wrapper predates the current format; keep the idle default.
-            self._result = recorded.get("result") or self._result
-            if recorded.get("lease"):
+            if (
+                not isinstance(recorded, dict)
+                or set(recorded) != {"result", "lease", "lease_instance", "lease_daemon"}
+                or not isinstance(recorded["result"], dict)
+            ):
+                raise WipeError("Reset audit does not match the current format")
+            self._result = recorded["result"]
+            if recorded["lease"] is not None:
                 self._lease = tuple(recorded["lease"])
                 self._lease_instance = recorded["lease_instance"]
                 self._lease_daemon = recorded["lease_daemon"]

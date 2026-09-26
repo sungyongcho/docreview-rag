@@ -1,44 +1,34 @@
-import { failureMessage, failureReport } from "@/lib/pipeline";
-import type { ChatMessage } from "@/lib/types";
+import { failureReport } from "@/lib/pipeline";
+import type { ChatMessage, ReviewRun } from "@/lib/types";
 
-export function terminalAnswer(payload: Record<string, unknown>): string {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = root.report as Record<string, unknown> | null;
-  if (report?.report_kind === "conversation" && typeof report.answer === "string") return report.answer;
-  if (report?.label === "SUPPORTED" && typeof report.answer === "string") return report.answer;
-  if (report?.label === "NOT_IN_DOCS") {
-    // The card adds the "related evidence" notice itself, so the text carries only the rationale.
-    return typeof report.rationale === "string" ? report.rationale : "The filings do not contain direct support for this question.";
+/** Decode the current terminal wire report once for both review request paths. */
+export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "text" | "performance" | "evidenceLabel" | "citations" | "trace" | "diagnostics" | "failureFix"> {
+  const report = run.report;
+  const failure = run.failure ? failureReport(run.failure) : undefined;
+  let text: string;
+  let evidenceLabel: ChatMessage["evidenceLabel"];
+  let citations: number | undefined;
+  if (report && "label" in report) {
+    text = report.label === "SUPPORTED" ? report.answer : report.rationale;
+    evidenceLabel = report.label === "SUPPORTED" ? "Cited evidence" : "Related evidence — not direct support";
+    citations = report.citations.length;
+  } else if (report?.report_kind === "conversation") {
+    text = report.answer;
+  } else if (failure) {
+    text = failure.text;
+    evidenceLabel = "Retrieved candidates — answer not generated";
+  } else {
+    throw new Error("Review completed without a valid terminal report or failure.");
   }
-  const failure = root.failure as Record<string, unknown> | null;
-  if (failure) return failureMessage(failure);
-  throw new Error("Review completed without a valid terminal report or failure.");
+  const traceFields = ["status", "total_requests", "total_input_tokens", "total_output_tokens", "total_time_seconds"] as const;
+  return {
+    pending: false, text, performance: run.execution ?? undefined, evidenceLabel, citations,
+    trace: traceFields.filter(key => run[key] !== undefined).map(key => `${key}=${String(run[key])}`).join(" · "),
+    diagnostics: runDiagnostics(run), failureFix: failure?.fix,
+  };
 }
 
-/** Evidence label for a terminal report; conversation replies and other unlabelled reports get none. */
-export function terminalEvidenceLabel(payload: Record<string, unknown>): ChatMessage["evidenceLabel"] {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = root.report as Record<string, unknown> | null;
-  if (report?.label === "SUPPORTED") return "Cited evidence";
-  if (report?.label === "NOT_IN_DOCS") return "Related evidence — not direct support";
-  if (report) return undefined;
-  return "Retrieved candidates — answer not generated";
-}
-
-/** Citations the report made, as opposed to the candidate pool the stream sent earlier. */
-export function terminalCitationCount(payload: Record<string, unknown>): number | undefined {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const report = root.report as Record<string, unknown> | null;
-  return Array.isArray(report?.citations) ? report.citations.length : undefined;
-}
-
-export function extractTrace(payload: Record<string, unknown>): string {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const values = ["status", "total_requests", "total_input_tokens", "total_output_tokens", "total_time_seconds"];
-  return values.filter((key) => root[key] !== undefined).map((key) => `${key}=${String(root[key])}`).join(" · ");
-}
-
-export const RUN_FACTS: ReadonlyArray<readonly [string, string]> = [
+export const RUN_FACTS: ReadonlyArray<readonly [keyof ReviewRun, string]> = [
   ["status", "Status"],
   ["run_id", "Run id"],
   ["iterations", "Iterations"],
@@ -63,13 +53,6 @@ export const FAILURE_FACTS: ReadonlyArray<readonly [string, string]> = [
   ["message", "Message"],
 ];
 
-/** The settings destination for a terminal failure, when the failure names one. */
-export function terminalFailureFix(payload: Record<string, unknown>): ChatMessage["failureFix"] {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
-  const failure = root.failure as Record<string, unknown> | null;
-  return failure ? failureReport(failure).fix : undefined;
-}
-
 /**
  * Flatten one terminal response into labelled rows.
  *
@@ -78,8 +61,7 @@ export function terminalFailureFix(payload: Record<string, unknown>): ChatMessag
  * discarding it. Node paths are joined rather than dropped so the route a run took
  * before failing is visible.
  */
-export function runDiagnostics(payload: Record<string, unknown>): Array<{ label: string; value: string }> {
-  const root = (payload.run ?? payload) as Record<string, unknown>;
+function runDiagnostics(root: ReviewRun): Array<{ label: string; value: string }> {
   const rows: Array<{ label: string; value: string }> = [];
   for (const [key, label] of RUN_FACTS) {
     if (root[key] !== undefined && root[key] !== null) rows.push({ label, value: String(root[key]) });

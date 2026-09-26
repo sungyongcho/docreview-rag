@@ -42,7 +42,7 @@ import type {
   EvaluationPreparation,
   ExperimentDefaults,
   CorpusSnapshot,
-  CorpusOperationRequest,
+  AdminCommand,
   OperatorJobBoard,
   Readiness,
   RetrievalProfile,
@@ -257,7 +257,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
     void getPublishedSnapshots().then((rows) => setSnapshotCount(Array.isArray(rows) ? rows.length : 0)).catch(() => undefined);
   }, [live]);
 
-  async function queueCorpus(body: CorpusOperationRequest) {
+  async function queueCorpus(body: AdminCommand) {
     if (!live) return;
     setBusy(true);
     try {

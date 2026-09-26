@@ -48,11 +48,11 @@ def test_independent_reviews_never_share_stage_metadata() -> None:
 
     async def exercise():
         """Run independent review entry points in distinct tasks."""
-        return await asyncio.gather(review("grade"), review("chat"))
+        return await asyncio.gather(review("grade"), review("check"))
 
     first, second = asyncio.run(exercise())
     assert [event["node"] for event in first["stages"]] == ["grade"]
-    assert [event["node"] for event in second["stages"]] == ["chat"]
+    assert [event["node"] for event in second["stages"]] == ["check"]
 
 
 def test_routing_metadata_appears_only_after_actual_resolution() -> None:

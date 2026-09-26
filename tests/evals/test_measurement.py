@@ -16,6 +16,7 @@ from app.evals.measurement import (
     indexing_budget_payload,
     measure_query_budget,
 )
+from app.evals.types import EvaluationRetrieval
 
 
 def _stepping_clock(step_ns):
@@ -36,7 +37,7 @@ def test_200_query_budget_measures_exact_boundary_without_storing_fake_results()
 
     async def retriever(query, k):
         calls.append((query, k))
-        return []
+        return EvaluationRetrieval(hits=())
 
     result = asyncio.run(
         measure_query_budget(
@@ -59,7 +60,7 @@ def test_query_budget_fails_only_after_the_explicit_limit():
     """Fail the budget only once total time passes the declared limit."""
 
     async def retriever(_query, _k):
-        return []
+        return EvaluationRetrieval(hits=())
 
     result = asyncio.run(
         measure_query_budget(
@@ -79,7 +80,7 @@ def test_query_budget_rejects_a_hit_count_that_is_not_a_positive_integer(k):
     """Reject a boolean or nonpositive ``k`` before measuring anything."""
 
     async def retriever(_query, _k):
-        return []
+        return EvaluationRetrieval(hits=())
 
     with pytest.raises(ValueError, match="k must be a positive integer"):
         asyncio.run(measure_query_budget(["q"], retriever, k=k, query_count=1))
@@ -156,7 +157,7 @@ def test_budget_artifact_records_the_arm_the_query_budget_ran_on():
     """Attribute the repeated-query p95 to one corpus and one retrieval lane."""
 
     async def retriever(_query, _k):
-        return []
+        return EvaluationRetrieval(hits=())
 
     query_budget = asyncio.run(
         measure_query_budget(["q"], retriever, query_count=4, clock=_stepping_clock(1_000_000))
@@ -198,7 +199,7 @@ def test_budgets_pass_only_when_every_measured_limit_holds():
     """Fail the run when any indexing arm or the repeated-query budget is exceeded."""
 
     async def retriever(_query, _k):
-        return []
+        return EvaluationRetrieval(hits=())
 
     fast = asyncio.run(
         measure_query_budget(["q"], retriever, query_count=4, clock=_stepping_clock(1_000_000))

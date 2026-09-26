@@ -77,15 +77,11 @@ def test_bm25_job_reports_completion_only_after_rebuild(tmp_path: Path, monkeypa
         )
         job = await service.enqueue(AdminCommand("rebuild_bm25"))
         await service._job_queue._queue.join()
-        finished = (await service._job_queue.jobs()).history[0]
+        finished = store.rows[job.job_id]
         expected_status = "failed" if fails else "succeeded"
         expected_current = 0 if fails else 1
-        assert finished.status == store.rows[job.job_id].status == expected_status
+        assert finished.status == expected_status
         assert (finished.current, finished.total) == (expected_current, 1)
-        assert (store.rows[job.job_id].current, store.rows[job.job_id].total) == (
-            expected_current,
-            1,
-        )
         assert [(event.current, event.total) for event in events] == (
             [(0, 1)] if fails else [(0, 1), (1, 1)]
         )

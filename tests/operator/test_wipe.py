@@ -17,6 +17,25 @@ from app.operator.wipe_errors import WipeError
 from tests.live_postgres import live_postgres_unavailable
 
 
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        {"status": "running", "completed": []},
+        {"result": None, "lease": None, "lease_instance": None, "lease_daemon": None},
+    ],
+)
+def test_old_or_invalid_audit_never_becomes_idle_state(tmp_path, recorded):
+    """Reject unsupported audit shapes without changing evidence or starting reset work."""
+    service = WipeService(tmp_path, lambda: False)
+    service._audit.write_text(json.dumps(recorded))
+    before = service._audit.read_bytes()
+
+    with pytest.raises(WipeError):
+        WipeService(tmp_path, lambda: False)
+
+    assert service._audit.read_bytes() == before
+
+
 def test_confirmation_rejects_changed_expired_and_duplicate_previews(tmp_path, monkeypatch):
     """A preview cannot authorize another state or be consumed twice."""
     service = WipeService(tmp_path, lambda: False)

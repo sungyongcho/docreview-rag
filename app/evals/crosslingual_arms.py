@@ -1,6 +1,5 @@
 """Cross-lingual retrieval arms: the arm model and the measurement of one arm."""
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +24,7 @@ from app.evals.retrieval_eval import (
     evaluate_retriever,
     write_evaluation_artifact,
 )
+from app.evals.types import EvaluationRetrieval
 from app.ingestion.progress import OperationProgressCallback
 from app.ingestion.registry import REGISTRIES, registry_for
 from app.ingestion.tokens import TARGET_INPUT_TOKENS
@@ -35,7 +35,7 @@ from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.language import QueryLanguage
 from app.retrieval.sbert import MULTILINGUAL_SBERT_MODEL
 from app.retrieval.translate import QueryTranslation, translate_query
-from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.retrieval.types import RetrievalFilters
 
 QueryHandling = Literal["direct", "routed", "translated"]
 ProviderChoice = Literal["deterministic", "openai", "sbert", "sbert-multi"]
@@ -301,7 +301,7 @@ def make_crosslingual_retriever(
     bound_llm_provider = llm_provider
     bound_provider_budget = provider_budget
 
-    async def translated(query: str, k: int) -> Sequence[ChunkHit]:
+    async def translated(query: str, k: int) -> EvaluationRetrieval:
         """Translate into the corpus language first, recording what was sent."""
         translation = await translate_query(
             query,

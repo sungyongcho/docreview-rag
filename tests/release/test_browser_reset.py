@@ -41,7 +41,7 @@ def test_only_dev_capabilities_expose_the_checkout_reset(tmp_path, monkeypatch, 
     marker.write_text(json.dumps({"reset_id": reset_id}))
     monkeypatch.setattr(browser_reset, "BROWSER_RESET_PATH", marker)
     settings = load_settings(
-        ReleaseSettings, env_file=None, mode="canned", DOCREVIEW_ENVIRONMENT=environment
+        ReleaseSettings, env_file=None, service_mode="canned", environment=environment
     )
     with TestClient(create_release_app(settings)) as client:
         response = client.get("/capabilities")

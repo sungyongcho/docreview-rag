@@ -1,5 +1,5 @@
 import { readStoredValue, writeStoredValue } from "./storage";
-import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type RetrievalProfile, type ReviewSessionDraft } from "./types";
+import { DEFAULT_PROFILE, resolvedRetrievalProfile, type RetrievalPresets, type RetrievalProfile, type ReviewSessionDraft } from "./types";
 
 export interface SavedPreset { id: string; name: string; retrieval: RetrievalProfile; description?: string; builtin?: boolean; updated_at?: string | null }
 const KEY = "docreview:retrieval-presets:v1";
@@ -18,8 +18,8 @@ function retrievalError(p: RetrievalProfile): string | null {
 }
 
 /** Keep hidden invalid settings from being sent after closing the editor. */
-export function conversationSettingsError(profile: ReviewSessionDraft): string | null {
-  const retrieval = retrievalError(resolvedRetrievalProfile(profile));
+export function conversationSettingsError(profile: ReviewSessionDraft, presets?: RetrievalPresets): string | null {
+  const retrieval = retrievalError(resolvedRetrievalProfile(profile, presets));
   if (retrieval) return retrieval;
   const p = profile.prompt_policy;
   const b = p.workflow_budget;
@@ -32,7 +32,7 @@ export function conversationSettingsError(profile: ReviewSessionDraft): string |
 
 /** Compare values independently of property order; names never enter the API contract. */
 export function sameRetrieval(a: RetrievalProfile, b: RetrievalProfile): boolean {
-  return Object.keys(resolvedRetrievalProfile(DEFAULT_SESSION_PROFILE)).every(key => a[key as keyof RetrievalProfile] === b[key as keyof RetrievalProfile]);
+  return Object.keys(DEFAULT_PROFILE).every(key => a[key as keyof RetrievalProfile] === b[key as keyof RetrievalProfile]);
 }
 
 /** Read only valid named presets; malformed storage is reported by the caller. */
@@ -67,7 +67,7 @@ export function presetError(value: unknown): string | null {
   if (p.builtin !== undefined && typeof p.builtin !== "boolean") return "Built-in must be a boolean.";
   if (p.updated_at != null && typeof p.updated_at !== "string") return "Updated time must be text.";
   if (!!p.builtin !== ["balanced", "korean", "accuracy"].includes(p.id)) return "Built-in preset identities are reserved.";
-  const keys = Object.keys(resolvedRetrievalProfile(DEFAULT_SESSION_PROFILE));
+  const keys = Object.keys(DEFAULT_PROFILE);
   if (!p.retrieval || typeof p.retrieval !== "object" || Array.isArray(p.retrieval) || Object.keys(p.retrieval).some(key => !keys.includes(key)) || keys.some(key => !(key in p.retrieval))) return "Include all retrieval fields and no unknown fields.";
   return retrievalError(p.retrieval);
 }

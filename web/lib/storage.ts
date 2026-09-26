@@ -17,11 +17,15 @@ const MAX_MESSAGES = 100;
 
 export function loadConversations(): Conversation[] {
   if (typeof window === "undefined") return [];
+  let raw: string | null = null;
   try {
-    const value: unknown = JSON.parse(browserStorage().getItem(STORAGE_KEY) ?? "[]");
+    raw = browserStorage().getItem(STORAGE_KEY);
+    const value: unknown = JSON.parse(raw ?? "[]");
+    if (!Array.isArray(value) || value.some(item => !isConversation(item))) rememberUnreadableValue(STORAGE_KEY, raw);
     if (!Array.isArray(value)) return [];
-    return value.filter(isConversation).map(migrateConversation).slice(0, MAX_CONVERSATIONS);
+    return value.filter(isConversation).slice(0, MAX_CONVERSATIONS);
   } catch {
+    rememberUnreadableValue(STORAGE_KEY, raw);
     return [];
   }
 }
@@ -52,12 +56,16 @@ export function newConversation(profile: ReviewSessionDraft = loadDefaultProfile
 export function loadDefaultProfile(): ReviewSessionDraft {
   if (productionBrowserStorageEnabled()) return newProdProfile();
   if (typeof window === "undefined") return DEFAULT_SESSION_PROFILE;
+  let raw: string | null = null;
   try {
-    const value = JSON.parse(browserStorage().getItem(DEFAULT_PROFILE_KEY) ?? "null") as Partial<ReviewSessionDraft> | null;
-    return value ? mergeProfile(value) : DEFAULT_SESSION_PROFILE;
+    raw = browserStorage().getItem(DEFAULT_PROFILE_KEY);
+    const value: unknown = JSON.parse(raw ?? "null");
+    if (validProfile(value)) return value;
   } catch {
-    return DEFAULT_SESSION_PROFILE;
+    // Invalid defaults remain available in recovery when the user next saves this concern.
   }
+  rememberUnreadableValue(DEFAULT_PROFILE_KEY, raw);
+  return DEFAULT_SESSION_PROFILE;
 }
 
 export function saveDefaultProfile(profile: ReviewSessionDraft): void {
@@ -135,30 +143,11 @@ export function browserStorageUsage(): number {
 }
 
 
-function mergeProfile(profile: Partial<ReviewSessionDraft>): ReviewSessionDraft {
-  return {
-    ...DEFAULT_SESSION_PROFILE,
-    ...profile,
-    prompt_policy: {
-      ...DEFAULT_SESSION_PROFILE.prompt_policy,
-      ...(profile.prompt_policy ?? {}),
-      workflow_budget: {
-        ...DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget,
-        ...(profile.prompt_policy?.workflow_budget ?? {}),
-      },
-    },
-  };
-}
-
 function positiveId(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 }
 
-/** Fill profile fields added after a conversation was saved; a missing profile takes the defaults. */
-function migrateConversation(conversation: Conversation): Conversation {
-  return { ...conversation, profile: objectValue(conversation.profile) ? mergeProfile(conversation.profile) : DEFAULT_SESSION_PROFILE };
-}
-
+/** Read current conversations; unsupported saved shapes are never repaired into new state. */
 function isConversation(value: unknown): value is Conversation {
   if (typeof value !== "object" || value === null) return false;
   const item = value as Partial<Conversation>;
@@ -170,7 +159,12 @@ function isConversation(value: unknown): value is Conversation {
     (item.draft === undefined || typeof item.draft === "string") &&
     (item.publishedTargets === undefined || Array.isArray(item.publishedTargets) && item.publishedTargets.every((target) => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year) && (target.document_ids === undefined || Array.isArray(target.document_ids) && target.document_ids.every((id) => typeof id === "string")))) &&
     (item.pipelineDraft === undefined || objectValue(item.pipelineDraft) && Array.isArray(item.pipelineDraft.targets) && item.pipelineDraft.targets.every(target => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year)) && (item.pipelineDraft.candidates === undefined || Array.isArray(item.pipelineDraft.candidates) && item.pipelineDraft.candidates.every(target => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year))) && typeof item.pipelineDraft.stage === "string" && Array.isArray(item.pipelineDraft.checked) && item.pipelineDraft.checked.every(step => typeof step === "string")) &&
-    Array.isArray(item.messages)
+    validProfile(item.profile) && Array.isArray(item.messages) && item.messages.every(message =>
+      objectValue(message) && typeof message.id === "string" && typeof message.text === "string"
+      && ["user", "assistant"].includes(String(message.role))
+      && (message.execution === undefined || objectValue(message.execution)
+        && Array.isArray(message.execution.completedNodes) && message.execution.completedNodes.every(node => typeof node === "string")
+        && Array.isArray(message.execution.observed) && message.execution.observed.every(node => typeof node === "string")))
   );
 }
 
@@ -217,7 +211,7 @@ interface StorageWarning { reason: "quota" | "unavailable" | "corrupt" | "versio
 interface StoredValue { version: number; value: string; }
 interface BrowserStorageExport { format: "docreview-browser-storage"; version: 1; entries: Array<{ key: string; version: number; value: string }>; }
 
-/** Enable migrations only after the real server identifies this page as production. */
+/** Select the storage format only after the server confirms the environment. */
 export function configureBrowserStorage(environment?: "dev" | "prod"): void {
   if (storageEnvironment === environment) return;
   if (storageEnvironment !== environment) {
@@ -253,7 +247,7 @@ export function subscribeStorageWarnings(listener: (warning: StorageWarning) => 
 /** Match active application keys; preserve archived preview records for a future release. */
 function ownedStorageKey(key: string): boolean { return !key.startsWith("docreview:preview:") && (key.startsWith("docreview:") || key === "docreview.locale"); }
 
-/** Keep current versioned keys; migrate only the previous unversioned preference names. */
+/** Map current DEV preference names to the PROD envelope keys. */
 function versionedKey(key: string): string {
   if (key === "docreview.locale") return "docreview:locale:v1";
   return /:v\d+$/.test(key) ? key : `${key}:v1`;
@@ -267,7 +261,7 @@ function objectValue(value: unknown): value is Record<string, unknown> { return 
 
 /** Validate known retrieval scalar types before preset editors consume imported values. */
 function validRetrieval(value: unknown): boolean {
-  if (!objectValue(value)) return false;
+  if (!objectValue(value) || Object.keys(DEFAULT_PROFILE).some(key => !(key in value))) return false;
   for (const [key, initial] of Object.entries(DEFAULT_PROFILE)) {
     const actual = value[key];
     if (actual === undefined || key === "lexical_ranker" && actual === null) continue;
@@ -281,8 +275,8 @@ function validRetrieval(value: unknown): boolean {
 }
 
 /** Reject malformed nested settings before they can enter a React render or request. */
-function validProfile(value: unknown): boolean {
-  if (!objectValue(value)) return false;
+function validProfile(value: unknown): value is ReviewSessionDraft {
+  if (!objectValue(value) || Object.keys(DEFAULT_SESSION_PROFILE).some(key => !(key in value))) return false;
   for (const field of ["doc_ids", "registries", "issuers", "sections", "forms", "languages", "kinds", "fiscal_years"]) {
     const values = value[field];
     if (values !== undefined && (!Array.isArray(values) || values.some(item => field === "fiscal_years" ? typeof item !== "number" || !Number.isInteger(item) : (field !== "sections" || item !== null) && typeof item !== "string"))) return false;
@@ -293,16 +287,13 @@ function validProfile(value: unknown): boolean {
   if (value.corpus_scope !== undefined && !["auto", "sec", "dart"].includes(String(value.corpus_scope))) return false;
   if (value.retrieval_preset !== undefined && !["balanced", "korean", "accuracy", "custom"].includes(String(value.retrieval_preset))) return false;
   if (value.engine !== undefined && !["openai", "local"].includes(String(value.engine))) return false;
-  for (const field of ["prompt_policy", "custom_retrieval", "filters"]) {
-    if (value[field] !== undefined && value[field] !== null && !objectValue(value[field])) return false;
-  }
   const policy = value.prompt_policy;
-  if (objectValue(policy)) {
-    for (const field of ["history_turns", "max_context_chars", "evidence_overfetch", "max_hits_per_document"]) if (policy[field] !== undefined && (typeof policy[field] !== "number" || !Number.isFinite(policy[field]))) return false;
-    if (policy.additional_instructions !== undefined && typeof policy.additional_instructions !== "string") return false;
-    if (policy.workflow_budget !== undefined && !objectValue(policy.workflow_budget)) return false;
-    if (objectValue(policy.workflow_budget) && Object.values(policy.workflow_budget).some(v => typeof v !== "number" || !Number.isFinite(v))) return false;
-  }
+  if (!objectValue(policy) || Object.keys(DEFAULT_SESSION_PROFILE.prompt_policy).some(key => !(key in policy))) return false;
+  const budget = policy.workflow_budget;
+  if (!objectValue(budget) || Object.keys(DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget).some(key => !(key in budget))) return false;
+  for (const field of ["history_turns", "max_context_chars", "evidence_overfetch", "max_hits_per_document"]) if (typeof policy[field] !== "number" || !Number.isFinite(policy[field])) return false;
+  if (typeof policy.additional_instructions !== "string") return false;
+  if (Object.values(budget).some(v => typeof v !== "number" || !Number.isFinite(v))) return false;
   return true;
 }
 
@@ -318,8 +309,7 @@ function validStoredValue(key: string, raw: string): boolean {
   if (key === OPERATIONS_TARGET_FILTER_KEY) return raw === "all" || OPERATION_TARGETS.includes(raw as OperatorTarget);
   try {
     const value: unknown = JSON.parse(raw);
-    if (key === STORAGE_KEY) return Array.isArray(value) && value.every(v => isConversation(v)
-      && (v.profile == null || validProfile(v.profile)) && v.messages.every(message => objectValue(message) && typeof message.id === "string" && typeof message.text === "string" && ["user", "assistant"].includes(String(message.role))));
+    if (key === STORAGE_KEY) return Array.isArray(value) && value.every(isConversation);
     if (key === DEFAULT_PROFILE_KEY) return validProfile(value);
     if (key === "docreview:retrieval-presets:v1") return Array.isArray(value) && value.every(item => objectValue(item) && typeof item.id === "string" && typeof item.name === "string" && validRetrieval(item.retrieval));
     if (key === EXPERIMENT_DEFAULTS_KEY || key === RECOVERY_KEY) return objectValue(value);
@@ -362,7 +352,14 @@ function preserveCorruptValues(): boolean {
   return okay;
 }
 
-/** Decode a versioned concern, migrating a valid old scalar/JSON payload exactly once. */
+/** Preserve exact physical bytes before a rejected record is replaced by a later save. */
+function rememberUnreadableValue(key: string, decoded: string | null): void {
+  if (decoded === null) return;
+  corruptValues.set(key, readRaw(key) ?? decoded);
+  storageWarning("corrupt", key);
+}
+
+/** Decode a PROD envelope, promoting a current DEV scalar/JSON value once. */
 function readProductionValue(key: string): string | null {
   const canonical = versionedKey(key);
   let source = canonical; let raw = readRaw(canonical);
@@ -381,9 +378,11 @@ function readProductionValue(key: string): string | null {
       }
       value = parsed.value; migrated = false;
     }
-  } catch { /* Scalar legacy preferences are validated below, never evaluated. */ }
+  } catch { /* Current DEV scalar preferences are validated below. */ }
   if (!validStoredValue(canonical, value)) {
-    corruptValues.set(source, raw); storageWarning("corrupt", source); return null;
+    corruptValues.set(source, raw); storageWarning("corrupt", source);
+    // The conversation reader keeps valid current records beside rejected ones.
+    return canonical === STORAGE_KEY ? value : null;
   }
   if (migrated) {
     if (writeRaw(canonical, JSON.stringify({ version: keyVersion(canonical), value })) && source !== canonical) writeRaw(source, null);
@@ -428,15 +427,19 @@ const productionStorage: Storage = {
   clear: () => { for (const [key] of storedEntries()) writeRaw(key, null); },
 };
 
-/** Read a previously deployed profile after a same-origin return to DEV without migrating DEV writes. */
+/** Read both live storage modes after a same-origin return to DEV; retain raw DEV writes. */
 const developmentStorage: Storage = {
   get length() { return rawBrowserStorage().length; },
   key: index => rawBrowserStorage().key(index),
   clear: () => rawBrowserStorage().clear(),
   removeItem: key => rawBrowserStorage().removeItem(key),
-  setItem: (key, value) => rawBrowserStorage().setItem(key, value),
+  setItem: (key, value) => {
+    if (!corruptValues.has(key)) { rawBrowserStorage().setItem(key, value); return; }
+    if (!preserveCorruptValues()) { sessionValues.set(key, value); return; }
+    if (writeRaw(key, value)) corruptValues.delete(key);
+  },
   getItem: key => {
-    const raw = rawBrowserStorage().getItem(key) ?? (ownedStorageKey(key) ? rawBrowserStorage().getItem(versionedKey(key)) : null);
+    const raw = sessionValues.has(key) ? sessionValues.get(key) ?? null : rawBrowserStorage().getItem(key) ?? (ownedStorageKey(key) ? rawBrowserStorage().getItem(versionedKey(key)) : null);
     if (raw === null) return null;
     try {
       const parsed: unknown = JSON.parse(raw);
@@ -446,7 +449,7 @@ const developmentStorage: Storage = {
   },
 };
 
-/** All consumers share this boundary; only real PROD migrates or uses quota fallback. */
+/** All consumers share this boundary; PROD wraps the current payload in a version envelope. */
 export function browserStorage(): Storage {
   return productionBrowserStorageEnabled() ? productionStorage : storageEnvironment === "dev" ? developmentStorage : rawBrowserStorage();
 }
@@ -544,9 +547,9 @@ export function applyFreshStartReset(resetId: string | null | undefined): boolea
 }
 
 /** Pre-paint preference read, generated here so components never access localStorage directly. */
-export function browserThemeBootstrap(legacyKey: string): string {
+export function browserThemeBootstrap(rawKey: string): string {
   const allowVersioned = process.env.NEXT_PUBLIC_ADMIN_MODE !== "live";
-  return `(function(){var t="system";try{var v=localStorage.getItem(${JSON.stringify(legacyKey)});if(!v&&${allowVersioned}){var s=JSON.parse(localStorage.getItem("docreview:theme:v1")||"null");if(s&&s.version===1)v=s.value;}if(v==="light"||v==="dark")t=v;}catch(e){}var d=t==="system"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;document.documentElement.dataset.theme=t;document.documentElement.dataset.colorMode=d;document.documentElement.style.colorScheme=d;})();`;
+  return `(function(){var t="system";try{var v=localStorage.getItem(${JSON.stringify(rawKey)});if(!v&&${allowVersioned}){var s=JSON.parse(localStorage.getItem("docreview:theme:v1")||"null");if(s&&s.version===1)v=s.value;}if(v==="light"||v==="dark")t=v;}catch(e){}var d=t==="system"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;document.documentElement.dataset.theme=t;document.documentElement.dataset.colorMode=d;document.documentElement.style.colorScheme=d;})();`;
 }
 
 /** Raw-value boundary shared with the browser-local preset implementation. */

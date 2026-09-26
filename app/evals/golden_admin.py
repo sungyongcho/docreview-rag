@@ -106,7 +106,6 @@ class GoldenAdminService:
                 for case in cases
             },
             suite_id=raw["suite_id"],
-            version=1,
             status="validated"
             if raw.get("checked_sha256") == digest
             and cases
@@ -114,7 +113,6 @@ class GoldenAdminService:
             else "draft",
             payload=tuple(payload),
             sha256=digest,
-            parent_id=None,
             created_at=datetime.fromisoformat(raw["created_at"]),
             updated_at=datetime.fromisoformat(raw["updated_at"]),
         )
@@ -206,11 +204,9 @@ class GoldenAdminService:
                 revision_id=self._identity(filename),
                 filename=filename,
                 suite_id=suite_id,
-                version=1,
                 status="draft",
                 payload=payload,
                 sha256=golden_payload_sha256(list(payload)),
-                parent_id=None,
                 created_at=now,
                 updated_at=now,
             )

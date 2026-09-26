@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { OperatorJob, OperatorJobStatus } from "@/lib/types";
+import type { OperatorJob } from "@/lib/types";
 import { I18nProvider } from "@/lib/i18n";
 import { JobCenter, JobProgress, jobErrorSummary, elapsedLabel } from "./job-center";
 
@@ -11,7 +11,7 @@ function job(overrides: Partial<OperatorJob> = {}): OperatorJob {
     domain: "corpus",
     kind: "ingest_manifest",
     request: {},
-    status: "failed" as OperatorJobStatus,
+    status: "failed" as OperatorJob["status"],
     stage: "ingest",
     current: 3,
     total: 9,

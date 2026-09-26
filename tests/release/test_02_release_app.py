@@ -39,6 +39,7 @@ def _run_report() -> RunReport:
     )
     return build_run_report(
         run_id="run-metered",
+        request_context={"model_calls": []},
         status="ok",
         total_time_seconds=0.0,
         system_prompt="Use only filing evidence.",
@@ -142,9 +143,9 @@ def test_public_readiness_publishes_counts_and_withholds_only_write_access(
     settings = load_settings(
         ReleaseSettings,
         env_file=None,
-        DOCREVIEW_ENVIRONMENT=environment,
+        environment=environment,
         admin_mode=admin_mode,
-        mode="runtime",
+        service_mode="runtime",
         host="127.0.0.1",
     )
     with TestClient(
@@ -198,7 +199,7 @@ def test_every_mode_guards_with_the_shared_allowance(
     """Build one allowance type in every mode so metering cannot differ between them."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MODE", environment)
-    settings = ReleaseSettings(mode=mode, host="127.0.0.1")
+    settings = ReleaseSettings(service_mode=mode, host="127.0.0.1")
     services = (
         RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
         if mode == "runtime"
@@ -217,7 +218,7 @@ def test_public_review_meters_every_provider_call_against_the_day_cap(
     """Charge each actual provider call of one admitted review to the UTC-day cost cap."""
     monkeypatch.chdir(tmp_path)
     settings = ReleaseSettings(
-        mode="runtime",
+        service_mode="runtime",
         public_daily_cost_usd=Decimal("0.03"),
         openai_max_cost_usd=Decimal("0.01"),
     )
@@ -247,7 +248,7 @@ def test_public_ai_routes_are_rate_limited_while_exempt_requests_pass(
     """Rate limit public provider-bearing requests, leaving the operator and free work alone."""
     monkeypatch.chdir(tmp_path)
     settings = ReleaseSettings(
-        mode="runtime",
+        service_mode="runtime",
         admin_mode="live",
         host="127.0.0.1",
         rate_limit_per_minute=1,
@@ -299,7 +300,7 @@ def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypat
         )
 
     services = build_runtime_services(
-        load_settings(ReleaseSettings, mode="runtime", env_file=None),
+        load_settings(ReleaseSettings, service_mode="runtime", env_file=None),
         provider_factory=provider_factory,
     )
 
@@ -314,7 +315,9 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> 
     for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
         monkeypatch.delenv(name, raising=False)
 
-    services = build_runtime_services(load_settings(ReleaseSettings, mode="runtime", env_file=None))
+    services = build_runtime_services(
+        load_settings(ReleaseSettings, service_mode="runtime", env_file=None)
+    )
 
     import asyncio
 
@@ -340,11 +343,11 @@ def test_runtime_composition_serves_the_configured_bm25_settings(monkeypatch, tm
     monkeypatch.chdir(tmp_path)
     for name in ("BM25_K1", "BM25_B", "BM25_IDF"):
         monkeypatch.delenv(name, raising=False)
-    default = build_runtime_services(ReleaseSettings(mode="runtime"))
+    default = build_runtime_services(ReleaseSettings(service_mode="runtime"))
     monkeypatch.setenv("BM25_K1", "1.6")
     monkeypatch.setenv("BM25_B", "0.5")
     monkeypatch.setenv("BM25_IDF", "robertson")
-    configured = build_runtime_services(ReleaseSettings(mode="runtime"))
+    configured = build_runtime_services(ReleaseSettings(service_mode="runtime"))
 
     assert default.bm25_parameters == ServerBM25(1.2, 0.75, "lucene")
     assert configured.bm25_parameters == ServerBM25(1.6, 0.5, "robertson")
@@ -360,7 +363,7 @@ def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
 
     live_settings = load_settings(
         ReleaseSettings,
-        mode="runtime",
+        service_mode="runtime",
         admin_mode="live",
         host="127.0.0.1",
         env_file=None,
@@ -435,7 +438,7 @@ def test_release_uses_configured_embedding_identity_and_credential_slot(
     services = build_runtime_services(
         load_settings(
             ReleaseSettings,
-            mode="runtime",
+            service_mode="runtime",
             MODE=environment,
             OPENAI_API_KEY_LOCAL="sk-development-fixture",
             OPENAI_API_KEY_PROD="sk-production-fixture",
@@ -486,7 +489,7 @@ def test_runtime_readiness_default_probe_shares_admin_status_and_keeps_the_paylo
         return {"status": asdict(status)}
 
     settings = load_settings(
-        ReleaseSettings, mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
+        ReleaseSettings, service_mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
     )
     with TestClient(
         create_release_app(
@@ -533,7 +536,7 @@ def test_bm25_missing_is_normal_preparation_after_embeddings_finish():
         }
 
     settings = load_settings(
-        ReleaseSettings, mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
+        ReleaseSettings, service_mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
     )
     with TestClient(
         create_release_app(
@@ -575,7 +578,7 @@ def test_readiness_reports_update_without_hiding_existing_counts():
             }
 
         app = create_release_app(
-            load_settings(ReleaseSettings, mode="runtime", host="127.0.0.1", env_file=None),
+            load_settings(ReleaseSettings, service_mode="runtime", host="127.0.0.1", env_file=None),
             services=runtime,
             readiness_probe=probe,
         )

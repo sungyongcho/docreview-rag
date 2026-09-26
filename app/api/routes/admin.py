@@ -10,7 +10,6 @@ from fastapi.responses import FileResponse
 from app.api.admin_deps import AdminServices
 from app.api.admin_schemas import (
     CorpusJobResource,
-    CorpusOperationRequest,
     CorpusSnapshotResource,
     DocumentDetailResponse,
     DocumentEmbeddingStatus,
@@ -63,6 +62,7 @@ from app.api.schemas import (
     ValidationIssue,
 )
 from app.config import get_settings
+from app.corpus_admin.types import AdminCommand
 from app.evals.drafts import DraftConflictError, DraftInputError
 from app.operator.job_history import HistoryConflictError
 
@@ -169,7 +169,7 @@ async def source_deletion_preview(
     "/corpus/jobs", response_model=CorpusJobResource, responses={400: {"model": ErrorResponse}}
 )
 async def enqueue_corpus(
-    request: CorpusOperationRequest,
+    request: AdminCommand,
     services: AdminServices,
 ) -> dict[str, Any]:
     """Queue one safe corpus acquisition, ingest, or indexing operation."""

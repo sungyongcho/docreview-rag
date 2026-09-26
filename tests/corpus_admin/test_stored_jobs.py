@@ -35,6 +35,7 @@ def test_selection_command_restores_from_stored_job(tmp_path):
         pytest.param("rebuild_bm25", {"expected_documents": True}, id="document-count-as-a-bool"),
         pytest.param("rebuild_bm25", {"manifest": []}, id="manifest-as-a-list"),
         pytest.param("unsupported", {}, id="unknown-job-kind"),
+        pytest.param("rebuild_bm25", {"old_argument": True}, id="unknown-command-field"),
     ],
 )
 def test_stored_command_rejects_invalid_json_types(kind, payload):

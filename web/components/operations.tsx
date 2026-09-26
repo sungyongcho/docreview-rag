@@ -210,7 +210,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
                   <TerminalSquare size={16} />
                   <span className="command-badges">
                     <span className={`command-kind ${command.category}`}>{t(command.category)}</span>
-                    <span className="command-kind target">{t(TARGET_LABELS[command.target] ?? "Target not reported")}</span>
+                    <span className="command-kind target">{t(TARGET_LABELS[command.target])}</span>
                     {command.confirmation && <span className="command-kind confirmation" title={t(command.confirmation)}><TriangleAlert size={11} aria-hidden="true" />{t("Confirmation required")}</span>}
                   </span>
                 </div>

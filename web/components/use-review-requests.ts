@@ -2,14 +2,14 @@ import { useRef, useState, type Dispatch, type RefObject, type SetStateAction } 
 
 import { useNotifications } from "@/components/notifications";
 import { candidateProgress, finishReviewProgress, initialReviewProgress, resolvedScopeFromServer, reviewProgressFromEvent } from "@/components/review-progress";
-import { extractTrace, runDiagnostics, terminalAnswer, terminalCitationCount, terminalEvidenceLabel, terminalFailureFix } from "@/components/review-response";
+import { terminalMessage } from "@/components/review-response";
 import { ApiError, getReleaseLimits, retrieveEvidence, streamReview } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { NavigationTarget } from "@/lib/navigation";
 import { notificationErrorDetail, notificationErrorMessage, type NotificationDetail } from "@/lib/notification-registry";
 import { reviewLimitationMessage, scopeFailurePatch, scopeFailureProgress } from "@/lib/scope-failure";
 import { saveConversations } from "@/lib/storage";
-import type { ChatMessage, Conversation, EvidenceHit, ReviewSessionDraft } from "@/lib/types";
+import type { ChatMessage, Conversation, EvidenceHit, ReviewExecution, ReviewRun, ReviewSessionDraft } from "@/lib/types";
 import type { useRuntimeHealth } from "@/lib/use-runtime-health";
 
 /** The assistant message a running request writes into, and the conversation that owns it. */
@@ -21,8 +21,6 @@ export interface ReviewTarget {
 interface ReviewRequestOptions {
   active: Conversation | undefined;
   activeId: string;
-  /** Session draft used while the conversation has not stored a profile of its own. */
-  fallbackProfile: ReviewSessionDraft;
   sessionProfile: ReviewSessionDraft;
   localModel: string | null;
   sendBlocked: boolean;
@@ -46,7 +44,7 @@ interface ReviewRequestOptions {
  * workspaces while a review streams never redirects its answer.
  */
 export function useReviewRequests({
-  active, activeId, fallbackProfile, sessionProfile, localModel, sendBlocked, developer, view, query, setQuery,
+  active, activeId, sessionProfile, localModel, sendBlocked, developer, view, query, setQuery,
   setConversations, reviewAbort, onReviewStarted, setDailyBudgetResetAt, checkRuntimeHealth,
 }: ReviewRequestOptions) {
   const { t } = useI18n();
@@ -108,32 +106,55 @@ export function useReviewRequests({
     }
   }
 
+  /** Reserve one assistant identity and cancellation scope before either kind of request starts. */
+  function beginReview(conversation: Conversation, question: string, revalidating: boolean, evidence: number, userMessage?: ChatMessage) {
+    setBusy(true);
+    const requestStarted = Date.now();
+    const execution = initialReviewProgress(revalidating, evidence, conversation.profile.corpus_scope);
+    reviewAbort.current?.abort();
+    const controller = new AbortController();
+    reviewAbort.current = controller;
+    const conversationId = conversation.id;
+    const assistantId = crypto.randomUUID();
+    const target = { conversationId, messageId: assistantId };
+    onReviewStarted(target);
+    setActiveReview(target);
+    const assistant: ChatMessage = { id: assistantId, role: "assistant", text: "", pending: true, execution, question };
+    appendMessage(conversationId, userMessage ? [userMessage, assistant] : assistant);
+    return { conversationId, assistantId, controller, requestStarted, execution };
+  }
+
+  /** Commit the terminal response to its reserved message with the request-specific evidence. */
+  function completeReview(request: ReturnType<typeof beginReview>, execution: ReviewExecution, run: ReviewRun, evidence: Partial<Pick<ChatMessage, "evidence" | "question" | "candidateToken" | "pinnedChunkIds" | "excludedChunkIds">>) {
+    if (request.controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
+    const message = terminalMessage(run);
+    const finished = finishReviewProgress(execution, run.failure ? "failed" : "completed", Date.now() - request.requestStarted, run.execution, run.report);
+    setDailyBudgetResetAt(null);
+    updateMessage(request.conversationId, request.assistantId, { ...message, execution: finished, ...evidence }, notificationErrorDetail(run.failure));
+  }
+
+  /** Release the completed request without clearing a replacement controller. */
+  function settleReview(controller: AbortController, localEngine: boolean) {
+    if (localEngine) void checkRuntimeHealth(true);
+    setBusy(false);
+    setActiveReview(null);
+    if (reviewAbort.current === controller) reviewAbort.current = null;
+  }
+
   async function submit() {
     const question = query.trim();
     if (!question || busy || !active || sendBlocked) return;
     setQuery("");
-    setBusy(true);
-    const requestStarted = Date.now();
-    let execution = initialReviewProgress(false, 0, (active.profile ?? fallbackProfile).corpus_scope);
-
-    reviewAbort.current?.abort();
-    const controller = new AbortController();
-    reviewAbort.current = controller;
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: question };
-    const conversationId = active.id;
-    const assistantId = crypto.randomUUID();
-    const pending = [...active.messages, userMessage];
-    const target = { conversationId, messageId: assistantId };
-    onReviewStarted(target);
-    setActiveReview(target);
+    const request = beginReview(active, question, false, 0, userMessage);
+    const { conversationId, assistantId, controller, requestStarted } = request;
+    let execution = request.execution;
     let preparedEvidence: EvidenceHit[] = [];
     const selectedProfile = { ...sessionProfile, local_model: localModel };
-    appendMessage(conversationId, [userMessage, { id: assistantId, role: "assistant", text: "", pending: true, execution, question }]);
     try {
       let evidence: EvidenceHit[] = [];
       let candidateToken: string | undefined;
-      const history = pending
-        .slice(0, -1)
+      const history = active.messages
         .filter((message) => !message.pending && message.text.trim() && (message.role === "user" || message.role === "assistant"))
         .map((message) => ({ role: message.role, text: message.text }));
       const response = await streamReview(
@@ -152,28 +173,7 @@ export function useReviewRequests({
           updateMessage(conversationId, assistantId, { execution });
         },
       );
-      if (controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
-      const answer = terminalAnswer(response);
-      const terminal = (response.run ?? response) as Record<string, unknown>;
-      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution, terminal.report);
-      setDailyBudgetResetAt(null);
-      const assistant: Partial<ChatMessage> = {
-        pending: false,
-        text: answer,
-        execution,
-        performance: terminal.execution as Record<string, unknown> | undefined,
-        evidence,
-        evidenceLabel: terminalEvidenceLabel(response),
-        citations: terminalCitationCount(response),
-        trace: extractTrace(response),
-        diagnostics: runDiagnostics(response),
-        failureFix: terminalFailureFix(response),
-        question,
-        candidateToken,
-        pinnedChunkIds: [],
-        excludedChunkIds: [],
-      };
-      updateMessage(conversationId, assistantId, assistant, notificationErrorDetail(terminal.failure));
+      completeReview(request, execution, response, { evidence, question, candidateToken, pinnedChunkIds: [], excludedChunkIds: [] });
     } catch (reason) {
       execution = scopeFailureProgress(reason, execution);
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
@@ -218,10 +218,7 @@ export function useReviewRequests({
         evidenceLabel: "Retrieved candidates — answer not generated",
       }, notificationErrorDetail(reason));
     } finally {
-      if ((active.profile ?? fallbackProfile).engine === "local") void checkRuntimeHealth(true);
-      setBusy(false);
-      setActiveReview(null);
-      if (reviewAbort.current === controller) reviewAbort.current = null;
+      settleReview(controller, active.profile.engine === "local");
     }
   }
 
@@ -245,18 +242,10 @@ export function useReviewRequests({
 
   async function reviewSelectedEvidence(message: ChatMessage) {
     if (!active || !message.question || !message.candidateToken || busy || sendBlocked) return;
-    setBusy(true);
-    const conversationId = active.id;
     const selected = (message.evidence ?? []).filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)).length;
-    const requestStarted = Date.now();
-    let execution = initialReviewProgress(true, selected, (active.profile ?? fallbackProfile).corpus_scope);
-    const assistantId = crypto.randomUUID();
-    const target = { conversationId, messageId: assistantId };
-    onReviewStarted(target);
-    setActiveReview(target);
-    appendMessage(conversationId, { id: assistantId, role: "assistant", text: "", pending: true, execution, question: message.question });
-    const controller = new AbortController();
-    reviewAbort.current = controller;
+    const request = beginReview(active, message.question, true, selected);
+    const { conversationId, assistantId, controller, requestStarted } = request;
+    let execution = request.execution;
     try {
       // Reuse the context that produced this candidate snapshot, excluding its question and later turns.
       const messageIndex = active.messages.findIndex((item) => item.id === message.id);
@@ -277,22 +266,7 @@ export function useReviewRequests({
         (event) => { if (controller.signal.aborted) return; execution = reviewProgressFromEvent(event, execution); updateMessage(conversationId, assistantId, { execution }); },
         controller.signal,
       );
-      if (controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
-      setDailyBudgetResetAt(null);
-      const terminal = (response.run ?? response) as Record<string, unknown>;
-      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution, terminal.report);
-      updateMessage(conversationId, assistantId, {
-        pending: false,
-        execution,
-        performance: terminal.execution as Record<string, unknown> | undefined,
-        text: terminalAnswer(response),
-        evidence: message.evidence?.filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)),
-        evidenceLabel: terminalEvidenceLabel(response),
-        citations: terminalCitationCount(response),
-        trace: extractTrace(response),
-        diagnostics: runDiagnostics(response),
-        failureFix: terminalFailureFix(response),
-      }, notificationErrorDetail(terminal.failure));
+      completeReview(request, execution, response, { evidence: message.evidence?.filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)) });
     } catch (reason) {
       execution = scopeFailureProgress(reason, execution);
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
@@ -305,10 +279,7 @@ export function useReviewRequests({
       noteDailyBudget(reason);
       notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Selected evidence review failed."), "error", "evidence-review", undefined, { event: "evidence-review-error", detail: notificationErrorDetail(reason) });
     } finally {
-      if ((active.profile ?? fallbackProfile).engine === "local") void checkRuntimeHealth(true);
-      setBusy(false);
-      setActiveReview(null);
-      if (reviewAbort.current === controller) reviewAbort.current = null;
+      settleReview(controller, active.profile.engine === "local");
     }
   }
 

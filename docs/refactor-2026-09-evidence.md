@@ -1213,3 +1213,211 @@ API generation check, build and post-build typecheck; React/act warnings are abs
 Whole-project basedpyright records 432 files, zero errors and zero warnings. Scoped Ruff,
 format checks and `git diff --check` pass. Full unit results and final post-documentation
 checks are recorded in report section 13.5 and the delivered PR's verification summary.
+
+## Ultra refactor: current owners and retired formats
+
+This is the expanded, explicitly approved follow-up to section 13, based on `19685bb8`.
+Previous second-pass evidence above is historical and is not rewritten as evidence for
+these new edits. Local records are under `/tmp/pr221-ultra-20260926/`, with bounded-agent
+reviews in `/tmp/pr221-{api,llm,web}-review.md` and `/tmp/pr221-final-independent.md`.
+Every shell check used `ulimit -v 4000000`. No user database or stored runtime artifact was
+used as a disposable fixture. Old stored-format support was explicitly retired by the
+user; unsupported data is not silently repaired and its original bytes are not deleted.
+
+### Removal decisions and independent review
+
+Reviewer names below identify distinct non-author reviewers: coordinator (R), API/jobs
+(A), LLM/evaluation (L), Web (W), and fresh independent consumer review (I). The evidence
+is actual producer/consumer inspection, not simply absence from a text search. Framework
+routes, CLI roots, stored writers, imports and current test assertions were included.
+
+| Removed owner/path | Current owner and reachability evidence | Independent verdicts |
+|---|---|---|
+| Duplicate settings fields/validators/key caches; deprecated environment/key aliases | Both settings classes inherit `ProviderSettings`; all release callers use `service_mode`; current Compose still selects `MODE` and `DOCREVIEW_MODE` separately. | A, W, I: remove |
+| Readiness board projection and swallowed lookup errors | Measurement uses its submitted job ID; standalone probes need no admin board. | A, W, I: remove |
+| Inferred ProviderMetadata/StepTrace requests; retired chat node | Current providers and trace conversion supply explicit requests; no current workflow emits chat. Sparse current DB trace encoding remains. | A, W, I: remove |
+| Historical Trace reconstruction/matching in usage and execution | Provider completion records current calls; runtime captures explicit `model_calls`, including empty provider-free lists. | R, A, W, I: remove |
+| Local connection v1 reader | Current writer emits v2; initial/default/disabled/server selection reads v2. Invalid or unsupported bytes remain untouched. | R, A, W, I: remove |
+| CorpusOperationRequest wrapper and duplicate validation | Route, CLI, persistence and retry share strict-scalar `AdminCommand`; JSON arrays still become tuple selections. | R, W, I: remove |
+| Corpus shadow JobBoard/history, stored-job projection and forwarding methods | API history already reads durable JobStore; queue retains active work until persisted completion. | R, W, I: remove |
+| Inspector document-detail SQL/projection/types | Admin now uses DocumentCatalog(public_only=False); public path retains filtering and sanitized URLs. | R, W, I: remove |
+| Wrapperless wipe-journal reader | Current atomic writer always emits result and lease fields; unsupported old bytes reject without deletion. | R, W, I: remove |
+| Duplicate artifact readers/indexers and private cross-service forwarding | EvaluationArtifacts confines paths before inspection; shared indexing rejects duplicate/missing IDs. | R, W, I: remove |
+| Persistence scoring repair and sequence-only retrieval adapter | Evaluator writes actual scoring once; every adapter returns hits with its optional per-call decomposition evidence. | R, W, I: remove |
+| DB golden revision/builtin fallback, snapshot revision fields, constant file response fields | No app/scripts DB revision writer; current file owner emits draft/validated. Evaluator records bound-case hash; all readers verify it directly. File-copy request parent_id remains current. Physical schema is unchanged. | R, A, I: remove |
+| Web incomplete-profile/old progress repair, free-text budget inference and retired labels | Current writers emit full profiles/progress, typed budgets and required operator target. Recovery preserves rejected originals before replacement. | R, A, I: remove |
+| Web duplicated terminal projections and flat/wrapped ambiguity | SSE emits flat RunResponse; current admin preview still explicitly emits {profile, run}. Shared lifecycle preserves request identity and cancellation. | R, A, I: remove |
+| Unreachable Measure public branches, duplicate refresh and mutable builtin catalog | Public workspace owns visitor pages; one job-signature effect refreshes runs; explicit current catalog drives server defaults. | R, A, I: remove |
+
+### Per-test disposition
+
+The Python names below are the complete baseline-to-final removed-name inventory; several
+were renamed or moved. Parameters and assertions for supported behavior are retained.
+
+| Baseline test (module shortened) | Disposition and retained behavior |
+|---|---|
+| admin_runtime: `test_document_detail_checks_schema_before_serializing` | Removed wrapper-only test; catalog drift test checks the actual gate before all document reads; isolated PostgreSQL checks public/admin parity. |
+| admin_runtime: `test_job_board_reads_history_without_revalidating_ingestion_arguments` | The first deletion also lost actual unified-board coverage. Source-aware comparison caught it; `test_operator_board_reads_persisted_history_and_global_queue_actions` restores current history, FIFO positions, cancellation/retry rules and fresh-instance detail reads. Only the old incomplete-command premise is retired. |
+| admin_schemas: `test_exact_ingestion_and_current_cli_manifest_requests_remain_valid` | Actual HTTP route test proves exact IDs, array/tuple roundtrip and same command instance at enqueue. |
+| admin_schemas: `test_selected_ingestion_requires_nonempty_unique_document_ids` | Actual HTTP invalid-command cases retain empty/duplicate IDs plus strict scalars and unknown-field rejection. |
+| admin_schemas: `test_source_deletion_requires_a_dedicated_explicit_confirmation` | Same HTTP cases and domain tests retain dedicated confirmation and exact selection before enqueue. |
+| job_queue: `test_historical_ingestion_without_selection_is_refused_on_retry` | Current stored-job incomplete-command test retains rejection before execution; queue tests now read the real ledger contract. |
+| public_snapshot_details: `test_artifact_only_snapshot_is_hash_verified` | Current canonical artifact test checks key-order independence and no old DB revision reads. |
+| public_snapshot_details: `test_historical_source_bound_artifact_requires_exact_original_and_frozen_source` | Real custom file -> binding -> evaluator -> public reader covers original-file preservation and altered question/source, missing frozen source and missing identity rejection. |
+| public_snapshot_details: `test_version_one_scoring_stamp_matches_persisted_configuration` | Current evaluator/artifact/ORM-row/public-detail roundtrip replaces unsupported old scoring repair; changed cutoff, threshold and retrieval config reject. |
+| regression: `test_a_config_cannot_shadow_the_reserved_scoring_stamp` | Moved to evaluator owner and proves rejection before retrieval. |
+| local_connection: `test_corrupt_file_fails_closed_and_prod_does_not_read_or_probe` | Renamed invalid-format test adds v1 connected/disabled rejection and exact byte preservation; PROD still neither reads nor probes. |
+| local_connection: `test_default_resolves_runtime_and_legacy_matching_choice_without_writes` | Current saved-initial test retains v2 default selection without writes; only v1 matching-address case retired. |
+| llm/schemas: `test_provider_metadata_keeps_final_raw_output_and_retry_count_consistent` | Consolidated into explicit-count test retaining final output, blank provider, repaired count, mismatch and zero-request denial assertions. |
+| observability/types: `test_step_trace_counts_sent_requests_and_defaults_older_records_to_their_attempts` | Explicit one/two/zero request cases remain; missing count now rejects. Current sparse persistence roundtrip remains. |
+| usage: `test_model_calls_include_gate_without_double_counting_the_same_trace` | Real deterministic provider plus stage recorder verifies gate, repair and unsent denial counts [1,2,0], exact tokens and cost. |
+| usage: `test_old_unpriced_calls_and_local_estimates_remain_explicit` | Unsupported incomplete call half retired; local embedding unknown-input/zero-cost assertion retained separately. |
+| usage: `test_partial_model_calls_keep_unmatched_historical_traces` | Retired reconstruction; malformed current lists reject and actual producer records retain all attempts. |
+| usage: `test_stored_rows_without_call_records_reconstruct_their_sent_requests` | Retired reconstruction; missing list rejects, explicit [] is provider-free, persisted current usage is integration-tested. |
+| operator/commands: `test_readme_command_table_matches_the_executable_registry` | Archived wording oracle removed; fixed argv, excluded/destructive targets, timeout and confirmation behavior remain. |
+| readiness: `test_percentile_uses_nearest_rank_and_tolerates_empty_input` | Summary test uses independently fixed p95 values; all-failed samples still exercise empty latency handling. |
+| readiness: `test_phase_tags_follow_the_queued_job_status` | Actual HTTP job-detail responses cover queued/running/succeeded and lookup failure instead of removed projection helper. |
+
+Web removals: stored chat node/old casual intent, operator response without required target,
+and incomplete saved-profile migration assert retired shapes. Current service-help,
+committed-stage, failure/cancellation, typed budget and complete-profile behavior remain.
+The direct terminal-helper auth-text assertion duplicated retained pipeline classification;
+real stream failure and selected-evidence lifecycle checks remain. Provider timing fixtures
+now use the sole current field with the same speed/zero-duration/missing-data assertions.
+DEV/PROD mounted-shell recovery tests prove original bytes survive startup autosave, and
+preset tests prove DEV defaults cannot pollute PROD. No test file was deleted.
+
+Protected boundaries are still executed: long local-model names in
+`local-engine-settings.test.tsx`, both queued and running deletion locks in
+`build-workspace.test.tsx`, saved initial v2 connection state, billed-attempt metadata,
+pre-call/repair refusals, unrestricted multilingual search and shared reranker lifetime.
+Constant-test scan found no constant-only Python tests; mixed schema/behavior checks were
+kept. Coverage overlap alone was not used to remove tests.
+
+### Repairs found by the final broad gates
+
+The first broad unit run reported 2,191 passed, 3 failed, 40 skipped. The snapshot resource
+fixture still passed a removed field, one offline queue test relied on the removed implicit
+fake-store behavior, and cross-language parity treated the newly recorded case digest as
+a shared retrieval setting. The first two now use the current schema and explicit LedgerStore.
+Parity compares the same suite, cutoff, all/scored case IDs and retrieval/scoring settings
+while excluding the language-specific evaluated-case hash. The actual evaluator test proves
+the two hashes differ and the valid language pair still passes. Same-language baseline
+comparison retains the hash. The API reviewer independently checked this distinction.
+All evaluation tests plus affected API/source-selection tests then passed: 369 passed,
+4 live tests deselected. This reuses unchanged full-suite results, rather than claiming a
+second complete unit run.
+
+The first required PostgreSQL run reported 34 passed, 4 failed. One fixture supplied old
+trace-only usage data; it now supplies current recorded calls with unchanged fixed expected
+request/token/cost totals, and passes on a new isolated database. Three failures stopped at
+missing acceptance-environment guards: wipe image, restored public bundle/DSN, prepared
+local-PROD data. Their actual acceptance procedures remain not run; they are not reported
+as passing or silently reclassified as skips. No user database was touched.
+
+Web snapshot type integration initially failed because a fixture lacked the API's required
+raw_artifact_path. Using the generated resource exposed that missing field; the current
+fixture now supplies it. The original failed type/build logs are retained alongside the
+subsequent passing checks. Initial Python type errors likewise identified obsolete snapshot
+arguments and a nullable execution assertion; both are corrected without relaxing types.
+
+The coverage comparison additionally identified a removed unified-board execution path.
+The restored behavioral test passed all three running-job variants; the whole affected
+module passed 11 tests. The JobStore domain filter lost its incidental caller when the
+shadow corpus board was removed, so the existing mixed-domain PostgreSQL test now asserts
+that filtering includes its evaluation row and excludes its corpus row. This strengthens
+the current owner rather than restoring the obsolete board.
+
+### Coverage method and attribution limits
+
+The pre-ultra reference is the preserved `cov-verified` dataset in
+`/tmp/a2-continuation-20260926/`: 17,133/19,181 statements (89.3228%) and
+4,271/5,456 branches (78.2808%). The new broad dataset is retained unchanged in
+`coverage-final`, including every failure. `coverage-verified` reuses unchanged production
+files and appends only repaired/affected tests. Since parity source changed after the broad
+run, its old arcs were explicitly purged with coverage.py's `CoverageData.purge_files`
+before all evaluation tests were recollected; stale line numbers are not merged for that
+file. Test-only fixture changes do not change measured production locations.
+
+Source matching against `19685bb8` initially found 11 formerly covered statements and two
+branch pairs missing. Eight statements belonged to the deleted unified-board test and were
+restored by the current-format board test. The live domain-filter assertion replaces an
+incidental filtered-list call removed with the shadow board. The other two locations are
+not evidence of removed valid assertions:
+
+- `CorpusJobQueue.enqueue`'s full-queue raise was attributed to the unchanged live ingestion
+  test, which enqueues three jobs sequentially and joins each before the next. It never
+  fills the queue. No queue-capacity assertion was removed by this change.
+- `_persist_current_job`'s return was previously reached when the optional store was None.
+  That supported test-only branch is retired; the current store is required. The remaining
+  missing-job guard has no lost historical assertion. Progress, failed persistence and
+  final flush behavior remain tested at the durable store boundary.
+
+The 16 changed/moved missing statements were inspected separately: existing malformed-v2
+connection guards, moved artifact/schema error paths, single forwarding lines and
+unexercised adapter/cancellation branches. None justified replacing real assertions with
+coverage-only calls. Aggregate coverage and this attribution review do not turn the old
+raw location comparator's exit 1 into a mechanical pass or diagnose its instrumentation.
+
+### Historical LLM decomposition decline: independent causal check
+
+The retained before/after artifacts contain 16 total and 12 scored positive cases. The
+entire aggregate decrease is one case, `m3c-02`, moving from first relevant rank 4 to no
+hit: recall/hit rate 0.333333 -> 0.250000 and MRR 0.141667 -> 0.120833. `m3c-22` also
+changes returned hits but remains a miss. All 16 single-query hit/score records match.
+The old generic comparison's `None` case IDs were not used; this check joins actual
+`cases[].golden.id` and inspects the corresponding scores.
+
+The fresh reviewer compared base `8ca94d9`, pre-ultra `19685bb8` and current code. The
+applicable system prompt, structured schema, original questions, 1,000/300 token and
+USD 0.05 call budget, explicit Terra model, Responses arguments/medium reasoning, ordered
+subquestion dispatch, RRF fusion and sequential case pairing are unchanged. The CLI's
+older default-model change cannot explain these runs: the harness explicitly passes the
+model, and both sets of 16 logs record Terra, status ok and one request. Equal corpus
+fingerprints contain only 2,567 English chunks, so the additional empty Korean lexical
+lane cannot change these rankings. No changed scoring arithmetic or case/hit join was found.
+
+All input-token counts match; six output-token counts differ, including `m3c-02` at
+99 -> 137. That is evidence of different provider usage, not proof of particular generated
+text. Historical subquestions and raw responses were not captured, so their exact semantic
+difference, provider-side state or model revision cannot be reconstructed or replayed.
+The evidence points to the generated decomposition boundary without establishing its exact
+cause; calling it random variation would exceed the evidence. No new paid evaluation was run.
+
+Current `EvaluationRetrieval` stores the actual decomposition from the same awaited call
+with that case's hits, including the provider-status reason for fallback. No second call
+or question-string lookup is added. The repeated-question/distinct-case regression checks
+exact recorded subquestions, fixed fused order [2, 1] and explicit fallback result [3].
+This improves future attribution and does not claim to recover the missing historical
+record or improve the measured recall.
+
+### Final verification record
+
+Evidence is retained under `/tmp/pr221-ultra-20260926/`; the reference artifacts remain
+under `/tmp/a2-continuation-20260926/`. Commands ran with `ulimit -v 4000000` and no paid
+provider opt-in. The final checkout contains 154 changed tracked paths, no deleted files,
+and no changes to instruction/OPS files, physical DB schema, stored data or dependencies.
+
+| Check | Final result and evidence |
+|---|---|
+| Python broad unit gate: `pytest -m "not live_postgres" --cov=app --cov=scripts --cov-branch --cov-context=test` | Initial 2,191 passed, 3 failed, 40 skipped; immutable `coverage-final/unit.xml` and logs retain all outcomes. The three failures were repaired as described above. |
+| Affected Python rerun: `pytest -m "not live_postgres" tests/evals tests/api/test_01_resource_reads.py tests/api/test_execution.py tests/ingestion/test_source_selection.py` | 369 passed, 4 live cases deselected (`unit-repair.xml`). Restored current board behavior and its whole module: 11 passed, 2 live cases deselected (`board-verified.log`). Final collection selects 2,237 unit cases, including the 40 skips; no second full-suite pass is claimed. |
+| Actual isolated PostgreSQL: `pytest -m live_postgres --require-live-postgres` | Initial 34 passed, 4 failed (`coverage-final/live.xml`). The current usage-persistence fixture passes on a new isolated database (`live-repair.xml`), giving passing evidence for all 35 supported live checks. The strengthened existing mixed-domain JobStore test separately passes (`live-domain.xml`). All temporary databases were sequential, disposable tmpfs containers; no user database was used. |
+| Environment acceptance | Three environment guards still fail: wipe image, restored public bundle/DSN, and prepared local-PROD data. The guarded acceptance operations were not run. These remain failed guards / unrun operations, not passing or skipped evidence. |
+| Python static checks | Ruff check and format check pass on all 95 changed Python files (`ruff-delivery.log`). Basedpyright checks 432 files with zero errors/warnings (`basedpyright-post-repair.json`); the later board/domain test changes have separate zero-error checks. `git diff --check` passes. |
+| Web broad gate: `npm test -- --maxWorkers=2`, `npm run typecheck`, `npm run check:api`, `npm run build`, post-build typecheck | 1,263 tests in 223 suites pass without React/act warnings (`web-final/summary.json`). After the final snapshot delta, 84 affected tests pass; type/API/build/post-build checks pass again (`web-snapshot-repaired/summary.json`). The final golden-fixture-only change passes its 3 tests. Earlier fixture type/build failures remain recorded. |
+| Deterministic evaluation | All 14 harness steps exit 0. Of 51 comparable deterministic outputs, 9 match exactly and 42 differ only by the newly added `config.scoring` and `config.evaluated_golden_sha256`. Removing only those newly added keys leaves every prior field, hit, score and rank equal (`evaluation-comparison.json`). The separate informational budget output also matches. |
+| Evaluation evidence integrity | All 42 raw case artifacts independently reproduce their stored canonical case hash, unique case IDs and scoring parameters `k=5`, `coverage_threshold=0.5` (`evaluated-artifact-verification.json`). Corpus/DB fingerprints match; corpus files, profiles and existing eval-run listings are unchanged. |
+| Evaluation comparison limits | Five existing CLI stdout files contain non-JSON output and remain unreadable to the JSON comparator; their individual arm artifacts are compared. The paid decomposition block was excluded, including its paired baseline and stdout (three outputs). No new paid evaluation was run. |
+| Browser/Compose/deployment | No new browser or Compose smoke, deployment, merge or real-service verification. Earlier section-13 smoke belongs to the earlier head and is not presented as final-head runtime proof. |
+
+The final combined coverage is **16,925/18,834 statements (89.8641%)** and
+**4,212/5,316 branches (79.2325%)**, versus 89.3228% and 78.2808% before this follow-up.
+The source-aware comparison now leaves two matched statements and one branch pair in
+`job_queue.py`, covered by the explicit attribution limitations above; the board and domain
+filter gaps are closed. Sixteen changed/moved missing statements retain their separate
+inspection disposition. The raw physical-location comparator is not claimed to pass.
+
+These are reviewer-authored repairs and implementation checks, supported by bounded
+independent agent reviews; they are not independent human approval. Historical LLM
+decomposition causality and the three unrun acceptance environments remain unresolved.

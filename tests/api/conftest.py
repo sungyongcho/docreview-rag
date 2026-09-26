@@ -82,6 +82,7 @@ def successful_run(hit):
         node_path=("retrieve", "grade", "check", "report"),
         steps=(),
         report=report.model_dump(mode="json"),
+        request_context={"model_calls": []},
     )
 
 
@@ -90,6 +91,7 @@ def budget_run():
     """Return one structured pre-node budget refusal."""
     return build_run_report(
         run_id="run-budget",
+        request_context={"model_calls": []},
         status="budget_exceeded",
         total_time_seconds=0.0,
         system_prompt="Use only filing evidence.",
@@ -124,6 +126,28 @@ def schema_rejected_run(trace):
         node_path=("retrieve", "grade"),
         steps=(trace,),
         report={"reason": failure.model_dump(mode="json")},
+        request_context={
+            "model_calls": [
+                {
+                    "step": 1,
+                    "node": "grade",
+                    "model": trace.model_name,
+                    "attempts": trace.requests,
+                    "elapsed_ms": trace.request_time_ms,
+                    "input_tokens": trace.input_tokens,
+                    "output_tokens": trace.output_tokens,
+                    "cached_input_tokens": trace.cached_input_tokens,
+                    "cache_write_input_tokens": trace.cache_write_input_tokens,
+                    "reasoning_tokens": trace.reasoning_tokens,
+                    "estimated_cost_usd": str(trace.estimated_cost_usd),
+                    "provider": "openai_responses",
+                    "local": False,
+                    "credential_slot": "OPENAI_API_KEY_LOCAL",
+                    "local_timings": [],
+                    "projected_input_tokens": None,
+                }
+            ]
+        },
     )
 
 

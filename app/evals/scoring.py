@@ -41,7 +41,7 @@ class SuiteScore:
 
         Every metric above moves with the cutoff and with the relevance threshold,
         so a stored baseline is only meaningful against a run that used the same
-        values. Persistence stamps this mapping into the run configuration.
+        values. The evaluator records this mapping in both artifact and stored config.
         """
         return {"k": self.k, "coverage_threshold": COVERAGE_THRESHOLD}
 

@@ -24,7 +24,6 @@ from app.corpus_admin.types import (
     AdminJob,
     CorpusSnapshot,
     CorpusStatus,
-    DocumentDetail,
 )
 from app.db.session_factory import SessionFactory
 from app.ingestion.source_deletion import SourceDeletion
@@ -67,7 +66,7 @@ class RuntimeCorpusAdminService:
             run_operation=self._operations.run,
             redact=context.redact,
             invalidate_status=self._inspector.invalidate_status,
-            job_store=job_store,
+            job_store=job_store or JobStore(session_factory=session_factory),
             corpus_access=corpus_access or CorpusAccess(),
             execution_lock=execution_lock or asyncio.Lock(),
             execution_coordinator=execution_coordinator or JobExecutionCoordinator(),
@@ -108,10 +107,6 @@ class RuntimeCorpusAdminService:
             parse_status=parse_status,
         )
 
-    async def document_detail(self, doc_id: str) -> DocumentDetail | None:
-        """Load one live document and no more than five bounded chunk bodies."""
-        return await self._inspector.document_detail(doc_id)
-
     async def preview_source_deletion(self, document_ids: tuple[str, ...]) -> dict[str, Any]:
         """Read exact deletion targets in a thread without blocking service requests."""
         return await asyncio.to_thread(self._source_deletion.preview, document_ids)
@@ -119,10 +114,6 @@ class RuntimeCorpusAdminService:
     async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
         """Queue one operation and start the persistent single worker lazily."""
         return await self._job_queue.enqueue(command, retry_of=retry_of)
-
-    def forget_history(self, job_ids: tuple[str, ...]) -> None:
-        """Release terminal cache records only after their persistent deletion."""
-        self._job_queue.forget_history(job_ids)
 
     async def retry(self, job_id: str) -> AdminJob:
         """Requeue the command from one failed or interrupted operation only."""

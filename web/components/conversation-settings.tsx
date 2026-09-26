@@ -1,4 +1,5 @@
 "use client";
+import { useSavedPresets } from "@/lib/use-saved-presets";
 import { closeSidePanel } from "./side-panel-motion";
 import { NotificationOutlet, useNotificationSurface } from "./notifications";
 import { useI18n } from "@/lib/i18n";
@@ -47,7 +48,8 @@ export function ConversationSettings(props: Props) {
   // The drawer shows the recommendation itself, so the pinned slow-CPU toast stays hidden while it is open.
   useNotificationSurface("slow-cpu-toast");
   const active = useRetainedPanelActive();
-  const settingsError = conversationSettingsError(props.profile);
+  const { builtins } = useSavedPresets();
+  const settingsError = conversationSettingsError(props.profile, builtins);
   const [savedDefaults, setSavedDefaults] = useState(DEFAULT_SESSION_PROFILE);
   useEffect(() => {
     function refresh() { setSavedDefaults(loadDefaultProfile()); }
@@ -66,7 +68,7 @@ export function ConversationSettings(props: Props) {
   }
   const searchDefaultsControls = props.editable && <div className="conversation-search-defaults"><p className="helper">{t("Use this search preset for newly created conversations. Current conversations stay unchanged.")}</p><div className="action-row"><button type="button" className="button" disabled={Boolean(settingsError)} onClick={() => saveSearchDefaults()}>{t("Save as new-chat search defaults")}</button><button type="button" className="button ghost" onClick={() => saveSearchDefaults(true)}>{t("Reset new-chat search defaults")}</button></div>{searchDefaultNotice && <p className="helper" role="status">{t(searchDefaultNotice)}</p>}</div>;
   const baseline = savedDefaults.prompt_policy;
-  const changes = Object.entries(props.profile.prompt_policy).filter(([key, value]) => key !== "workflow_budget" && value !== baseline[key as keyof typeof baseline]).length + Object.entries(props.profile.prompt_policy.workflow_budget).filter(([key, value]) => value !== baseline.workflow_budget[key as keyof typeof baseline.workflow_budget]).length + Object.entries(resolvedRetrievalProfile(props.profile)).filter(([key, value]) => value !== resolvedRetrievalProfile(savedDefaults)[key as keyof ReturnType<typeof resolvedRetrievalProfile>]).length;
+  const changes = Object.entries(props.profile.prompt_policy).filter(([key, value]) => key !== "workflow_budget" && value !== baseline[key as keyof typeof baseline]).length + Object.entries(props.profile.prompt_policy.workflow_budget).filter(([key, value]) => value !== baseline.workflow_budget[key as keyof typeof baseline.workflow_budget]).length + Object.entries(resolvedRetrievalProfile(props.profile, builtins)).filter(([key, value]) => value !== resolvedRetrievalProfile(savedDefaults, builtins)[key as keyof ReturnType<typeof resolvedRetrievalProfile>]).length;
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -150,7 +152,7 @@ export function ConversationSettings(props: Props) {
           {panelHeading("Search settings")}
           <RetrievalPresetSelect profile={props.profile} editable={props.editable} onChange={props.onChange} onManage={props.onManagePresets} />
           {props.editable ? <section className="conversation-custom-retrieval" data-help="review.retrieval">
-            {props.profile.retrieval_preset !== "custom" ? <button className="button" type="button" onClick={() => patch({ retrieval_preset: "custom", custom_retrieval: resolvedRetrievalProfile(props.profile) })}>{t("Customize retrieval")}</button> : <ProfileFields conversation profile={resolvedRetrievalProfile(props.profile)} onChange={(custom_retrieval) => patch({ retrieval_preset: "custom", custom_retrieval })} helpPrefix="review.retrieval" />}
+            {props.profile.retrieval_preset !== "custom" ? <button className="button" type="button" onClick={() => patch({ retrieval_preset: "custom", custom_retrieval: resolvedRetrievalProfile(props.profile, builtins) })}>{t("Customize retrieval")}</button> : <ProfileFields conversation profile={resolvedRetrievalProfile(props.profile, builtins)} onChange={(custom_retrieval) => patch({ retrieval_preset: "custom", custom_retrieval })} helpPrefix="review.retrieval" />}
           </section> : <p className="helper">{t("Choose an available preset. Custom retrieval editing is available in DEV mode.")}</p>}
           <RetrievalPresetExplanation profile={props.profile} />
           <RetrievalPresetComparison profile={props.profile} editable={props.editable} />

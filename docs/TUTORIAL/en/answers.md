@@ -75,7 +75,7 @@ Five cards show per page. The sticky toolbar always shows the visible range, the
 
 ![The expanded related-evidence section listing section-titled evidence cards with pin/exclude controls and pagination.](../assets/collapsed-titled-paginated-evidence-candidates.en.png)
 
-Click the corpus status line (**Corpus total · N filings**) to inspect preparation and **Back** to return to the retained draft, profile, messages, and scroll. [Execution performance](runtime.md) explains measured bars, repeated calls, uncollected fields, and legacy records.
+Click the corpus status line (**Corpus total · N filings**) to inspect preparation and **Back** to return to the retained draft, profile, messages, and scroll. [Execution performance](runtime.md) explains measured bars, repeated calls, uncollected fields, and supported saved records.
 
 For CPU-only local models, use the optional [CPU starting preset and hardware guidance](ollama.md#cpu-starting-preset). Existing defaults remain unchanged; apply a preset explicitly and inspect the next run's timings.
 
@@ -109,7 +109,7 @@ Selected scope and server-resolved scope remain separate: Auto can resolve to SE
 
 A model can identify a company name in the question, but the server verifies filing availability against the real catalog. A supported alias such as NVIDIA can resolve to the NVDA company in the corpus. Ambiguous companies require clarification; a mixture of available and missing companies names the missing companies before asking for a valid scope. A requested year or selected scope that matches no provided filing also stops before retrieval.
 
-Greetings, thanks, and usage questions receive fixed service guidance at stage 0. Expected stops show their stage and reason, with all subsequent stages **Not performed in this request**, including citation verification and result preparation. They are distinct from technical failures such as an unavailable catalog or classifier timeout. DEV and PROD use the same policy. Historical conversation replies retain their original recorded behavior; model-step totals always use actual recorded calls.
+Greetings, thanks, and usage questions receive fixed service guidance at stage 0. Expected stops show their stage and reason, with all subsequent stages **Not performed in this request**, including citation verification and result preparation. They are distinct from technical failures such as an unavailable catalog or classifier timeout. DEV and PROD use the same policy. Saved outputs require the current execution format; model-step totals always use actual recorded calls.
 <!-- /details -->
 
 ### SCREENSHOT NEEDED

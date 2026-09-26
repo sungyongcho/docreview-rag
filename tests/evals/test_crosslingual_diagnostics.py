@@ -18,6 +18,7 @@ from app.evals.crosslingual_diagnostics import (
 )
 from app.evals.parity import ParityAssessment
 from app.evals.retrieval_eval import PersistedEvaluation
+from app.evals.types import EvaluationRetrieval
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.evals.crosslingual_support import (
     QUESTIONS,
@@ -61,7 +62,7 @@ def test_lexical_coverage_counts_the_collapse_instead_of_assuming_it():
         """Return one candidate only for the Latin-bearing Korean question."""
         # Korean questions still carry Latin tokens, and the English tsquery can match
         # them, so the collapse is partial. The number says how partial.
-        return [hit(1, start=100)] if "AMD" in query else []
+        return EvaluationRetrieval(hits=tuple([hit(1, start=100)] if "AMD" in query else []))
 
     coverage = asyncio.run(
         lexical_candidate_coverage(latin_only, cases, language="ko", candidate_k=20)
@@ -110,6 +111,10 @@ def test_parity_pairs_only_gate_a_hybrid_arm_with_language_aware_handling(monkey
     ]
     runs.append(evaluate_arm(arm(strategy="vector", lexical_ranker=None)))
 
+    assert (
+        runs[0].evaluation.config["evaluated_golden_sha256"]
+        != runs[1].evaluation.config["evaluated_golden_sha256"]
+    )
     assessments = parity_pairs(runs)
     gated = gated_assessments(assessments)
 

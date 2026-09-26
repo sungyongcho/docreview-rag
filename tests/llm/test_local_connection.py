@@ -119,13 +119,24 @@ def test_empty_server_is_a_valid_connection_and_changed_url_does_not_get_secret(
     asyncio.run(exercise())
 
 
-def test_corrupt_file_fails_closed_and_prod_does_not_read_or_probe(tmp_path, monkeypatch) -> None:
-    """Invalid stored settings do not fall back, and prod does not even read them."""
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "not json",
+        '{"version":1,"state":"connected","base_url":"http://saved"}',
+        '{"version":1,"state":"disabled"}',
+    ],
+)
+def test_invalid_format_fails_closed_and_prod_does_not_read_or_probe(
+    tmp_path, monkeypatch, stored
+) -> None:
+    """Invalid or retired formats stay untouched; production never reads or probes them."""
     path = tmp_path / "broken.json"
-    path.write_text("not json")
+    path.write_text(stored)
     manager = LocalConnectionManager(path=path, transport=httpx.MockTransport(metadata_server))
     assert manager.current.source == "invalid"
     assert manager.current.inventory is None
+    assert path.read_text() == stored
 
     def forbid(*args, **kwargs):
         """Fail if production accesses the connection file or model server."""
@@ -201,10 +212,17 @@ def test_saved_choice_overrides_invalid_initial_url(tmp_path) -> None:
     path.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "state": "connected",
-                "base_url": "http://saved",
-                "protocol": "ollama",
+                "selected_server_id": "saved",
+                "servers": [
+                    {
+                        "id": "saved",
+                        "name": "Saved",
+                        "base_url": "http://saved",
+                        "protocol": "ollama",
+                    }
+                ],
             }
         )
     )
@@ -236,7 +254,7 @@ def test_invalid_initial_url_is_reported_when_no_saved_choice_exists(tmp_path) -
 def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path) -> None:
     """Real filesystem denial preserves existing configuration and explains ownership."""
     path = tmp_path / "local-llm.json"
-    path.write_text('{"version":1,"state":"disabled"}')
+    path.write_text('{"version":2,"state":"disabled","selected_server_id":"default","servers":[]}')
     path.chmod(0)
     try:
         unreadable = LocalConnectionManager(path=path)
@@ -258,23 +276,14 @@ def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path)
         tmp_path.chmod(0o700)
 
 
-@pytest.mark.parametrize(
-    "saved_choice",
-    [
-        {
-            "version": 1,
-            "state": "connected",
-            "base_url": "http://host.docker.internal:11434",
-            "protocol": "auto",
-        },
-        {"version": 2, "state": "initial", "selected_server_id": "default", "servers": []},
-    ],
-    ids=["legacy-matching-address", "stored-initial-state"],
-)
-def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(
-    tmp_path, saved_choice
-) -> None:
-    """Saved startup choices resolve to Default without rewriting persisted settings."""
+def test_saved_initial_choice_resolves_runtime_default_without_writes(tmp_path) -> None:
+    """A saved initial choice resolves to Default without rewriting its current format."""
+    saved_choice = {
+        "version": 2,
+        "state": "initial",
+        "selected_server_id": "default",
+        "servers": [],
+    }
     initial = "http://host.docker.internal:11434"
     path = tmp_path / "connection.json"
     path.write_text(json.dumps(saved_choice))

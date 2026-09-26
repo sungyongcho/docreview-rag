@@ -209,30 +209,19 @@ def test_budget_refusal_rejects_negative_evidence():
         )
 
 
-def test_provider_metadata_keeps_final_raw_output_and_retry_count_consistent():
-    """Keep the final raw output and the retry count consistent with each other."""
-    values = metadata().model_dump()
-    values.update(
-        retries=1,
-        raw_outputs=("invalid", "valid"),
-        llm_output="valid",
-        requests=2,
-    )
-    result = ProviderMetadata.model_validate(values)
-
-    assert result.retries == 1
-    with pytest.raises(ValidationError):
-        ProviderMetadata.model_validate({**values, "llm_output": "invalid"})
-    with pytest.raises(ValidationError):
-        ProviderMetadata.model_validate({**values, "provider": "   "})
-
-
 def test_provider_metadata_counts_sent_requests_and_allows_a_refusal_before_any_request():
-    """Requests default to one per captured output; a refusal before the call carries none."""
+    """Explicit requests distinguish paid repairs and refusals before a call is sent."""
     assert metadata().requests == 1
     repaired = metadata().model_dump()
-    repaired.update(retries=1, raw_outputs=("invalid", "valid"), llm_output="valid", requests=None)
+    repaired.update(retries=1, raw_outputs=("invalid", "valid"), llm_output="valid", requests=2)
     assert ProviderMetadata.model_validate(repaired).requests == 2
+    with pytest.raises(ValidationError, match="final raw output"):
+        ProviderMetadata.model_validate({**repaired, "llm_output": "invalid"})
+    with pytest.raises(ValidationError):
+        ProviderMetadata.model_validate({**repaired, "provider": "   "})
+    del repaired["requests"]
+    with pytest.raises(ValidationError, match="requests"):
+        ProviderMetadata.model_validate(repaired)
     with pytest.raises(ValidationError, match="sent requests"):
         ProviderMetadata.model_validate({**metadata().model_dump(), "requests": 2})
 

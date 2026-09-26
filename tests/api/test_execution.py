@@ -58,7 +58,7 @@ def test_effective_budget_exposes_the_limiting_source_and_chat_exclusion():
 
 
 def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(successful_run):
-    """Live and persisted projections retain details while historical absence stays unknown."""
+    """Live and persisted projections retain current measurements and optional timing."""
     fields = {
         "routing_queries": {"en": "Revenue?"},
         "resolved_scope": {"source": "issuer_alias"},
@@ -72,9 +72,15 @@ def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(s
                 "elapsed_ms": 4.0,
                 "input_tokens": 9,
                 "output_tokens": 2,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
+                "reasoning_tokens": 0,
+                "estimated_cost_usd": "0.000001",
                 "provider": "openai_responses",
                 "local": False,
                 "credential_slot": "OPENAI_API_KEY_LOCAL",
+                "local_timings": [],
+                "projected_input_tokens": None,
             }
         ],
     }
@@ -98,9 +104,22 @@ def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(s
         mode="json"
     )
     assert restored["execution"] == execution
-    historical = RunResponse.from_run_report(successful_run).model_dump(mode="json")["execution"]
-    assert historical["stage_results"] is None
-    assert historical["effective_settings"] is None
+    provider_free = RunResponse.from_run_report(successful_run).execution
+    assert provider_free is not None
+    assert provider_free.model_calls == []
+    assert provider_free.stage_results is None
+    assert provider_free.effective_settings is None
+
+
+@pytest.mark.parametrize("context", [None, {}, {"model_calls": None}, {"model_calls": {}}])
+def test_execution_rejects_missing_call_records_instead_of_rebuilding_traces(
+    schema_rejected_run, context
+):
+    """A billed trace cannot make an unsupported execution context look current."""
+    with pytest.raises(ValueError, match="recorded model calls must be a list"):
+        RunResponse.from_run_report(
+            schema_rejected_run.model_copy(update={"request_context": context})
+        )
 
 
 @pytest.mark.parametrize(

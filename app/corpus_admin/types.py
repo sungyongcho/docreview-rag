@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
+
+from pydantic import ConfigDict, Field, StrictBool, StrictInt, StrictStr
+from pydantic.dataclasses import dataclass as validated_dataclass
 
 from app.ingestion.source_catalog import ACQUISITION_COMPANIES, AcquisitionCompany, approved_company
 from app.ingestion.source_selection import SourceInventory
@@ -24,7 +27,6 @@ type AdminJobStatus = Literal[
 type SchemaStatus = Literal["compatible", "empty", "drifted", "unavailable"]
 
 MAX_QUEUED_JOBS = 8
-MAX_JOB_HISTORY = 20
 CHUNK_PREVIEW_LIMIT = 5
 CHUNK_PREVIEW_CHARS = 1_000
 
@@ -110,43 +112,6 @@ class AdminDocument:
 
 
 @dataclass(frozen=True, slots=True)
-class ChunkPreview:
-    """Bounded source-cited chunk text shown for a selected document."""
-
-    chunk_id: int
-    ordinal: int
-    citation: str
-    span: str
-    source_sha256: str
-    body: str
-
-
-@dataclass(frozen=True, slots=True)
-class SnapshotMembership:
-    """One immutable snapshot revision containing a selected document."""
-
-    snapshot_id: int
-    label: str
-    status: str
-    public: bool
-    created_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class DocumentDetail:
-    """One selected document and its bounded chunk previews."""
-
-    document: AdminDocument
-    chunks: tuple[ChunkPreview, ...]
-    text_chunks: int = 0
-    table_chunks: int = 0
-    embedded_chunks: int = 0
-    item_counts: tuple[dict[str, object], ...] = ()
-    embedding_identities: tuple[dict[str, object], ...] = ()
-    snapshot_memberships: tuple[SnapshotMembership, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class CorpusSnapshot:
     """Atomic administrator projection used by one UI refresh."""
 
@@ -159,19 +124,19 @@ class CorpusSnapshot:
     acquisition_companies: tuple[AcquisitionCompany, ...] = ACQUISITION_COMPANIES
 
 
-@dataclass(frozen=True, slots=True)
+@validated_dataclass(frozen=True, slots=True, config=ConfigDict(extra="forbid"))
 class AdminCommand:
     """Validated safe operation submitted through the local administrator UI."""
 
     kind: AdminJobKind
-    identifiers: tuple[str, ...] = ()
-    years: tuple[int, ...] = ()
-    manifest: str | None = None
-    selection_id: str | None = None
-    expected_documents: int | None = None
-    document_ids: tuple[str, ...] | None = None
-    deletion_token: str | None = None
-    confirm_delete: bool | None = None
+    identifiers: tuple[StrictStr, ...] = ()
+    years: tuple[Annotated[StrictInt, Field(gt=0)], ...] = ()
+    manifest: StrictStr | None = None
+    selection_id: StrictStr | None = None
+    expected_documents: Annotated[StrictInt, Field(gt=0)] | None = None
+    document_ids: tuple[StrictStr, ...] | None = None
+    deletion_token: StrictStr | None = None
+    confirm_delete: StrictBool | None = None
 
     def __post_init__(self) -> None:
         """Reject unsupported or structurally unsafe command arguments."""
@@ -211,8 +176,6 @@ class AdminCommand:
             "ingest_manifest",
         }:
             raise ValueError("Exact document IDs apply only to source ingestion.")
-        if self.expected_documents is not None and self.expected_documents <= 0:
-            raise ValueError("expected_documents must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,12 +196,3 @@ class AdminJob:
     finished_at: datetime | None = None
     error_code: str | None = None
     result_refs: dict[str, object] | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class JobBoard:
-    """Current worker state and bounded newest-first operation history."""
-
-    active: AdminJob | None
-    queued: tuple[AdminJob, ...]
-    history: tuple[AdminJob, ...]

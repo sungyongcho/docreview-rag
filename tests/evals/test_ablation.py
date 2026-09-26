@@ -8,7 +8,7 @@ import pytest
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1
 from app.evals.ablation import ExperimentConfig, experiment_matrix, run_ablation
 from app.evals.retrieval_eval import evaluate_retriever
-from app.evals.types import GoldenCase, GoldenSpan
+from app.evals.types import EvaluationRetrieval, GoldenCase, GoldenSpan
 from app.retrieval.types import ChunkHit
 from tests.evals.support import SOURCE_SHA256
 
@@ -229,7 +229,7 @@ def test_run_ablation_writes_stable_raw_artifacts_and_comparison_table(tmp_path)
 
         async def retriever(_query, _k):
             """Return the one relevant hit for every query."""
-            return [hit()]
+            return EvaluationRetrieval(hits=(hit(),))
 
         clock_values = iter((0, 1_000_000))
         return await evaluate_retriever(
@@ -304,7 +304,7 @@ def test_run_ablation_accepts_extra_provenance_but_rejects_a_changed_arm(tmp_pat
 
             async def retriever(_query, _k):
                 """Return the one relevant hit for every query."""
-                return [hit()]
+                return EvaluationRetrieval(hits=(hit(),))
 
             return await evaluate_retriever(
                 [golden_case()],

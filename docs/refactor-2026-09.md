@@ -1349,3 +1349,87 @@ Section 6 retains the first-pass walkthrough. The second pass changes these boun
   likewise was not reproduced as originally described; the implemented Web test change
   waits for conversation loading before typing. The later job-history Escape timing
   repair has its own test-cleanup evidence.
+
+## 14. User-approved ultra refactor and separate review
+
+This follow-up starts from PR #221 head `19685bb8cf37909d131e3d3f2bfeb9b9b6c82ad1`
+against `refactor/remove-dead-code` at `8ca94d94ef095839593fae561b1cd7baeef412fb`.
+The checkout was clean before these reviewer contributions. The user expanded the original
+bounded review into a current-code cleanup and explicitly retired old persisted-format
+support; actual data deletion remains separate. That decision supersedes section 13.9's
+retention of old chat/local-connection readers and the former D-3 readability requirement
+for this change. No instruction/OPS files, physical DB schema, stored runtime data,
+dependencies, deployment configuration or published history were changed.
+
+### 14.1 Problems established and corrected
+
+- **Environment selection:** canonical `environment="prod"` construction could silently
+  select development, and release `mode` collided with the case-insensitive `MODE` alias.
+  Shared `ProviderSettings` now owns source precedence and provider fields; release's
+  internal `service_mode` remains exposed through the existing `DOCREVIEW_MODE` setting.
+  Key and slot are derived from the selected environment, without duplicate cached state.
+  Two constructor regressions failed before the repair and pass afterward.
+- **Admin vector preview:** its evaluation adapter was called with a lexical ranker,
+  rejecting vector retrieval before searching. All preview strategies now use the same
+  current retrieval dispatcher. The vector/lexical/hybrid regression reproduced the error.
+- **Diagnostics:** job-board failures previously became an empty board and lost phase
+  evidence; p95 used rounding rather than nearest-rank ceiling. The measurement reads its
+  submitted job's persisted detail, propagates lookup errors, and distinguishes expected
+  degraded readiness (503) from failed health samples. Behavioral checks reproduce both.
+- **Web state:** an initial evaluation refresh occurred twice, and reading DEV presets
+  mutated shipped builtin values later reused in PROD. One lifecycle now refreshes runs;
+  effective server presets are passed to actual consumers without mutating the builtins.
+  Unsupported mixed browser records no longer hide valid siblings, and replacement saves
+  preserve original physical bytes in the existing recovery store first.
+- **Snapshot evidence:** current golden datasets are files, while snapshot code could
+  consult an obsolete DB revision or mutable builtin file. Sorted artifact JSON also
+  changed the old order-sensitive digest. Evaluation now records an independent canonical
+  hash of the exact source-bound cases, alongside unchanged original-file provenance.
+  Snapshot creation, comparison and public detail verify that artifact/config identity;
+  public detail also checks frozen source membership. A real custom-file/binding/evaluator
+  regression covers success, mutation and missing evidence without substituting builtins.
+
+### 14.2 One owner for each current rule
+
+`AdminCommand` is the validated HTTP/CLI/retry command; the duplicate transport model is
+removed. `JobStore` owns history and the corpus queue keeps only active execution state.
+`DocumentCatalog` owns both public and administrator detail, with explicit visibility and
+URL policy. Current `model_calls` owns usage and execution data; old Trace matching and
+invented request-count recovery are gone. Provider and trace objects require actual
+request counts, including zero for pre-call refusal. The current sparse SQL trace encoding
+remains supported because current writers still emit it.
+
+`EvaluationArtifacts` owns confined JSON reads and unique case indexing. Evaluation owns
+its scoring stamp and evaluated-case identity before persistence, so artifacts and rows
+agree without reader repairs. `EvaluationRetrieval` carries hits and optional actual
+subquestions/fallback evidence together for each invocation. The served prompt, lane
+selection, fusion and scoring rules are preserved.
+
+The Web consumes the current flat stream response and generated snapshot/command types.
+Terminal lifecycle handling, profile shape, builtin catalog resolution and provider timing
+each have one path. Retired chat labels, old incomplete profile repair, textual budget
+inference, v1 connection readers, wrapperless wipe journals and old evaluation readers are
+removed. Current version-2 connection `initial`/disabled/server states, current DEV raw and
+PROD envelope browser formats, failure propagation and service-help replies remain.
+
+### 14.3 Test quality and review boundaries
+
+No pre-existing file was deleted. Twenty-one Python test names were removed or renamed;
+these are not twenty-one lost behaviors. The appendix records each retained assertion or
+explicitly retired format, together with Web removals. Small tests with distinct behavior
+or schema/security invariants remain. Three independent non-author reviews per removal
+cluster examined consumers, producers and retained assertions; the final snapshot delta
+was separately checked by the coordinator, API reviewer and independent reviewer.
+
+The long local-model identifier, queued/running deletion lock and saved `initial`
+connection-state regressions remain. Paid-attempt metadata and budget rejection checks,
+unrestricted search, shared reranker lifecycle and embedding/snapshot identity tests remain.
+The previous raw coverage failure is preserved as a limitation; neither previous reports
+nor a larger passing-test count are treated as proof of coverage preservation.
+
+### 14.4 Final verification and limits
+
+See the matching ultra-refactor appendix for exact commands, result counts, coverage
+comparison, repaired intermediate failures and remaining uncertainty. All changes in this
+section are disclosed reviewer contributions. No additional paid evaluation, merge,
+deployment, history rewrite or deletion of user data was performed.

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.api.errors import ApiProblemError
+from app.evals.identity import EVALUATED_GOLDEN_KEY, evaluated_golden_sha256
 from app.evals.snapshots import SnapshotService
 
 
@@ -24,12 +25,8 @@ def comparison(tmp_path):
             }
         ]
     }
-    for path in paths:
-        path.write_text(json.dumps(payload))
     snapshots = [
-        SimpleNamespace(
-            id=index, public=True, status="ready", eval_result_id=index, golden_revision_id=1
-        )
+        SimpleNamespace(id=index, public=True, status="ready", eval_result_id=index)
         for index in (1, 2)
     ]
     results = [
@@ -42,6 +39,7 @@ def comparison(tmp_path):
         )
         for index in (1, 2)
     ]
+    _write_evidence(paths, results, payload)
     session = AsyncMock()
     session.__aenter__.return_value = session
     session.scalars.side_effect = lambda _: (
@@ -49,6 +47,17 @@ def comparison(tmp_path):
     )
     service = SnapshotService(session_factory=lambda: session, artifact_dir=tmp_path)
     return SimpleNamespace(service=service, paths=paths, session=session, results=results)
+
+
+def _write_evidence(paths, results, payload):
+    """Record the exact current case identity for size-boundary comparison fixtures."""
+    for path, result in zip(paths, results, strict=True):
+        result.config = {
+            EVALUATED_GOLDEN_KEY: evaluated_golden_sha256(
+                [case["golden"] for case in payload["cases"]]
+            )
+        }
+        path.write_text(json.dumps({**payload, "suite": result.suite, "config": result.config}))
 
 
 def test_public_comparison_keeps_ordinary_recorded_results(comparison):
@@ -62,12 +71,25 @@ def test_public_comparison_keeps_ordinary_recorded_results(comparison):
     comparison.session.execute.assert_not_called()
 
 
+def test_duplicate_case_ids_do_not_silently_replace_comparison_evidence(comparison):
+    """Both comparison surfaces reject duplicate identity; public errors stay storage-safe."""
+    payload = json.loads(comparison.paths[0].read_text())
+    payload["cases"].append(payload["cases"][0])
+    comparison.paths[0].write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="duplicate case ids"):
+        asyncio.run(comparison.service.compare(1, 2))
+    with pytest.raises(ApiProblemError) as caught:
+        asyncio.run(comparison.service.compare(1, 2, public_only=True))
+    assert caught.value.status_code == 409
+    assert str(comparison.paths[0]) not in caught.value.error.message
+
+
 def test_artifact_size_cap_precedes_json_read(comparison, monkeypatch):
     """Oversized sparse files never reach the JSON reader."""
     with comparison.paths[0].open("ab") as stream:
         stream.truncate(16 * 1024 * 1024 + 1)
     reader = Mock(side_effect=AssertionError("must not read oversized bytes"))
-    monkeypatch.setattr(comparison.service, "_artifact", reader)
+    monkeypatch.setattr("app.evals.artifacts.read_strict_json", reader)
     with pytest.raises(ApiProblemError) as caught:
         asyncio.run(comparison.service.compare(1, 2, public_only=True))
     assert caught.value.status_code == 409
@@ -98,8 +120,7 @@ def test_public_case_cap_does_not_truncate_or_limit_admin(comparison):
             for index in range(1001)
         ]
     }
-    for path in comparison.paths:
-        path.write_text(json.dumps(payload))
+    _write_evidence(comparison.paths, comparison.results, payload)
     with pytest.raises(ApiProblemError) as caught:
         asyncio.run(comparison.service.compare(1, 2, public_only=True))
     assert caught.value.status_code == 409
@@ -116,8 +137,7 @@ def test_public_response_byte_cap_does_not_truncate_admin(comparison):
             }
         ]
     }
-    for path in comparison.paths:
-        path.write_text(json.dumps(payload))
+    _write_evidence(comparison.paths, comparison.results, payload)
     with pytest.raises(ApiProblemError) as caught:
         asyncio.run(comparison.service.compare(1, 2, public_only=True))
     assert caught.value.status_code == 409

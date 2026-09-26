@@ -265,3 +265,21 @@ it("round-trips conversation vector-only retrieval with its intentionally absent
   importBrowserSettings(backup, true);
   expect(loadConversations()[0].profile?.custom_retrieval).toEqual(profile.custom_retrieval);
 });
+
+it.each(["dev", "prod"] as const)("preserves rejected profile and execution bytes before a later %s save", environment => {
+  const { local_model: _oldField, ...incompleteProfile } = DEFAULT_SESSION_PROFILE;
+  const unsupported = [
+    { ...conversations[0], profile: incompleteProfile },
+    { ...conversations[0], id: "old-execution", messages: [{ id: "old-message", role: "assistant", text: "Saved answer", execution: { node: "report", evidence: 0, relevant: 0, steps: 0 } }] },
+  ];
+  const value = JSON.stringify(unsupported);
+  const raw = environment === "prod" ? JSON.stringify({ version: 2, value }) : value;
+  localStorage.setItem("docreview:conversations:v2", raw);
+  configureBrowserStorage(environment);
+  expect(loadConversations()).toEqual([]);
+  expect(localStorage.getItem("docreview:conversations:v2")).toBe(raw);
+  saveConversations(conversations);
+  expect(loadConversations()).toEqual(conversations);
+  const recovery = JSON.parse(localStorage.getItem("docreview:storage-recovery:v1")!);
+  expect(JSON.parse(recovery.value)["docreview:conversations:v2"]).toBe(raw);
+});

@@ -24,6 +24,7 @@ def step_trace(**overrides):
         "request_time_ms": 12.5,
         "llm_output": '{"label":"SUPPORTED"}',
         "retries": 0,
+        "requests": 1,
         "error": None,
     }
     values.update(overrides)

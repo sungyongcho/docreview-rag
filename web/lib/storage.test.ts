@@ -92,14 +92,16 @@ describe("conversation storage", () => {
   });
 });
 
-it("restores old conversation profiles without a model and remembers new selections", () => {
+it("ignores unsupported profiles without changing their stored bytes", () => {
   window.localStorage.clear();
   const { local_model: _removed, ...oldProfile } = DEFAULT_SESSION_PROFILE;
-  const conversation = { ...newConversation(), profile: { ...oldProfile, engine: "local" as const } };
-  window.localStorage.setItem("docreview:conversations:v2", JSON.stringify([conversation]));
-  expect(loadConversations()[0].profile?.local_model).toBeNull();
-  saveConversations([{ ...conversation, profile: { ...conversation.profile, local_model: "chosen" } }]);
-  expect(loadConversations()[0].profile?.local_model).toBe("chosen");
+  const raw = JSON.stringify([{ ...newConversation(), profile: oldProfile }]);
+  window.localStorage.setItem("docreview:conversations:v2", raw);
+  expect(loadConversations()).toEqual([]);
+  expect(window.localStorage.getItem("docreview:conversations:v2")).toBe(raw);
+  const current = { ...newConversation(), profile: { ...DEFAULT_SESSION_PROFILE, local_model: "chosen" } };
+  saveConversations([current]);
+  expect(loadConversations()).toEqual([current]);
 });
 
 describe("operations filter storage", () => {

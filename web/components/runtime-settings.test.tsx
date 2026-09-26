@@ -36,7 +36,7 @@ const READINESS: Readiness = {
       minute_reset_seconds: 42,
       day_reset_seconds: 3600,
       daily_cost_reset_at_utc: "2026-09-02T00:00:00Z",
-      scope: "single_process",
+      scope: "shared_storage",
     }), { status: 200, headers: { "content-type": "application/json" } })));
     render(<RuntimeSettings live={false} readiness={null} />);
 

@@ -791,13 +791,13 @@ it("schema drift blocks stale completed counts without blocking the answer model
 });
 
 it("preserves the recorded provider output ceiling instead of guessing an input failure", () => {
-  const legacy = { code: "provider_failure", node: "grade", status: "budget_exceeded", details: ["output_tokens: used=600 limit=600", "$: Expecting value at line 1 column 1 [json_invalid]"], attempts: 1 };
-  expect(failureReport(legacy).text).toBe("The model call reached its output token limit (600 of 600) at the grade step.");
-  expect(failureReport(legacy).fix).toBeUndefined();
-  const structured = { ...legacy, budget: { which: "output_tokens", used: 600, limit: 600 }, budget_source: "provider_budget" };
+  const failure = { code: "provider_failure", node: "grade", status: "budget_exceeded", details: ["output_tokens: used=600 limit=600"], attempts: 1 };
+  const structured = { ...failure, budget: { which: "output_tokens", used: 600, limit: 600 }, budget_source: "provider_budget" };
+  expect(failureReport(structured).text).toBe("The model call reached its output token limit (600 of 600) at the grade step.");
   expect(failureReport(structured).fix?.category).toBe("runtime");
   expect(failureReport({ ...structured, budget_source: "run_limits" }).fix?.category).toBe("limits");
-  expect(failureReport({ ...legacy, details: [] }).text).not.toContain("input");
+  expect(failureReport(failure).text).not.toMatch(/input token|output token/);
+  expect(failureReport(failure).fix).toBeUndefined();
 });
 
 it("explains a refusal made before the call from the projected prompt size", async () => {

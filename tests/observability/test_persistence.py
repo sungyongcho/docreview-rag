@@ -4,6 +4,7 @@ import asyncio
 from decimal import Decimal
 from typing import cast
 
+from pydantic import ValidationError
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -180,7 +181,7 @@ def test_local_timing_round_trips_through_existing_jsonb_context() -> None:
 
 def test_sent_requests_round_trip_through_existing_jsonb_context() -> None:
     """A step refused before its call keeps zero requests through storage without a new column."""
-    from app.observability.persistence import record_to_step, stored_step_requests
+    from app.observability.persistence import record_to_step
 
     refused = step_trace(
         step=2,
@@ -207,5 +208,6 @@ def test_sent_requests_round_trip_through_existing_jsonb_context() -> None:
     assert [step.requests for step in restored.steps] == [1, 0]
     assert restored.total_requests == 1
     assert record_to_step(traces[1]).requests == 1
-    assert stored_step_requests({"trace_requests": {"2": True}}, step=2, retries=0) == 1
+    with pytest.raises(ValidationError, match="requests"):
+        record_to_step(traces[1], request_context={"trace_requests": {"2": True}})
     assert "trace_requests" not in (report_to_records(run_report())[0].request_context or {})

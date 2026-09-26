@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import math
 from typing import Any, Final
 
+from app.evals.identity import EVALUATED_GOLDEN_KEY
 from app.evals.regression import (
     HIGHER_IS_BETTER_METRICS,
     MetricName,
@@ -68,13 +69,17 @@ class ParityAssessment:
 
 
 def _config_identity(config: Mapping[str, Any], expected_language: str) -> dict[str, Any]:
-    """Strip the arm name and the query language, leaving what both arms must share."""
+    """Compare arm settings while allowing the two language-specific case payloads."""
     query = config.get("query")
     if not isinstance(query, Mapping) or "language" not in query:
         raise ValueError("parity requires an evaluation config carrying query.language")
     if query["language"] != expected_language:
         raise ValueError(f"expected a {expected_language} evaluation, got {query['language']!r}")
-    identity = {key: value for key, value in config.items() if key != "name"}
+    # Translated questions have different evaluated hashes by design; case alignment is
+    # checked separately before comparing these retrieval settings.
+    identity = {
+        key: value for key, value in config.items() if key not in {"name", EVALUATED_GOLDEN_KEY}
+    }
     identity["query"] = {key: value for key, value in query.items() if key != "language"}
     return identity
 

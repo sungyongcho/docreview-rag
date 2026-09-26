@@ -136,6 +136,10 @@ async def _exercise() -> tuple[bool, str]:
                 corpus.job_id,
                 evaluation.job_id,
             } <= {job.job_id for job in await store.list()}
+            evaluations = await store.list(domain="evaluation")
+            assert evaluation.job_id in {job.job_id for job in evaluations}
+            assert corpus.job_id not in {job.job_id for job in evaluations}
+            assert all(job.domain == "evaluation" for job in evaluations)
         finally:
             await transaction.rollback()
         return True, ""
@@ -185,9 +189,7 @@ async def _exercise_corpus_worker(tmp_path) -> tuple[bool, str]:
             created_id = created.job_id
             await service._job_queue._queue.join()
             await asyncio.sleep(0.1)
-            board = await service._job_queue.jobs()
             persisted = await store.get(created.job_id)
-            assert board.history[0].status == "succeeded"
             assert persisted is not None
             assert persisted.status == "succeeded"
             assert persisted.current == 2

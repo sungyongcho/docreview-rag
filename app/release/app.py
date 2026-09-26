@@ -168,7 +168,7 @@ def build_runtime_services(
     provider_factory: ProviderFactory = OpenAILLMProvider,
 ) -> RuntimeApiServices:
     """Compose runtime services without activating a provider from key presence alone."""
-    if settings.mode != "runtime":
+    if settings.service_mode != "runtime":
         raise ValueError("runtime services require DOCREVIEW_MODE=runtime")
     providers = {}
     budgets = {}
@@ -201,9 +201,9 @@ def build_runtime_services(
     install_secret_redaction(tuple(secrets))
     corpus_settings = Settings.model_validate(
         {
-            "MODE": settings.environment,
-            "OPENAI_API_KEY_LOCAL": settings.openai_api_key_dev,
-            "OPENAI_API_KEY_PROD": settings.openai_api_key_prod,
+            "environment": settings.environment,
+            "openai_api_key_dev": settings.openai_api_key_dev,
+            "openai_api_key_prod": settings.openai_api_key_prod,
         }
     )
     return RuntimeApiServices(
@@ -229,7 +229,7 @@ def build_runtime_services(
 def _release_info(settings: ReleaseSettings) -> ReleaseInfo:
     """Project settings onto limits the release surface publishes."""
     return ReleaseInfo(
-        mode=settings.mode,
+        mode=settings.service_mode,
         environment=settings.environment,
         admin_mode=settings.admin_mode if settings.environment == "dev" else "readonly",
         openai_enabled=settings.openai_enabled,
@@ -252,7 +252,7 @@ def create_release_app(
     """Create one guarded API with an optional static Next.js service shell."""
     active_settings = settings or ReleaseSettings()
     active_services = services
-    if active_settings.mode == "runtime" and active_services is None:
+    if active_settings.service_mode == "runtime" and active_services is None:
         active_services = build_runtime_services(active_settings)
 
     admin_services = (
@@ -299,7 +299,7 @@ def create_release_app(
     @application.get("/health", response_model=ReleaseHealth, tags=["release"])
     async def health() -> ReleaseHealth:
         """Report liveness and the mode the release is serving in."""
-        return ReleaseHealth(mode=active_settings.mode)
+        return ReleaseHealth(mode=active_settings.service_mode)
 
     @application.get("/release", response_model=ReleaseInfo, tags=["release"])
     async def release_info() -> ReleaseInfo:
@@ -383,7 +383,7 @@ def create_release_app(
         models = openai_policy_snapshot()["roles"]
         if not isinstance(models, dict):
             raise ValueError("model policy roles must be an object")
-        if active_settings.mode == "canned":
+        if active_settings.service_mode == "canned":
             return ReleaseReadiness(
                 status="ready",
                 mode="canned",

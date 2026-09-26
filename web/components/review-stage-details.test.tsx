@@ -5,7 +5,7 @@ import { ReviewStageDetails, type DisclosureStage } from "./review-stage-details
 import type { ReviewExecution } from "@/lib/types";
 
 afterEach(cleanup);
-const state: ReviewExecution = { node: "report", evidence: 2, relevant: 1, steps: 2, outcome: "completed", selectedScope: "auto", resolvedScope: { source: "alias", filters: { registries: ["sec"], issuers: ["NVDA"], fiscal_years: [2024] } } };
+const state: ReviewExecution = { node: "report", observed: ["report"], completedNodes: ["report"], evidence: 2, relevant: 1, steps: 2, outcome: "completed", selectedScope: "auto", resolvedScope: { source: "alias", filters: { registries: ["sec"], issuers: ["NVDA"], fiscal_years: [2024] } } };
 const performance = {
   effective_settings: { retrieval: { preset: "balanced", k: 5 } }, routing_queries: { sec: "NVIDIA data center" },
   stages: [{ node: "retrieve", status: "completed", elapsed_ms: 12 }, { node: "retrieve", status: "completed", elapsed_ms: 8 }],
@@ -41,13 +41,11 @@ describe("recorded stage detail data", () => {
     expect(field("Fiscal year")).toHaveTextContent("FY2024");
   });
 
-  it("does not infer stage 0 from resolved scope and does not reclassify historical conversation routes", () => {
-    const { container, rerender } = render(<ReviewStageDetails stage="path" state={state} performance={{ model_calls: [] }} />);
+  it("does not infer stage 0 from resolved scope", () => {
+    const { container } = render(<ReviewStageDetails stage="path" state={state} performance={{ model_calls: [] }} />);
     expect(container.querySelector('[aria-current="step"]')).toBeNull();
     expect(screen.getByText("No service path was recorded. A later scope or result does not establish this decision.")).toBeInTheDocument();
-    rerender(<ReviewStageDetails stage="path" state={state} performance={{ path_decision: { intent: "casual_chat", rationale: "Original conversation decision" } }} />);
-    expect(container.querySelector('[aria-current="step"]')).toBeNull();
-    expect(screen.getByText("Original conversation decision")).toBeInTheDocument();
+
   });
   it("shows actual scope and routing without deriving them from the question", () => {
     render(<ReviewStageDetails stage="gate" state={state} performance={performance} />);
@@ -112,7 +110,7 @@ describe("recorded stage detail data", () => {
     expect(field("Final label")).toHaveTextContent("Answer not generated");
   });
   it.each<DisclosureStage>(["path", "gate", "retrieve", "grade", "check", "report"])("uses one empty-state note when no fields were recorded in %s", (stage) => {
-    render(<ReviewStageDetails stage={stage} state={{ node: "report", evidence: 0, relevant: 0, steps: 0 }} />);
+    render(<ReviewStageDetails stage={stage} state={{ node: "report", observed: ["report"], completedNodes: ["report"], evidence: 0, relevant: 0, steps: 0 }} />);
     expect(screen.getByText("This stage was not recorded for this run.")).toBeVisible();
     expect(document.querySelectorAll("dd")).toHaveLength(0);
   });
@@ -196,7 +194,7 @@ it("keeps unknown elapsed measurements unknown instead of showing a partial tota
 
 it("opens run details from the heading with the selected stage, even after panels are closed", () => {
   const details = vi.fn();
-  render(<ReviewProgressSteps state={{ ...state, observed: ["gate", "retrieve", "report"] }} performance={performance} onOpenDetails={details} />);
+  render(<ReviewProgressSteps state={{ ...state, observed: ["gate", "retrieve", "report"], completedNodes: ["gate", "retrieve", "report"] }} performance={performance} onOpenDetails={details} />);
   const action = screen.getByRole("button", { name: "Open run details" });
   expect(action.closest(".review-progress-heading")).not.toBeNull();
   fireEvent.click(action);

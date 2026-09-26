@@ -41,8 +41,8 @@ def connection_app(
     settings = load_settings(
         ReleaseSettings,
         env_file=None,
-        DOCREVIEW_ENVIRONMENT=environment,
-        mode="runtime",
+        environment=environment,
+        service_mode="runtime",
         host="127.0.0.1",
         admin_mode=admin_mode,
         admin_cors_origin=admin_cors_origin,

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.evals.bilingual import BilingualSuite
 import app.evals.crosslingual_arms as crosslingual_arms
 from app.evals.crosslingual_arms import CrosslingualArm, run_arm
-from app.evals.types import GoldenCase, GoldenCategory, GoldenSpan
+from app.evals.types import EvaluationRetrieval, GoldenCase, GoldenCategory, GoldenSpan
 from app.retrieval.types import ChunkHit
 from tests.evals.support import EVALUATION_RECORDED_AT, SOURCE_SHA256
 
@@ -129,7 +129,7 @@ def scripted(monkeypatch, per_language):
             language = (
                 "ko" if any(question == query for _, question in QUESTIONS.values()) else "en"
             )
-            return per_language[language]
+            return EvaluationRetrieval(hits=tuple(per_language[language]))
 
         return retriever
 

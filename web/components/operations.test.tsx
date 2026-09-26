@@ -245,15 +245,3 @@ it("combines category and target filters and restores both without running a com
   expect(screen.getByRole("heading", { name: "Prepare empty schema" })).toBeInTheDocument();
   expect(screen.queryByText("No commands match these filters.")).not.toBeInTheDocument();
 });
-
-it("keeps an older operator response visible without guessing its missing target", async () => {
-  const { target: _target, ...legacy } = COMMANDS[0];
-  vi.mocked(getOperatorCommands).mockResolvedValue([legacy as OperatorCommand]);
-  render(<Operations />);
-  await flush();
-  expect(screen.getByRole("heading", { name: "Git status" })).toBeInTheDocument();
-  expect(screen.getByText("Target not reported")).toBeInTheDocument();
-  fireEvent.click(within(screen.getByRole("group", { name: "Command target" })).getByRole("button", { name: "App" }));
-  expect(screen.getByText("No commands match these filters.")).toBeInTheDocument();
-  expect(startOperatorJob).not.toHaveBeenCalled();
-});

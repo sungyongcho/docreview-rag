@@ -576,12 +576,9 @@ export function failureReport(failure: Record<string, unknown>, developer = LOCA
 
   if (status === "budget_exceeded" && failure.code === "provider_failure") {
     const budget = failure.budget && typeof failure.budget === "object" ? failure.budget as Record<string, unknown> : null;
-    const first = Array.isArray(failure.details) && typeof failure.details[0] === "string" ? failure.details[0] : "";
-    // Older persisted reports carry this exact server-generated budget line.
-    const legacy = /^(input_tokens|output_tokens|estimated_cost_usd): used=([\d.]+) limit=([\d.]+)$/.exec(first);
-    const resource = budget?.which ?? legacy?.[1];
-    const used = budget?.used ?? legacy?.[2];
-    const limit = budget?.limit ?? legacy?.[3];
+    const resource = budget?.which;
+    const used = budget?.used;
+    const limit = budget?.limit;
     const kind = resource === "input_tokens" ? "input token" : resource === "output_tokens" ? "output token" : resource === "estimated_cost_usd" ? "estimated cost" : null;
     const amount = used !== undefined && limit !== undefined ? ` (${used} of ${limit})` : "";
     const projected = typeof budget?.projected_input_tokens === "number" ? budget.projected_input_tokens : null;

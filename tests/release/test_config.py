@@ -17,7 +17,7 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
 
     settings = load_settings(ReleaseSettings, env_file=None)
 
-    assert settings.mode == "canned"
+    assert settings.service_mode == "canned"
     assert settings.openai_api_key is None
     assert settings.openai_enabled is False
     assert settings.admin_mode == "readonly"
@@ -33,7 +33,7 @@ def test_canned_mode_keeps_the_provider_off_even_with_a_key(monkeypatch) -> None
     monkeypatch.setenv("OPENAI_API_KEY_LOCAL", secret)
 
     canned = load_settings(ReleaseSettings, env_file=None)
-    runtime = load_settings(ReleaseSettings, mode="runtime", env_file=None)
+    runtime = load_settings(ReleaseSettings, service_mode="runtime", env_file=None)
 
     assert canned.openai_enabled is False
     assert runtime.openai_enabled is True
@@ -49,9 +49,9 @@ def test_environment_slot_enables_runtime_without_an_explicit_key(monkeypatch) -
     monkeypatch.delenv("OPENAI_API_KEY_PROD", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY_LOCAL", secret)
 
-    dev = load_settings(ReleaseSettings, mode="runtime", env_file=None)
+    dev = load_settings(ReleaseSettings, service_mode="runtime", env_file=None)
     monkeypatch.setenv("MODE", "prod")
-    prod = load_settings(ReleaseSettings, mode="runtime", env_file=None)
+    prod = load_settings(ReleaseSettings, service_mode="runtime", env_file=None)
 
     assert dev.openai_enabled is True
     assert dev.openai_key_slot == "dev"
@@ -103,7 +103,7 @@ def test_live_admin_requires_runtime_and_loopback() -> None:
         load_settings(
             ReleaseSettings,
             env_file=None,
-            mode="runtime",
+            service_mode="runtime",
             admin_mode="live",
             host="0.0.0.0",
         )
@@ -111,7 +111,7 @@ def test_live_admin_requires_runtime_and_loopback() -> None:
     settings = load_settings(
         ReleaseSettings,
         env_file=None,
-        mode="runtime",
+        service_mode="runtime",
         admin_mode="live",
         host="127.0.0.1",
     )
@@ -155,10 +155,10 @@ def test_production_requires_luna_but_retains_explicit_dev_terra() -> None:
         load_settings(
             ReleaseSettings,
             env_file=None,
-            DOCREVIEW_ENVIRONMENT="prod",
+            environment="prod",
             openai_model="gpt-5.6-terra",
         )
     dev = load_settings(
-        ReleaseSettings, env_file=None, DOCREVIEW_ENVIRONMENT="dev", openai_model="gpt-5.6-terra"
+        ReleaseSettings, env_file=None, environment="dev", openai_model="gpt-5.6-terra"
     )
     assert dev.provider_budget().pricing.output_per_million_usd == Decimal("12.00")

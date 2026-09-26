@@ -3,7 +3,7 @@ import { requestFetch, type TimedRequestInit } from "./http-request";
 import type {
   AdminDocumentPage,
   Capabilities,
-  CorpusOperationRequest,
+  AdminCommand,
   CorpusSnapshot,
   DocumentDetail,
   DocumentFacets,
@@ -27,6 +27,7 @@ import type {
   ReleaseLimits,
   RetrievalProfile,
   ReviewPathDecision,
+  ReviewRun,
   ReviewSessionProfile,
   SnapshotComparison,
   SuiteId,
@@ -119,7 +120,7 @@ export async function retrieveEvidence(query: string, sessionProfile: ReviewSess
 export interface ReviewProgress {
   display_stage?: "path";
   path_decision?: ReviewPathDecision | null;
-  node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+  node: "gate" | "route" | "retrieve" | "grade" | "check" | "report";
   evidence_count: number;
   relevant_count: number;
   step_count: number;
@@ -149,7 +150,7 @@ export async function streamReview(
   onProgress: (progress: ReviewProgress) => void,
   signal?: AbortSignal,
   onCandidates?: (payload: RetrievePayload) => void,
-): Promise<Record<string, unknown>> {
+): Promise<ReviewRun> {
   const historyTurns = sessionProfile.prompt_policy?.history_turns ?? DEFAULT_SESSION_PROFILE.prompt_policy.history_turns;
   const response = await requestFetch(apiUrl("/review/stream"), {
     method: "POST",
@@ -190,7 +191,7 @@ export async function streamReview(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let terminal: Record<string, unknown> | null = null;
+  let terminal: ReviewRun | null = null;
   let done = false;
 
   async function consume(frameText: string) {
@@ -207,7 +208,7 @@ export async function streamReview(
     }
     if (frame.event === "report") {
       if (terminal) throw new Error("Review stream emitted more than one terminal event.");
-      terminal = payload;
+      terminal = payload as unknown as ReviewRun;
       return;
     }
     if (frame.event === "error") {
@@ -346,7 +347,7 @@ export async function previewRetrieval(query: string, profile: RetrievalProfile)
 }
 
 export async function previewReview(query: string, profile: RetrievalProfile) {
-  return request<Record<string, unknown>>("/admin/review/preview", {
+  return request<components["schemas"]["ReviewPreviewResponse"]>("/admin/review/preview", {
     method: "POST",
     body: JSON.stringify({ query, profile, filters: {} }),
   });
@@ -382,7 +383,7 @@ export function getCorpusSnapshot(): Promise<CorpusSnapshot> {
   return request<CorpusSnapshot>("/admin/corpus");
 }
 
-export function queueCorpusOperation(body: CorpusOperationRequest): Promise<Record<string, unknown>> {
+export function queueCorpusOperation(body: AdminCommand): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>("/admin/corpus/jobs", {
     method: "POST",
     body: JSON.stringify(body),
@@ -402,7 +403,7 @@ export function getAdminSnapshots(): Promise<PublishedSnapshot[]> {
   return request<PublishedSnapshot[]>("/admin/snapshots");
 }
 
-export function createSnapshot(body: { label: string; eval_result_id: number; golden_revision_id: number | null; public: boolean }): Promise<PublishedSnapshot> {
+export function createSnapshot(body: components["schemas"]["SnapshotCreateRequest"]): Promise<PublishedSnapshot> {
   return request<PublishedSnapshot>("/admin/snapshots", { method: "POST", body: JSON.stringify(body) });
 }
 
@@ -522,7 +523,7 @@ export function getGoldenEvidence(docId: string, query: string, after: number, s
 }
 
 
-/** Read an exact published golden version without exposing an administrator catalog. */
+/** Read the evaluated cases of a public snapshot without exposing an administrator catalog. */
 export function getPublicSnapshotDataset(snapshotId: number, params: URLSearchParams) {
   return request<import("./types").PublicSnapshotDataset>(`/public/snapshots/${snapshotId}/dataset?${params}`);
 }

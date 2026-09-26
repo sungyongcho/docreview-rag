@@ -15,6 +15,8 @@ export function configurePresetStorage(value: PresetPermissions | null): void {
   if (permissions?.environment === value?.environment && permissions?.can_change_custom_retrieval === value?.can_change_custom_retrieval) return;
   permissions = value ? { environment: value.environment, can_change_custom_retrieval: value.can_change_custom_retrieval } : null;
   permissionRevision += 1;
+  catalog = null;
+  error = null;
   for (const listener of permissionListeners) listener();
 }
 
@@ -51,10 +53,6 @@ export function refreshFilePresets(): Promise<void> {
     if (!next.unchanged) {
       if (!Array.isArray(next.presets) || next.presets.some(p => presetError(p)) || !Array.isArray(next.errors)) throw new Error("Saved presets could not be read.");
       catalog = next;
-      for (const builtin of BUILTIN_PRESETS) {
-        const found = next.presets.find(p => p.id === builtin.id && p.builtin);
-        if (found) builtin.retrieval = found.retrieval;
-      }
     }
     error = null;
   }).catch(reason => { if (revision === permissionRevision && presetStorageKind() === "file") error = reason instanceof Error ? reason.message : "Saved presets could not be read."; }).finally(() => {

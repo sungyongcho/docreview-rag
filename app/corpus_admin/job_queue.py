@@ -3,14 +3,13 @@
 Corpus and evaluation jobs share one execution lock and one first-come turn order,
 because both load the database heavily. A queued job therefore waits for its turn,
 then for the lock, and holds searches off only while it rewrites what search reads.
-The board keeps job state in memory; with a job store configured, the shared ledger
-keeps it too, so a restart can report interrupted work and an operator can retry it.
+The shared ledger records job state, so a restart can report interrupted work and an
+operator can retry it. The worker keeps a local snapshot while publishing progress.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import replace
@@ -20,13 +19,11 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
-from app.corpus_admin.stored_jobs import command_payload, job_from_stored
+from app.corpus_admin.stored_jobs import command_from_stored, command_payload
 from app.corpus_admin.types import (
-    MAX_JOB_HISTORY,
     MAX_QUEUED_JOBS,
     AdminCommand,
     AdminJob,
-    JobBoard,
     OperationOutcome,
 )
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
@@ -99,8 +96,8 @@ class CorpusJobQueue:
         Removes server credentials from every message a job records.
     invalidate_status : Callable[[], None]
         Drops the memoized corpus status once a job has changed the corpus.
-    job_store : JobStore | None
-        Shared job ledger, or ``None`` to keep jobs in memory only.
+    job_store : JobStore
+        Shared persistent job ledger.
     corpus_access : CorpusAccess
         Gate that holds searches off while a job rewrites what search reads.
     execution_lock : asyncio.Lock
@@ -117,7 +114,7 @@ class CorpusJobQueue:
         run_operation: OperationExecutor,
         redact: Callable[[str], str],
         invalidate_status: Callable[[], None],
-        job_store: JobStore | None,
+        job_store: JobStore,
         corpus_access: CorpusAccess,
         execution_lock: asyncio.Lock,
         execution_coordinator: JobExecutionCoordinator,
@@ -133,7 +130,6 @@ class CorpusJobQueue:
         self._execution_coordinator = execution_coordinator
         self._queue: asyncio.Queue[AdminJob] = asyncio.Queue(maxsize=MAX_QUEUED_JOBS)
         self._jobs: dict[str, AdminJob] = {}
-        self._history: deque[str] = deque(maxlen=MAX_JOB_HISTORY)
         self._worker: asyncio.Task[None] | None = None
         self._recovered_jobs = False
         self._cancel_events: dict[str, asyncio.Event] = {}
@@ -168,61 +164,37 @@ class CorpusJobQueue:
         )
         self._jobs[job.job_id] = job
         self._cancel_events[job.job_id] = asyncio.Event()
-        if self._job_store is not None:
-            await self._job_store.create(
-                job_id=job.job_id,
-                domain="corpus",
-                kind=command.kind,
-                request_json=command_payload(command),
-                created_at=job.created_at,
-                result_refs=job.result_refs,
-            )
+        await self._job_store.create(
+            job_id=job.job_id,
+            domain="corpus",
+            kind=command.kind,
+            request_json=command_payload(command),
+            created_at=job.created_at,
+            result_refs=job.result_refs,
+        )
         await self._execution_coordinator.register(job.job_id, job.created_at, kind=command.kind)
         self._queue.put_nowait(job)
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._work(), name="corpus-admin-worker")
         return job
 
-    def forget_history(self, job_ids: tuple[str, ...]) -> None:
-        """Release terminal cache records only after their persistent deletion."""
-        for job_id in job_ids:
-            job = self._jobs.get(job_id)
-            if job is not None and job.status not in {"queued", "running"}:
-                self._jobs.pop(job_id, None)
-        self._history = deque(
-            (job_id for job_id in self._history if job_id not in job_ids),
-            maxlen=self._history.maxlen,
-        )
-
     async def retry(self, job_id: str) -> AdminJob:
         """Requeue the command from one failed or interrupted operation only."""
         await self.recover_jobs()
-        if self._job_store is not None:
-            record = await self._job_store.get(job_id)
-            if record is not None and record.kind == LEDGER_KIND:
-                raise ValueError("Usage ledger entries cannot be executed or retried.")
-            if record is None or record.result_refs.get("__history_archived") is True:
-                raise ValueError(
-                    "Restore archived history before retrying; deleted jobs cannot be retried."
-                )
-        job = await self._known_job(job_id)
-        if job is None or job.status not in {"failed", "interrupted"}:
+        record = await self._job_store.get(job_id)
+        if record is not None and record.kind == LEDGER_KIND:
+            raise ValueError("Usage ledger entries cannot be executed or retried.")
+        if record is None or record.result_refs.get("__history_archived") is True:
+            raise ValueError(
+                "Restore archived history before retrying; deleted jobs cannot be retried."
+            )
+        if record.domain != "corpus" or record.status not in {"failed", "interrupted"}:
             raise ValueError("only a known failed or interrupted job can be retried")
-        if job.command.kind == "delete_sources":
+        if record.kind == "delete_sources":
             raise ValueError(
                 "Source deletion requires a fresh preview and confirmation; it cannot be retried."
             )
-        return await self.enqueue(job.command, retry_of=job_id)
-
-    async def _known_job(self, job_id: str) -> AdminJob | None:
-        """Find a job in memory, or in the ledger when an earlier process ran it."""
-        job = self._jobs.get(job_id)
-        if job is not None or self._job_store is None:
-            return job
-        stored = await self._job_store.get(job_id)
-        if stored is None or stored.domain != "corpus":
-            return None
-        return job_from_stored(stored)
+        return await self.enqueue(command_from_stored(record), retry_of=job_id)
 
     async def cancel(self, job_id: str) -> AdminJob:
         """Cancel queued work or request cooperative running-job cancellation."""
@@ -236,41 +208,14 @@ class CorpusJobQueue:
         await self._execution_coordinator.cancel(job_id)
         cancelled = _cancelled(job)
         self._jobs[job_id] = cancelled
-        if self._job_store is not None:
-            await self._job_store.cancel(job_id)
+        await self._job_store.cancel(job_id)
         return cancelled
-
-    async def jobs(self) -> JobBoard:
-        """Return one active job, FIFO queue, and newest-first bounded history."""
-        await self.recover_jobs()
-        if self._job_store is not None:
-            rows = await self._job_store.list(domain="corpus", limit=MAX_JOB_HISTORY + 16)
-            jobs = tuple(job_from_stored(row) for row in rows if row.kind != LEDGER_KIND)
-            active = next((item for item in jobs if item.status == "running"), None)
-            queued = tuple(
-                sorted(
-                    (item for item in jobs if item.status == "queued"),
-                    key=lambda item: item.created_at,
-                )
-            )
-            history = tuple(
-                item
-                for item in jobs
-                if item.status in {"succeeded", "failed", "interrupted", "cancelled"}
-            )[:MAX_JOB_HISTORY]
-            return JobBoard(active, queued, history)
-        ordered = sorted(self._jobs.values(), key=lambda item: item.created_at)
-        active = next((item for item in ordered if item.status == "running"), None)
-        queued = tuple(item for item in ordered if item.status == "queued")
-        history = tuple(self._jobs[job_id] for job_id in reversed(self._history))
-        return JobBoard(active, queued, history)
 
     async def recover_jobs(self) -> None:
         """Mark stale process-owned jobs interrupted once before accepting work."""
         if self._recovered_jobs:
             return
-        if self._job_store is not None:
-            await self._job_store.interrupt_incomplete("corpus")
+        await self._job_store.interrupt_incomplete("corpus")
         self._recovered_jobs = True
 
     def _publish(self, job_id: str, progress: OperationProgress) -> None:
@@ -288,8 +233,7 @@ class CorpusJobQueue:
             detail_total=progress.detail_total,
             result_refs=advance_progress(job.command.kind, job.result_refs, progress, _utc_now()),
         )
-        if self._job_store is not None:
-            self._persister.schedule(job_id)
+        self._persister.schedule(job_id)
 
     async def _record_usage(self, job_id: str, record: dict[str, object]) -> None:
         """Persist cumulative batch usage without stale progress overwriting it."""
@@ -305,7 +249,7 @@ class CorpusJobQueue:
 
     async def _persist_current_job(self, job_id: str) -> None:
         """Persist the latest in-memory state, collapsing stale progress callbacks."""
-        if self._job_store is None or job_id not in self._jobs:
+        if job_id not in self._jobs:
             return
         job = self._jobs[job_id]
         await self._job_store.put(
@@ -334,8 +278,7 @@ class CorpusJobQueue:
             started_at=_utc_now(),
             result_refs=start_progress(queued.command.kind, queued.result_refs, _utc_now()),
         )
-        if self._job_store is not None:
-            self._persister.schedule(job_id)
+        self._persister.schedule(job_id)
         try:
             outcome = await self._run_operation(
                 queued.command,
@@ -351,8 +294,6 @@ class CorpusJobQueue:
         self._jobs[job_id] = finished
         await self._persister.write_final(job_id)
         self._invalidate_status()
-        self._history.append(job_id)
-        self._cancel_events.pop(job_id, None)
 
     def _failed(self, job: AdminJob, error: Exception) -> AdminJob:
         """Return the terminal record of a job whose operation raised."""
@@ -394,9 +335,6 @@ class CorpusJobQueue:
             )
             await self._persister.write_final(queued.job_id)
         self._invalidate_status()
-        if queued.job_id not in self._history:
-            self._history.append(queued.job_id)
-        self._cancel_events.pop(queued.job_id, None)
 
     async def _work(self) -> None:
         """Run queued jobs serially through the shared corpus/evaluation lock."""
@@ -405,21 +343,22 @@ class CorpusJobQueue:
             try:
                 await self._run_in_turn(queued)
             except JobTurnCancelledError:
-                if queued.job_id not in self._history:
-                    self._history.append(queued.job_id)
+                # Cancellation already wrote the terminal state before removing its turn.
+                pass
             finally:
+                await self._persister.flush(queued.job_id)
+                self._jobs.pop(queued.job_id, None)
+                self._cancel_events.pop(queued.job_id, None)
                 self._queue.task_done()
 
     async def _run_in_turn(self, queued: AdminJob) -> None:
         """Wait for the job's turn and the shared lock, skipping it once cancelled."""
         if self._is_cancelled(queued):
-            self._history.append(queued.job_id)
             return
         async with self._execution_coordinator.turn(queued.job_id):
             async with self._execution_lock:
                 # The operator may cancel while the job waits for its turn or the lock.
                 if self._is_cancelled(queued):
-                    self._history.append(queued.job_id)
                     return
                 await self._execute_guarded(queued)
 

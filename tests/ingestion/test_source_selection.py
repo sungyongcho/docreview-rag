@@ -11,6 +11,7 @@ from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.ingestion.manifest import Manifest
 from app.ingestion.source_publication import fixed_path, publish_acquired
 from app.ingestion.source_selection import acquisition_draft, record_selection, source_inventory
+from tests.corpus_admin.support import LedgerStore
 from tests.ingestion.support import (
     acquired_filing,
     filing_document,
@@ -215,7 +216,7 @@ def test_ingest_selected_job_uses_existing_manifest_job_contract(tmp_path):
             )
 
         service = RuntimeCorpusAdminService(
-            settings=Settings(corpus_dir=tmp_path), operation_runner=runner
+            settings=Settings(corpus_dir=tmp_path), operation_runner=runner, job_store=LedgerStore()
         )
         job = await service.enqueue(
             AdminCommand(

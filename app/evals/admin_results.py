@@ -7,7 +7,6 @@ row can never point the admin surface at an arbitrary file.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,16 +20,8 @@ from app.api.admin_schemas import (
 )
 from app.db.models import EvalResult
 from app.db.session_factory import SessionFactory
-from app.evals.artifacts import read_strict_json
+from app.evals.artifacts import EvaluationArtifacts, cases_by_id
 from app.evals.regression import SCORING_CONFIG_KEY
-
-
-def confined_artifact_path(raw: str, artifact_dir: Path) -> Path:
-    """Confine persisted artifact reads to the configured evaluation directory."""
-    path = Path(raw).resolve()
-    if path.parent != artifact_dir:
-        raise ValueError("evaluation artifact is outside the configured directory")
-    return path
 
 
 async def compatible_baseline(
@@ -86,14 +77,9 @@ async def compare_stored_results(
         raise ValueError("evaluation scoring metadata must be an object")
     if candidate_scoring.get("k") != baseline_scoring.get("k"):
         raise ValueError("evaluation cutoffs are not compatible")
-    candidate_payload = read_strict_json(
-        confined_artifact_path(candidate.raw_artifact_path, artifact_dir), error=ValueError
-    )
-    baseline_payload = read_strict_json(
-        confined_artifact_path(baseline.raw_artifact_path, artifact_dir), error=ValueError
-    )
-    if not isinstance(candidate_payload, dict) or not isinstance(baseline_payload, dict):
-        raise ValueError("evaluation artifact root must be an object")
+    artifacts = EvaluationArtifacts(artifact_dir)
+    candidate_payload = artifacts.read(candidate.raw_artifact_path)
+    baseline_payload = artifacts.read(baseline.raw_artifact_path)
     metric_names = ("recall_at_k", "hit_rate_at_k", "mrr", "mean_latency_ms")
     candidate_metrics = candidate_payload.get("metrics", {})
     baseline_metrics = baseline_payload.get("metrics", {})
@@ -106,14 +92,6 @@ async def compare_stored_results(
         )
         for name in metric_names
     )
-
-    def cases_by_id(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        """Index artifact case objects by their strict golden identity."""
-        return {
-            str(item["golden"]["id"]): item
-            for item in payload.get("cases", [])
-            if isinstance(item, dict) and isinstance(item.get("golden"), dict)
-        }
 
     baseline_cases = cases_by_id(baseline_payload)
     candidate_cases = cases_by_id(candidate_payload)
@@ -171,23 +149,17 @@ async def stored_result_detail(
         result = await session.get(EvalResult, result_id)
     if result is None:
         return None
-    payload = read_strict_json(
-        confined_artifact_path(result.raw_artifact_path, artifact_dir), error=ValueError
-    )
-    if not isinstance(payload, dict):
-        raise ValueError("evaluation artifact root must be an object")
+    payload = EvaluationArtifacts(artifact_dir).read(result.raw_artifact_path)
     raw_metrics = payload.get("metrics")
     if not isinstance(raw_metrics, dict):
         raise ValueError("evaluation artifact metrics must be an object")
     cases: list[EvaluationCaseSummary] = []
-    for item in payload.get("cases", [])[:50]:
-        if not isinstance(item, dict) or not isinstance(item.get("golden"), dict):
-            continue
+    for item in list(cases_by_id(payload).values())[:50]:
         raw_score = item.get("score")
         score = raw_score if isinstance(raw_score, dict) else {}
         cases.append(
             EvaluationCaseSummary(
-                case_id=str(item["golden"].get("id", "unknown")),
+                case_id=item["golden"]["id"],
                 question=str(item["golden"].get("question", "")),
                 first_relevant_rank=score.get("first_relevant_rank"),
                 citations=tuple(

@@ -86,7 +86,7 @@ def test_snapshot_routes_read_stored_results_without_starting_work(client_factor
     result = EvalResultResource(
         result_id=9,
         suite="sec-en",
-        config={"golden_sha256": "a" * 64},
+        config={"evaluated_golden_sha256": "a" * 64},
         metrics={"mrr": 0.5},
         raw_artifact_path="artifact.json",
         created_at=recorded,
@@ -99,7 +99,6 @@ def test_snapshot_routes_read_stored_results_without_starting_work(client_factor
             public=True,
             corpus_fingerprint="b" * 64,
             profile={},
-            golden_revision_id=None,
             eval_result=result,
             document_count=2,
             created_at=recorded,
