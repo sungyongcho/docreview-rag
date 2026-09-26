@@ -2,7 +2,6 @@
 
 import asyncio
 from dataclasses import replace
-from datetime import UTC, datetime
 import json
 from pathlib import Path
 
@@ -15,13 +14,14 @@ from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.ingestion.progress import OperationProgress
 from app.operator.corpus_access import JobCancelledError
-from app.operator.jobs import JobDomain, JobStatus, JobStore, StoredJob
+from app.operator.jobs import JobStore
 from app.operator.progress import PROGRESS_KEY, stored_progress
 from app.retrieval.bm25 import TermStatCounts
 from app.retrieval.embeddings import (
     DeterministicEmbeddingProvider,
     EmbeddingBackfillResult,
 )
+from tests.corpus_admin.support import LedgerStore
 from tests.live_postgres import live_postgres_unavailable
 
 
@@ -243,109 +243,6 @@ def test_manifest_resolution_is_confined_to_valid_root_entries(tmp_path: Path) -
         service._resolve_manifest("notes.json")
 
 
-class _LedgerStore(JobStore):
-    """In-memory job ledger whose writes can be made to fail a set number of times."""
-
-    def __init__(self, failures: int = 0) -> None:
-        super().__init__()
-        self.rows: dict[str, StoredJob] = {}
-        self.failures = failures
-        self.puts: list[str] = []
-
-    async def create(
-        self,
-        *,
-        job_id: str,
-        domain: JobDomain,
-        kind: str,
-        request_json: dict[str, object],
-        message: str = "Queued",
-        created_at: datetime | None = None,
-        result_refs: dict[str, object] | None = None,
-    ) -> StoredJob:
-        """Insert one queued row."""
-        now = created_at or datetime.now(UTC)
-        row = StoredJob(
-            job_id=job_id,
-            domain=domain,
-            kind=kind,
-            request_json=dict(request_json),
-            status="queued",
-            stage="queued",
-            current=0,
-            total=None,
-            detail_current=None,
-            detail_total=None,
-            message=message,
-            error_code=None,
-            result_refs=dict(result_refs or {}),
-            created_at=now,
-            started_at=None,
-            finished_at=None,
-            updated_at=now,
-        )
-        self.rows[job_id] = row
-        return row
-
-    async def put(
-        self,
-        job_id: str,
-        *,
-        status: JobStatus,
-        stage: str,
-        current: int,
-        total: int | None,
-        detail_current: int | None,
-        detail_total: int | None,
-        message: str,
-        started_at: datetime | None,
-        finished_at: datetime | None,
-        error_code: str | None = None,
-        result_refs: dict[str, object] | None = None,
-    ) -> StoredJob:
-        """Replace one row, raising while failures remain."""
-        if self.failures > 0:
-            self.failures -= 1
-            raise RuntimeError("ledger unavailable")
-        row = self.rows[job_id]
-        updated = replace(
-            row,
-            status=status,
-            stage=stage,
-            current=current,
-            total=total,
-            detail_current=detail_current,
-            detail_total=detail_total,
-            message=message,
-            started_at=started_at,
-            finished_at=finished_at,
-            error_code=error_code,
-            result_refs={**row.result_refs, **(result_refs or {})},
-            updated_at=datetime.now(UTC),
-        )
-        self.rows[job_id] = updated
-        self.puts.append(status)
-        return updated
-
-    async def get(self, job_id: str) -> StoredJob | None:
-        """Return one row."""
-        return self.rows.get(job_id)
-
-    async def list(
-        self, *, domain: JobDomain | None = None, limit: int = 100
-    ) -> tuple[StoredJob, ...]:
-        """Return newest-first rows."""
-        rows = sorted(
-            self.rows.values(), key=lambda row: (row.created_at, row.job_id), reverse=True
-        )
-        return tuple(row for row in rows if domain is None or row.domain == domain)[:limit]
-
-    async def interrupt_incomplete(self, domain: JobDomain) -> tuple[str, ...]:
-        """Nothing is stale in a fresh in-memory ledger."""
-        del domain
-        return ()
-
-
 @pytest.mark.parametrize("fails", [False, True], ids=["success", "failure"])
 def test_bm25_job_reports_completion_only_after_rebuild(tmp_path: Path, monkeypatch, fails) -> None:
     """Persist complete progress only after the actual BM25 operation succeeds."""
@@ -392,7 +289,7 @@ def test_bm25_job_reports_completion_only_after_rebuild(tmp_path: Path, monkeypa
 
     async def scenario():
         """Run the real queued operation and inspect its terminal ledger record."""
-        store = _LedgerStore()
+        store = LedgerStore()
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
             session_factory=FakeSession,
@@ -421,7 +318,7 @@ def test_worker_survives_ledger_failures_and_lands_the_terminal_state(tmp_path: 
 
     async def scenario() -> None:
         """Fail the first two writes, then require succeeded rows and a live worker."""
-        store = _LedgerStore(failures=2)
+        store = LedgerStore(failures=2)
 
         async def runner(command, publish) -> OperationOutcome:
             """Publish a burst of progress in one turn, then finish."""
@@ -579,24 +476,6 @@ def test_ingestion_rejects_unknown_selection_before_parsing(tmp_path, monkeypatc
         )
 
 
-def test_selection_command_restores_from_stored_job(tmp_path):
-    """Restore the identical selection when retrying a persisted operation."""
-
-    async def scenario():
-        """Create the ledger row without starting any database work."""
-        store = _LedgerStore()
-        command = AdminCommand("ingest_manifest", manifest="manifest.json", selection_id="selected")
-        row = await store.create(
-            job_id="selection",
-            domain="corpus",
-            kind=command.kind,
-            request_json=runtime._command_payload(command),
-        )
-        assert runtime._command_from_stored(row) == command
-
-    asyncio.run(scenario())
-
-
 @pytest.mark.parametrize("registry", ["sec", "dart"])
 def test_acquisition_returns_common_manifest_selection(tmp_path, monkeypatch, registry):
     """Forward adapter provenance without creating a second catalog."""
@@ -686,29 +565,6 @@ def test_backfill_uses_the_exact_selected_document_ids(tmp_path, monkeypatch):
     assert calls == [("nvda-2024",), ("nvda-2024",)]
 
 
-@pytest.mark.parametrize(
-    "kind,payload",
-    [
-        ("rebuild_bm25", {"identifiers": "NVDA"}),
-        ("rebuild_bm25", {"years": ["2024"]}),
-        ("rebuild_bm25", {"expected_documents": True}),
-        ("rebuild_bm25", {"manifest": []}),
-        ("unsupported", {}),
-    ],
-)
-def test_stored_command_rejects_invalid_json_types(kind, payload):
-    """Reject malformed persisted commands instead of coercing retry inputs."""
-
-    async def scenario():
-        """Validate one in-memory ledger row without starting an operation."""
-        store = _LedgerStore()
-        row = await store.create(job_id="invalid", domain="corpus", kind=kind, request_json=payload)
-        with pytest.raises(ValueError):
-            runtime._command_from_stored(row)
-
-    asyncio.run(scenario())
-
-
 def test_schema_drift_does_not_misreport_source_permissions(tmp_path, monkeypatch):
     """A schema mismatch must not masquerade as an unwritable corpus directory."""
     service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
@@ -791,7 +647,7 @@ def test_embedding_usage_survives_job_transitions(tmp_path, outcome):
 
     async def scenario():
         """Use the bounded in-memory ledger to exercise real worker transition code."""
-        store = _LedgerStore()
+        store = LedgerStore()
         service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
 
         async def operation(command, publish, on_usage=None):
@@ -830,7 +686,7 @@ def test_restored_embedding_usage_ledger_cannot_be_retried_or_read_as_a_command(
 
     async def scenario():
         """Use a restored terminal ledger without reaching a database or provider."""
-        store = _LedgerStore()
+        store = LedgerStore()
         row = await store.create(
             job_id="usage-ledger",
             domain="corpus",
@@ -851,7 +707,7 @@ def test_historical_ingestion_without_selection_is_refused_on_retry(tmp_path):
 
     async def scenario():
         """Retry one restored failed row without reaching a database or provider."""
-        store = _LedgerStore()
+        store = LedgerStore()
         row = await store.create(
             job_id="old-ingest",
             domain="corpus",
