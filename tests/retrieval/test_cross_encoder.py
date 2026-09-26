@@ -43,7 +43,7 @@ def retrieve(monkeypatch, events: list[tuple[str, int]], **kwargs):
             cast(AsyncSession, object()),
             "market risk",
             provider=DeterministicEmbeddingProvider(),
-            filters=RetrievalFilters(),
+            filters=RetrievalFilters(languages=("en",)),
             **kwargs,
         )
     )

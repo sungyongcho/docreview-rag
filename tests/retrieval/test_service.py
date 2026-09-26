@@ -29,7 +29,7 @@ def test_service_uses_default_candidate_pool_one_session_and_rank_only_component
     """Share one session and preserve rank-only component provenance."""
     events = []
     session = cast(AsyncSession, object())
-    filters = RetrievalFilters(doc_ids=("NVDA-FY2024",))
+    filters = RetrievalFilters(doc_ids=("NVDA-FY2024",), languages=("en",))
 
     class Provider(DeterministicEmbeddingProvider):
         """Test double for Provider behavior."""
@@ -139,6 +139,7 @@ def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypa
             provider=DeterministicEmbeddingProvider(),
             k=1,
             candidate_k=2,
+            filters=RetrievalFilters(languages=("en",)),
             reranker=Reranker(),
         )
     )
@@ -262,7 +263,7 @@ def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch
             "매출총이익률은 어떻게 변화했습니까?",
             provider=Provider(),
             k=2,
-            filters=RetrievalFilters(),
+            filters=RetrievalFilters(languages=("en",)),
             route_by_language=True,
         )
     )
@@ -311,7 +312,15 @@ def test_routing_stays_off_for_a_caller_that_does_not_ask_for_it(monkeypatch):
     monkeypatch.setattr(service, "lexical_search", lexical)
 
     session = cast(AsyncSession, object())
-    result = asyncio.run(service.retrieve(session, "AMD의 매출은?", provider=Provider(), k=2))
+    result = asyncio.run(
+        service.retrieve(
+            session,
+            "AMD의 매출은?",
+            provider=Provider(),
+            k=2,
+            filters=RetrievalFilters(languages=("en",)),
+        )
+    )
 
     # The service holds no opinion of its own: it never reads Settings, so an arm
     # measured here cannot inherit a query path its recorded config does not name.
@@ -441,3 +450,83 @@ def test_translated_variant_keeps_the_target_lexical_lane(monkeypatch):
 
     assert lexical_calls == [("revenue growth drivers", ("en",), "english")]
     assert result.component_rankings.lexical_by_language == {"en": (2,)}
+
+
+def test_unrestricted_filter_with_a_routed_variant_reaches_every_corpus(monkeypatch):
+    """An empty language filter fans both lanes out over every corpus language."""
+    embedded = []
+    vector_calls = []
+    lexical_calls = []
+
+    class Provider(DeterministicEmbeddingProvider):
+        """Record the query text each vector lane embeds."""
+
+        async def embed_query(self, query):
+            """Exercise embed query behavior."""
+            embedded.append(query)
+            return [0.0] * self.dimensions
+
+    async def vector(session, query_vector, *, k, filters, identity=None):
+        """Record the language restriction of every vector lane."""
+        vector_calls.append(filters.languages)
+        return [hit(1 if filters.languages == ("en",) else 3, 0.9)]
+
+    async def lexical(session, query, k, filters, *, text_search_config):
+        """Record the language and configuration of every lexical lane."""
+        lexical_calls.append((filters.languages, text_search_config))
+        return [hit(2 if filters.languages == ("en",) else 4, 5.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+    result = asyncio.run(
+        service.retrieve(
+            cast(AsyncSession, object()),
+            "compare all companies 매출 growth",
+            provider=Provider(),
+            k=4,
+            filters=RetrievalFilters(),
+            query_variants={"en": "compare all companies revenue growth"},
+            route_by_language=True,
+        )
+    )
+
+    # One vector lane per corpus language, each embedded with the query in its language.
+    assert vector_calls == [("en",), ("ko",)]
+    assert embedded == ["compare all companies revenue growth", "compare all companies 매출 growth"]
+    assert lexical_calls == [(("en",), "english"), (("ko",), "simple")]
+    assert result.component_rankings.vector_by_language == {"en": (1,), "ko": (3,)}
+    assert result.component_rankings.lexical_by_language == {"en": (2,), "ko": (4,)}
+    assert {candidate.chunk_id for candidate in result.hits} == {1, 2, 3, 4}
+
+
+def test_unrestricted_filter_without_a_variant_keeps_one_vector_lane(monkeypatch):
+    """Without a translation the vector lane stays unrestricted; lexical lanes still fan out."""
+    vector_calls = []
+    lexical_calls = []
+
+    async def vector(session, query_vector, *, k, filters, identity=None):
+        """Record the language restriction of every vector lane."""
+        vector_calls.append(filters.languages)
+        return [hit(1, 0.9)]
+
+    async def lexical(session, query, k, filters, *, text_search_config):
+        """Record the query each lexical lane parses."""
+        lexical_calls.append((filters.languages, query))
+        return [hit(2 if filters.languages == ("en",) else 3, 5.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+    result = asyncio.run(
+        service.retrieve(
+            cast(AsyncSession, object()),
+            "삼성전자 memory",
+            provider=DeterministicEmbeddingProvider(),
+            k=3,
+            filters=None,
+        )
+    )
+
+    assert vector_calls == [()]
+    assert lexical_calls == [(("en",), "삼성전자 memory"), (("ko",), "삼성 성전 전자 memory")]
+    assert result.component_rankings.vector_by_language == {}
+    assert result.component_rankings.lexical_by_language == {"en": (2,), "ko": (3,)}
