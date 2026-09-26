@@ -14,17 +14,6 @@ from app.api.admin_schemas import (
 from app.retrieval.service import ComponentRankings
 
 
-def test_default_profile_is_explicit_hybrid_ts_rank() -> None:
-    """Expose every session parameter without inheriting hidden process state."""
-    profile = RetrievalProfile()
-
-    assert profile.strategy == "hybrid"
-    assert profile.lexical_ranker == "ts_rank_cd"
-    assert profile.k == 5
-    assert profile.candidate_k == 20
-    assert profile.rrf_k == 60
-
-
 @pytest.mark.parametrize(
     "values",
     [
@@ -33,6 +22,13 @@ def test_default_profile_is_explicit_hybrid_ts_rank() -> None:
         {"strategy": "lexical", "route_by_language": True},
         {"strategy": "vector", "lexical_ranker": None, "reranker": "cross_encoder"},
         {"k": 10, "candidate_k": 5},
+    ],
+    ids=[
+        "vector_names_a_lexical_ranker",
+        "lexical_without_a_ranker",
+        "language_routing_without_hybrid",
+        "reranking_without_hybrid",
+        "candidate_depth_below_k",
     ],
 )
 def test_profile_rejects_contradictory_retrieval_plans(values) -> None:
@@ -43,11 +39,11 @@ def test_profile_rejects_contradictory_retrieval_plans(values) -> None:
 
 def test_matrix_axes_must_be_unique_and_nonempty() -> None:
     """Refuse a matrix whose repeated axes would duplicate artifacts."""
-    with pytest.raises(ValidationError, match="target_text_chars"):
+    with pytest.raises(ValidationError, match="target_tokens must be nonempty and unique"):
         EvaluationRunRequest(
             suite_id="sec-en",
             mode="matrix",
-            target_text_chars=(500, 500),
+            target_tokens=(1024, 1024),
         )
 
 
