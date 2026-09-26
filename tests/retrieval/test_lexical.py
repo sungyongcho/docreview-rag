@@ -78,11 +78,11 @@ def test_relaxation_leaves_queries_without_safe_positive_splits_to_websearch(que
 
 
 def test_ranking_normalizes_by_extent_distance_and_document_length():
-    """Normalize ranking by term proximity and document length."""
-    assert lexical.TS_RANK_NORMALIZATION == 4 | 1
+    """Pass ts_rank_cd the extent-distance (4) and document-length (1) normalization flags."""
+    sql, params = normalized_sql(lexical.lexical_statement("gross margin percentage", 7))
 
-    _sql, params = normalized_sql(lexical.lexical_statement("gross margin percentage", 7))
-    assert lexical.TS_RANK_NORMALIZATION in params.values()
+    assert "ts_rank_cd(chunks.content_tsv, lexical_query.tsquery, %(ts_rank_cd_1)s)" in sql
+    assert params["ts_rank_cd_1"] == 4 | 1
 
 
 def test_snapshot_statement_reads_only_the_frozen_chunk_revision():
