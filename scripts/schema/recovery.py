@@ -10,13 +10,13 @@ import socket
 import subprocess
 import time
 from urllib.error import URLError
-from urllib.request import ProxyHandler, build_opener
 from uuid import uuid4
 
 from dotenv import dotenv_values, set_key, unset_key
 
 from scripts.stack.__main__ import compose_command, compose_environment
 from scripts.stack.environment import load_local_environment
+from scripts.stack.local_http import local_opener
 
 
 def create_recovery(source: Path, parent: Path) -> Path:
@@ -91,7 +91,7 @@ def recovery_environment(target: Path) -> dict[str, str]:
 
 def wait_recovery(origin: str, *, timeout: float = 180) -> None:
     """Confirm the routed web API sees a compatible writable DB, without requiring corpus data."""
-    opener = build_opener(ProxyHandler({}))
+    opener = local_opener()
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:

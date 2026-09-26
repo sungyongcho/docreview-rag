@@ -18,7 +18,9 @@ import tempfile
 import time
 from typing import Any
 from urllib.error import URLError
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import Request
+
+from scripts.stack.local_http import local_opener
 
 
 class OperatorLifecycleError(RuntimeError):
@@ -104,7 +106,7 @@ class LocalOperator:
             headers={"Origin": state["origin"], "Authorization": f"Bearer {state['token']}"},
         )
         try:
-            with build_opener(ProxyHandler({})).open(request, timeout=1) as response:
+            with local_opener().open(request, timeout=1) as response:
                 return response.status == 200
         except URLError, TimeoutError:
             return False

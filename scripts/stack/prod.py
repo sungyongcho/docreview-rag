@@ -12,7 +12,6 @@ from pathlib import Path
 import subprocess
 import time
 from urllib.error import HTTPError
-from urllib.request import ProxyHandler, build_opener
 
 from dotenv import dotenv_values
 
@@ -26,6 +25,7 @@ from deploy.gcp.verify_artifacts import (
 )
 from scripts.stack.environment import load_local_environment
 from scripts.stack.fresh import docker_inventory, write_receipt
+from scripts.stack.local_http import local_opener
 
 
 def storage(root: Path) -> Path:
@@ -243,7 +243,7 @@ def wait_search_ready(root: Path, *, timeout: float = 90) -> dict:
     url = (
         f"http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}/docreview-rag/api/ready/"
     )
-    opener = build_opener(ProxyHandler({}))
+    opener = local_opener()
     deadline = time.monotonic() + timeout
     latest = None
     while time.monotonic() < deadline:

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import subprocess
 import sys
-from urllib.error import HTTPError
-from urllib.request import ProxyHandler, build_opener
+
+from scripts.stack.local_http import read_local_json
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -74,14 +73,7 @@ def require_running_mode(root: Path, mode: str) -> None:
     url = (
         f"http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}/docreview-rag/api/ready/"
     )
-    try:
-        response = build_opener(ProxyHandler({})).open(url, timeout=5)
-    except HTTPError as error:
-        if error.code != 503:
-            raise
-        response = error
-    with response:
-        observed = json.load(response)
+    observed = read_local_json(url, timeout=5, accept=(503,))
     if observed.get("mode") != "runtime" or observed.get("environment") != mode:
         raise ValueError(f"The local server is not {mode.upper()}; no data was changed.")
 

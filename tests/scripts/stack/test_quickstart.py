@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from scripts.stack import quickstart as setup
+from scripts.stack import local_http, quickstart as setup
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def test_prod_server_readiness_accepts_empty_corpus_without_claiming_search(monk
     )
     opener = Mock()
     opener.open.side_effect = error
-    monkeypatch.setattr(setup, "build_opener", lambda *args: opener)
+    monkeypatch.setattr(local_http, "build_opener", lambda *args: opener)
     setup.wait_ready("http://127.0.0.1:8000", mode="prod", timeout=1)
     assert opener.open.call_args.args[0].endswith("/api/ready/")
 
