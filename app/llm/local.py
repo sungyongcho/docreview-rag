@@ -14,6 +14,46 @@ from app.llm.schemas import LocalModelTiming, Prompt, ProviderBudget
 LocalLlmProtocol = Literal["openai_responses", "ollama"]
 
 
+def _responses_output(payload: dict[str, object]) -> tuple[str | None, str | None]:
+    """Read the message text and refusal one Responses object carries in ``output``.
+
+    The wire format carries text only as ``output[].content[]`` parts of type
+    ``output_text``; a top-level ``output_text`` is a convenience of the OpenAI SDK, not
+    a JSON field, so it is read only when the items carry no text.
+
+    Parameters
+    ----------
+    payload : dict[str, object]
+        Decoded ``POST /v1/responses`` body.
+
+    Returns
+    -------
+    tuple[str | None, str | None]
+        Joined message text, or ``None`` when no text part was present, and the first
+        nonblank ``refusal`` part, in that order.
+    """
+    texts: list[str] = []
+    refusal: str | None = None
+    output = payload.get("output")
+    for item in output if isinstance(output, list) else ():
+        if not isinstance(item, dict) or item.get("type") != "message":
+            continue
+        content = item.get("content")
+        for part in content if isinstance(content, list) else ():
+            if not isinstance(part, dict):
+                continue
+            text = part.get("text")
+            if part.get("type") == "output_text" and isinstance(text, str):
+                texts.append(text)
+            declined = part.get("refusal")
+            if part.get("type") == "refusal" and isinstance(declined, str) and declined.strip():
+                refusal = refusal or declined
+    if texts:
+        return "".join(texts), refusal
+    top_level = payload.get("output_text")
+    return (top_level if isinstance(top_level, str) else None), refusal
+
+
 class LocalLLMProvider(LLMProvider):
     """Normalize two local structured-output protocols without exposing their endpoint."""
 
@@ -94,19 +134,23 @@ class LocalLLMProvider(LLMProvider):
         )
         response.raise_for_status()
         payload = response.json()
-        usage = payload.get("usage") if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            raise ValueError("local Responses payload was not a JSON object")
+        usage = payload.get("usage")
         input_tokens = usage.get("input_tokens") if isinstance(usage, dict) else None
         output_tokens = usage.get("output_tokens") if isinstance(usage, dict) else None
         if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
             raise ValueError("local Responses payload did not include token usage")
-        output_text = payload.get("output_text")
-        if not isinstance(output_text, str):
-            raise ValueError("local Responses payload did not include output_text")
+        output_text, refusal = _responses_output(payload)
+        if output_text is None and refusal is None:
+            raise ValueError("local Responses payload did not include output text")
+        request_id = payload.get("id")
         return RawProviderResponse(
-            output_text=output_text,
+            output_text=output_text or "",
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            request_id=payload.get("id") if isinstance(payload.get("id"), str) else None,
+            request_id=request_id if isinstance(request_id, str) else None,
+            refusal=refusal,
         )
 
     async def _ollama_request[OutputT: BaseModel](

@@ -1,14 +1,15 @@
 """Local structured-output provider protocol tests."""
 
 import asyncio
+from collections.abc import Callable
 from decimal import Decimal
 import json
 
 import httpx
 import pytest
 
-from app.llm.local import LocalLLMProvider
-from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
+from app.llm.local import LocalLlmProtocol, LocalLLMProvider
+from app.llm.schemas import Prompt, ProviderBudget, ProviderRefusal, ProviderResult, TokenPricing
 from tests.llm.support import ChatReply
 
 
@@ -23,6 +24,41 @@ def budget() -> ProviderBudget:
             output_per_million_usd=Decimal("0"),
         ),
     )
+
+
+def complete_locally(
+    respond: Callable[[httpx.Request], httpx.Response],
+    *,
+    protocol: LocalLlmProtocol,
+    base_url: str,
+) -> ProviderResult[ChatReply]:
+    """Run one completion over an offline transport that answers with ``respond``."""
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    provider = LocalLLMProvider(
+        base_url=base_url, model_name="local-model", protocol=protocol, client=client
+    )
+    result = asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
+    asyncio.run(client.aclose())
+    return result
+
+
+def responses_payload(*content: dict[str, object]) -> dict[str, object]:
+    """Build one Responses wire object whose single assistant message carries ``content``."""
+    return {
+        "id": "resp_1",
+        "object": "response",
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "id": "msg_1",
+                "role": "assistant",
+                "status": "completed",
+                "content": list(content),
+            }
+        ],
+        "usage": {"input_tokens": 8, "output_tokens": 3, "total_tokens": 11},
+    }
 
 
 @pytest.mark.parametrize(("context_window", "expected_num_ctx"), [(None, 150), (12_600, 12_600)])
@@ -217,3 +253,87 @@ def test_provider_carries_the_configured_context_window_and_refuses_a_nonpositiv
             api_key=None,
             context_window=0,
         )
+
+
+def test_responses_wire_payload_is_read_from_its_output_items() -> None:
+    """The Responses wire format carries text only inside ``output[].content[]``, so a
+    spec-shaped local server answers with status ``ok`` and its reported usage."""
+    sent: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Record the request and answer with the documented Responses object."""
+        sent.append(request)
+        return httpx.Response(
+            200,
+            json=responses_payload(
+                {"type": "output_text", "text": '{"answer":"hello"}', "annotations": []}
+            ),
+        )
+
+    result = complete_locally(
+        respond, protocol="openai_responses", base_url="http://127.0.0.1:8000/v1"
+    )
+
+    assert sent[0].url.path == "/v1/responses"
+    assert result.status == "ok", result.refusal
+    assert result.parsed == ChatReply(answer="hello")
+    assert result.metadata.api_url == "local://openai-compatible"
+    assert result.metadata.request_ids == ("resp_1",)
+    assert (result.metadata.input_tokens, result.metadata.output_tokens) == (8, 3)
+
+
+def test_responses_refusal_item_becomes_a_typed_provider_refusal() -> None:
+    """A ``refusal`` content part is the model declining, not a malformed payload."""
+    result = complete_locally(
+        lambda request: httpx.Response(
+            200, json=responses_payload({"type": "refusal", "refusal": "I cannot help with that."})
+        ),
+        protocol="openai_responses",
+        base_url="http://127.0.0.1:8000/v1",
+    )
+
+    assert result.status == "provider_refused", result.refusal
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert result.refusal.message == "I cannot help with that."
+    assert result.refusal.attempts == 1
+    assert result.metadata.requests == 1
+
+
+def test_responses_top_level_output_text_is_still_accepted() -> None:
+    """A server that adds the SDK's convenience field, and nothing else, is still read."""
+    result = complete_locally(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "id": "resp_2",
+                "output_text": '{"answer":"hello"}',
+                "usage": {"input_tokens": 8, "output_tokens": 3},
+            },
+        ),
+        protocol="openai_responses",
+        base_url="http://127.0.0.1:8000/v1",
+    )
+
+    assert result.status == "ok", result.refusal
+    assert result.parsed == ChatReply(answer="hello")
+
+
+def test_responses_payload_without_text_or_refusal_fails_closed() -> None:
+    """An answer carrying neither text nor a refusal is a provider error, not a repair."""
+    result = complete_locally(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "id": "resp_3",
+                "status": "incomplete",
+                "output": [{"type": "reasoning", "id": "rs_1", "summary": []}],
+                "usage": {"input_tokens": 8, "output_tokens": 3},
+            },
+        ),
+        protocol="openai_responses",
+        base_url="http://127.0.0.1:8000/v1",
+    )
+
+    assert result.status == "provider_error"
+    assert isinstance(result.refusal, ProviderRefusal)
+    assert "output text" in result.refusal.message
