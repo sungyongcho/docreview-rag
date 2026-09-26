@@ -25,7 +25,7 @@ def _details(services: Services) -> PublicSnapshotDetails:
             code="snapshot_evidence_unavailable",
             message="Published evaluation evidence requires the runtime service.",
         )
-    return PublicSnapshotDetails(services.session_factory, services._snapshots)
+    return PublicSnapshotDetails(services.session_factory, services.snapshots)
 
 
 @router.get("/{snapshot_id}/dataset", response_model=PublicSnapshotDataset)

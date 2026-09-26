@@ -446,6 +446,15 @@ class RuntimeApiServices(ApiServices):
         return read_company_names(self._corpus_root or get_settings().corpus_dir)
 
     @property
+    def snapshots(self) -> SnapshotService:
+        """Expose the snapshot service so published-evidence readers share its database.
+
+        The public snapshot routes read datasets and evaluations of published snapshots
+        through this service; a read-only property keeps them out of private state.
+        """
+        return self._snapshots
+
+    @property
     def corpus_root(self) -> Path | None:
         """Expose the injected corpus directory; ``None`` means the settings directory applies.
 
