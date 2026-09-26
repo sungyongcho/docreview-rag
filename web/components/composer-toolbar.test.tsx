@@ -119,8 +119,6 @@ describe("corpus readiness summary", () => {
     }
     // A public surface withholds counts; the server's ready verdict still confirms hybrid search.
     expect(readinessStatusLabel(readiness({ documents: null, chunks: null, pending_embeddings: null, availability: "ready" }))).toBe("Hybrid search ready");
-    {
-    }
     expect(readinessStatusLabel(readiness({ database_connected: false }))).toBe("Corpus unavailable");
     expect(readinessStatusLabel(readiness({ availability: "not_applicable", database_connected: null, bm25_ready: null }))).toBe("Readiness not reported");
   });
