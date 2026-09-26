@@ -130,14 +130,15 @@ def _provider_allowance(
         output_tokens=used_output,
         cached_input_tokens=used_cached,
         cache_write_input_tokens=used_cache_write,
-        attempts=1,
+        attempts=0,
         inclusive=True,
     ):
         return ProviderFailure(
             node=node,
             status="budget_exceeded",
-            attempts=1,
+            attempts=0,
             details=(f"{exceeded.which}: used={exceeded.used} limit={exceeded.limit}",),
+            budget=exceeded,
         )
     spent = effective.pricing.estimate(
         used_input,
@@ -163,6 +164,21 @@ def _traced[OutputT: BaseModel](
     return state.model_copy(update={"steps": (*state.steps, trace)})
 
 
+def _committed(
+    state: WorkflowState,
+    node: WorkflowNode,
+    failure: ProviderFailure | NodeError,
+) -> WorkflowState:
+    """Commit one typed failure as the node's outcome and keep it in the history."""
+    return state.model_copy(
+        update={
+            "failure": failure,
+            "reasons": (*state.reasons, failure),
+            "node_path": (*state.node_path, node),
+        }
+    )
+
+
 def _committed_failure(
     state: WorkflowState,
     node: WorkflowNode,
@@ -173,13 +189,7 @@ def _committed_failure(
     if not message.strip():
         message = f"{node} failed without an error message"
     failure = NodeError(node=node, error_type=type(error).__name__, message=message)
-    return state.model_copy(
-        update={
-            "failure": failure,
-            "reasons": (*state.reasons, failure),
-            "node_path": (*state.node_path, node),
-        }
-    )
+    return _committed(state, node, failure)
 
 
 def _result_hits(result: RetrievalResult) -> tuple[ChunkHit, ...]:
@@ -330,17 +340,20 @@ async def run_workflow(
         current: WorkflowState,
         node: GradeOrCheckNode,
     ) -> WorkflowState | RunReport:
-        """Guard, call the provider, trace the call, and commit one graded node."""
+        """Guard, call the provider, trace the call, and commit one graded node.
+
+        A refusal the runner makes before the call is committed exactly like one the
+        provider returns: the node joins the path, its stage ends failed, and the
+        observer sees the failure.
+        """
         if refusal := blocked_by_budget(current, node):
             return refusal
         allowance = _provider_allowance(request, current, node)
         if isinstance(allowance, ProviderFailure):
-            current = current.model_copy(
-                update={
-                    "failure": allowance,
-                    "reasons": (*current.reasons, allowance),
-                }
-            )
+            async with stage(node) as measurement:
+                measurement.failed = True
+                current = _committed(current, node, allowance)
+            await notify(node, current)
             return failed(current)
         async with stage(node) as measurement:
             try:

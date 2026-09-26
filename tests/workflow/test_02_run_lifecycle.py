@@ -369,11 +369,65 @@ def test_exhausted_provider_limit_refuses_the_check_before_calling(
     )
 
     assert result.status == "budget_exceeded"
-    assert result.node_path == ("retrieve", "grade")
+    assert result.node_path == ("retrieve", "grade", "check")
     assert report_of(result)["reason"]["status"] == "budget_exceeded"
     assert report_of(result)["reason"]["node"] == "check"
+    assert report_of(result)["reason"]["attempts"] == 0
     assert report_of(result)["reason"]["details"] == [expected_detail]
+    assert report_of(result)["reason"]["budget_source"] == "provider_budget"
     assert len(provider.prompts) == 1
+
+
+def test_pre_call_refusal_by_the_runner_matches_the_provider_side_refusal():
+    """Commit the runner's own pre-call refusal exactly like the provider's.
+
+    Nothing was sent, so the refusal reports zero attempts and carries the budget
+    evidence that names its source; the refused node joins the path, its stage ends
+    failed, and the observer sees the failure, as it does when the provider refuses.
+    """
+    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
+    provider = _provider([_raw(grade, input_tokens=10, output_tokens=1)])
+    seen = []
+    events = []
+
+    async def observer(node, state):
+        seen.append((node, state.failure is not None))
+
+    async def observe(event):
+        events.append((event.node, event.phase, event.status))
+
+    async def exercise():
+        """Run the refused check under the stage recorder and the node observer."""
+        with record_stages(observe):
+            return await run_workflow(
+                _request(provider_budget=_provider_budget(max_input_tokens=10)),
+                retriever=retriever_returning([_hit()]),
+                provider=provider,
+                clock=SequenceClock(),
+                on_node=observer,
+            )
+
+    result = asyncio.run(exercise())
+
+    assert result.status == "budget_exceeded"
+    assert len(provider.prompts) == 1
+    reason = report_of(result)["reason"]
+    assert reason["node"] == "check"
+    assert reason["attempts"] == 0
+    assert reason["budget"] == {
+        "status": "budget_exceeded",
+        "which": "input_tokens",
+        "used": 10,
+        "limit": 10,
+        "attempts": 0,
+        "schema_errors": [],
+        "projected_input_tokens": None,
+    }
+    assert reason["budget_source"] == "provider_budget"
+    assert result.node_path == ("retrieve", "grade", "check")
+    assert result.total_requests == 1
+    assert seen == [("retrieve", False), ("grade", False), ("check", True)]
+    assert events[-2:] == [("check", "start", "running"), ("check", "end", "failed")]
 
 
 def test_schema_rejection_stops_closed_with_raw_trace_history_and_observer():
