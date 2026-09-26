@@ -1433,3 +1433,37 @@ See the matching ultra-refactor appendix for exact commands, result counts, cove
 comparison, repaired intermediate failures and remaining uncertainty. All changes in this
 section are disclosed reviewer contributions. No additional paid evaluation, merge,
 deployment, history rewrite or deletion of user data was performed.
+
+## 15. Job lookup and evaluation history after integration
+
+The user authorized merging the existing implementation PRs before this bounded follow-up.
+PR #221 merged into #220 at `fe280f36039fc394596f943a7f09309c97132856`; #220 merged into
+main at `12bccbbb161fcc342ba2d754eaf0f4492c34c049`. Both resulting trees match the verified
+`d3a81fa` tree. Local main was fast-forwarded while clean. Protected living drafts #37/#38
+were preserved. This follow-up changes only job lookup and evaluation history ownership.
+
+`operator_job()` previously searched the most recent 100 jobs and returned not-found for
+an older stored ID. It now reads that ID directly, preserving archived-terminal visibility
+rules. Queue positions read all pending IDs in the coordinator's `(created_at, job_id)`
+order, independently of the recent-history page. The extended API regression first failed
+for all three running-job variants and then passed with older terminal and queued records.
+
+`EvaluationAdminService.jobs()` previously intersected stored IDs with a cache hydrated
+only on startup. Restoring an evaluation archived at startup could not restore its list
+entry without a restart. The service now projects current stored rows on each read; retry
+also uses the persisted request. Memory holds only execution state and is released after
+pending writes finish. `_history`, `_hydrate_jobs`, test-only `job()`, `forget_history` and
+the no-store execution branch are removed. No existing test is deleted or weakened.
+
+Independent non-author removal verdicts: API, LLM/search and final reviewer approved the
+coordinator's bounded-list removal; coordinator, LLM/search and final reviewer approved
+the evaluation author's cache and unused-accessor removals. The evidence appendix records
+retained behavior, test corrections and final checks. These are agent reviews, not human
+approval. Existing terminal-persistence retries are unchanged: if every write fails, the
+last stored state remains authoritative and unfinished work is interrupted on restart.
+
+DEV/PROD data policy is unchanged. DEV uses administrator data and editable local settings;
+PROD uses published ready snapshot data, server execution policy and browser-owned presets.
+Stored browser values do not grant authority. The earlier mixed-browser-envelope concern
+is deferred pending its intended partial-read policy; it is not treated as a confirmed
+defect or permission to unify the two modes.

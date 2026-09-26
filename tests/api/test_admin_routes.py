@@ -526,9 +526,13 @@ def test_evaluation_preparation_and_submission_share_a_typed_blocker(tmp_path):
     from app.config import Settings
     from app.evals.admin import EvaluationAdminService
     from app.retrieval.embeddings import DeterministicEmbeddingProvider
+    from tests.corpus_admin.support import LedgerStore
 
+    store = LedgerStore()
     evaluations = EvaluationAdminService(
-        settings=Settings(corpus_dir=tmp_path), provider=DeterministicEmbeddingProvider()
+        settings=Settings(corpus_dir=tmp_path),
+        provider=DeterministicEmbeddingProvider(),
+        job_store=store,
     )
     services = RuntimeAdminApiServices(
         runtime=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
@@ -544,6 +548,7 @@ def test_evaluation_preparation_and_submission_share_a_typed_blocker(tmp_path):
         assert rejected.status_code == 409
         assert rejected.json()["error"]["code"] == "evaluation_not_ready"
         assert evaluations._jobs == {}
+        assert store.rows == {}
 
 
 def test_golden_field_errors_are_structured_and_evidence_pages_are_bounded():

@@ -1421,3 +1421,78 @@ inspection disposition. The raw physical-location comparator is not claimed to p
 These are reviewer-authored repairs and implementation checks, supported by bounded
 independent agent reviews; they are not independent human approval. Historical LLM
 decomposition causality and the three unrun acceptance environments remain unresolved.
+
+## Post-integration job history verification
+
+The user requested the existing implementation PRs be merged first, followed by fixes for
+exact job-ID lookup and evaluation history ownership. PR #221 merged at `fe280f36`, then
+#220 at `12bccbbb`; both preserve verified tree `089774d949cace85cdd795701d780a848599f875`.
+Local main was clean and fast-forwarded. Living drafts #37/#38 and other worktrees remain.
+The follow-up starts from `12bccbbb` and does not change DEV/PROD policy or browser code.
+
+### Removal and behavior evidence
+
+| Removed path | Actual reachability and retained responsibility | Independent non-author verdicts |
+|---|---|---|
+| Single-job lookup through the recent 100-job board | The ID route and retry/cancel response paths need an exact persisted record, not a bounded presentation page. `JobStore.get` now owns that read; archived terminal records remain hidden. Queue positions read every queued ID in coordinator order. | API reviewer, LLM/search reviewer, final reviewer: remove |
+| Evaluation `_history` and `_hydrate_jobs` | The deque only received/filtered IDs and did not own ordering or evict execution state. Startup hydration was the sole producer of the stale terminal cache. `jobs()` now projects current `JobStore.list(domain="evaluation", limit=20)` rows. | Coordinator, LLM/search reviewer, final reviewer: remove |
+| Evaluation `forget_history` | Its only caller invalidated terminal cache after API deletion. Ledger reads now reflect archive, restore and deletion directly; the callback is removed with its caller. | Coordinator, LLM/search reviewer, final reviewer: remove |
+| Evaluation `job()` and no-store execution branch | No application, script, export or registered route called `job()`; tests used it instead of the live list contract. The served constructor already supplied `JobStore`. Offline tests now inject `LedgerStore`; runtime construction defaults to a real store. | Coordinator, LLM/search reviewer, final reviewer: remove |
+| Cached retry and retained terminal execution state | Retry validates one persisted request and preserves its original row and `retry_of` link. `_jobs` remains for active deduplication, cancellation and progress, then is released after pending writes finish. Recovery still interrupts stale work once and never resumes it automatically. | Coordinator, LLM/search reviewer, final reviewer: remove |
+
+No existing test was deleted or skipped. Queue completion, shared execution ordering,
+preparation rechecks, duplicate rejection, delayed progress versus cancellation, restart
+interruption, effective BM25 settings and recorded result references remain asserted.
+Test reads moved from the deleted cache accessor to the actual persisted-list contract.
+The new rejection cases distinguish missing/archived/wrong-domain records and current
+queued/running/succeeded/cancelled states from eligible failed/interrupted retries.
+
+Both defects reproduced before their production fixes: old job-ID reads returned None
+after 100 newer rows (three existing parameter cases), and an evaluation archived at
+startup stayed absent after restoration. The extended API test retains all prior history,
+queue-action and missing-ID assertions. The evaluation test verifies restored request,
+status, progress, result IDs, baseline and artifact references, then re-archive/removal.
+Actual PostgreSQL independently exercises archive before service creation, restoration
+through `JobHistoryService`, and the next read from that same evaluation service.
+
+Two test assumptions were corrected during review: an old restart fake returned oldest
+first instead of `JobStore.list`'s newest-first order; the new current-state retry test
+initially seeded queued/running records before recovery. It now completes empty-store
+recovery before seeding current work, keeping restart interruption and active-job refusal
+separate. No production behavior was changed to accommodate either fake.
+
+### Final checks and limits
+
+Evidence is under `/tmp/job-history-reads-20260926/` and the implementation/removal audit
+is `/tmp/job-history-evaluation-review.md`. Every shell command used `ulimit -v 4000000`.
+
+- **Unit:** `pytest -m "not live_postgres" tests/api tests/evals tests/operator
+  tests/corpus_admin tests/scripts/diagnostics` passes **737 tests**, with 17 live cases
+  deselected (`unit-final.xml`). The initial broad run had 736 passed/1 failed because
+  an offline route fixture omitted its ledger. Explicit injection repaired it without
+  restoring a no-store runtime path; its module passed 28 before the final broad rerun.
+- **Actual PostgreSQL:** seven job/history/API checks pass (`live-final.xml`), including
+  exact FIFO ties, state transitions, archive/restore, backup/delete protection and current
+  result metadata. Three additional usage/source checks pass (`live-coverage.xml`) to
+  recollect unchanged SQL paths in the edited modules. The first live launch omitted two
+  dedicated fixture DSNs and stopped at their guards (5 passed/2 failed); its logs remain.
+  The corrected harness created the missing disposable databases. All DB writers ran
+  sequentially on owned tmpfs containers, which were removed afterward.
+- **Static:** Ruff check/format passes for all ten changed Python files. Basedpyright
+  checks 432 files with zero errors/warnings; the subsequent test-only corrections also
+  pass their scoped type checks. `git diff --check` passes.
+- **Coverage:** unchanged production files reuse the prior verified dataset. Old arcs
+  for `admin_runtime.py`, `evals/admin.py` and `operator/jobs.py` were purged before the
+  affected tests were recollected. Final statements: **16,919/18,795 (90.0186%)**, versus
+  89.8641%; branches: **4,201/5,278 (79.5945%)**, versus 79.2325%. Source-aware matching
+  against `12bccbbb` finds **zero previously covered unchanged statements or branches
+  missing**. One changed scheduling line remains unexecuted; its former optional-store
+  branch was also unexecuted. No coverage-only assertion was added to hide that limit.
+- **Not run:** full-repository unit suite, Web checks, generated API rebuild, browser,
+  Compose, paid/provider evaluation, deployment and unrelated acceptance environments.
+  Public schemas, Web sources and retrieval/scoring implementations are unchanged.
+
+The existing terminal-write failure policy is preserved: after bounded persistence
+attempts fail, the last durable state remains authoritative; unfinished records become
+interrupted on restart. The follow-up does not claim storage recovery after an unavailable
+database or alter the user's intentionally different DEV/PROD data-reading policies.

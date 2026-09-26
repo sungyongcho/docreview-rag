@@ -7,11 +7,9 @@ The suite catalog lives in :mod:`app.evals.suites`, stored-result reading in
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
-import logging
 from pathlib import Path
 from typing import Any, Final, cast
 from uuid import uuid4
@@ -66,6 +64,7 @@ from app.operator.jobs import (
     JobStore,
     JobTurnCancelledError,
     ProgressPersister,
+    StoredJob,
     _default_session_factory,
 )
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
@@ -93,7 +92,7 @@ class EvaluationNotReadyError(ValueError):
 
 
 class EvaluationAdminService:
-    """Run golden evaluations serially and retain bounded in-process job state."""
+    """Run evaluations serially while the shared ledger owns their visible history."""
 
     def __init__(
         self,
@@ -116,9 +115,8 @@ class EvaluationAdminService:
         ).resolve()
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=MAX_QUEUED_EVALUATIONS)
         self._jobs: dict[str, EvaluationJobResource] = {}
-        self._history: deque[str] = deque(maxlen=MAX_EVALUATION_JOBS)
         self._worker: asyncio.Task[None] | None = None
-        self._job_store = job_store
+        self._job_store = job_store or JobStore(session_factory=session_factory)
         self._execution_lock = execution_lock or asyncio.Lock()
         self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
         self._recovered_jobs = False
@@ -356,8 +354,7 @@ class EvaluationAdminService:
         job = self._jobs[job_id]
         if job.status == "queued" and job.message != message:
             self._jobs[job_id] = job.model_copy(update={"message": message})
-            if self._job_store is not None:
-                self._persister.schedule(job_id)
+            self._persister.schedule(job_id)
 
     async def _enqueue(
         self, request: EvaluationRunRequest, *, retry_of: str | None = None
@@ -390,15 +387,14 @@ class EvaluationAdminService:
             message="Queued",
             created_at=datetime.now(UTC),
         )
-        if self._job_store is not None:
-            await self._job_store.create(
-                job_id=job_id,
-                domain="evaluation",
-                kind=request.mode,
-                request_json=request.model_dump(mode="json"),
-                created_at=job.created_at,
-                result_refs={"retry_of": retry_of} if retry_of is not None else {},
-            )
+        await self._job_store.create(
+            job_id=job_id,
+            domain="evaluation",
+            kind=request.mode,
+            request_json=request.model_dump(mode="json"),
+            created_at=job.created_at,
+            result_refs={"retry_of": retry_of} if retry_of is not None else {},
+        )
         self._jobs[job_id] = job
         await self._execution_coordinator.register(
             job_id,
@@ -412,71 +408,41 @@ class EvaluationAdminService:
         return self._jobs[job_id]
 
     async def jobs(self) -> EvaluationJobsResponse:
-        """Return active, queued, and completed jobs in newest-first order."""
+        """Project currently visible persisted evaluations in newest-first order."""
         await self.recover_jobs()
-        visible = None
-        if self._job_store is not None:
-            visible = {
-                row.job_id
-                for row in await self._job_store.list(
-                    domain="evaluation", limit=MAX_EVALUATION_JOBS
-                )
-            }
-        return EvaluationJobsResponse(
-            jobs=tuple(
-                sorted(
-                    (
-                        job
-                        for job in self._jobs.values()
-                        if visible is None or job.job_id in visible
-                    ),
-                    key=lambda job: job.created_at,
-                    reverse=True,
-                )
-            )
-        )
+        rows = await self._job_store.list(domain="evaluation", limit=MAX_EVALUATION_JOBS)
+        return EvaluationJobsResponse(jobs=tuple(self._job_resource(row) for row in rows))
 
-    async def job(self, job_id: str) -> EvaluationJobResource | None:
-        """Return one job without exposing internal task objects."""
-        return self._jobs.get(job_id)
-
-    def forget_history(self, job_ids: tuple[str, ...]) -> None:
-        """Release terminal cache records only after their persistent deletion."""
-        for job_id in job_ids:
-            job = self._jobs.get(job_id)
-            if job is not None and job.status not in {"queued", "running"}:
-                self._jobs.pop(job_id, None)
-        self._history = deque(
-            (job_id for job_id in self._history if job_id not in job_ids),
-            maxlen=self._history.maxlen,
+    @staticmethod
+    def _job_resource(row: StoredJob) -> EvaluationJobResource:
+        """Decode a current evaluation request and its persisted result references."""
+        refs = row.result_refs
+        return EvaluationJobResource(
+            job_id=row.job_id,
+            request=EvaluationRunRequest.model_validate(row.request_json),
+            status=row.status,
+            stage=row.stage,
+            message=row.message,
+            current=row.current,
+            total=row.total,
+            result_id=cast("int | None", refs.get("result_id")),
+            result_ids=tuple(cast("list[int]", refs.get("result_ids", []))),
+            baseline_id=cast("int | None", refs.get("baseline_id")),
+            artifact_paths=tuple(cast("list[str]", refs.get("artifact_paths", []))),
+            created_at=row.created_at,
+            started_at=row.started_at,
+            finished_at=row.finished_at,
         )
 
     async def retry(self, job_id: str) -> EvaluationJobResource:
         """Create a new evaluation from one failed or interrupted persisted request."""
         await self.recover_jobs()
-        if self._job_store is not None:
-            record = await self._job_store.get(job_id)
-            if record is None or record.result_refs.get("__history_archived") is True:
-                raise ValueError(
-                    "Restore archived history before retrying; deleted jobs cannot be retried."
-                )
-        current = self._jobs.get(job_id)
-        if current is not None:
-            if current.status not in {"failed", "interrupted"}:
-                raise ValueError("only failed or interrupted evaluations can be retried")
-            return await self.enqueue(current.request, retry_of=job_id)
-        if self._job_store is None:
-            raise ValueError("evaluation job does not exist")
         stored = await self._job_store.get(job_id)
-        if (
-            stored is None
-            or stored.domain != "evaluation"
-            or stored.status
-            not in {
-                "failed",
-                "interrupted",
-            }
-        ):
+        if stored is None or stored.result_refs.get("__history_archived") is True:
+            raise ValueError(
+                "Restore archived history before retrying; deleted jobs cannot be retried."
+            )
+        if stored.domain != "evaluation" or stored.status not in {"failed", "interrupted"}:
             raise ValueError("only failed or interrupted evaluations can be retried")
         return await self.enqueue(
             EvaluationRunRequest.model_validate(stored.request_json), retry_of=job_id
@@ -498,55 +464,17 @@ class EvaluationAdminService:
         )
         self._jobs[job_id] = cancelled
         await self._execution_coordinator.cancel(job_id)
-        if self._job_store is not None:
-            await self._persister.write_final(
-                job_id, lambda: self._persist_job(cancelled, error_code="cancelled")
-            )
+        await self._persister.write_final(
+            job_id, lambda: self._persist_job(cancelled, error_code="cancelled")
+        )
         return cancelled
 
     async def recover_jobs(self) -> None:
         """Interrupt stale process-owned evaluations once before accepting work."""
         if self._recovered_jobs:
             return
-        if self._job_store is not None:
-            await self._job_store.interrupt_incomplete("evaluation")
-            await self._hydrate_jobs()
+        await self._job_store.interrupt_incomplete("evaluation")
         self._recovered_jobs = True
-
-    async def _hydrate_jobs(self) -> None:
-        """Restore persisted evaluation history so a restart keeps prior jobs visible."""
-        assert self._job_store is not None
-        stored = await self._job_store.list(domain="evaluation", limit=MAX_EVALUATION_JOBS)
-        for row in stored:
-            if row.job_id in self._jobs:
-                continue
-            try:
-                request = EvaluationRunRequest.model_validate(row.request_json)
-            except TypeError, ValueError:
-                logging.getLogger(__name__).warning(
-                    "Skipping persisted evaluation with an unreadable request: %s",
-                    row.job_id,
-                )
-                continue
-            refs = row.result_refs
-            self._jobs[row.job_id] = EvaluationJobResource(
-                job_id=row.job_id,
-                request=request,
-                status=row.status,
-                stage=row.stage,
-                message=row.message,
-                current=row.current,
-                total=row.total,
-                result_id=cast("int | None", refs.get("result_id")),
-                result_ids=tuple(cast("list[int]", refs.get("result_ids") or [])),
-                baseline_id=cast("int | None", refs.get("baseline_id")),
-                artifact_paths=tuple(cast("list[str]", refs.get("artifact_paths") or [])),
-                created_at=row.created_at,
-                started_at=row.started_at,
-                finished_at=row.finished_at,
-            )
-            if row.job_id not in self._history:
-                self._history.append(row.job_id)
 
     async def _persist_job(
         self,
@@ -555,8 +483,6 @@ class EvaluationAdminService:
         error_code: str | None = None,
     ) -> None:
         """Persist the newest evaluation state and result references."""
-        if self._job_store is None:
-            return
         await self._job_store.put(
             job.job_id,
             status=job.status,
@@ -596,8 +522,7 @@ class EvaluationAdminService:
         self._jobs[job_id] = self._jobs[job_id].model_copy(
             update={"stage": stage, "message": message, "current": current, "total": total}
         )
-        if self._job_store is not None:
-            self._persister.schedule(job_id)
+        self._persister.schedule(job_id)
 
     async def _corpus_fingerprint(self, session: AsyncSession) -> str:
         """Bind evaluation to exact current inputs and the configured vector space."""
@@ -726,8 +651,7 @@ class EvaluationAdminService:
             }
         )
         self._jobs[job_id] = job
-        if self._job_store is not None:
-            self._persister.schedule(job_id)
+        self._persister.schedule(job_id)
         error_code = None
         try:
             preparation = await self.preparation(job.request)
@@ -779,7 +703,6 @@ class EvaluationAdminService:
         await self._persister.write_final(
             job_id, lambda: self._persist_job(finished, error_code=error_code)
         )
-        self._history.append(job_id)
 
     async def _abandon_job(self, job_id: str, error: Exception) -> None:
         """Record a worker-level failure so a broken evaluation never stays running."""
@@ -797,16 +720,13 @@ class EvaluationAdminService:
             await self._persister.write_final(
                 job_id, lambda: self._persist_job(finished, error_code="worker_error")
             )
-        if job_id not in self._history:
-            self._history.append(job_id)
 
     async def _work(self) -> None:
-        """Execute evaluations serially through the shared corpus/evaluation lock."""
+        """Execute evaluations serially and release state after pending writes finish."""
         while not self._queue.empty():
             job_id = await self._queue.get()
             try:
                 if self._jobs[job_id].status == "cancelled":
-                    self._history.append(job_id)
                     continue
                 async with self._execution_coordinator.turn(job_id):
                     async with self._execution_lock:
@@ -815,12 +735,11 @@ class EvaluationAdminService:
                                 await self._execute_job(job_id)
                             except Exception as error:  # noqa: BLE001 - the worker outlives one job
                                 await self._abandon_job(job_id, error)
-                        else:
-                            self._history.append(job_id)
             except JobTurnCancelledError:
-                if job_id not in self._history:
-                    self._history.append(job_id)
+                pass
             finally:
+                await self._persister.flush(job_id)
+                self._jobs.pop(job_id, None)
                 self._queue.task_done()
 
     async def compare(self, candidate_id: int, baseline_id: int) -> EvaluationComparisonResponse:
