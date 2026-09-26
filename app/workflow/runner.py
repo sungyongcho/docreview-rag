@@ -7,16 +7,20 @@ import time
 
 from pydantic import BaseModel
 
-from app.llm.provider import LLMProvider
+from app.llm.provider import BilledAttemptAllowanceError, LLMProvider
 from app.llm.schemas import (
     AnswerDecision,
     ProviderBudget,
+    ProviderMetadata,
     ProviderResult,
     RelevanceJudgment,
 )
 from app.observability.budget import pre_node_budget_guard
 from app.observability.stages import stage
-from app.observability.trace import step_trace_from_provider_result
+from app.observability.trace import (
+    step_trace_from_provider_metadata,
+    step_trace_from_provider_result,
+)
 from app.observability.types import (
     JsonObject,
     JsonValue,
@@ -169,6 +173,26 @@ def _traced[OutputT: BaseModel](
     return state.model_copy(update={"steps": (*state.steps, trace)})
 
 
+def _traced_denial(
+    state: WorkflowState,
+    metadata: ProviderMetadata,
+    failure: ProviderFailure,
+) -> WorkflowState:
+    """Append the trace of the billed attempt whose repair the shared allowance denied.
+
+    The denial leaves no provider result for the node to interpret, so the attempt is
+    traced from the metadata the provider raised with it, and the node's typed failure
+    becomes the step's error.
+    """
+    trace = step_trace_from_provider_metadata(
+        metadata,
+        step=len(state.steps) + 1,
+        node=failure.node,
+        error=failure.model_dump_json(),
+    )
+    return state.model_copy(update={"steps": (*state.steps, trace)})
+
+
 def _committed(
     state: WorkflowState,
     node: WorkflowNode,
@@ -198,7 +222,7 @@ def _committed_failure(
 
 
 class BilledRunAllowanceError(AIAllowanceError):
-    """A shared-allowance denial that stopped a run after an earlier call was billed.
+    """A shared-allowance denial that stopped a run after an earlier attempt was billed.
 
     It is an ``AIAllowanceError`` with the original code, message and retry delay, so
     every caller keeps its retry mapping. ``report`` is the committed failure report,
@@ -210,16 +234,23 @@ class BilledRunAllowanceError(AIAllowanceError):
         self.report = report
 
 
-def _allowance_failure(node: GradeOrCheckNode, error: AIAllowanceError) -> ProviderFailure:
-    """Type a shared-allowance denial that arrived after an earlier call was billed.
+def _allowance_failure(
+    node: GradeOrCheckNode,
+    error: AIAllowanceError,
+    *,
+    attempts: int,
+) -> ProviderFailure:
+    """Type a shared-allowance denial that arrived after an earlier attempt was billed.
 
-    The denial precedes the request, so the node made no attempt; its code, message
-    and retry delay are kept as details so the committed run says why it stopped.
+    The denial precedes the request it refuses, so ``attempts`` counts only what the
+    node sent before it: none when its first request was denied, one when only its
+    repair was. The code, message and retry delay are kept as details so the committed
+    run says why it stopped.
     """
     return ProviderFailure(
         node=node,
         status="budget_exceeded",
-        attempts=0,
+        attempts=attempts,
         details=(
             *(part for part in (error.code, str(error)) if part.strip()),
             f"retry_after={error.retry_after}",
@@ -272,8 +303,8 @@ async def run_workflow(
         If the clock is non-finite or moves backwards.
     AIAllowanceError
         If the shared allowance denies a provider call. A denial after an earlier call
-        was billed is first committed to the observer as a typed failure and raised as
-        ``BilledRunAllowanceError``, which carries the committed report.
+        or attempt was billed is first committed to the observer as a typed failure and
+        raised as ``BilledRunAllowanceError``, which carries the committed report.
 
     Notes
     -----
@@ -383,7 +414,9 @@ async def run_workflow(
         observer sees the failure. A shared-allowance denial that arrives after an
         earlier call was billed is committed the same way and then re-raised, so the
         billed trace reaches the observer while the caller keeps its retry mapping; a
-        denial before anything was sent propagates without committing a node.
+        denial before anything was sent propagates without committing a node. A denied
+        repair always follows a billed first attempt of this node, so that attempt is
+        traced before the denial is committed, even when it is the run's first call.
         """
         if refusal := blocked_by_budget(current, node):
             return refusal
@@ -407,11 +440,16 @@ async def run_workflow(
                         build_check_prompt(current), AnswerDecision, allowance
                     )
                     current = check_node(_traced(current, decided, node), decided)
+            except BilledAttemptAllowanceError as error:
+                denied = error
+                failure = _allowance_failure(node, error, attempts=error.metadata.requests)
+                current = _traced_denial(current, error.metadata, failure)
+                current = _committed(current, node, failure)
             except AIAllowanceError as error:
                 if not current.steps:
                     raise
                 denied = error
-                current = _committed(current, node, _allowance_failure(node, error))
+                current = _committed(current, node, _allowance_failure(node, error, attempts=0))
             except Exception as error:
                 current = _committed_failure(current, node, error)
             measurement.failed = current.failure is not None

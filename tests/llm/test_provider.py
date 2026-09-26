@@ -8,18 +8,23 @@ from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
 import app.llm.provider as provider_module
-from app.llm.provider import OpenAILLMProvider, strict_response_format
+from app.llm.provider import (
+    BilledAttemptAllowanceError,
+    OpenAILLMProvider,
+    strict_response_format,
+)
 from app.llm.schemas import (
     AnswerDecision,
     BudgetExceeded,
     Prompt,
     ProviderBudget,
+    ProviderMetadata,
     ProviderRefusal,
     RelevanceJudgment,
     SchemaRejected,
     TokenPricing,
 )
-from app.release.ai_allowance import SharedAIAllowance, active_allowance
+from app.release.ai_allowance import AIAllowanceError, SharedAIAllowance, active_allowance
 from tests.llm.support import DeterministicLLMProvider, TickClock, raw
 
 
@@ -574,3 +579,68 @@ def test_missing_tokenizer_is_a_pre_call_refusal_that_sent_nothing(monkeypatch, 
     assert result.metadata.raw_outputs == ()
     assert result.metadata.llm_output == ""
     assert result.metadata.request_time_ms == 0
+
+
+class AllowanceCappedProvider(DeterministicLLMProvider):
+    """Meter like the shared allowance: deny the request sent after ``deny_after`` others."""
+
+    def __init__(self, responses, *, deny_after):
+        super().__init__(responses, clock=TickClock())
+        self.deny_after = deny_after
+        self.denial = AIAllowanceError("public_daily_limit", "Daily AI allowance reached.", 60)
+
+    async def _request(self, prompt, schema, budget):
+        """Deny before the request is sent, as the allowance reservation does."""
+        if len(self.prompts) == self.deny_after:
+            raise self.denial
+        return await super()._request(prompt, schema, budget)
+
+
+def test_denied_repair_surfaces_the_billed_first_attempt_as_provider_metadata():
+    """Raise a denied repair with the metadata of the first attempt, which was billed.
+
+    The error stays an ``AIAllowanceError`` with the original code, message and retry
+    delay, so the 429 mapping is unchanged, and its metadata is what a typed failure
+    after that attempt would carry, so the caller can trace what was paid for.
+    """
+    label_only_decision = '{"label":"SUPPORTED"}'
+    provider = AllowanceCappedProvider(
+        [raw(label_only_decision, input_tokens=10, output_tokens=5)], deny_after=1
+    )
+
+    with pytest.raises(AIAllowanceError) as raised:
+        asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
+
+    denial = raised.value
+    assert isinstance(denial, BilledAttemptAllowanceError)
+    assert (denial.code, str(denial), denial.retry_after) == (
+        "public_daily_limit",
+        "Daily AI allowance reached.",
+        60,
+    )
+    assert len(provider.prompts) == 1
+    assert denial.metadata == ProviderMetadata(
+        provider="deterministic",
+        model_name="deterministic-mock",
+        api_url="deterministic://local",
+        input_tokens=10,
+        output_tokens=5,
+        estimated_cost_usd=Decimal("0.00007"),
+        request_time_ms=1.0,
+        retries=0,
+        request_ids=("req-1",),
+        llm_output=label_only_decision,
+        raw_outputs=(label_only_decision,),
+        requests=1,
+    )
+
+
+def test_denied_first_attempt_is_re_raised_unchanged():
+    """Re-raise a denial of the first attempt as is: nothing was sent, so nothing was billed."""
+    provider = AllowanceCappedProvider([], deny_after=0)
+
+    with pytest.raises(AIAllowanceError) as raised:
+        asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
+
+    assert raised.value is provider.denial
+    assert provider.prompts == ()

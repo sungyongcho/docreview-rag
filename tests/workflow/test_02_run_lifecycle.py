@@ -10,7 +10,7 @@ from app.observability.stages import record_stages, stage_metadata
 from app.observability.types import Budget, RunReport
 from app.release.ai_allowance import AIAllowanceError
 from app.retrieval.service import ComponentRankings, RetrievalResult
-from app.workflow.runner import Retriever, run_workflow
+from app.workflow.runner import BilledRunAllowanceError, Retriever, run_workflow
 from app.workflow.types import ProviderFailure, WorkflowRequest
 from tests.llm.support import DeterministicLLMProvider, TickClock, raw as _raw
 from tests.workflow.support import (
@@ -757,6 +757,93 @@ def test_mid_run_allowance_denial_commits_the_billed_grade_trace_before_propagat
     )
     assert state.reasons[-1] == state.failure
     assert events[-2:] == [("check", "start", "running"), ("check", "end", "failed")]
+
+
+def test_repair_denial_of_the_grade_commits_its_billed_attempt_before_propagating():
+    """Keep the grade's billed first attempt when the shared allowance denies its repair.
+
+    The grade is the run's first provider call, so that attempt is the run's only trace.
+    The run is committed with it and the typed denial, and the error carries the
+    committed report so the caller can keep the billed run before answering 429.
+    """
+    grade_without_reason = '{"grades":[{"chunk_id":1,"relevant":true}]}'
+    provider = _AllowanceCappedProvider(
+        [_raw(grade_without_reason, input_tokens=300, output_tokens=20)], deny_after=1
+    )
+    committed = []
+
+    async def observer(node, state):
+        committed.append((node, state))
+
+    with pytest.raises(AIAllowanceError) as raised:
+        asyncio.run(
+            run_workflow(
+                _request(),
+                retriever=retriever_returning([_hit()]),
+                provider=provider,
+                clock=SequenceClock(),
+                on_node=observer,
+            )
+        )
+
+    error = raised.value
+    assert isinstance(error, BilledRunAllowanceError)
+    assert (error.code, error.retry_after) == ("public_daily_limit", 60)
+    assert len(provider.prompts) == 1
+    report = error.report
+    assert report.status == "budget_exceeded"
+    assert report.node_path == ("retrieve", "grade")
+    assert [step.node for step in report.steps] == ["grade"]
+    assert report.steps[0].llm_output == grade_without_reason
+    assert (report.steps[0].input_tokens, report.steps[0].requests) == (300, 1)
+    assert report.total_requests == 1
+    node, state = committed[-1]
+    assert node == "grade"
+    assert state.steps == report.steps
+    assert state.failure == ProviderFailure(
+        node="grade",
+        status="budget_exceeded",
+        attempts=1,
+        details=("public_daily_limit", "Daily AI allowance reached.", "retry_after=60"),
+    )
+
+
+def test_repair_denial_of_the_check_keeps_its_billed_attempt_in_the_traces():
+    """Trace the check's billed first attempt when the shared allowance denies its repair.
+
+    Without that trace the persisted run would count the grade call alone and understate
+    the requests, tokens and cost the run was billed for.
+    """
+    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
+    label_only_check = '{"label":"SUPPORTED"}'
+    provider = _AllowanceCappedProvider(
+        [
+            _raw(grade, input_tokens=300, output_tokens=20),
+            _raw(label_only_check, input_tokens=200, output_tokens=10, request_id="req-2"),
+        ],
+        deny_after=2,
+    )
+
+    with pytest.raises(AIAllowanceError) as raised:
+        asyncio.run(
+            run_workflow(
+                _request(),
+                retriever=retriever_returning([_hit()]),
+                provider=provider,
+                clock=SequenceClock(),
+            )
+        )
+
+    error = raised.value
+    assert isinstance(error, BilledRunAllowanceError)
+    assert len(provider.prompts) == 2
+    _, traces = report_to_records(error.report)
+    assert [trace.node for trace in traces] == ["grade", "check"]
+    assert traces[1].llm_output == label_only_check
+    assert traces[1].input_tokens == 200
+    assert error.report.total_requests == 2
+    assert (error.report.total_input_tokens, error.report.total_output_tokens) == (500, 30)
+    assert report_of(error.report)["reason"]["attempts"] == 1
 
 
 def test_allowance_denial_of_the_first_call_propagates_without_committing_a_node():

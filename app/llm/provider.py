@@ -34,6 +34,20 @@ from app.release.ai_allowance import AIAllowanceError, active_allowance, reserve
 type Clock = Callable[[], int]
 
 
+class BilledAttemptAllowanceError(AIAllowanceError):
+    """A shared-allowance denial of a repair after the call's first attempt was billed.
+
+    It is an ``AIAllowanceError`` with the original code, message, retry delay and reset,
+    so every caller keeps its retry mapping. ``metadata`` describes the attempt already
+    sent exactly as a typed failure after that attempt would, so a caller can trace what
+    was billed.
+    """
+
+    def __init__(self, error: AIAllowanceError, metadata: ProviderMetadata) -> None:
+        super().__init__(error.code, str(error), error.retry_after, error.reset)
+        self.metadata = metadata
+
+
 class _OpenAIPreflightError(ValueError):
     """Return a structured budget refusal without counting an unsent provider call."""
 
@@ -213,7 +227,8 @@ class LLMProvider(ABC):
             If the injected clock moves backwards.
         AIAllowanceError
             If the shared OpenAI allowance denies the call before dispatch; propagated so
-            the API can answer 429.
+            the API can answer 429. A denied repair raises ``BilledAttemptAllowanceError``,
+            which carries the metadata of the first attempt that was already billed.
 
         Notes
         -----
@@ -231,6 +246,22 @@ class LLMProvider(ABC):
         total_reasoning_tokens = 0
         total_request_time_ms = 0.0
 
+        def sent_metadata(projected: int | None = None) -> ProviderMetadata:
+            """Describe the attempts sent so far as this completion's trace metadata."""
+            return self._metadata(
+                raw_outputs=raw_outputs,
+                local_timings=local_timings,
+                request_ids=request_ids,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                cached_input_tokens=total_cached_input_tokens,
+                cache_write_input_tokens=total_cache_write_input_tokens,
+                reasoning_tokens=total_reasoning_tokens,
+                request_time_ms=total_request_time_ms,
+                budget=budget,
+                projected_input_tokens=projected,
+            )
+
         def failed(
             failure: CompletionFailure, *, projected: int | None = None
         ) -> ProviderResult[OutputT]:
@@ -239,19 +270,7 @@ class LLMProvider(ABC):
                 status=failure.status,
                 parsed=None,
                 refusal=failure,
-                metadata=self._metadata(
-                    raw_outputs=raw_outputs,
-                    local_timings=local_timings,
-                    request_ids=request_ids,
-                    input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens,
-                    cached_input_tokens=total_cached_input_tokens,
-                    cache_write_input_tokens=total_cache_write_input_tokens,
-                    reasoning_tokens=total_reasoning_tokens,
-                    request_time_ms=total_request_time_ms,
-                    budget=budget,
-                    projected_input_tokens=projected,
-                ),
+                metadata=sent_metadata(projected),
             )
 
         repair_errors: tuple[str, ...] = ()
@@ -291,8 +310,13 @@ class LLMProvider(ABC):
             started = self._clock()
             try:
                 raw = await self._request(current_prompt, schema, remaining)
-            except AIAllowanceError:
-                raise
+            except AIAllowanceError as error:
+                if not raw_outputs:
+                    # Nothing of this completion was sent, so nothing was billed.
+                    raise
+                # Only the repair was denied: the first attempt was sent and billed, so it
+                # leaves with the denial and the caller can trace it like any paid attempt.
+                raise BilledAttemptAllowanceError(error, sent_metadata()) from error
             except _OpenAIPreflightError as error:
                 # The adapter's stricter projection refused the call; the metadata carries
                 # the same projection so model_calls and the failure details agree.
