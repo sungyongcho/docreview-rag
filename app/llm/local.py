@@ -25,11 +25,12 @@ def openai_compatible_root(base_url: str) -> str:
 
 
 def _responses_output(payload: dict[str, object]) -> tuple[str | None, str | None]:
-    """Read the message text and refusal one Responses object carries in ``output``.
+    """Read the message text and refusal one Responses object carries.
 
-    The wire format carries text only as ``output[].content[]`` parts of type
-    ``output_text``; a top-level ``output_text`` is a convenience of the OpenAI SDK, not
-    a JSON field, so it is read only when the items carry no text.
+    The Responses wire format carries text as ``output[].content[]`` parts of type
+    ``output_text``, so those parts are read first. Some OpenAI-compatible servers also
+    send a top-level ``output_text`` string, the value the OpenAI SDK derives from those
+    parts; it is read as a fallback only when the items carry no text part.
 
     Parameters
     ----------
@@ -39,8 +40,8 @@ def _responses_output(payload: dict[str, object]) -> tuple[str | None, str | Non
     Returns
     -------
     tuple[str | None, str | None]
-        Joined message text, or ``None`` when no text part was present, and the first
-        nonblank ``refusal`` part, in that order.
+        Joined message text, else the top-level ``output_text`` string, else ``None``;
+        then the first nonblank ``refusal`` part.
     """
     texts: list[str] = []
     refusal: str | None = None
