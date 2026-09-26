@@ -360,7 +360,8 @@ async def run_ablation(
     ------
     ValueError
         If configs are empty or names repeat, ``recorded_at`` is naive, or an
-        evaluation's config differs from its arm provenance.
+        evaluation's config does not carry its arm provenance. Extra keys, such as
+        the corpus and golden identity the admin surface records, are allowed.
     OSError
         If an artifact directory or file cannot be created or written.
 
@@ -381,8 +382,10 @@ async def run_ablation(
     outcomes: list[AblationOutcome] = []
     for config in ordered:
         evaluation = await evaluator(config)
-        if evaluation.config != config.to_dict():
-            raise ValueError(f"evaluation config does not match arm {config.name}")
+        provenance = config.to_dict()
+        missing = object()
+        if any(evaluation.config.get(key, missing) != value for key, value in provenance.items()):
+            raise ValueError(f"evaluation config does not carry arm {config.name}")
 
         path = directory / artifact_filename(recorded_at, config.name)
         write_evaluation_artifact(path, evaluation)

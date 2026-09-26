@@ -47,6 +47,7 @@ from app.evals.loader import (
     GoldenDataError,
     encode_golden_payload,
 )
+from app.evals.regression import SCORING_CONFIG_KEY
 from app.evals.retrieval_eval import (
     evaluate_retriever,
     persist_evaluation,
@@ -819,7 +820,7 @@ class EvaluationAdminService:
         )
         for row in rows:
             identity = row.config.get("admin_identity", {})
-            scoring = row.config.get("_scoring", {})
+            scoring = row.config.get(SCORING_CONFIG_KEY, {})
             if (
                 isinstance(identity, dict)
                 and identity.get("golden_sha256") == golden_sha256
@@ -1142,8 +1143,8 @@ class EvaluationAdminService:
             raise ValueError("evaluation suites are not compatible")
         if candidate.config.get("admin_identity") != baseline.config.get("admin_identity"):
             raise ValueError("evaluation corpus or golden identity is not compatible")
-        candidate_scoring = candidate.config.get("_scoring", {})
-        baseline_scoring = baseline.config.get("_scoring", {})
+        candidate_scoring = candidate.config.get(SCORING_CONFIG_KEY, {})
+        baseline_scoring = baseline.config.get(SCORING_CONFIG_KEY, {})
         if not isinstance(candidate_scoring, dict) or not isinstance(baseline_scoring, dict):
             raise ValueError("evaluation scoring metadata must be an object")
         if candidate_scoring.get("k") != baseline_scoring.get("k"):

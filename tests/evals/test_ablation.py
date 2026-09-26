@@ -293,3 +293,53 @@ def test_run_ablation_rejects_duplicate_config_names(tmp_path):
                 recorded_at=datetime.now(UTC),
             )
         )
+
+
+def test_run_ablation_accepts_extra_provenance_but_rejects_a_changed_arm(tmp_path):
+    """The admin surface adds its corpus and golden identity to the evaluation config; the
+    arm's own values must still be carried unchanged."""
+    recorded_at = datetime(2026, 8, 12, 14, 30, tzinfo=UTC)
+    (config,) = experiment_matrix(
+        target_tokens=(1024,), strategies=("lexical",), lexical_rankers=("bm25",)
+    )
+
+    def evaluator_with(extra):
+        """Build an evaluator whose config is the arm provenance plus ``extra``."""
+
+        async def evaluator(arm):
+            """Evaluate one arm against a fixed hit."""
+
+            async def retriever(_query, _k):
+                """Return the one relevant hit for every query."""
+                return [hit()]
+
+            return await evaluate_retriever(
+                [golden_case()],
+                retriever,
+                suite="m3-test",
+                config=arm.to_dict() | extra,
+                clock=lambda: 0,
+                recorded_at=recorded_at,
+            )
+
+        return evaluator
+
+    identity = {"admin_identity": {"golden_sha256": "a" * 64, "corpus_fingerprint": "b" * 64}}
+    report = asyncio.run(
+        run_ablation(
+            (config,), evaluator_with(identity), artifact_dir=tmp_path, recorded_at=recorded_at
+        )
+    )
+    (outcome,) = report.outcomes
+    assert outcome.evaluation.config["admin_identity"] == identity["admin_identity"]
+    assert outcome.evaluation.config["chunking"]["target_tokens"] == 1024
+
+    with pytest.raises(ValueError, match="does not carry arm"):
+        asyncio.run(
+            run_ablation(
+                (config,),
+                evaluator_with({"chunking": {"target_tokens": 2048}}),
+                artifact_dir=tmp_path / "changed",
+                recorded_at=recorded_at,
+            )
+        )
