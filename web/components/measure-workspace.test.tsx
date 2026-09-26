@@ -609,7 +609,7 @@ it("keeps verdicts consistent and explains missing source evidence before sendin
   cleanup(); window.localStorage.clear();
   const question = { id: "draft-01", question: "Question?", category: "absent", facet: "factual", answers: [], reference_answer: "NOT_IN_DOCS", expected_label: "NOT_IN_DOCS", note: "Review this", tags: [], curation_status: "user-authored", approval_status: "pending-author-approval", human_verified: false };
   const revision = { filename: "test.json", revision_id: 7, suite_id: "sec-en", version: 1, status: "draft", payload: [question], sha256: "b".repeat(64), parent_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
-  const fetchMock = stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : url.endsWith("/sec-en/revisions") ? [revision] : url.endsWith("/canonical") ? { filename: "retrieval.json", suite_id: "sec-en", payload: [], sha256: "a".repeat(64) } : []);
+  stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : url.endsWith("/sec-en/revisions") ? [revision] : url.endsWith("/canonical") ? { filename: "retrieval.json", suite_id: "sec-en", payload: [], sha256: "a".repeat(64) } : []);
   render(<Host live initialTab="golden" />);
   await screen.findByRole("option", { name: "test.json" });
   fireEvent.change(screen.getByLabelText("Golden suite"), { target: { value: "file:7" } });

@@ -2,7 +2,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { newConversation, HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile, configureBrowserStorage, readStoredValue } from "@/lib/storage";
+import { newConversation, HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, configureBrowserStorage, readStoredValue } from "@/lib/storage";
 import type { DocumentFacets, Readiness, OperatorJob } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";

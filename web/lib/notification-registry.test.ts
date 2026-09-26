@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import ts from "typescript";
 import { KO } from "./messages-ko";
 import { describe, expect, it } from "vitest";
