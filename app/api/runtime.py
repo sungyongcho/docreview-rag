@@ -17,7 +17,9 @@ from app.api.deps import ApiServices
 from app.api.document_catalog import DocumentCatalog
 from app.api.errors import ApiProblemError, bad_request, translate_runtime_errors, unavailable
 from app.api.evidence import (
+    CandidateSnapshot,
     CandidateSnapshotCodec,
+    EvidenceSelection,
     EvidenceSnapshotError,
     select_evidence,
 )
@@ -256,6 +258,93 @@ async def _routed_query_variants(
             ) from error
         routed_queries[language] = routed.translated_query
     return routed_queries
+
+
+def _evidence_problem(error: EvidenceSnapshotError) -> ApiProblemError:
+    """Answer a snapshot or selection failure with its own status, code and message."""
+    return ApiProblemError(
+        status_code=error.status_code,
+        code=error.code,
+        message=error.message,
+    )
+
+
+def _snapshot_hit(row: Chunk, rank: int) -> ChunkHit:
+    """Rebuild one snapshot candidate as a hit whose score keeps the snapshot's order."""
+    return ChunkHit(
+        chunk_id=row.id,
+        doc_id=row.doc_id,
+        item=row.item,
+        kind=cast("Literal['text', 'table']", row.kind),
+        citation=row.citation,
+        start_char=row.start_char,
+        end_char=row.end_char,
+        source_sha256=row.source_sha256,
+        body=row.body,
+        context_header=row.context_header,
+        index_text=row.index_text,
+        score=1.0 / rank,
+    )
+
+
+def _stage_result(
+    node: WorkflowNode,
+    state: WorkflowState,
+    snapshot_candidates: list[JsonValue] | None,
+) -> JsonValue:
+    """Record what one workflow stage saw, kept and decided, including failed stages.
+
+    Kept and rejected evidence exist only once a grade, check or report stage has judged
+    the evidence without failing; other stages record ``None`` for both. A review that
+    answers from a snapshot lists the snapshot's candidates at every stage.
+    """
+    evidence_judged = node in {"grade", "check", "report"} and state.failure is None
+    candidates: list[JsonValue] | None = snapshot_candidates
+    if candidates is None:
+        candidates = [
+            {
+                "chunk_id": hit.chunk_id,
+                "doc_id": hit.doc_id,
+                "citation": hit.citation,
+                "rank": rank,
+                "score": hit.score,
+            }
+            for rank, hit in enumerate(state.retrieved_hits, 1)
+        ]
+    kept_chunk_ids: list[JsonValue] | None = None
+    rejected_chunk_ids: list[JsonValue] | None = None
+    if evidence_judged:
+        kept_chunk_ids = list(state.relevant_chunk_ids)
+        rejected_chunk_ids = [
+            hit.chunk_id for hit in state.evidence if hit.chunk_id not in state.relevant_chunk_ids
+        ]
+    return {
+        "node": node,
+        "candidates": candidates,
+        "evidence_chunk_ids": [hit.chunk_id for hit in state.evidence],
+        "kept_chunk_ids": kept_chunk_ids,
+        "rejected_chunk_ids": rejected_chunk_ids,
+        "decision": state.decision.model_dump(mode="json") if state.decision else None,
+        "reasons": [reason.model_dump(mode="json") for reason in state.reasons],
+        "failure": state.failure.model_dump(mode="json") if state.failure else None,
+    }
+
+
+def _selection_record(selection: EvidenceSelection | None) -> JsonObject | None:
+    """Record which signed candidate snapshot a review answered from, and how.
+
+    Only a digest of the candidate token is kept: it identifies the snapshot without
+    storing the signed token with the run.
+    """
+    if selection is None:
+        return None
+    return {
+        "candidate_snapshot_sha256": hashlib.sha256(
+            selection.candidate_token.encode("utf-8")
+        ).hexdigest(),
+        "pinned_chunk_ids": list(selection.pinned_chunk_ids),
+        "excluded_chunk_ids": list(selection.excluded_chunk_ids),
+    }
 
 
 class RuntimeApiServices(ApiServices):
@@ -840,12 +929,7 @@ class RuntimeApiServices(ApiServices):
         llm_provider, provider_budget = await self._engines.resolve_engine(request)
         engine = request.session_profile.engine
         if request.session_profile.snapshot_id is not None:
-            async with self._session_factory() as validation_session:
-                selected_snapshot = await validation_session.get(
-                    EvaluationSnapshot, request.session_profile.snapshot_id
-                )
-            if selected_snapshot is None or selected_snapshot.status != "ready":
-                raise bad_request("snapshot_unavailable", "Selected snapshot is not ready.")
+            await self._require_ready_snapshot(request.session_profile.snapshot_id)
         if path is None:
             _, path = await self._conversation.decide_path(request)
         async with stage("route") as routing_stage:
@@ -863,11 +947,7 @@ class RuntimeApiServices(ApiServices):
                     filters=scope.filters,
                 )
             except EvidenceSnapshotError as error:
-                raise ApiProblemError(
-                    status_code=error.status_code,
-                    code=error.code,
-                    message=error.message,
-                ) from error
+                raise _evidence_problem(error) from error
         routed_queries: dict[str, str] = dict(snapshot.routing_queries) if snapshot else {}
         if snapshot is None and self._query_routing_enabled and profile.route_by_language:
             routed_queries = await _routed_query_variants(
@@ -897,69 +977,12 @@ class RuntimeApiServices(ApiServices):
                 selected_result: RetrievalResult | None = None
                 snapshot_candidates: list[JsonValue] | None = None
                 if snapshot is not None and request.evidence_selection is not None:
-                    ids = tuple(candidate.chunk_id for candidate in snapshot.candidates)
-                    rows = tuple(await session.scalars(select(Chunk).where(Chunk.id.in_(ids))))
-                    models = {row.id: row for row in rows}
-                    ordered_hits = tuple(
-                        ChunkHit(
-                            chunk_id=item.chunk_id,
-                            doc_id=models[item.chunk_id].doc_id,
-                            item=models[item.chunk_id].item,
-                            kind=cast("Literal['text', 'table']", models[item.chunk_id].kind),
-                            citation=models[item.chunk_id].citation,
-                            start_char=models[item.chunk_id].start_char,
-                            end_char=models[item.chunk_id].end_char,
-                            source_sha256=models[item.chunk_id].source_sha256,
-                            body=models[item.chunk_id].body,
-                            context_header=models[item.chunk_id].context_header,
-                            index_text=models[item.chunk_id].index_text,
-                            score=1.0 / rank,
-                        )
-                        for rank, item in enumerate(snapshot.candidates, start=1)
-                        if item.chunk_id in models
-                    )
-                    try:
-                        selected = select_evidence(
-                            snapshot,
-                            request.evidence_selection,
-                            ordered_hits,
-                            k=profile.k,
-                            max_context_chars=policy.max_context_chars,
-                        )
-                    except EvidenceSnapshotError as error:
-                        raise ApiProblemError(
-                            status_code=error.status_code,
-                            code=error.code,
-                            message=error.message,
-                        ) from error
-                    snapshot_candidates = [
-                        {
-                            "chunk_id": item.chunk_id,
-                            "doc_id": models[item.chunk_id].doc_id,
-                            "citation": models[item.chunk_id].citation,
-                            "rank": rank,
-                            "score": item.score,
-                        }
-                        for rank, item in enumerate(snapshot.candidates, 1)
-                    ]
-                    ids_by_language: dict[str, list[int]] = {}
-                    for hit in selected:
-                        ids_by_language.setdefault(
-                            self._scope.manifest_index().documents[hit.doc_id].language,
-                            [],
-                        ).append(hit.chunk_id)
-                    selected_result = RetrievalResult(
-                        hits=selected,
-                        candidates=selected,
-                        score_stage="rrf",
-                        component_rankings=ComponentRankings(
-                            vector=(),
-                            lexical=(),
-                            lexical_by_language={
-                                language: tuple(chunk_ids)
-                                for language, chunk_ids in ids_by_language.items()
-                            },
-                        ),
+                    selected_result, snapshot_candidates = await self._selected_evidence(
+                        session,
+                        snapshot,
+                        request.evidence_selection,
+                        k=profile.k,
+                        max_context_chars=policy.max_context_chars,
                     )
 
                 async def retrieve_for_workflow(
@@ -968,10 +991,10 @@ class RuntimeApiServices(ApiServices):
                     filters: RetrievalFilters,
                 ) -> RetrievalResult:
                     """Retrieve on the session this run already holds."""
-                    result = (
-                        selected_result
-                        if selected_result is not None
-                        else await self._retrieve_with_session(
+                    if selected_result is not None:
+                        result = selected_result
+                    elif retrieval_override is None:
+                        result = await self._retrieve_with_session(
                             session,
                             query,
                             k,
@@ -979,9 +1002,9 @@ class RuntimeApiServices(ApiServices):
                             profile,
                             routed_queries or None,
                         )
-                        if retrieval_override is None
-                        else await retrieval_override(session, query, k, filters)
-                    )
+                    else:
+                        result = await retrieval_override(session, query, k, filters)
+                    # End the retrieval transaction before the workflow's provider calls.
                     if session.in_transaction():
                         await session.rollback()
                     return result
@@ -990,41 +1013,7 @@ class RuntimeApiServices(ApiServices):
 
                 async def record_node(node: WorkflowNode, state: WorkflowState) -> None:
                     """Retain actual stage outputs, including failed and repeated stages."""
-                    stage_results.append(
-                        {
-                            "node": node,
-                            "candidates": snapshot_candidates
-                            if snapshot_candidates is not None
-                            else [
-                                {
-                                    "chunk_id": hit.chunk_id,
-                                    "doc_id": hit.doc_id,
-                                    "citation": hit.citation,
-                                    "rank": rank,
-                                    "score": hit.score,
-                                }
-                                for rank, hit in enumerate(state.retrieved_hits, 1)
-                            ],
-                            "evidence_chunk_ids": [hit.chunk_id for hit in state.evidence],
-                            "kept_chunk_ids": list(state.relevant_chunk_ids)
-                            if node in {"grade", "check", "report"} and state.failure is None
-                            else None,
-                            "rejected_chunk_ids": [
-                                hit.chunk_id
-                                for hit in state.evidence
-                                if hit.chunk_id not in state.relevant_chunk_ids
-                            ]
-                            if node in {"grade", "check", "report"} and state.failure is None
-                            else None,
-                            "decision": state.decision.model_dump(mode="json")
-                            if state.decision
-                            else None,
-                            "reasons": [reason.model_dump(mode="json") for reason in state.reasons],
-                            "failure": state.failure.model_dump(mode="json")
-                            if state.failure
-                            else None,
-                        }
-                    )
+                    stage_results.append(_stage_result(node, state, snapshot_candidates))
                     if on_node is not None:
                         await on_node(node, state)
 
@@ -1056,23 +1045,7 @@ class RuntimeApiServices(ApiServices):
                                 "resolved_profile": profile.model_dump(mode="json"),
                                 "resolved_scope": scope.model_dump(mode="json"),
                                 "routing_queries": routed_queries,
-                                "selection": (
-                                    {
-                                        "candidate_snapshot_sha256": hashlib.sha256(
-                                            request.evidence_selection.candidate_token.encode(
-                                                "utf-8"
-                                            )
-                                        ).hexdigest(),
-                                        "pinned_chunk_ids": list(
-                                            request.evidence_selection.pinned_chunk_ids
-                                        ),
-                                        "excluded_chunk_ids": list(
-                                            request.evidence_selection.excluded_chunk_ids
-                                        ),
-                                    }
-                                    if request.evidence_selection is not None
-                                    else None
-                                ),
+                                "selection": _selection_record(request.evidence_selection),
                             }
                         }
                     )
@@ -1100,6 +1073,74 @@ class RuntimeApiServices(ApiServices):
                     await persist(denial.report)
                     raise
                 return await persist(report)
+
+    async def _require_ready_snapshot(self, snapshot_id: int) -> None:
+        """Refuse a snapshot query unless that snapshot has finished building."""
+        async with self._session_factory() as validation_session:
+            selected_snapshot = await validation_session.get(EvaluationSnapshot, snapshot_id)
+        if selected_snapshot is None or selected_snapshot.status != "ready":
+            raise bad_request("snapshot_unavailable", "Selected snapshot is not ready.")
+
+    async def _selected_evidence(
+        self,
+        session: AsyncSession,
+        snapshot: CandidateSnapshot,
+        selection: EvidenceSelection,
+        *,
+        k: int,
+        max_context_chars: int,
+    ) -> tuple[RetrievalResult, list[JsonValue]]:
+        """Answer from the evidence a reviewer selected out of a signed candidate snapshot.
+
+        The chunks are reloaded by the ids the snapshot names, so the workflow sees the
+        pinned and ranked evidence the reviewer saw instead of running a new search, and
+        every stage records the snapshot's candidates.
+        """
+        ids = tuple(candidate.chunk_id for candidate in snapshot.candidates)
+        rows = tuple(await session.scalars(select(Chunk).where(Chunk.id.in_(ids))))
+        models = {row.id: row for row in rows}
+        ordered_hits = tuple(
+            _snapshot_hit(models[item.chunk_id], rank)
+            for rank, item in enumerate(snapshot.candidates, start=1)
+            if item.chunk_id in models
+        )
+        try:
+            selected = select_evidence(
+                snapshot,
+                selection,
+                ordered_hits,
+                k=k,
+                max_context_chars=max_context_chars,
+            )
+        except EvidenceSnapshotError as error:
+            raise _evidence_problem(error) from error
+        snapshot_candidates: list[JsonValue] = [
+            {
+                "chunk_id": item.chunk_id,
+                "doc_id": models[item.chunk_id].doc_id,
+                "citation": models[item.chunk_id].citation,
+                "rank": rank,
+                "score": item.score,
+            }
+            for rank, item in enumerate(snapshot.candidates, 1)
+        ]
+        ids_by_language: dict[str, list[int]] = {}
+        for hit in selected:
+            document_language = self._scope.manifest_index().documents[hit.doc_id].language
+            ids_by_language.setdefault(document_language, []).append(hit.chunk_id)
+        selected_result = RetrievalResult(
+            hits=selected,
+            candidates=selected,
+            score_stage="rrf",
+            component_rankings=ComponentRankings(
+                vector=(),
+                lexical=(),
+                lexical_by_language={
+                    language: tuple(chunk_ids) for language, chunk_ids in ids_by_language.items()
+                },
+            ),
+        )
+        return selected_result, snapshot_candidates
 
     async def get_run(self, run_id: str) -> RunReport | None:
         """Load one run and ordered traces without executing workflow code."""
