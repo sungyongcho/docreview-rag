@@ -1271,8 +1271,9 @@ Coverage is the full unit/live run plus the affected test rerun on unchanged app
 This pass adds explicit defect handling, regression cases, typed fixtures and responsibility
 boundaries, so it does not reduce every size metric. The complexity-over-10 count also
 increases. These numbers describe the result; they are not targets used to justify wrappers
-or test deletion. Radon reports `SyntaxError at line: 88` for `app/ingestion/dart_api.py` in
-both measurements, so its SLOC/complexity are excluded in both. The harness's historical
+or test deletion. Radon's raw-line analysis reports `SyntaxError at line: 88` for
+`app/ingestion/dart_api.py` in both measurements, so its SLOC is excluded in both;
+the separate complexity analysis includes that module. The harness's historical
 `coverage_lines_pct` field is a combined percentage; statement and branch percentages are
 reported separately here.
 
