@@ -4,20 +4,18 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.config import Settings, get_settings
 from app.corpus_admin.context import CorpusAdminContext, SessionFactory
 from app.corpus_admin.inspection import CorpusInspector
+from app.corpus_admin.operations import CorpusOperations, OperationRunner
 from app.corpus_admin.stored_jobs import command_payload, job_from_stored
 from app.corpus_admin.types import (
     MAX_JOB_HISTORY,
@@ -28,18 +26,11 @@ from app.corpus_admin.types import (
     CorpusStatus,
     DocumentDetail,
     JobBoard,
-    OperationOutcome,
 )
-from app.db.bootstrap import bootstrap_schema
-from app.db.models import Chunk, ChunkEmbedding
-from app.ingestion.dart_api import acquire_dart
-from app.ingestion.edgar_api import DEFAULT_MANIFEST, acquire_edgar
-from app.ingestion.manifest import Manifest
 from app.ingestion.progress import OperationProgress
-from app.ingestion.seed import load_seed_batch, persist_seed_batch
 from app.ingestion.source_deletion import SourceDeletion
 from app.ingestion.source_selection import record_selection
-from app.observability.usage import LEDGER_KIND, USAGE_KEY, UsageSink, merge_usage
+from app.observability.usage import LEDGER_KIND, USAGE_KEY, merge_usage
 from app.operator.corpus_access import CorpusAccess, JobCancelledError
 from app.operator.jobs import (
     JobExecutionCoordinator,
@@ -49,38 +40,12 @@ from app.operator.jobs import (
     _default_session_factory,
 )
 from app.operator.progress import advance_progress, finish_progress, start_progress
-from app.retrieval.bm25 import backfill_term_stats
-from app.retrieval.embeddings import (
-    EmbeddingBackfillResult,
-    EmbeddingProvider,
-    embed_missing_chunks,
-    matching_embedding,
-)
+from app.retrieval.embeddings import EmbeddingProvider
 
 
 def _utc_now() -> datetime:
     """Return one timezone-aware job timestamp."""
     return datetime.now(UTC)
-
-
-async def _embedding_state(
-    session: AsyncSession, provider: EmbeddingProvider, document_ids: tuple[str, ...] | None = None
-) -> tuple[int, int]:
-    """Return committed compatible and pending chunk counts for one provider identity."""
-    identity = provider.identity
-    compatible = select(ChunkEmbedding.chunk_id).where(matching_embedding(identity)).exists()
-    scope = (Chunk.doc_id.in_(document_ids),) if document_ids is not None else ()
-    total = int(await session.scalar(select(func.count()).select_from(Chunk).where(*scope)) or 0)
-    ready = int(
-        await session.scalar(select(func.count()).select_from(Chunk).where(compatible, *scope)) or 0
-    )
-    return ready, total - ready
-
-
-OperationRunner = Callable[
-    [AdminCommand, Callable[[OperationProgress], None]],
-    Awaitable[OperationOutcome],
-]
 
 
 class RuntimeCorpusAdminService:
@@ -106,12 +71,15 @@ class RuntimeCorpusAdminService:
             embedding_provider=embedding_provider,
         )
         self._inspector = CorpusInspector(self._context)
-        self._operation_runner = operation_runner
         self._job_store = job_store
         self.corpus_access = corpus_access or CorpusAccess()
         self._execution_lock = execution_lock or asyncio.Lock()
         self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
         self._source_deletion = SourceDeletion(self._context.corpus_root)
+        self._operations = CorpusOperations(
+            self._context, self._inspector, self._source_deletion, operation_runner
+        )
+        self._run_operation = self._operations.run
         self._queue: asyncio.Queue[AdminJob] = asyncio.Queue(maxsize=MAX_QUEUED_JOBS)
         self._jobs: dict[str, AdminJob] = {}
         self._history: deque[str] = deque(maxlen=MAX_JOB_HISTORY)
@@ -332,169 +300,6 @@ class RuntimeCorpusAdminService:
             error_code=job.error_code,
             result_refs=job.result_refs or {},
         )
-
-    async def _assert_writable_schema(self) -> None:
-        """Block every operation when live schema is unavailable or drifted."""
-        status, message, _tables = await self._inspector.schema_state()
-        if status not in {"compatible", "empty"}:
-            raise RuntimeError(f"corpus writes are blocked: {message}")
-
-    def _resolve_manifest(self, name: str) -> Path:
-        """Resolve one enumerated manifest name inside the configured corpus root."""
-        candidate = (self._context.corpus_root / name).resolve()
-        if candidate.parent != self._context.corpus_root:
-            raise ValueError("manifest must be selected from the corpus root")
-        if name.startswith("selected-") and name.endswith("-manifest.json") and candidate.is_file():
-            catalog = Manifest.read(candidate)
-            if (
-                len(catalog.selections) == 1
-                and name == f"{catalog.selections[0].selection_id}-manifest.json"
-            ):
-                return candidate
-        allowed = {item.name for item in self._inspector.manifest_summaries() if item.valid}
-        if name not in allowed:
-            raise ValueError("manifest is not a valid selectable corpus manifest")
-        return candidate
-
-    async def _run_operation(
-        self,
-        command: AdminCommand,
-        publish: Callable[[OperationProgress], None],
-        on_usage: UsageSink | None = None,
-    ) -> OperationOutcome:
-        """Execute one safe operation through reusable in-process boundaries."""
-        if command.kind == "delete_sources":
-            assert command.deletion_token is not None
-            publish(OperationProgress("delete_sources", 0, 1, "Checking confirmed originals"))
-            summary = await asyncio.to_thread(self._source_deletion.execute, command.deletion_token)
-            publish(OperationProgress("delete_sources", 1, 1, summary))
-            return OperationOutcome(summary)
-        if self._operation_runner is not None:
-            return await self._operation_runner(command, publish)
-        if command.kind not in {"acquire_edgar", "acquire_dart"}:
-            await self._assert_writable_schema()
-
-        if command.kind == "acquire_edgar":
-            publish(OperationProgress("prepare", 0, 1, "Preparing EDGAR acquisition"))
-            result = await acquire_edgar(
-                self._context.corpus_root / DEFAULT_MANIFEST.name,
-                tickers=command.identifiers,
-                years=command.years,
-                user_agent=self._context.settings.sec_user_agent or "",
-                on_progress=publish,
-            )
-            return OperationOutcome(
-                f"Fetched {len(result.fetched)} filing(s)", result.manifest, result.selection_id
-            )
-
-        if command.kind == "acquire_dart":
-            secret = self._context.settings.dart_api_key
-            if secret is None:
-                raise ValueError("DART_API_KEY is not configured")
-            result = await acquire_dart(
-                stock_codes=command.identifiers,
-                fiscal_years=command.years,
-                corpus_dir=self._context.corpus_root,
-                api_key=secret.get_secret_value(),
-                on_progress=publish,
-            )
-            return OperationOutcome(
-                f"Archived {len(result.archived)} filing(s)", result.manifest, result.selection_id
-            )
-
-        if command.kind == "ingest_manifest":
-            assert command.manifest is not None
-            manifest = self._resolve_manifest(command.manifest)
-            assert command.selection_id is not None
-            Manifest.read(manifest).selected_sources(
-                command.selection_id, self._context.corpus_root
-            )
-            loop = asyncio.get_running_loop()
-
-            def publish_from_parser(progress: OperationProgress) -> None:
-                """Move parser-thread progress safely onto the queue's event loop."""
-                loop.call_soon_threadsafe(publish, progress)
-
-            batch = await asyncio.to_thread(
-                load_seed_batch,
-                manifest,
-                selection_id=command.selection_id,
-                embedding_provider=self._context.embedding_provider,
-                expected_documents=command.expected_documents,
-                on_progress=publish_from_parser,
-            )
-            await asyncio.sleep(0)
-            publish(OperationProgress("schema", 0, 1, "Checking schema compatibility"))
-            await bootstrap_schema(self._context.database_engine)
-            publish(OperationProgress("schema", 1, 1, "Schema compatible"))
-            async with self._context.session_factory() as session:
-                result = await persist_seed_batch(
-                    session,
-                    batch,
-                    on_progress=publish,
-                )
-            return OperationOutcome(
-                f"Ingested {result.documents} document(s) and {result.chunks} chunk(s)",
-                command.manifest,
-                command.selection_id,
-            )
-
-        if command.kind == "backfill_embeddings":
-            document_ids = None
-            if command.manifest is not None or command.selection_id is not None:
-                if not command.manifest or not command.selection_id:
-                    raise ValueError("selected backfill requires manifest and selection_id")
-                manifest_path = self._resolve_manifest(command.manifest)
-                sources = Manifest.read(manifest_path).selected_sources(
-                    command.selection_id, self._context.corpus_root
-                )
-                document_ids = tuple(source.document.document_id for source in sources)
-            await bootstrap_schema(self._context.database_engine)
-            async with self._context.session_factory() as session:
-                ready_before, pending = await _embedding_state(
-                    session, self._context.embedding_provider, document_ids
-                )
-
-            def on_batch(result: EmbeddingBackfillResult) -> None:
-                """Publish cumulative batch counts from the resumable backfill."""
-                publish(
-                    OperationProgress(
-                        "embedding",
-                        result.embedded + result.skipped_stale,
-                        pending,
-                        f"Embedded {result.embedded}; skipped stale {result.skipped_stale}",
-                    )
-                )
-
-            async with self._context.session_factory() as session:
-                result = await embed_missing_chunks(
-                    session,
-                    self._context.embedding_provider,
-                    on_batch=on_batch,
-                    document_ids=document_ids,
-                    on_usage=on_usage,
-                )
-            async with self._context.session_factory() as session:
-                ready_after, pending_after = await _embedding_state(
-                    session, self._context.embedding_provider, document_ids
-                )
-            if ready_after < ready_before + result.embedded:
-                raise RuntimeError(
-                    "embedding postcondition failed: reported rows were not committed"
-                )
-            if pending_after > max(0, pending - result.embedded):
-                raise RuntimeError("embedding postcondition failed: pending rows did not decrease")
-            return OperationOutcome(
-                f"Embedded {result.embedded} chunk(s); skipped {result.skipped_stale} stale; "
-                f"verified {ready_after} ready"
-            )
-
-        await bootstrap_schema(self._context.database_engine)
-        publish(OperationProgress("bm25", 0, 1, "Rebuilding BM25 statistics"))
-        async with self._context.session_factory() as session:
-            result = await backfill_term_stats(session)
-        publish(OperationProgress("bm25", 1, 1, "BM25 statistics rebuilt"))
-        return OperationOutcome(f"Rebuilt BM25 statistics for {result.chunks} chunk(s)")
 
     async def _execute_job(self, queued: AdminJob) -> None:
         """Execute one corpus job while the shared operator lock is held."""

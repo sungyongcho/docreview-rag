@@ -229,7 +229,7 @@ def test_ingest_selected_job_uses_existing_manifest_job_contract(tmp_path):
         await service.retry(job.job_id)
         await service._queue.join()
         assert calls[0] == calls[1]
-        assert service._resolve_manifest(job.command.manifest).exists()
+        assert service._operations._resolve_manifest(job.command.manifest).exists()
 
     asyncio.run(scenario())
 
