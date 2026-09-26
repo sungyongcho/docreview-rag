@@ -1,5 +1,9 @@
 """Builders shared by the agent tests."""
 
+from typing import cast
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.agent.provider import ProviderTurn
 
 
@@ -59,8 +63,9 @@ class FakeSessionFactory:
         self.chunk = chunk
         self.sessions = []
 
-    def __call__(self):
+    def __call__(self) -> AsyncSession:
         """Produce one fresh fake session per call, the way a sessionmaker does."""
         session = FakeSession(self.chunk)
         self.sessions.append(session)
-        return session
+        # The duck-typed fake stands in for the AsyncSession a SessionFactory returns.
+        return cast(AsyncSession, session)
