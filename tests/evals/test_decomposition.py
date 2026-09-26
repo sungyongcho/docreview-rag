@@ -4,10 +4,12 @@ import asyncio
 from datetime import datetime
 import json
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from app.evals.decomposition import category_metrics, run_decomposition_comparison
+from app.evals.retrieval_eval import RetrievalEvaluation
 from app.evals.scoring import CaseScore
 from tests.evals.support import EVALUATION_RECORDED_AT, absent_case, positive_case, relevant_hit
 
@@ -40,7 +42,7 @@ def test_category_metrics_slices_scored_cases_only():
         )
     )
 
-    metrics = category_metrics(evaluation)
+    metrics = category_metrics(cast(RetrievalEvaluation, evaluation))
 
     assert set(metrics) == {"multi_hop", "simple_lookup"}
     assert metrics["multi_hop"]["scored_case_count"] == 2.0

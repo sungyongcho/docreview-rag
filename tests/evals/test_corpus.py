@@ -2,10 +2,14 @@
 
 from typing import cast
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import CheckConstraint, Table
+
 from app.config import Settings
 from app.db.models import Base
 import app.evals.corpus as corpus
 from app.evals.corpus import _temporary_metadata, build_chunking_batch, load_chunking_filings
+from app.ingestion.parser import ParsedFiling
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
@@ -38,9 +42,16 @@ def test_load_chunking_filings_parses_the_manifest_once(monkeypatch, tmp_path):
     assert calls == [entries]
 
 
+def embedding_type(table: Table) -> Vector:
+    """Return the pgvector type declared on a table's embedding column."""
+    column_type = table.c.embedding.type
+    assert isinstance(column_type, Vector)
+    return column_type
+
+
 def test_the_temporary_schema_keeps_actual_normalized_constraints_and_vector_width():
     """Preserve normalized source relations while isolating experiment dimensions."""
-    original_type = Base.metadata.tables["chunk_embeddings"].c.embedding.type
+    original_type = embedding_type(Base.metadata.tables["chunk_embeddings"])
     original_dimensions = original_type.dim
     metadata = _temporary_metadata(12)
     assert set(metadata.tables) == set(Base.metadata.tables)
@@ -55,17 +66,18 @@ def test_the_temporary_schema_keeps_actual_normalized_constraints_and_vector_wid
         for constraint in metadata.tables["chunk_embeddings"].constraints
         if constraint.name == "ck_chunk_embeddings_dimensions"
     )
+    assert isinstance(dimension_check, CheckConstraint)
     assert str(dimension_check.sqltext) == "dimensions = 12"
     assert "embedding" not in metadata.tables["chunks"].c
-    assert metadata.tables["chunk_embeddings"].c.embedding.type.dim == 12
-    assert metadata.tables["snapshot_chunks"].c.embedding.type.dim == 12
+    assert embedding_type(metadata.tables["chunk_embeddings"]).dim == 12
+    assert embedding_type(metadata.tables["snapshot_chunks"]).dim == 12
     assert Base.metadata.tables["chunk_embeddings"].c.embedding.type is original_type
     assert original_type.dim == original_dimensions
 
 
 def test_chunking_batch_passes_the_token_target_to_the_chunker(monkeypatch):
     """Keep evaluation chunking on the same token configuration as ingestion."""
-    filing = object()
+    filing = cast(ParsedFiling, object())
     received = []
 
     def chunk_filing(source, config):
@@ -122,5 +134,8 @@ def test_chunking_respects_the_selected_models_actual_token_limit(monkeypatch):
     monkeypatch.setattr(corpus, "chunk_filing", chunk_filing)
     monkeypatch.setattr(corpus, "build_seed_batch_from_filings", build_batch)
     build_chunking_batch(
-        2048, provider=provider, selection_id="sec-evaluation", parsed_filings=(object(),)
+        2048,
+        provider=provider,
+        selection_id="sec-evaluation",
+        parsed_filings=(cast(ParsedFiling, object()),),
     )

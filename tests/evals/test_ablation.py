@@ -56,6 +56,13 @@ def hit() -> ChunkHit:
     )
 
 
+def retrieval_provenance(config: ExperimentConfig) -> dict[str, object]:
+    """Return the nested retrieval mapping of one arm's provenance."""
+    retrieval = config.to_dict()["retrieval"]
+    assert isinstance(retrieval, dict)
+    return retrieval
+
+
 def test_experiment_matrix_crosses_chunking_retrieval_and_lexical_ranker():
     """Cross every chunk target, retrieval path, and lexical ranker in canonical order."""
     configs = experiment_matrix(
@@ -111,16 +118,16 @@ def test_config_provenance_records_the_ranker_and_bm25_defaults_only_where_used(
             "populated_corpus_embeddings_modified": False,
         },
     }
-    assert vector.to_dict()["retrieval"]["lexical_ranker"] is None
-    assert "bm25" not in lexical.to_dict()["retrieval"]
-    assert "bm25" not in vector.to_dict()["retrieval"]
+    assert retrieval_provenance(vector)["lexical_ranker"] is None
+    assert "bm25" not in retrieval_provenance(lexical)
+    assert "bm25" not in retrieval_provenance(vector)
 
     assert (bm25.bm25_k1, bm25.bm25_b, bm25.bm25_idf) == (
         DEFAULT_BM25_K1,
         DEFAULT_BM25_B,
         DEFAULT_BM25_IDF,
     )
-    assert bm25.to_dict()["retrieval"]["bm25"] == {
+    assert retrieval_provenance(bm25)["bm25"] == {
         "k1": DEFAULT_BM25_K1,
         "b": DEFAULT_BM25_B,
         "idf": DEFAULT_BM25_IDF,
@@ -140,7 +147,7 @@ def test_experiment_matrix_propagates_explicit_bm25_parameters():
         bm25_idf="robertson",
     )
 
-    assert config.to_dict()["retrieval"]["bm25"] == {
+    assert retrieval_provenance(config)["bm25"] == {
         "k1": 1.5,
         "b": 0.4,
         "idf": "robertson",

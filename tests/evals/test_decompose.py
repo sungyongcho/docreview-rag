@@ -4,10 +4,12 @@ import asyncio
 from decimal import Decimal
 import sys
 from types import SimpleNamespace
+from typing import cast
 
 from pydantic import ValidationError
 import pytest
 
+from app.db.session_factory import SessionFactory
 from app.evals.decompose import QueryDecomposition, make_decomposed_retriever
 from app.llm.schemas import ProviderBudget, TokenPricing
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
@@ -64,7 +66,7 @@ def test_decomposed_retriever_gathers_per_sub_question_sessions_and_fuses(monkey
     monkeypatch.setattr(module, "retrieve", fake_retrieve)
     factory = FakeSessionFactory()
     retriever = make_decomposed_retriever(
-        factory,
+        cast(SessionFactory, factory),
         llm_provider=provider,
         provider_budget=budget(),
         embedding_provider=DeterministicEmbeddingProvider(),
@@ -93,7 +95,7 @@ def test_decomposed_retriever_logs_a_degraded_decomposition(monkeypatch, caplog)
     module = sys.modules[make_decomposed_retriever.__module__]
     monkeypatch.setattr(module, "retrieve", fake_retrieve)
     retriever = make_decomposed_retriever(
-        FakeSessionFactory(),
+        cast(SessionFactory, FakeSessionFactory()),
         llm_provider=refusing,
         provider_budget=budget(),
         embedding_provider=DeterministicEmbeddingProvider(),

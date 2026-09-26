@@ -2,8 +2,10 @@
 
 import asyncio
 from dataclasses import replace
+from typing import cast
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.evals.index_identity import index_fingerprint
 from app.retrieval.embeddings import EmbeddingIdentity
@@ -42,12 +44,19 @@ def test_index_fingerprint_rejects_changed_chunks_with_unchanged_document_source
     """Rechunking, changed input, and changed vectors each invalidate evaluation identity."""
     identity = EmbeddingIdentity("test", "model", 2, "cl100k_base")
     chunk = ["document", "key", "b" * 64, 0, "en", "text", "1", None, None, [1.0, 0.0]]
-    baseline = asyncio.run(index_fingerprint(_Session(chunk), identity))
+    baseline = asyncio.run(index_fingerprint(cast(AsyncSession, _Session(chunk)), identity))
     changed = list(chunk)
     changed[field] = value
-    assert asyncio.run(index_fingerprint(_Session(changed), identity)) != baseline
-    assert asyncio.run(index_fingerprint(_Session(chunk), identity)) == baseline
     assert (
-        asyncio.run(index_fingerprint(_Session(chunk), replace(identity, tokenizer="different")))
+        asyncio.run(index_fingerprint(cast(AsyncSession, _Session(changed)), identity)) != baseline
+    )
+    assert asyncio.run(index_fingerprint(cast(AsyncSession, _Session(chunk)), identity)) == baseline
+    assert (
+        asyncio.run(
+            index_fingerprint(
+                cast(AsyncSession, _Session(chunk)),
+                replace(identity, tokenizer="different"),
+            )
+        )
         != baseline
     )

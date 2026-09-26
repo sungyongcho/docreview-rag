@@ -8,7 +8,12 @@ from typing import cast
 
 import pytest
 
-from app.api.admin_schemas import EvaluationPreparationResource, EvaluationRunRequest
+from app.api.admin_schemas import (
+    EvaluationJobResource,
+    EvaluationPreparationResource,
+    EvaluationRunRequest,
+    RetrievalProfile,
+)
 from app.config import Settings
 from app.corpus_admin.runtime import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand, CorpusStatus, OperationOutcome
@@ -28,6 +33,13 @@ def ready_evaluation_inputs(monkeypatch):
         )
 
     monkeypatch.setattr(EvaluationAdminService, "preparation", prepared)
+
+
+async def enqueued_job(service: EvaluationAdminService, job_id: str) -> EvaluationJobResource:
+    """Return a job the test already enqueued, which the service must still report."""
+    job = await service.job(job_id)
+    assert job is not None
+    return job
 
 
 @pytest.mark.usefixtures("ready_evaluation_inputs")
@@ -93,7 +105,7 @@ def test_queued_evaluation_can_be_cancelled_before_execution(tmp_path: Path, mon
 
         assert calls == 1
         assert cancelled.status == "cancelled"
-        assert (await service.job(second.job_id)).status == "cancelled"
+        assert (await enqueued_job(service, second.job_id)).status == "cancelled"
 
     asyncio.run(scenario())
 
@@ -144,7 +156,7 @@ def test_corpus_and_evaluation_workers_share_one_execution_lock(
         evaluation_job = await evaluation.enqueue(EvaluationRunRequest(suite_id="sec-en"))
         await asyncio.sleep(0)
         assert events == ["corpus-start"]
-        assert (await evaluation.job(evaluation_job.job_id)).status == "queued"
+        assert (await enqueued_job(evaluation, evaluation_job.job_id)).status == "queued"
 
         gate.set()
         await corpus._job_queue._queue.join()
@@ -168,7 +180,7 @@ def test_waiting_evaluation_deduplicates_and_rechecks_preparation(
         status = CorpusStatus(True, "compatible", "ok", 1, 10, 5, 5, True, True, "deterministic")
         calls = []
 
-        async def readiness():
+        async def readiness() -> CorpusStatus:
             """Return readiness as changed by the simulated corpus completion."""
             return status
 
@@ -192,6 +204,7 @@ def test_waiting_evaluation_deduplicates_and_rechecks_preparation(
                 return_exceptions=True,
             )
             assert isinstance(duplicate, EvaluationAlreadyQueuedError)
+            assert isinstance(first, EvaluationJobResource)
             assert duplicate.job_id == first.job_id
             assert first.message == "Waiting for backfill_embeddings embedding-job to finish."
             assert len(service._jobs) == 1
@@ -200,6 +213,7 @@ def test_waiting_evaluation_deduplicates_and_rechecks_preparation(
                 status = replace(status, pending_embeddings=0, embedded_chunks=10)
         await service._queue.join()
         result = await service.job(first.job_id)
+        assert result is not None
         assert result.status == ("succeeded" if preparation_succeeds else "failed")
         assert len(calls) == int(preparation_succeeds)
         if not preparation_succeeds:
@@ -228,8 +242,8 @@ def test_evaluation_waiting_message_tracks_the_current_global_blocker(tmp_path):
             second = await service.enqueue(EvaluationRunRequest(suite_id="sec-ko"))
             assert "embed" in second.message
         async with coordinator.turn("lexical"):
-            assert "rebuild_bm25 lexical" in (await service.job(first.job_id)).message
-            assert "rebuild_bm25 lexical" in (await service.job(second.job_id)).message
+            assert "rebuild_bm25 lexical" in (await enqueued_job(service, first.job_id)).message
+            assert "rebuild_bm25 lexical" in (await enqueued_job(service, second.job_id)).message
             await service.cancel(first.job_id)
             await service.cancel(second.job_id)
         await service._queue.join()
@@ -275,7 +289,9 @@ def test_quick_evaluation_preparation_matches_the_selected_strategy(
     )
     request = EvaluationRunRequest(
         suite_id="sec-en",
-        profile={"strategy": strategy, "lexical_ranker": None if strategy == "vector" else "bm25"},
+        profile=RetrievalProfile(
+            strategy=strategy, lexical_ranker=None if strategy == "vector" else "bm25"
+        ),
     )
     if allowed:
         asyncio.run(service._require_preparation(request, allow_pending=False))

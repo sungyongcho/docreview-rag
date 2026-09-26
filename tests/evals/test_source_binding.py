@@ -84,6 +84,7 @@ def test_wrong_hash_is_not_repaired_or_relabelled(tmp_path):
     bound = bind_golden(payload, manifest, "sec", requirements_path=requirements)
     assert not bound.ready
     assert bound.sources[0].state == "source_invalid"
+    assert bound.sources[0].detail is not None
     assert "hash does not match" in bound.sources[0].detail
     assert bound.cases[0].answers[0].doc_id == "NVDA-FY2024"
 

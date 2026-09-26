@@ -9,6 +9,7 @@ from typing import Any, Self, cast
 import pytest
 
 from app.config import Settings
+from app.db.models import EvalResult
 from app.evals.admin import EvaluationAdminService
 from app.evals.admin_results import compatible_baseline
 from app.evals.regression import SCORING_CONFIG_KEY
@@ -68,8 +69,10 @@ def _artifact(path: Path, first_rank: int | None) -> Path:
 
 def _service(tmp_path: Path, rows: dict[int, _Row]) -> EvaluationAdminService:
     """Build the service against on-disk artifacts and stored rows."""
+    # `_env_file` is a pydantic-settings init option the synthesized signature omits.
+    without_dotenv: dict[str, Any] = {"_env_file": None}
     return EvaluationAdminService(
-        settings=Settings(corpus_dir=tmp_path, _env_file=None),
+        settings=Settings(corpus_dir=tmp_path, **without_dotenv),
         provider=DeterministicEmbeddingProvider(),
         artifact_dir=tmp_path / "runs",
         session_factory=cast(Any, lambda: _Session(rows)),
@@ -167,7 +170,7 @@ def test_compatible_baseline_reads_the_scoring_stamp_that_persistence_writes(
     config = {"admin_identity": identity, SCORING_CONFIG_KEY: {"k": 5}}
     row = _Row(1, _artifact(runs / "one.json", 1), config)
 
-    async def lookup(k: int) -> _Row | None:
+    async def lookup(k: int) -> EvalResult | None:
         """Ask for the newest baseline scored at cutoff ``k``."""
         async with _Session({1: row}) as session:
             return await compatible_baseline(

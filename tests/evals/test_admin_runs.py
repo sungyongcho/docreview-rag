@@ -4,10 +4,11 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from app.api.admin_schemas import EvaluationRunRequest
+from app.api.admin_schemas import EvaluationRunRequest, RetrievalProfile
 from app.config import Settings
 from app.evals.admin import EvaluationAdminService
 import app.evals.admin_runs as admin_runs_module
@@ -72,7 +73,7 @@ def test_matrix_forwards_dart_manifest_and_profile_parameters(tmp_path: Path, mo
         request = EvaluationRunRequest(
             suite_id="dart-ko",
             mode="matrix",
-            profile={"bm25_k1": 1.5, "bm25_b": 0.6},
+            profile=RetrievalProfile(bm25_k1=1.5, bm25_b=0.6),
         )
         await service._matrix(request)
 
@@ -205,7 +206,7 @@ def test_selected_golden_revision_drives_quick_and_matrix_inputs(
         draft = await golden.create_draft("sec-en", filename="custom.json")
         service._golden_dir = golden_dir
 
-        captured = None
+        captured: tuple[dict[str, Any], Any] | None = None
 
         async def run_matrix(**kwargs):
             """Read the temporary matrix input while it is still present."""
