@@ -515,13 +515,3 @@ class LocalConnectionManager:
             self._persist(self._saved_state("disabled", self._selected_server_id))
             self._active = LocalConnection(None, self.initial_protocol, "disabled", None)
         return await self.state()
-
-    async def reset(self) -> dict[str, Any]:
-        """Restore startup settings and let ordinary readiness report reachability."""
-        self._require_enabled()
-        async with self._lock:
-            candidate = self._initial_connection()
-            self._persist(self._saved_state("initial", "default"))
-            self._selected_server_id = "default"
-            self._active = candidate
-        return await self.state()

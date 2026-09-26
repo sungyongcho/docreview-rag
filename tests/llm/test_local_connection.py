@@ -24,8 +24,8 @@ def metadata_server(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"models": models})
 
 
-def test_saved_connection_restart_disconnect_and_reset(tmp_path) -> None:
-    """Saved choices survive restart; explicit off stays off and reset restores startup."""
+def test_saved_connection_restart_and_disconnect(tmp_path) -> None:
+    """Saved choices survive restart and an explicit off stays off."""
     path = tmp_path / "local-settings/connection.json"
     transport = httpx.MockTransport(metadata_server)
     manager = LocalConnectionManager(
@@ -55,10 +55,6 @@ def test_saved_connection_restart_disconnect_and_reset(tmp_path) -> None:
         disabled = LocalConnectionManager(path=path, transport=transport)
         assert disabled.current.source == "disabled"
         assert (await disabled.public_state()) == {"enabled": False, "reason": "disabled"}
-        restored = await restarted.reset()
-        assert restored["source"] == "environment"
-        assert restored["base_url"] == "http://initial:11434"
-        assert LocalConnectionManager(path=path).current.source == "default"
 
     asyncio.run(exercise())
 
@@ -226,8 +222,6 @@ def test_saved_choice_overrides_invalid_initial_url(tmp_path) -> None:
     response = asyncio.run(manager.state())
     assert "secret" not in json.dumps(response)
     assert response["initial_base_url"] == ""
-    with pytest.raises(ValueError, match="HTTP or HTTPS"):
-        asyncio.run(manager.reset())
     assert manager.current is previous
     assert path.read_bytes() == original_bytes
 
@@ -292,7 +286,7 @@ def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(tmp_
     assert path.read_bytes() == original
 
 
-def test_named_servers_survive_switch_disconnect_reset_and_restart(tmp_path) -> None:
+def test_named_servers_survive_switch_disconnect_and_restart(tmp_path) -> None:
     """Persist a named registry while Default and explicit off preserve all saved choices."""
     path = tmp_path / "connection.json"
     transport = httpx.MockTransport(metadata_server)
@@ -317,10 +311,6 @@ def test_named_servers_survive_switch_disconnect_reset_and_restart(tmp_path) -> 
         )
         assert (await restarted.state())["servers"] == second["servers"]
         assert (await restarted.state())["selected_server_id"] == desk_id
-        reset = await restarted.reset()
-        assert reset["selected_server_id"] == "default"
-        assert reset["base_url"] == "http://initial"
-        assert reset["servers"] == second["servers"]
         assert json.loads(path.read_text())["version"] == 2
         await restarted.select_server(desk_id)
         assert restarted.current.base_url == "http://desk"

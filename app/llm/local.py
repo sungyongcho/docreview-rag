@@ -15,6 +15,15 @@ from app.llm.schemas import LocalModelTiming, Prompt, ProviderBudget
 LocalLlmProtocol = Literal["openai_responses", "ollama"]
 
 
+def openai_compatible_root(base_url: str) -> str:
+    """Return the server root of an OpenAI-compatible base URL, dropping a ``/v1`` suffix.
+
+    Operators configure either the server root or its ``/v1`` API prefix; request paths
+    are built from the root so both spellings reach the same ``/v1/...`` endpoints.
+    """
+    return base_url.removesuffix("/v1")
+
+
 def _responses_output(payload: dict[str, object]) -> tuple[str | None, str | None]:
     """Read the message text and refusal one Responses object carries in ``output``.
 
@@ -137,9 +146,8 @@ class LocalLLMProvider(LLMProvider):
         budget: ProviderBudget,
     ) -> RawProviderResponse:
         """Call an OpenAI Responses-compatible local endpoint."""
-        base = self._base_url[:-3] if self._base_url.endswith("/v1") else self._base_url
         payload = await self._post_json(
-            f"{base}/v1/responses",
+            f"{openai_compatible_root(self._base_url)}/v1/responses",
             {
                 "model": self.model_name,
                 "instructions": prompt.system,
