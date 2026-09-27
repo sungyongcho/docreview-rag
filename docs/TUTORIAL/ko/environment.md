@@ -182,31 +182,39 @@ Ollama는 로컬 답변을 위한 선택 사항이며 DocReview 스택과 별도
 
 ## 운영 배포 {#production-deployment}
 
-위 내용은 모두 내 기계에서 돌아갑니다. 공개 사이트는 의도적으로 작게 잡은 별도
-대상입니다. Cloudflare Worker 뒤의 e2-medium VM 한 대와 Firebase Hosting의 정적
-내보내기입니다. 스크립트는 `deploy/gcp/`와 `scripts/deploy/`에 있으며 튜토리얼 과정에서
-실행되는 것은 없습니다.
+위 내용은 모두 내 기계에서 돌아갑니다. 공개 원본 서버는 2 OCPU·12 GB RAM의
+Oracle Cloud A1 인스턴스이며 gomoku의 minimax 서비스와 공유합니다. DocReview는
+호스트 `8880` 포트의 Caddy를, minimax는 기존 `8080` 포트를 사용하고 정적 화면은
+Firebase Hosting에서 제공합니다. `deploy/cloudflare`의 DocReview 전용 Worker로
+배포 책임을 분리합니다. 아래 절차는 전환과 이후 배포 방법이며 이미 완료했다는
+근거가 아닙니다. Oracle 스크립트는 `deploy/oracle/`, Firebase 배포는
+`scripts/deploy/firebase.sh`에 있습니다. `deploy/gcp/`는 별도 선택 가능한 배포
+경로로 유지하며, 어느 배포도 이 로컬 튜토리얼을 따라 하는 것만으로 실행되지 않습니다.
 
 ```text
 visitor ──HTTPS──> sungyongcho.com/docreview-rag/*
-                          │  Cloudflare Worker
+                          │  DocReview Worker (docreview-router)
             ┌─────────────┴──────────────┐
    /docreview-rag/*        /docreview-rag/api/*
             │                              │  plain HTTP
             ▼                              ▼
-   Firebase Hosting             GCP e2-medium (us-central1-a, ephemeral IP)
-   static Next export           firewall: tcp:8000 from Cloudflare IPv4 only
-                                  Caddy :80 → host 8000
+   Firebase Hosting             docreview-api.sungyongcho.com:8880
+   static Next export           Oracle A1, shared with minimax :8080
+   preserve /docreview-rag       firewall: tcp:8880 from Cloudflare IPv4 only
+                                  host 8880 → Caddy :80
                                     allow-list + X-DocReview-Public: true
                                       └─> FastAPI ──> pgvector Postgres
                                   no operator API; administer in local DEV
 ```
 
-TLS는 Cloudflare에서 끝납니다. VM은 `8000` 포트에서 평문 HTTP만 받고, GCP 방화벽은
-Cloudflare가 공개한 IPv4 대역만 허용하므로 다른 곳에서는 직접 닿을 수 없습니다. Caddy는
-공개 경로만 프록시하고 `X-DocReview-Public: true`를 붙입니다. `/admin/*`을
-숨기는 것은 이 헤더이므로 외부에서 닿는 모든 포트 앞에는 Caddy가 있어야 합니다. 프로덕션은
-운영자 API를 노출하지 않으며, 관리는 로컬 DEV 환경에서 실행합니다.
+TLS는 Cloudflare에서 끝납니다. 전용 Worker는
+`sungyongcho.com/docreview-rag`와 `sungyongcho.com/docreview-rag/*`만 담당합니다.
+Firebase 정적 경로의 접두사는 유지하고 API 요청의 `/docreview-rag/api`를 제거한 뒤
+Oracle 원본으로 HTTP 전달합니다. 기존 원본 DNS 레코드는 해당 인스턴스를 가리켜야
+하며 이 배포에서 DNS를 변경하지 않습니다. Oracle 공유 호스트 준비는 gomoku에
+남고 DocReview는 자체 앱·Caddy·정적 화면·Worker를 배포합니다. Caddy는 공개 경로만
+프록시하고 `X-DocReview-Public: true`를 붙이며, 외부에서 닿는 모든 API 포트 앞에
+있어야 합니다. 프로덕션은 운영자 API를 노출하지 않으며 관리는 로컬 DEV에서 실행합니다.
 
 ### 요청 한도의 프록시 경계 {#public-request-boundary}
 
@@ -224,52 +232,72 @@ JSON이 아니어도 크기 초과를 안내합니다. 서버는 본문 해석 �
 파일과 영구 볼륨을 유지하세요. 교체하면 기록된 사용량이 사라집니다.
 
 배포는 별도 작업입니다. 이 정책을 배포하기 전에 실제 Caddy가 보는 접속 주소와
-Cloudflare 전용 방화벽 경로를 확인하고, 전제가 다르면 배포를 보류하세요. 격리된
-Caddy 테스트는 로컬 근거이며 운영 경로 검증이 아닙니다. Cloudflare의 방문자별
-제한이 있다고 가정하지 않으며, 이 정책을 위해 별도 `gomoku` Worker나 Cloudflare
-계정 설정을 변경하지 않습니다. 방문자 IP 전달 헤더 제거는 Python으로의 전달을
-줄이는 조치이며 서비스 전체의 GDPR 면제나 준수 완료를 뜻하지 않습니다.
+Cloudflare 전용 방화벽 경로를 확인하세요. Oracle 서브넷에 실제 연결된 보안 목록,
+연결된 모든 네트워크 보안 그룹, 호스트 방화벽의 유효 규칙을 의도한 Cloudflare
+주소 대역과 대조합니다. 연결되지 않은 보안 목록은 실제 접근 경로의 증거가 아닙니다.
+전제가 다르면 배포를 보류하세요. 격리된 Caddy 테스트는 로컬 근거이며 운영 경로
+검증이 아닙니다. Cloudflare의 방문자별 제한이 있다고 가정하지 않습니다. 공유 요청
+한도 정책은 DocReview 경로를 gomoku에서 전용 Worker로 옮기는 작업과 별개입니다.
+방문자 IP 전달 헤더 제거는 Python으로의 전달을 줄이는 조치이며 서비스 전체의
+GDPR 면제나 준수 완료를 뜻하지 않습니다.
 
 ### 실행 순서 {#production-order}
 
-1. `.env`에 배포 값을 채웁니다. `DEPLOY_GCP_PROJECT`는 필수이고 first-install에는
-   `DEPLOY_POSTGRES_PASSWORD`와 `DEPLOY_ARTIFACT_DIR`이 필요합니다. 선택으로
-   `DEPLOY_GCP_ZONE`, `DEPLOY_VM_NAME`, `DEPLOY_MACHINE_TYPE`, `DEPLOY_AR_REPO`,
-   `DOCREVIEW_IMAGE`를 둘 수 있습니다. 모든 값이 이 파일 하나에 있고
-   `deploy/gcp/deploy_env_config.sh`가 마스킹된 요약을 출력합니다.
-2. `deploy/gcp/deploy_all.sh all`이 단계를 순서대로 실행합니다. `setup`이 필요한
-   API와 Artifact Registry 리포지토리, 배포 서비스 계정을 만들고, `vm`이
-   `pd-standard` 30 GB 부트 디스크, 임시 외부 IP, 방화벽 규칙(`tcp:8000`은
-   Cloudflare 전용, `tcp:22`는 IAP 전용)을 갖춘 e2-medium VM(공유 vCPU 2개,
-   RAM 4 GB)을 만듭니다. 첫 부팅 때 `deploy/gcp/startup.sh`가 Docker와
-   2 GB 스왑 파일을 설치합니다. SSH는 IAP TCP 전달만 허용합니다.
-3. `image` 단계가 `docker/Dockerfile`을 빌드해 `DOCREVIEW_IMAGE`로 푸시하고,
-   `backend` 단계(`deploy/gcp/deploy_backend.sh`)가 `docker-compose.deploy.yml`,
-   `deploy/Caddyfile`, 생성된 VM 환경(`/opt/docreview/.env`)을 복사하고 검증된
-   아티팩트 번들(코퍼스·데이터베이스·평가 기록)을 복원한 뒤 스택을 띄웁니다.
-4. `deploy/gcp/print_origin.sh`가 `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000`과
-   `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`을 출력합니다.
-5. 사이트의 Cloudflare Worker 라우팅 설정에 이 값들을 적용합니다.
-   `/docreview-rag/api/*` 요청은 `DEPLOY_DOCREVIEW_ORIGIN`으로, 나머지
-   `/docreview-rag/*`는 `DEPLOY_DOCREVIEW_SITE_ORIGIN`으로 전달되도록
-   설정하고, 해당 사이트의 라우팅 배포 절차로 Worker를 배포합니다.
-6. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh`가
-   `NEXT_PUBLIC_ADMIN_MODE`를 비운 채 공개 번들을 빌드하고 배포합니다.
+1. 이 저장소의 `.env`에 `DEPLOY_ORACLE_HOST`, `DEPLOY_ORACLE_SSH_USER`와
+   필요할 때 `DEPLOY_ORACLE_SSH_KEY` 또는 `DEPLOY_ORACLE_SSH_CONFIG`를
+   설정합니다. 비밀이 아닌 호스트·원본 설정을 여기에 유지합니다.
+   검증된 known-hosts 기록이 필요하며 SSH·SCP·rsync 모두 엄격한 호스트 키 검사를
+   사용합니다. 선택한 SSH 설정은 세 전송 방식에 공통 적용됩니다. 백엔드 배포에는
+   기존 운영 키 출처를 사용하고 Worker 배포에는 외부에서 제공한
+   `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`을 사용합니다. 라우팅
+   책임을 옮긴다는 이유로 토큰을 복사하지 않습니다.
+2. 위의 방화벽·Caddy 관측 주소 전제를 확인합니다.
+   `bash deploy/oracle/deploy_backend.sh update`는 격리된 원격 `mktemp` 경로에서
+   빌드하며 공유 파일에 `rsync --delete`를 실행하지 않고 앱과 Caddy를 함께
+   갱신합니다. 첫 설치에는 검증된 공개 산출물 번들과 `DEPLOY_POSTGRES_PASSWORD`가
+   별도로 필요하며, `first-install`은 영구 저장소가 비어 있을 때만 사용합니다.
+   두 경로 모두 `deploy/gcp/docker-compose.deploy.yml`의 공통 Compose 계약을
+   사용합니다.
+   빌드 경로는 `DEPLOY_ORACLE_BUILD_DIR` 아래에 남겨 별도로 승인된 정리 때
+   처리합니다. 실행 중인 Caddy 컨테이너가 앱 갱신 전에 설정을 검증하고 이후 다시
+   불러오며, 실패한 배포 준비 파일과 롤백 기록은 복구를 위해 보존합니다.
+3. `bash deploy/oracle/print_origin.sh`로 전용 Worker의 원본 설정값을 확인합니다.
+   의도한 API 원본은 `http://docreview-api.sungyongcho.com:8880`이고 정적 원본은
+   Firebase를 유지합니다. 인스턴스 주소가 바뀌면 기존 DNS 레코드를 확인합니다.
+4. `npm --prefix deploy/cloudflare ci`로 설치한 뒤
+   `npm --prefix deploy/cloudflare test`와
+   `npm --prefix deploy/cloudflare run deploy:dry-run -- --bootstrap`을 실행합니다.
+   최초 전환 때만 `npm --prefix deploy/cloudflare run deploy -- --bootstrap`으로
+   경로와 workers.dev/미리보기 URL 없이 Worker를 만듭니다. 그 뒤 DocReview 경로
+   두 개의 기존 ID만 공유 gomoku Worker에서 `docreview-router`로 옮기고 다른
+   경로는 보존합니다. 전환 뒤 bootstrap을 다시 실행하면 전용 Worker의 경로를
+   제거하므로 반복하지 않습니다. 전환을 확인한 뒤 이후 배포는
+   `npm --prefix deploy/cloudflare run deploy:dry-run`과
+   `npm --prefix deploy/cloudflare run deploy`를 사용합니다.
+5. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh`는 공개 모드와
+   API 접두사를 명시해 방문자 번들을 빌드·게시합니다. 배포 뒤 원본 상태, 정적 경로,
+   API 경로와 SSE를 확인합니다.
 
-외부 IP는 임시입니다. VM을 멈췄다 켜면 바뀌므로 그 뒤에는 4·5단계를 반복합니다. 고정
-IP를 예약하면 이를 피할 수 있지만 월 약 $3가 듭니다.
+`bash deploy/oracle/deploy_backend.sh rollback`은 이전 앱 이미지와 Caddy 설정을
+한 쌍으로 복원합니다. 갱신과 롤백은 PostgreSQL·원문·평가 기록·기존 SQLite 요청/비용
+장부를 유지하며 호스트 준비나 DB 복원을 다시 실행하지 않습니다. 로컬 검사 통과나
+배포 명령 성공만으로 운영 비용 차단을 검증했다고 판단하지 않습니다.
+
+GCP를 별도 배포 대상으로 선택하면 `deploy/gcp/deploy_all.sh`의
+setup/VM/image/backend 단계와 `deploy/gcp/print_origin.sh`를 사용합니다.
+이 경로는 Oracle 내부 빌드 대신 e2-medium VM과 Artifact Registry를 사용하며,
+전용 Worker의 경로 소유권과 Firebase 정적 접두사는 바꾸지 않습니다.
 
 ### 월 비용 {#production-cost}
 
-| 구성 요소 | 내용 | 비용 |
+| 구성 요소 | 내용 | 비용 경계 |
 |---|---|---|
-| GCP e2-medium | `us-central1` 온디맨드: 공유 vCPU 2개, RAM 4 GB, 시간당 약 $0.034(상시 가동 시 월 약 $25) + `pd-standard` 30 GB 디스크 월 약 $1 | 약 $26 |
-| 외부 IP | 임시 IP. 고정 IP를 예약하면 월 약 $3 | $0 |
-| Firebase Hosting | 무료 등급(정적 내보내기) | $0 |
-| Cloudflare Worker | 무료 등급 | $0 |
-| OpenAI | `DOCREVIEW_PUBLIC_DAILY_COST_USD`(compose 파일에서 `0.10`)로 UTC 하루 단위 상한 | ≤ $0.10/day |
+| Oracle A1 | 2 OCPU·12 GB 공유 인스턴스에서 minimax와 DocReview 포트를 분리 | 계정에 할당된 Always Free 범위를 목표로 하되 실제 컴퓨트·저장소·네트워크 자격 확인 |
+| Firebase Hosting | 기존 정적 내보내기 사이트 | 설정된 요금제의 제공량 이내 유지 |
+| Cloudflare Worker | DocReview 전용 라우터 | 설정된 요금제의 제공량 이내 유지 |
+| OpenAI | `DOCREVIEW_PUBLIC_DAILY_COST_USD`(배포 compose 파일에서 `0.30`)로 UTC 하루 단위 상한 | ≤ $0.30/day |
 
-트레이드오프: VM이 북미에 있어 유럽 방문자는 약 100 ms의 지연이 더 붙습니다.
-데이터베이스(현재 약 430 MB)는 Postgres, Docker 이미지, 스왑을 두고도 30 GB 디스크에
-넉넉히 들어갑니다. RAM 4 GB에 맞춰 Postgres는 `shared_buffers=256MB`, `work_mem=4MB`로
-돌고, 2 GB 스왑 파일이 가끔의 급증을 받아냅니다.
+공유 호스트에서 minimax도 실행되므로 두 서비스에 필요한 자원을 남겨 두세요.
+A1 내부의 앱 빌드는 운영 트래픽과 일시적으로 자원을 경쟁할 수 있습니다. 이 목표
+구성이 인프라 비용 0을 보장한다고 보지 말고 측정된 자원 사용량과 계정 청구 상태를
+확인하세요.

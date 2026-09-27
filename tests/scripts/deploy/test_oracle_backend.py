@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 
@@ -37,7 +38,9 @@ def launcher(tmp_path):
             "from pathlib import Path\n"
             "with open(os.environ['COMMAND_LOG'], 'a') as out:\n"
             "    out.write(json.dumps([Path(sys.argv[0]).name, *sys.argv[1:]]) + '\\n')\n"
-            "if 'mktemp -d' in sys.argv[-1]:\n"
+            "if '/build.XXXXXXXX' in sys.argv[-1]:\n"
+            "    print('/home/ubuntu/build/docreview-rag/build.TEST')\n"
+            "elif 'mktemp -d' in sys.argv[-1]:\n"
             "    print('/tmp/docreview-deploy.TEST')\n"
         )
         path.chmod(0o755)
@@ -70,3 +73,216 @@ def test_artifacts_are_required_only_for_first_install(launcher, mode):
         )
         assert not any("database.public.dump" in " ".join(cmd) for cmd in commands)
         assert any(cmd[0] == "rsync" for cmd in commands) == (mode == "update")
+
+
+def test_update_stages_caddy_and_keeps_the_build_context_isolated(launcher):
+    """Update sends the proxy config and syncs into a fresh context without deleting old work."""
+    script, env, log = launcher
+    result = subprocess.run(
+        ["bash", str(script), "update"], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    commands = [json.loads(line) for line in log.read_text().splitlines()]
+    assert any(
+        cmd[0] == "scp" and any(value.endswith("/deploy/Caddyfile") for value in cmd)
+        for cmd in commands
+    )
+    sync = next(cmd for cmd in commands if cmd[0] == "rsync")
+    assert "--delete" not in sync
+    assert "deploy/cloudflare/" in sync
+    assert sync[-1] == "ubuntu@192.0.2.1:/home/ubuntu/build/docreview-rag/build.TEST/"
+    build = next(cmd[-1] for cmd in commands if "docker build" in cmd[-1])
+    assert "cd /home/ubuntu/build/docreview-rag/build.TEST &&" in build
+    apply = next(cmd[-1] for cmd in commands if "sudo bash" in cmd[-1])
+    assert "; then sudo rm -rf" in apply
+    assert "else status=$?; echo 'Deployment failed; staging preserved" in apply
+    assert "Build context retained" in result.stdout
+
+
+def test_selected_ssh_config_keeps_strict_host_verification_for_every_transport(launcher, tmp_path):
+    """One selected client config and quoted key path reach SSH, SCP and rsync consistently."""
+    script, env, log = launcher
+    config = tmp_path / "ssh client config"
+    key = tmp_path / "private key"
+    env = {**env, "DEPLOY_ORACLE_SSH_CONFIG": str(config), "DEPLOY_ORACLE_SSH_KEY": str(key)}
+    result = subprocess.run(
+        ["bash", str(script), "update"], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    for command in (json.loads(line) for line in log.read_text().splitlines()):
+        args = shlex.split(command[command.index("-e") + 1]) if command[0] == "rsync" else command
+        assert args[args.index("-F") + 1] == str(config)
+        assert args[args.index("-i") + 1] == str(key)
+        assert "StrictHostKeyChecking=yes" in args
+
+
+@pytest.fixture
+def installed_backend(tmp_path):
+    """Execute the remote apply script against private files and a recorded container boundary."""
+    install_dir = tmp_path / "install"
+    data_dir = tmp_path / "data"
+    stage = tmp_path / "stage"
+    tools = tmp_path / "tools"
+    for directory in (install_dir / "deploy", data_dir, stage, tools):
+        directory.mkdir(parents=True)
+    (install_dir / "image.env").write_text("DOCREVIEW_IMAGE=docreview-rag:old\n")
+    (install_dir / ".env").write_text("FIXTURE=true\n")
+    (install_dir / "docker-compose.yml").write_text("services: {}\n")
+    (install_dir / "deploy/Caddyfile").write_text(':80 { respond "old" }\n')
+    (stage / "Caddyfile").write_text(':80 { respond "new" }\n')
+    persistent = {
+        ".restore-complete": b"completed",
+        "postgres/PG_VERSION": b"16",
+        "corpus/source.txt": b"preserved source",
+        "eval-runs/result.json": b"{}",
+        "runtime/public-ai-limits.sqlite3": b"preserved usage ledger",
+    }
+    for name, content in persistent.items():
+        path = data_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    script = tmp_path / "apply_backend.sh"
+    script.write_text(
+        (ROOT / "deploy/oracle/apply_backend.sh")
+        .read_text()
+        .replace("install_dir=/opt/docreview", f"install_dir={shlex.quote(str(install_dir))}")
+        .replace("data_dir=/var/lib/docreview", f"data_dir={shlex.quote(str(data_dir))}")
+    )
+    (tools / "id").write_text("#!/bin/sh\nprintf '0\\n'\n")
+    (tools / "id").chmod(0o755)
+    (tools / "docker").write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "validate = 'validate' in args\n"
+        "row = {'args': args, 'image': os.environ.get('DOCREVIEW_IMAGE')}\n"
+        "row['caddy'] = (Path(os.environ['INSTALL_DIR']) / 'deploy/Caddyfile').read_text()\n"
+        "if validate: row['stdin'] = sys.stdin.read()\n"
+        "with open(os.environ['COMMAND_LOG'], 'a') as out:\n"
+        "    out.write(json.dumps(row) + '\\n')\n"
+        "if validate and os.environ.get('FAIL_VALIDATION'): sys.exit(1)\n"
+        "if 'up' in args and os.environ.get('FAIL_APP'): sys.exit(1)\n"
+        "if 'reload' in args and os.environ.get('FAIL_RELOAD'): sys.exit(1)\n"
+        "if args[-3:] == ['images', '-q', 'app']: print('sha256:previous-app')\n"
+    )
+    (tools / "docker").chmod(0o755)
+    log = tmp_path / "apply-commands.jsonl"
+    env = {
+        **os.environ,
+        "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+        "COMMAND_LOG": str(log),
+        "INSTALL_DIR": str(install_dir),
+    }
+    return script, install_dir, data_dir, stage, env, log, persistent
+
+
+def apply(installed_backend, mode, **failures):
+    """Invoke one update or rollback with optional failures at the actual command boundaries."""
+    script, _, _, stage, env, _, _ = installed_backend
+    return subprocess.run(
+        ["bash", str(script), mode, str(stage), "docreview-rag:new"],
+        env={**env, **failures},
+        capture_output=True,
+        text=True,
+    )
+
+
+def assert_persistent_data_preserved(installed_backend):
+    """Verify every original persistent file and directory membership after an operation."""
+    _, _, data_dir, _, _, _, persistent = installed_backend
+    assert {
+        str(path.relative_to(data_dir)): path.read_bytes()
+        for path in data_dir.rglob("*")
+        if path.is_file()
+    } == persistent
+
+
+def test_update_and_rollback_restore_app_and_proxy_without_replacing_mounted_inode(
+    installed_backend,
+):
+    """A verified update and later rollback reload matching proxy bytes and preserve all data."""
+    _, install_dir, _, stage, _, log, _ = installed_backend
+    caddy = install_dir / "deploy/Caddyfile"
+    inode = caddy.stat().st_ino
+    original = caddy.read_text()
+    result = apply(installed_backend, "update")
+    assert result.returncode == 0, result.stderr
+    assert caddy.read_text() == (stage / "Caddyfile").read_text()
+    assert caddy.stat().st_ino == inode
+    assert (install_dir / "rollback-Caddyfile").read_text() == original
+    assert (install_dir / "image.env").read_text() == "DOCREVIEW_IMAGE=docreview-rag:new\n"
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    validation = next(i for i, row in enumerate(calls) if "validate" in row["args"])
+    app_swap = next(i for i, row in enumerate(calls) if "up" in row["args"])
+    reload = next(i for i, row in enumerate(calls) if "reload" in row["args"])
+    assert validation < app_swap < reload
+    assert calls[validation]["stdin"] == (stage / "Caddyfile").read_text()
+    assert calls[reload]["caddy"] == (stage / "Caddyfile").read_text()
+    assert calls[app_swap]["args"][-7:] == [
+        "up",
+        "-d",
+        "--no-deps",
+        "--wait",
+        "--wait-timeout",
+        "180",
+        "app",
+    ]
+    rollback_image = (install_dir / "rollback-image").read_text().strip()
+    result = apply(installed_backend, "rollback")
+    assert result.returncode == 0, result.stderr
+    assert caddy.read_text() == original
+    assert caddy.stat().st_ino == inode
+    assert (install_dir / "image.env").read_text() == f"DOCREVIEW_IMAGE={rollback_image}\n"
+    assert not (install_dir / ".update-in-progress").exists()
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert [row for row in calls if "reload" in row["args"]][-1]["caddy"] == original
+    assert_persistent_data_preserved(installed_backend)
+
+
+def test_invalid_staged_caddy_fails_before_app_or_backup_changes(installed_backend):
+    """A rejected config cannot swap the running app, installed config, or rollback evidence."""
+    _, install_dir, _, _, _, log, _ = installed_backend
+    original = (install_dir / "deploy/Caddyfile").read_text()
+    result = apply(installed_backend, "update", FAIL_VALIDATION="1")
+    assert result.returncode != 0
+    assert (install_dir / "deploy/Caddyfile").read_text() == original
+    assert (install_dir / "image.env").read_text() == "DOCREVIEW_IMAGE=docreview-rag:old\n"
+    assert not (install_dir / ".update-in-progress").exists()
+    assert not (install_dir / "rollback-image").exists()
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert any("validate" in row["args"] for row in calls)
+    assert not any("up" in row["args"] or "tag" in row["args"] for row in calls)
+    assert_persistent_data_preserved(installed_backend)
+
+
+@pytest.mark.parametrize("failure", ["FAIL_APP", "FAIL_RELOAD"])
+def test_failed_update_remains_recoverable_and_blocks_another_update(installed_backend, failure):
+    """App or reload failure preserves the complete prior pair until an explicit rollback."""
+    _, install_dir, _, _, _, _, _ = installed_backend
+    original = (install_dir / "deploy/Caddyfile").read_text()
+    assert apply(installed_backend, "update", **{failure: "1"}).returncode != 0
+    assert (install_dir / ".update-in-progress").is_file()
+    assert (install_dir / "rollback-Caddyfile").read_text() == original
+    assert (install_dir / "rollback-image").is_file()
+    assert apply(installed_backend, "update").returncode != 0
+    result = apply(installed_backend, "rollback")
+    assert result.returncode == 0, result.stderr
+    assert (install_dir / "deploy/Caddyfile").read_text() == original
+    assert not (install_dir / ".update-in-progress").exists()
+    assert_persistent_data_preserved(installed_backend)
+
+
+def test_failed_rollback_keeps_its_checkpoint_for_retry(installed_backend):
+    """A rollback from a completed update also remains marked until its reload succeeds."""
+    _, install_dir, _, _, _, _, _ = installed_backend
+    assert apply(installed_backend, "update").returncode == 0
+    rollback_image = (install_dir / "rollback-image").read_text()
+    rollback_caddy = (install_dir / "rollback-Caddyfile").read_text()
+    assert apply(installed_backend, "rollback", FAIL_RELOAD="1").returncode != 0
+    assert (install_dir / ".update-in-progress").is_file()
+    assert (install_dir / "rollback-image").read_text() == rollback_image
+    assert (install_dir / "rollback-Caddyfile").read_text() == rollback_caddy
+    assert apply(installed_backend, "rollback").returncode == 0
+    assert not (install_dir / ".update-in-progress").exists()
+    assert_persistent_data_preserved(installed_backend)

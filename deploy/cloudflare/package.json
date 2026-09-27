@@ -1,0 +1,15 @@
+{
+  "name": "docreview-router",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test worker.test.mjs deploy.test.mjs",
+    "deploy:dry-run": "node deploy.mjs --dry-run",
+    "deploy": "node deploy.mjs"
+  },
+  "devDependencies": {
+    "miniflare": "5.20260925.0-alpha",
+    "wrangler": "4.141.0"
+  }
+}

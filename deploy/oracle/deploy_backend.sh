@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the application image on the Oracle instance and stage an explicit
-# first installation, update only the existing application image, or roll back.
+# first installation, update the application and proxy configuration, or roll back.
 # Counterpart of deploy/gcp/deploy_backend.sh with plain ssh/rsync and no registry.
 set -euo pipefail
 
@@ -40,8 +40,14 @@ fi
 #    carry linux/aarch64 wheels (torch +cpu, tokenizers, lxml, asyncpg, numpy).
 # ---------------------------------------------------------------------------
 if [[ "${DO_BUILD}" == true ]]; then
-  note "Syncing source tree to ${ORACLE_SSH_TARGET}:${ORACLE_BUILD_DIR}"
-  oracle_ssh "install -d -m 0755 '${ORACLE_BUILD_DIR}'"
+  printf -v quoted_build_root '%q' "${ORACLE_BUILD_DIR}"
+  printf -v quoted_build_template '%q' "${ORACLE_BUILD_DIR}/build.XXXXXXXX"
+  remote_build="$(oracle_ssh "install -d -m 0755 ${quoted_build_root} && mktemp -d ${quoted_build_template}")"
+  [[ "${remote_build}" == "${ORACLE_BUILD_DIR}/build."* \
+    && "${remote_build##*/}" =~ ^build\.[a-zA-Z0-9]+$ ]] \
+    || { echo "Unexpected remote build directory." >&2; exit 1; }
+  printf -v quoted_remote_build '%q' "${remote_build}"
+  note "Syncing source tree to ${ORACLE_SSH_TARGET}:${remote_build}"
   # Mirror .dockerignore plus local-only state; the remote build context must not
   # receive secrets, private dumps, local corpora or an x86_64 virtualenv.
   oracle_rsync \
@@ -53,12 +59,14 @@ if [[ "${DO_BUILD}" == true ]]; then
     --exclude 'data/eval_runs/' --exclude 'data/corpus/' --exclude 'data/runtime/' \
     --exclude 'data/local-prod/' --exclude 'data/local-settings/' \
     --exclude 'deploy/firebase/public/' --exclude 'deploy/firebase/.firebase/' \
-    "${REPO_ROOT}/" "${ORACLE_SSH_TARGET}:${ORACLE_BUILD_DIR}/"
+    --exclude 'deploy/cloudflare/' \
+    "${REPO_ROOT}/" "${ORACLE_SSH_TARGET}:${remote_build}/"
   ok "source synced"
 
   note "Building ${DOCREVIEW_IMAGE} on the instance (first build: Next.js + uv sync, 10-20 min on 2 cores)"
-  oracle_ssh "cd '${ORACLE_BUILD_DIR}' && sudo docker build --file docker/Dockerfile --tag '${DOCREVIEW_IMAGE}' ."
+  oracle_ssh "cd ${quoted_remote_build} && sudo docker build --file docker/Dockerfile --tag '${DOCREVIEW_IMAGE}' ."
   ok "image ${DOCREVIEW_IMAGE} built"
+  ui_dim "Build context retained at ${remote_build}; remove it only after separately authorized cleanup."
 fi
 
 # ---------------------------------------------------------------------------
@@ -69,6 +77,9 @@ remote_stage="$(oracle_ssh 'umask 077; mktemp -d /tmp/docreview-deploy.XXXXXXXX'
 [[ "${remote_stage}" =~ ^/tmp/docreview-deploy\.[a-zA-Z0-9]+$ ]] \
   || { echo "Unexpected remote staging path." >&2; exit 1; }
 oracle_scp "${SCRIPT_DIR}/apply_backend.sh" "${ORACLE_SSH_TARGET}:${remote_stage}/"
+if [[ "${mode}" == update ]]; then
+  oracle_scp "${REPO_ROOT}/deploy/Caddyfile" "${ORACLE_SSH_TARGET}:${remote_stage}/"
+fi
 
 if [[ "${mode}" == first-install ]]; then
   local_stage="$(mktemp -d /tmp/docreview-deploy.XXXXXXXX)"
@@ -104,11 +115,11 @@ PY
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Apply as root; the staging directory is removed afterwards.
+# 3. Apply as root; retain failed staging for inspection and rollback.
 # ---------------------------------------------------------------------------
-oracle_ssh -t "sudo bash '${remote_stage}/apply_backend.sh' '${mode}' '${remote_stage}' '${DOCREVIEW_IMAGE}'; status=\$?; sudo rm -rf '${remote_stage}'; exit \${status}"
+oracle_ssh -t "if sudo bash '${remote_stage}/apply_backend.sh' '${mode}' '${remote_stage}' '${DOCREVIEW_IMAGE}'; then sudo rm -rf '${remote_stage}'; else status=\$?; echo 'Deployment failed; staging preserved at ${remote_stage}' >&2; exit \${status}; fi"
 ok "Backend ${mode} finished on ${ORACLE_HOST}"
 
 note "Health from the instance:"
 oracle_ssh "curl -fsS 'http://127.0.0.1:${ORIGIN_PORT}/health' && echo"
-ui_dim "Next: bash ${SCRIPT_DIR}/print_origin.sh (values for the gomoku .env), then gomoku/deploy/03_deploy_cloudflare.sh."
+ui_dim "Next: verify the dedicated DocReview Worker origin and Firebase frontend."

@@ -1,5 +1,5 @@
 # Public origin behind the Cloudflare Worker. Plain HTTP: TLS ends at Cloudflare and
-# the GCP firewall only admits Cloudflare IPv4 ranges on the published port.
+# the origin firewall only admits Cloudflare IPv4 ranges on the published port.
 :80 {
 	encode zstd gzip
 

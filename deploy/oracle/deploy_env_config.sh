@@ -45,16 +45,22 @@ export OPENAI_API_KEY_PROD="${OPENAI_API_KEY_PROD:?OPENAI_API_KEY_PROD is requir
 # ===== SSH =====
 export ORACLE_SSH_USER="${DEPLOY_ORACLE_SSH_USER:-ubuntu}"
 export ORACLE_SSH_KEY="${DEPLOY_ORACLE_SSH_KEY:-}"
+export ORACLE_SSH_CONFIG="${DEPLOY_ORACLE_SSH_CONFIG:-}"
 if [[ ! "${ORACLE_HOST}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
   echo "DEPLOY_ORACLE_HOST must be a plain IPv4 address, got: ${ORACLE_HOST}" >&2
   exit 1
 fi
-SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30)
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o StrictHostKeyChecking=yes)
 [[ -z "${ORACLE_SSH_KEY}" ]] || SSH_OPTS+=(-i "${ORACLE_SSH_KEY}")
+[[ -z "${ORACLE_SSH_CONFIG}" ]] || SSH_OPTS+=(-F "${ORACLE_SSH_CONFIG}")
 export ORACLE_SSH_TARGET="${ORACLE_SSH_USER}@${ORACLE_HOST}"
 oracle_ssh() { ssh "${SSH_OPTS[@]}" "${ORACLE_SSH_TARGET}" "$@"; }
 oracle_scp() { scp "${SSH_OPTS[@]}" "$@"; }
-oracle_rsync() { rsync -az --delete -e "ssh ${SSH_OPTS[*]}" "$@"; }
+oracle_rsync() {
+  local remote_shell
+  printf -v remote_shell '%q ' ssh "${SSH_OPTS[@]}"
+  rsync -az -e "${remote_shell}" "$@"
+}
 
 # ===== Origin: Caddy publishes this host port; minimax already uses 8080 =====
 # Must be a port Cloudflare Workers may fetch (80, 443, 2052, 2053, 2082, 2083,

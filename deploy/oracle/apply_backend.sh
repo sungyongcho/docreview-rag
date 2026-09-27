@@ -76,23 +76,39 @@ if [[ "${mode}" == first-install ]]; then
 else
   [[ -f "${data_dir}/.restore-complete" && -f "${data_dir}/postgres/PG_VERSION" \
     && -f "${install_dir}/image.env" ]] || fail "A completed first-install is required; no data was restored or reset."
+  [[ -f "${install_dir}/deploy/Caddyfile" && ! -L "${install_dir}/deploy/Caddyfile" ]] \
+    || fail "The installed Caddyfile must be a regular file."
   if [[ "${mode}" == rollback ]]; then
-    [[ -f "${install_dir}/rollback-image" ]] || fail "No rollback image is recorded."
+    [[ -f "${install_dir}/rollback-image" && -f "${install_dir}/rollback-Caddyfile" ]] \
+      || fail "No complete application and Caddy rollback is recorded."
     image="$(cat "${install_dir}/rollback-image")"
     docker image inspect "${image}" >/dev/null
+    caddy_source="${install_dir}/rollback-Caddyfile"
+    compose exec -T caddy caddy validate --config - --adapter caddyfile < "${caddy_source}"
+    if [[ ! -e "${install_dir}/.update-in-progress" ]]; then
+      (set -o noclobber; printf '%s\n' "${image}" > "${install_dir}/.update-in-progress")
+    fi
   else
     [[ ! -e "${install_dir}/.update-in-progress" ]] \
       || fail "An interrupted update exists; use rollback before attempting another update."
+    caddy_source="${stage}/Caddyfile"
+    [[ -f "${caddy_source}" && ! -L "${caddy_source}" ]] || fail "The staged Caddyfile is missing."
+    # Validate stdin inside the running Caddy image before changing either service.
+    compose exec -T caddy caddy validate --config - --adapter caddyfile < "${caddy_source}"
     previous_id="$(compose images -q app)"
     [[ -n "${previous_id}" ]] || fail "Cannot preserve a rollback image for the existing app."
     rollback_image="docreview-rollback:$(date -u +%Y%m%dT%H%M%S)-$$"
     docker image tag "${previous_id}" "${rollback_image}"
+    cp -p "${install_dir}/deploy/Caddyfile" "${install_dir}/rollback-Caddyfile"
     printf '%s\n' "${rollback_image}" > "${install_dir}/rollback-image"
     (set -o noclobber; printf '%s\n' "${image}" > "${install_dir}/.update-in-progress")
   fi
   export DOCREVIEW_IMAGE="${image}"
-  # Update only the app; database, sources, evaluations and SQLite usage remain intact.
+  # Database, sources, evaluations and SQLite usage remain intact.
   compose up -d --no-deps --wait --wait-timeout 180 app
+  # Preserve the inode already bind-mounted by the running Caddy container.
+  cat "${caddy_source}" > "${install_dir}/deploy/Caddyfile"
+  compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
   printf 'DOCREVIEW_IMAGE=%s\n' "${image}" > "${install_dir}/image.env"
   if [[ -f "${install_dir}/.update-in-progress" ]]; then
     mv "${install_dir}/.update-in-progress" "${install_dir}/.last-update"

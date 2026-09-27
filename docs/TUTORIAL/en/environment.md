@@ -191,32 +191,41 @@ state; it does not repair, ingest, index, or call an answer model.
 
 ## Production deployment {#production-deployment}
 
-Everything above runs on your machine. The public site is a separate, deliberately
-small target: one e2-medium VM behind a Cloudflare Worker, and a static export on
-Firebase Hosting. The scripts live in `deploy/gcp/` and `scripts/deploy/`; none of them
-runs as part of the tutorial.
+Everything above runs on your machine. The public origin is a separate Oracle
+Cloud A1 instance with 2 OCPU and 12 GB RAM, shared with gomoku's minimax service.
+DocReview uses Caddy on host port `8880`; minimax keeps `8080`. Firebase Hosting
+serves the static export. Deployment ownership is separated through the dedicated
+DocReview Worker in `deploy/cloudflare`; the steps below describe the cutover and
+subsequent deployment, not evidence that either has completed. Oracle scripts live
+in `deploy/oracle/`, and Firebase deployment in `scripts/deploy/firebase.sh`.
+The `deploy/gcp/` path remains a supported alternative. None runs as part of this
+local tutorial.
 
 ```text
 visitor ──HTTPS──> sungyongcho.com/docreview-rag/*
-                          │  Cloudflare Worker
+                          │  DocReview Worker (docreview-router)
             ┌─────────────┴──────────────┐
    /docreview-rag/*        /docreview-rag/api/*
             │                              │  plain HTTP
             ▼                              ▼
-   Firebase Hosting             GCP e2-medium (us-central1-a, ephemeral IP)
-   static Next export           firewall: tcp:8000 from Cloudflare IPv4 only
-                                  Caddy :80 → host 8000
+   Firebase Hosting             docreview-api.sungyongcho.com:8880
+   static Next export           Oracle A1, shared with minimax :8080
+   preserve /docreview-rag       firewall: tcp:8880 from Cloudflare IPv4 only
+                                  host 8880 → Caddy :80
                                     allow-list + X-DocReview-Public: true
                                       └─> FastAPI ──> pgvector Postgres
                                   no operator API; administer in local DEV
 ```
 
-TLS ends at Cloudflare. The VM speaks plain HTTP on port `8000`, and the GCP firewall
-admits only Cloudflare's published IPv4 ranges, so nothing else can reach it directly.
-Caddy proxies only the public paths and adds `X-DocReview-Public: true`; that header is
-what hides `/admin/*`, so Caddy must stay in front of every externally
-reachable port. Production exposes no operator API; administration runs in the
-local DEV environment.
+TLS ends at Cloudflare. The dedicated Worker owns only
+`sungyongcho.com/docreview-rag` and `sungyongcho.com/docreview-rag/*`. It preserves
+the static prefix on Firebase and strips `/docreview-rag/api` before forwarding
+API requests over HTTP to the Oracle origin. The existing origin DNS record must
+point to that instance; the deployment does not modify DNS. Shared Oracle host
+provisioning remains in gomoku, while DocReview owns its app, Caddy, static site,
+and Worker. Caddy proxies only public paths and adds `X-DocReview-Public: true`;
+it must stay in front of every externally reachable API port. Production exposes
+no operator API; administration runs in the local DEV environment.
 
 ### Request-limit boundary {#public-request-boundary}
 
@@ -235,56 +244,79 @@ provider call. Keep the existing SQLite ledger file and persistent volume when
 updating; replacing them would lose recorded usage.
 
 Deployment is a separate operation. Before deploying this policy, verify the peer
-address that the actual Caddy instance sees and the Cloudflare-only firewall path;
-hold deployment if those premises differ. An isolated Caddy test is local evidence,
+address that the actual Caddy instance sees and the Cloudflare-only firewall path.
+Inspect the security lists actually attached to the Oracle subnet, every attached
+network security group, and the host firewall against the intended Cloudflare
+address ranges; a detached security list proves nothing about access. Hold
+deployment if those premises differ. An isolated Caddy test is local evidence,
 not verification of the production route. No visitor-specific Cloudflare rate rule
-is assumed, and this policy requires no change to the separate `gomoku` Worker or
-Cloudflare account settings. Removing forwarded visitor-IP headers reduces their
-delivery to Python; it does not establish service-wide GDPR exemption or compliance.
+is assumed. The shared request-limit policy is independent of transferring the
+DocReview routes from gomoku to a dedicated Worker. Removing forwarded visitor-IP
+headers reduces their delivery to Python; it does not establish service-wide GDPR
+exemption or compliance.
 
 ### Order of operations {#production-order}
 
-1. Fill `.env` with the deployment values: `DEPLOY_GCP_PROJECT` (required),
-   `DEPLOY_POSTGRES_PASSWORD` and `DEPLOY_ARTIFACT_DIR` (first-install), and
-   optionally `DEPLOY_GCP_ZONE`, `DEPLOY_VM_NAME`, `DEPLOY_MACHINE_TYPE`,
-   `DEPLOY_AR_REPO`, `DOCREVIEW_IMAGE`. Every value lives in this one file;
-   `deploy/gcp/deploy_env_config.sh` loads it and prints a masked summary.
-2. `deploy/gcp/deploy_all.sh all` runs the stages in order. `setup` enables the
-   required APIs and creates the Artifact Registry repository and the deployment
-   service account; `vm` creates the e2-medium VM (2 shared vCPU, 4 GB RAM) with a
-   `pd-standard` 30 GB boot disk, an ephemeral external IP, and the firewall rules
-   (Cloudflare-only `tcp:8000`, IAP-only `tcp:22`). `deploy/gcp/startup.sh`
-   installs Docker and a 2 GB swap file on first boot. SSH is allowed through
-   IAP TCP forwarding only.
-3. The `image` stage builds `docker/Dockerfile` and pushes `DOCREVIEW_IMAGE`;
-   the `backend` stage (`deploy/gcp/deploy_backend.sh`) copies
-   `docker-compose.deploy.yml`, `deploy/Caddyfile` and the generated VM env
-   (as `/opt/docreview/.env`), restores the validated artifact bundle (corpus,
-   database, evaluation records) and starts the stack.
-4. `deploy/gcp/print_origin.sh` prints `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000` and
-   `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`.
-5. Apply these values in the site's Cloudflare Worker routing configuration so
-   that `/docreview-rag/api/*` requests are forwarded to
-   `DEPLOY_DOCREVIEW_ORIGIN` and the rest of `/docreview-rag/*` to
-   `DEPLOY_DOCREVIEW_SITE_ORIGIN`, then deploy the Worker through that site's
-   own routing deployment workflow.
-6. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh` builds the public
-   bundle with `NEXT_PUBLIC_ADMIN_MODE` unset and deploys it.
+1. Configure this repository's `.env` with `DEPLOY_ORACLE_HOST`,
+   `DEPLOY_ORACLE_SSH_USER`, and optional `DEPLOY_ORACLE_SSH_KEY` or
+   `DEPLOY_ORACLE_SSH_CONFIG`. Keep non-secret host and origin configuration here.
+   SSH, SCP, and rsync require a verified known-hosts entry and use strict host-key
+   checking; the optional SSH config applies to all three transports.
+   Use the existing production-key source for backend deployment and externally
+   provided `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` for Worker deployment;
+   do not copy tokens merely to move routing ownership.
+2. Check the firewall and observed-Caddy-peer prerequisites above.
+   `bash deploy/oracle/deploy_backend.sh update` builds in an isolated remote
+   `mktemp` context without `rsync --delete` against shared files, then updates
+   the app and Caddy together. A first installation instead requires the validated
+   public artifact bundle and `DEPLOY_POSTGRES_PASSWORD`; use `first-install`
+   only for empty persistent storage. Both use the shared Compose contract in
+   `deploy/gcp/docker-compose.deploy.yml`.
+   Build contexts remain under `DEPLOY_ORACLE_BUILD_DIR` for separately authorized
+   cleanup. The running Caddy container validates configuration before the app
+   update and reloads it afterward; failed staging and rollback records remain
+   available for recovery.
+3. `bash deploy/oracle/print_origin.sh` prints the dedicated Worker's origin
+   overrides. The intended API origin is
+   `http://docreview-api.sungyongcho.com:8880`; the static origin stays on Firebase.
+   Verify the existing DNS record if the instance address changes.
+4. From the repository root, install with `npm --prefix deploy/cloudflare ci`, then
+   run `npm --prefix deploy/cloudflare test` and
+   `npm --prefix deploy/cloudflare run deploy:dry-run -- --bootstrap`.
+   For the initial cutover only,
+   `npm --prefix deploy/cloudflare run deploy -- --bootstrap` creates the Worker
+   without routes or workers.dev/preview URLs. Then transfer the existing IDs of
+   only the two DocReview routes from the shared gomoku Worker to
+   `docreview-router`, preserving all other routes. Do not bootstrap again after
+   the transfer: it would remove the dedicated Worker's routes. Verify the
+   transfer, then use `npm --prefix deploy/cloudflare run deploy:dry-run` and
+   `npm --prefix deploy/cloudflare run deploy` for subsequent releases.
+5. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh` builds and
+   publishes the visitor bundle, explicitly selecting the public mode and API
+   prefix. Verify origin health, static routing, API routing, and SSE afterward.
 
-The external IP is ephemeral: stopping and starting the VM changes it, so repeat
-steps 4 and 5 afterwards. A reserved static IP avoids that at roughly $3/month.
+`bash deploy/oracle/deploy_backend.sh rollback` restores the previous app image
+and Caddy configuration as a pair. Update and rollback preserve PostgreSQL,
+corpus, evaluations, and the existing SQLite request/cost ledger. They do not
+rerun host provisioning or restore the database. A local pass or successful
+deployment command does not prove live cost protection.
+
+For a separately selected GCP target, retain `deploy/gcp/deploy_all.sh` for its
+setup/VM/image/backend stages and `deploy/gcp/print_origin.sh` for the origin.
+That path uses an e2-medium VM and Artifact Registry rather than an Oracle-local
+build; it does not change the dedicated Worker's route ownership or Firebase's
+static prefix.
 
 ### Monthly cost {#production-cost}
 
-| Component | Detail | Cost |
+| Component | Detail | Cost boundary |
 |---|---|---|
-| GCP e2-medium | On-demand in `us-central1`: 2 shared vCPU, 4 GB RAM, about $0.034/hour (about $25/month when always on), plus about $1/month for the 30 GB `pd-standard` disk | ≈ $26 |
-| External IP | Ephemeral; a reserved static IP would be about $3/month | $0 |
-| Firebase Hosting | Free tier (static export) | $0 |
-| Cloudflare Worker | Free tier | $0 |
-| OpenAI | Capped per UTC day by `DOCREVIEW_PUBLIC_DAILY_COST_USD` (`0.10` in the compose file) | ≤ $0.10/day |
+| Oracle A1 | Shared 2 OCPU / 12 GB instance; minimax and DocReview keep separate ports | Target the account's allocated Always Free resources; verify actual compute, storage, and network entitlement |
+| Firebase Hosting | Existing static-export site | Stay within the configured plan's allowance |
+| Cloudflare Worker | Dedicated DocReview router | Stay within the configured plan's allowance |
+| OpenAI | Capped per UTC day by `DOCREVIEW_PUBLIC_DAILY_COST_USD` (`0.30` in the deployment compose file) | ≤ $0.30/day |
 
-Trade-offs: visitors in Europe see roughly 100 ms of added latency because the VM sits
-in North America. The database (about 430 MB today) fits the 30 GB disk with room for
-Postgres, Docker images and swap. With 4 GB of RAM, Postgres runs with
-`shared_buffers=256MB` and `work_mem=4MB`; the 2 GB swap file absorbs the occasional spike.
+The shared host also runs minimax, so leave resources for both services. Building
+the application on the A1 instance can temporarily compete with live traffic.
+Check measured resource use and the account's billing state instead of treating
+this target configuration as a guarantee of zero infrastructure cost.

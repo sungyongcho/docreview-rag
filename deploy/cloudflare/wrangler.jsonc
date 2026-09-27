@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "docreview-router",
+  "main": "worker.js",
+  "compatibility_date": "2026-02-11",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "sungyongcho.com/docreview-rag", "zone_name": "sungyongcho.com" },
+    { "pattern": "sungyongcho.com/docreview-rag/*", "zone_name": "sungyongcho.com" }
+  ],
+  "vars": {
+    "DOCREVIEW_ORIGIN": "http://docreview-api.sungyongcho.com:8880",
+    "DOCREVIEW_SITE_ORIGIN": "https://docreview-rag.web.app"
+  },
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "head_sampling_rate": 0.01, "invocation_logs": false },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  }
+}
