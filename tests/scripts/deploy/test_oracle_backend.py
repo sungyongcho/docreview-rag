@@ -28,16 +28,25 @@ def launcher(tmp_path):
         "DEPLOY_POSTGRES_PASSWORD=fixture-password\n"
         "DEPLOY_ORACLE_IMAGE=docreview-rag:fixture\n"
     )
+    subprocess.run(["git", "init", "--quiet", str(checkout)], check=True)
+    subprocess.run(["git", "-C", str(checkout), "add", "--", "deploy"], check=True)
     tools = tmp_path / "tools"
     tools.mkdir()
     for command in ("ssh", "scp", "rsync"):
         path = tools / command
         path.write_text(
             "#!/usr/bin/env python3\n"
-            "import json, os, sys\n"
+            "import json, os, subprocess, sys\n"
             "from pathlib import Path\n"
             "with open(os.environ['COMMAND_LOG'], 'a') as out:\n"
             "    out.write(json.dumps([Path(sys.argv[0]).name, *sys.argv[1:]]) + '\\n')\n"
+            "if Path(sys.argv[0]).name == 'rsync':\n"
+            "    source_list = Path(sys.argv[sys.argv.index('--files-from') + 1])\n"
+            "    Path(os.environ['SOURCE_LIST_LOG']).write_bytes(source_list.read_bytes())\n"
+            "    if os.environ.get('FAIL_SYNC'): sys.exit(23)\n"
+            "    if os.environ.get('LOCAL_SYNC'):\n"
+            "        args = [os.environ['REAL_RSYNC'], *sys.argv[1:-1], os.environ['LOCAL_SYNC']]\n"
+            "        sys.exit(subprocess.run(args).returncode)\n"
             "if '/build.XXXXXXXX' in sys.argv[-1]:\n"
             "    print('/home/ubuntu/build/docreview-rag/build.TEST')\n"
             "elif 'mktemp -d' in sys.argv[-1]:\n"
@@ -45,10 +54,14 @@ def launcher(tmp_path):
         )
         path.chmod(0o755)
     log = tmp_path / "commands.jsonl"
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
     env = {
         **{key: value for key, value in os.environ.items() if key != "DEPLOY_ARTIFACT_DIR"},
         "PATH": str(tools) + os.pathsep + os.environ["PATH"],
         "COMMAND_LOG": str(log),
+        "SOURCE_LIST_LOG": str(tmp_path / "source-list"),
+        "TMPDIR": str(scratch),
         "DOTENV_PATH": str(dotenv),
         "DEPLOY_SUMMARY": "0",
     }
@@ -89,6 +102,8 @@ def test_update_stages_caddy_and_keeps_the_build_context_isolated(launcher):
     )
     sync = next(cmd for cmd in commands if cmd[0] == "rsync")
     assert "--delete" not in sync
+    assert "--from0" in sync
+    assert "--files-from" in sync
     assert "deploy/cloudflare/" in sync
     assert sync[-1] == "ubuntu@192.0.2.1:/home/ubuntu/build/docreview-rag/build.TEST/"
     build = next(cmd[-1] for cmd in commands if "docker build" in cmd[-1])
@@ -97,6 +112,81 @@ def test_update_stages_caddy_and_keeps_the_build_context_isolated(launcher):
     assert "; then sudo rm -rf" in apply
     assert "else status=$?; echo 'Deployment failed; staging preserved" in apply
     assert "Build context retained" in result.stdout
+
+
+def test_build_sync_uses_only_tracked_files_without_reading_private_untracked_data(launcher):
+    """A real local rsync preserves tracked public assets and excludes unreadable private files."""
+    script, env, log = launcher
+    checkout = script.parents[2]
+    golden = checkout / "data/golden"
+    golden.mkdir(parents=True)
+    public = golden / "public examples.json"
+    public.write_text('{"public": true}\n')
+    asset = checkout / "web/public/public\nasset.txt"
+    asset.parent.mkdir(parents=True)
+    asset.write_text("public asset\n")
+    ignored = [golden / ".datasets.lock", golden / "testing.json"]
+    (checkout / ".gitignore").write_text("data/golden/.datasets.lock\ndata/golden/testing.json\n")
+    for path in ignored:
+        path.write_text("private test fixture\n")
+        path.chmod(0)
+    (checkout / "untracked-notes.txt").write_text("local-only test fixture\n")
+    subprocess.run(
+        ["git", "-C", str(checkout), "add", "--", ".gitignore", str(public), str(asset)],
+        check=True,
+    )
+    destination = checkout.parent / "synced"
+    destination.mkdir()
+    rsync = shutil.which("rsync")
+    assert rsync is not None, "The real rsync executable is required for source-selection coverage."
+    result = subprocess.run(
+        ["bash", str(script), "update"],
+        env={**env, "LOCAL_SYNC": str(destination) + "/", "REAL_RSYNC": rsync},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (destination / public.relative_to(checkout)).read_text() == public.read_text()
+    assert (destination / asset.relative_to(checkout)).read_text() == asset.read_text()
+    assert not any((destination / path.relative_to(checkout)).exists() for path in ignored)
+    assert not (destination / "untracked-notes.txt").exists()
+    assert not (destination / ".env").exists()
+    listed = Path(env["SOURCE_LIST_LOG"]).read_bytes().split(b"\0")
+    assert b"data/golden/public examples.json" in listed
+    assert b"web/public/public\nasset.txt" in listed
+    assert all(str(path.relative_to(checkout)).encode() not in listed for path in ignored)
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    sync = next(command for command in calls if command[0] == "rsync")
+    assert not Path(sync[sync.index("--files-from") + 1]).exists()
+
+
+def test_git_listing_failure_stops_before_remote_actions_and_removes_the_private_list(launcher):
+    """An unavailable Git index cannot trigger remote staging or a partial source sync."""
+    script, env, log = launcher
+    git = Path(env["PATH"].split(os.pathsep)[0]) / "git"
+    git.write_text("#!/bin/sh\nexit 42\n")
+    git.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(script), "update"], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 42
+    assert not log.exists()
+    assert list(Path(env["TMPDIR"]).iterdir()) == []
+
+
+def test_sync_failure_preserves_its_exit_status_and_removes_the_private_list(launcher):
+    """A failed copy neither starts a build nor leaves the private Git file list behind."""
+    script, env, log = launcher
+    result = subprocess.run(
+        ["bash", str(script), "update"],
+        env={**env, "FAIL_SYNC": "1"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 23
+    commands = [json.loads(line) for line in log.read_text().splitlines()]
+    assert not any("docker build" in cmd[-1] or "apply_backend.sh" in cmd[-1] for cmd in commands)
+    assert list(Path(env["TMPDIR"]).iterdir()) == []
 
 
 def test_selected_ssh_config_keeps_strict_host_verification_for_every_transport(launcher, tmp_path):

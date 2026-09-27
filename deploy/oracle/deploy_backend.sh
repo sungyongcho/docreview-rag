@@ -16,7 +16,7 @@ source "${SCRIPT_DIR}/deploy_env_config.sh"
 note() { ui_log "$*"; }
 ok() { ui_ok "$*"; }
 
-for cmd in ssh scp rsync python3; do
+for cmd in ssh scp rsync python3 git; do
   command -v "${cmd}" >/dev/null 2>&1 || { echo "Missing required command: ${cmd}" >&2; exit 1; }
 done
 
@@ -40,6 +40,10 @@ fi
 #    carry linux/aarch64 wheels (torch +cpu, tokenizers, lxml, asyncpg, numpy).
 # ---------------------------------------------------------------------------
 if [[ "${DO_BUILD}" == true ]]; then
+  build_file_list="$(mktemp "${TMPDIR:-/tmp}/docreview-build-files.XXXXXXXX")"
+  trap 'build_cleanup_status=$?; rm -f "${build_file_list}"; exit "${build_cleanup_status}"' EXIT
+  git -C "${REPO_ROOT}" ls-files --cached -z > "${build_file_list}"
+  [[ -s "${build_file_list}" ]] || { echo "No tracked build files found." >&2; exit 1; }
   printf -v quoted_build_root '%q' "${ORACLE_BUILD_DIR}"
   printf -v quoted_build_template '%q' "${ORACLE_BUILD_DIR}/build.XXXXXXXX"
   remote_build="$(oracle_ssh "install -d -m 0755 ${quoted_build_root} && mktemp -d ${quoted_build_template}")"
@@ -48,9 +52,9 @@ if [[ "${DO_BUILD}" == true ]]; then
     || { echo "Unexpected remote build directory." >&2; exit 1; }
   printf -v quoted_remote_build '%q' "${remote_build}"
   note "Syncing source tree to ${ORACLE_SSH_TARGET}:${remote_build}"
-  # Mirror .dockerignore plus local-only state; the remote build context must not
-  # receive secrets, private dumps, local corpora or an x86_64 virtualenv.
-  oracle_rsync \
+  # Only indexed source files may enter the build context. Apply runtime exclusions
+  # as well; ignored or untracked private data is never traversed or read.
+  oracle_rsync --from0 --files-from "${build_file_list}" \
     --exclude '.git/' --exclude '.venv/' --exclude '.env' --exclude '.env.*' \
     --exclude '.dashboard/' --exclude '.dashboard-cache/' --exclude '.claude/' \
     --exclude 'tests/' --exclude 'tmp/' --exclude '.pytest_cache/' --exclude '.ruff_cache/' \
@@ -61,6 +65,8 @@ if [[ "${DO_BUILD}" == true ]]; then
     --exclude 'deploy/firebase/public/' --exclude 'deploy/firebase/.firebase/' \
     --exclude 'deploy/cloudflare/' \
     "${REPO_ROOT}/" "${ORACLE_SSH_TARGET}:${remote_build}/"
+  rm -f "${build_file_list}"
+  trap - EXIT
   ok "source synced"
 
   note "Building ${DOCREVIEW_IMAGE} on the instance (first build: Next.js + uv sync, 10-20 min on 2 cores)"
