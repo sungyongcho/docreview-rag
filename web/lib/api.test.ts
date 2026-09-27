@@ -99,7 +99,7 @@ describe("API client", () => {
 describe("review response body cancellation", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it.each([false, true])("cancels the response reader after headers or for an already aborted signal (preaborted=%s)", async (preaborted) => {
+  it.each([false, true])("cancels a sent stream and never dispatches a pre-cancelled request (preaborted=%s)", async (preaborted) => {
     const cancellation = vi.fn();
     const response = new Response(new ReadableStream({ cancel: cancellation }), { headers: { "content-type": "text/event-stream" } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
@@ -112,7 +112,8 @@ describe("review response body cancellation", () => {
       controller.abort();
     }
     await rejected;
-    expect(cancellation).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(preaborted ? 0 : 1);
+    expect(cancellation).toHaveBeenCalledTimes(preaborted ? 0 : 1);
     expect(response.body?.locked).toBe(false);
   });
 

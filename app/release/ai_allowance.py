@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_CEILING, Decimal
+import logging
 import math
 from pathlib import Path
 import secrets
@@ -14,6 +15,7 @@ import sqlite3
 import time
 
 MICRO = Decimal(1_000_000)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +31,7 @@ class RateLimitDecision:
 
 
 class AIAllowanceError(ValueError):
-    """Carry an actual-call denial through provider and runtime exception boundaries."""
+    """Carry a limit or ledger failure through provider and runtime exception boundaries."""
 
     def __init__(self, code: str, message: str, retry_after: int, reset: datetime | None = None):
         """Retain retry metadata without client identities or storage paths."""
@@ -38,12 +40,17 @@ class AIAllowanceError(ValueError):
         self.retry_after = max(1, retry_after)
         self.reset = reset
 
+    @property
+    def status_code(self) -> int:
+        """Distinguish unavailable enforcement from a successfully enforced limit."""
+        return 503 if self.code == "allowance_unavailable" else 429
+
 
 class SharedAIAllowance:
     """Atomically retain per-client request windows and the UTC-day cost cap across restarts.
 
-    Every actual provider call reserves its own conservative cost, so a request that makes
-    several calls is charged once per call; the request slot is consumed by the first one.
+    The middleware admits each execution request before reading its body. Actual provider
+    calls independently reserve conservative costs, including multiple calls per request.
     """
 
     def __init__(self, path: Path, daily_limit: Decimal, per_minute: int, per_day: int):
@@ -75,17 +82,23 @@ class SharedAIAllowance:
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         """Use a bounded SQLite lock wait; writers serialize before reading capacity."""
-        connection = sqlite3.connect(self.path, timeout=10)
         try:
-            with connection:
-                yield connection
-        finally:
-            connection.close()
+            connection = sqlite3.connect(self.path, timeout=10)
+            try:
+                with connection:
+                    yield connection
+            finally:
+                connection.close()
+        except sqlite3.Error as error:
+            logger.exception("Public allowance ledger unavailable")
+            raise AIAllowanceError(
+                "allowance_unavailable", "The service request allowance is unavailable.", 1
+            ) from error
 
     def _rate_decision(
         self, connection: sqlite3.Connection, client: str, now: float
     ) -> RateLimitDecision:
-        """Read or consume an IP window inside the caller's locked transaction."""
+        """Inspect a rolling IP window inside the caller's locked transaction."""
         connection.execute("DELETE FROM calls WHERE stamp <= ?", (now - 172800,))
         stamps = [
             row[0]
@@ -112,20 +125,36 @@ class SharedAIAllowance:
             day_reset,
         )
 
-    def _rate(self, client: str) -> RateLimitDecision:
+    def _rate(self, client: str, *, consume: bool) -> RateLimitDecision:
         """Read or consume rolling IP capacity in one durable transaction."""
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            return self._rate_decision(connection, client, time.time())
+            now = time.time()
+            decision = self._rate_decision(connection, client, now)
+            if consume and decision.allowed:
+                connection.execute("INSERT INTO calls VALUES (?, 'request', ?, 0)", (now, client))
+                remaining = self._rate_decision(connection, client, now)
+                # This request was admitted even if it consumed the final slot.
+                return RateLimitDecision(
+                    True,
+                    remaining.retry_after_seconds,
+                    remaining.remaining_minute,
+                    remaining.remaining_day,
+                    remaining.minute_reset_seconds,
+                    remaining.day_reset_seconds,
+                )
+            return decision
+
+    async def admit(self, client: str) -> RateLimitDecision:
+        """Atomically consume one request slot, leaving denied windows unchanged."""
+        return await asyncio.to_thread(self._rate, client, consume=True)
 
     async def peek(self, client: str) -> RateLimitDecision:
         """Inspect an IP window without consuming it."""
-        return await asyncio.to_thread(self._rate, client)
+        return await asyncio.to_thread(self._rate, client, consume=False)
 
-    def _reserve(
-        self, amount: Decimal, client: str | None = None
-    ) -> tuple[bool, Decimal, datetime, RateLimitDecision | None]:
-        """Reserve cost and optional first-request admission in the same transaction."""
+    def _cost(self, amount: Decimal = Decimal(0)) -> tuple[bool, Decimal, datetime]:
+        """Reserve conservative spend without refunds, including ambiguous failures."""
         if not amount.is_finite() or amount < 0:
             raise ValueError("Invalid API reservation")
         units = int((amount * MICRO).to_integral_value(rounding=ROUND_CEILING))
@@ -134,28 +163,12 @@ class SharedAIAllowance:
             connection.execute("BEGIN IMMEDIATE")
             now = datetime.fromtimestamp(time.time(), UTC)
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            decision = (
-                self._rate_decision(connection, client, now.timestamp())
-                if client is not None
-                else None
-            )
-            if decision is not None and not decision.allowed:
-                raise AIAllowanceError(
-                    "rate_limited",
-                    "The service request limit was reached.",
-                    decision.retry_after_seconds,
-                )
             spent = connection.execute(
                 "SELECT COALESCE(SUM(amount), 0) FROM calls WHERE kind='openai' AND stamp>=?",
                 (start.timestamp(),),
             ).fetchone()[0]
             allowed = spent + units <= ceiling
             if allowed:
-                if client is not None:
-                    connection.execute(
-                        "INSERT INTO calls VALUES (?, 'request', ?, 0)", (now.timestamp(), client)
-                    )
-                    decision = self._rate_decision(connection, client, now.timestamp())
                 if units:
                     connection.execute(
                         "INSERT INTO calls VALUES (?, 'openai', NULL, ?)",
@@ -166,13 +179,7 @@ class SharedAIAllowance:
                 allowed,
                 max(Decimal(0), Decimal(ceiling - spent) / MICRO),
                 start + timedelta(days=1),
-                decision,
             )
-
-    def _cost(self, amount: Decimal = Decimal(0)) -> tuple[bool, Decimal, datetime]:
-        """Reserve conservative spend without refunds, including ambiguous failures."""
-        allowed, remaining, reset, _ = self._reserve(amount)
-        return allowed, remaining, reset
 
     async def reserve_amount(self, amount: Decimal) -> tuple[bool, Decimal, datetime]:
         """Serialize a provider reservation across all local worker processes."""
@@ -184,34 +191,8 @@ class SharedAIAllowance:
         return remaining, reset
 
 
-class RequestAIAllowance:
-    """Share one IP admission across concurrent provider calls in one HTTP request."""
-
-    def __init__(self, allowance: SharedAIAllowance, client: str):
-        """Keep mutable request admission in the context copied to child tasks."""
-        self.allowance = allowance
-        self.client = client
-        self.decision: RateLimitDecision | None = None
-        self._lock = asyncio.Lock()
-
-    async def reserve_amount(self, amount: Decimal) -> tuple[bool, Decimal, datetime]:
-        """Admit the first actual call atomically, then reserve only later call costs."""
-        async with self._lock:
-            allowed, remaining, reset, decision = await asyncio.to_thread(
-                self.allowance._reserve,
-                amount,
-                self.client if self.decision is None else None,
-            )
-            if allowed and decision is not None:
-                self.decision = decision
-            return allowed, remaining, reset
-
-
 active_allowance: ContextVar[SharedAIAllowance | None] = ContextVar(
     "public_ai_allowance", default=None
-)
-active_request_allowance: ContextVar[RequestAIAllowance | None] = ContextVar(
-    "public_ai_request_allowance", default=None
 )
 
 
@@ -220,9 +201,7 @@ async def reserve_openai(amount: Decimal) -> None:
     allowance = active_allowance.get()
     if allowance is None:
         return
-    request = active_request_allowance.get()
-    target = request if request is not None and request.allowance is allowance else allowance
-    allowed, _, reset = await target.reserve_amount(amount)
+    allowed, _, reset = await allowance.reserve_amount(amount)
     if not allowed:
         raise AIAllowanceError(
             "daily_cost_limit",

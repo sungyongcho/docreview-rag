@@ -22,6 +22,8 @@ What drove NVIDIA's data center revenue growth in FY2024? Cite evidence from the
 
 Otherwise ask a similarly focused question about an available filing. Select **Send question** once. Read the execution summary below your question while it runs; **Stop request** stops an active request. If a request is unavailable or limited, read the displayed reason and inspect an existing result instead.
 
+The [public limits](overview.md#allowance) count execution requests, including search trials and reruns, rather than successful answers. Browser, shared server, and global AI cost limits are separate. A browser limit preserves your draft and shows when to retry; a request already sent still counts if stopped or unsuccessful.
+
 ## 3. Read the answer and its evidence {#qs-app-3}
 
 A `SUPPORTED` answer still needs source verification. Open its citations and **Retrieved evidence candidates**. Check the company, fiscal year, filing section, and quoted passage against each claim. A candidate is not automatically a citation used in the answer.

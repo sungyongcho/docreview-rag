@@ -1,5 +1,6 @@
 """Public middleware, headers, and secret-redaction tests."""
 
+import asyncio
 from collections.abc import Iterator
 from decimal import Decimal
 import io
@@ -8,9 +9,11 @@ import sys
 
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+import httpx
 import pytest
 from uvicorn.logging import AccessFormatter
 
+from app.api.errors import install_error_handlers
 from app.release.ai_allowance import SharedAIAllowance, reserve_openai
 from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware, client_host
 from app.release.secrets import REDACTION, SecretRedactor, install_secret_redaction
@@ -181,17 +184,155 @@ def test_spoofed_forwarded_entries_through_one_proxy_hop_share_one_rate_limit_ke
     tmp_path,
 ) -> None:
     """Key the client on the hop the trusted proxy appended, not on client-written entries."""
-    app = _guarded_app(tmp_path, trust_proxy_headers=True)
+    app = _guarded_app(tmp_path, trust_proxy_headers=True, daily_limit=Decimal("0.02"))
 
     with TestClient(app) as client:
         first = client.post("/review", headers={"x-forwarded-for": "203.0.113.1, 10.0.0.1"})
         second = client.post("/review", headers={"x-forwarded-for": "203.0.113.2, 10.0.0.1"})
         other_hop = client.post("/review", headers={"x-forwarded-for": "203.0.113.1, 10.0.0.2"})
+        other_cost = client.post("/review", headers={"x-forwarded-for": "10.0.0.3"})
 
     assert first.status_code == 200
     assert second.status_code == 429
     assert second.json()["error"]["code"] == "rate_limited"
     assert other_hop.status_code == 200
+    assert other_cost.status_code == 429
+    assert other_cost.json()["error"]["code"] == "daily_cost_limit"
+
+
+@pytest.mark.parametrize("path", ["/retrieve", "/review", "/review/stream"])
+@pytest.mark.parametrize("suffix", ["", "/"])
+def test_exhausted_requests_never_parse_the_body(tmp_path, monkeypatch, path, suffix):
+    """Deny every public POST spelling before body parsing, retrieval, or a provider call."""
+    app = _guarded_app(tmp_path)
+    with TestClient(app) as client:
+        assert client.post("/review", json={}).status_code == 200
+
+        async def unexpected_body(self):
+            """Fail if the guard attempts to decode an already denied request."""
+            raise AssertionError("a denied request must not parse its body")
+
+        monkeypatch.setattr(Request, "json", unexpected_body)
+        response = client.post(path + suffix, content=b"malformed body")
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "rate_limited"
+    assert int(response.headers["retry-after"]) > 0
+
+
+@pytest.mark.parametrize("size", [256 * 1024, 256 * 1024 + 1])
+def test_denial_body_transfer_is_bounded_without_extending_retry(tmp_path, monkeypatch, size):
+    """Reject oversized direct bodies and deduct transfer time from the original wait."""
+    with TestClient(_guarded_app(tmp_path)) as client:
+        assert client.post("/review", json={}).status_code == 200
+        moments = iter((100.0, 110.0))
+        monkeypatch.setattr("app.release.middleware.monotonic", lambda: next(moments))
+        response = client.post("/review", content=b"x" * size)
+    if size == 256 * 1024:
+        assert response.status_code == 429
+        assert response.headers["Retry-After"] == "50"
+    else:
+        assert response.status_code == 413
+        assert response.json()["error"]["code"] == "request_too_large"
+    assert response.headers["X-RateLimit-Remaining-Minute"] == "0"
+
+
+def test_rejected_and_provider_free_requests_consume_slots_but_reads_do_not(tmp_path):
+    """Validation, control rejection, and execution errors spend slots, while reads do not."""
+    app = _guarded_app(tmp_path, per_minute=5, per_day=5)
+
+    @app.post("/retrieve")
+    async def retrieve(payload: dict):
+        """Exercise route validation and a failing provider-free execution."""
+        if payload.get("fail"):
+            raise RuntimeError("failed search")
+        return {"ok": True}
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        assert client.post("/retrieve/", json={}).status_code == 200
+        for path in ("/retrieve", "/limits", "/static/app.js"):
+            assert client.get(path).status_code in {404, 405}
+        malformed = client.post(
+            "/retrieve", content=b"{", headers={"content-type": "application/json"}
+        )
+        assert malformed.status_code == 422
+        assert malformed.headers["X-RateLimit-Remaining-Day"] == "3"
+        denied = client.post(
+            "/review/",
+            json={"session_profile": {"engine": "local"}},
+            headers={"x-docreview-public": "true"},
+        )
+        assert denied.status_code == 403
+        assert denied.headers["X-RateLimit-Remaining-Day"] == "2"
+        assert client.post("/retrieve", json={"fail": True}).status_code == 500
+        final = client.post("/retrieve", json={})
+        assert final.status_code == 200
+        assert final.headers["X-RateLimit-Remaining-Day"] == "0"
+        assert client.post("/retrieve", json={}).status_code == 429
+
+
+def test_cancelled_execution_retains_its_request_slot(tmp_path):
+    """Cancelling an admitted HTTP request does not refund its durable admission."""
+
+    async def scenario():
+        """Cancel through the real ASGI transport once the endpoint has started."""
+        ledger = SharedAIAllowance(tmp_path / "cancel.sqlite3", Decimal("1"), 1, 1)
+        app = FastAPI()
+        app.add_middleware(ReleaseGuardMiddleware, allowance=ledger, trust_proxy_headers=False)
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        @app.post("/retrieve")
+        async def retrieve():
+            """Wait indefinitely until this request's transport is cancelled."""
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            pending = asyncio.create_task(client.post("/retrieve", json={}))
+            await asyncio.wait_for(started.wait(), timeout=5)
+            pending.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+            assert cancelled.is_set()
+            assert (await client.post("/retrieve", json={})).status_code == 429
+            assert (await ledger.status())[0] == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure_stage", ["admission", "provider"])
+def test_ledger_failure_blocks_work_with_503(tmp_path, monkeypatch, failure_stage):
+    """An actual SQLite open failure blocks body parsing or the pending provider call."""
+    ledger = SharedAIAllowance(tmp_path / "failed.sqlite3", Decimal("1"), 5, 5)
+    app = FastAPI()
+    install_error_handlers(app)
+    app.add_middleware(ReleaseGuardMiddleware, allowance=ledger, trust_proxy_headers=False)
+
+    @app.post("/review")
+    async def review():
+        """Fail the cost ledger after admission, before any provider would be dispatched."""
+        ledger.path = tmp_path
+        await reserve_openai(Decimal("0.1"))
+        raise AssertionError("provider must not run")
+
+    if failure_stage == "admission":
+        ledger.path = tmp_path  # Opening a directory as SQLite fails without altering any data.
+
+        async def unexpected_body(self):
+            """No request body may be parsed when admission cannot be enforced."""
+            raise AssertionError("body must not be parsed")
+
+        monkeypatch.setattr(Request, "json", unexpected_body)
+    with TestClient(app) as client:
+        response = client.post("/review", json={})
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "allowance_unavailable"
+    assert str(tmp_path) not in response.text
 
 
 def test_server_secret_is_redacted_before_log_formatting() -> None:

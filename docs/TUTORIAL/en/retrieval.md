@@ -29,6 +29,8 @@ OpenAI query embeddings can incur cost even when corpus embeddings are ready. **
 separate answer operation with provider usage and a recorded run. Do not invoke it just to inspect
 retrieval. Preview retrieval does not persist an evaluation result or alter a conversation profile.
 
+On the public build, every search request uses the same [browser and shared server request allowances](overview.md#allowance) as conversation sends and reruns, even for keyword-only retrieval with no provider call. If the browser limit blocks it, the query remains available to send after the displayed wait. AI cost is tracked separately when a provider is called.
+
 <!-- screenshot: search-trial-input-and-ranked-results -->
 
 ![A search trial in the playground with a typed query and the ranked result list below it.](../assets/search-trial-input-and-ranked-results.en.png)

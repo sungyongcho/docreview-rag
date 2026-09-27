@@ -1,5 +1,6 @@
 import type { components } from "./api-generated";
 import { requestFetch, type TimedRequestInit } from "./http-request";
+import { BrowserRateLimitError, recordBrowserRequest } from "./browser-request-limits";
 import type {
   AdminDocumentPage,
   Capabilities,
@@ -63,6 +64,7 @@ export function apiUrl(path: string): string {
 
 /** Decode the shared HTTP error envelope for JSON and streaming requests. */
 function responseError(response: Response, payload: Record<string, unknown>, defaultCode: string, defaultMessage: string): ApiError {
+  if (response.status === 413) return new ApiError(413, "request_too_large", "The execution request is too large. Shorten the question or conversation and try again.");
   const error = (payload.error ?? {}) as Record<string, unknown>;
   const retryAfter = Number(response.headers.get("Retry-After"));
   if (Number.isFinite(retryAfter) && retryAfter > 0) error.retry_after_seconds = retryAfter;
@@ -81,13 +83,25 @@ function responseError(response: Response, payload: Record<string, unknown>, def
   );
 }
 
+/** One dispatch boundary for public JSON and streaming execution requests. */
+async function apiFetch(path: string, init: TimedRequestInit): Promise<Response> {
+  if ((init.method ?? "GET").toUpperCase() === "POST" && ["/retrieve", "/review", "/review/stream"].includes(path.replace(/\/+$/, ""))) {
+    try { recordBrowserRequest(init.signal); }
+    catch (error) {
+      if (error instanceof BrowserRateLimitError) throw new ApiError(429, error.code, error.message, undefined, error.failure);
+      throw error;
+    }
+  }
+  return requestFetch(apiUrl(path), init);
+}
+
 /** Send one JSON request and preserve the API's typed failure details. */
 async function request<T>(path: string, init?: TimedRequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const read = method === "GET" || method === "HEAD";
   let response: Response;
   try {
-    response = await requestFetch(apiUrl(path), {
+    response = await apiFetch(path, {
       timeoutMs: read ? REQUEST_TIMEOUT_MS : undefined,
       ...init,
       headers: { "content-type": "application/json", ...init?.headers },
@@ -98,6 +112,7 @@ async function request<T>(path: string, init?: TimedRequestInit): Promise<T> {
     }
     throw error;
   }
+  if (response.status === 413) throw responseError(response, {}, "request_too_large", "");
   const text = await response.text();
   let payload: Record<string, unknown>;
   try {
@@ -160,7 +175,7 @@ export async function streamReview(
   onCandidates?: (payload: RetrievePayload) => void,
 ): Promise<ReviewRun> {
   const historyTurns = sessionProfile.prompt_policy?.history_turns ?? DEFAULT_SESSION_PROFILE.prompt_policy.history_turns;
-  const response = await requestFetch(apiUrl("/review/stream"), {
+  const response = await apiFetch("/review/stream", {
     method: "POST",
     headers: { "content-type": "application/json", "X-DocReview-Telemetry": "stages" },
     body: JSON.stringify({

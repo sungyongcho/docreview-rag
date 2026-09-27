@@ -38,6 +38,9 @@ function runtimeKorean(source: string): string | undefined {
     }).join(" · ");
   }
   const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
+    [/^(This browser has reached its execution request limit\.|The global AI cost limit is reached\.|The server request limit shared by multiple visitors is reached\.) Retry in (\d+) seconds\.$/, (message, seconds) => `${known(message)} ${seconds}초 후 다시 시도하세요.`],
+    [/^(The global AI cost limit is reached\.) Resets: (.+)\.$/, (message, reset) => `${known(message)} 초기화: ${reset}.`],
+    [/^The global AI cost limit is reached\. AI calls resume at (.+)\.$/, (reset) => `전체 AI 비용 한도에 도달했습니다. AI 호출 재개: ${reset}.`],
     [/^Open (.+) and inspect its current state\.$/, (stage) => `${translate("ko", stage)} 단계로 이동해 현재 상태를 확인하세요.`],
     [/^Next step · (.+)$/, (stage) => `다음 단계 · ${known(stage)}`],
     [/^Running · (.+)$/, (stage) => `실행 중 · ${known(stage)}`],

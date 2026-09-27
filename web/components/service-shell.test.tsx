@@ -819,7 +819,7 @@ describe("service shell", () => {
     expect(screen.getByRole("link", { name: "Development log" })).toHaveAttribute("href", "/docreview-rag/docs/en/development/");
   });
 
-  it("shows the evidence-only banner and fallback when the answer model is off", async () => {
+  it("shows the provider failure without automatically retrying public execution", async () => {
     saveConversations([newConversation(DEFAULT_SESSION_PROFILE)]);
     const fetchMock = stubPublicApi();
     const ordinaryFetch = fetchMock.getMockImplementation()!;
@@ -833,30 +833,19 @@ describe("service shell", () => {
       }
       let payload: unknown;
       if (url === "GET /ready") payload = { ...READY_RUNTIME, review_enabled: false, active_review_model: null };
-      else if (url === "POST /retrieve") payload = {
-        results: [],
-        candidates: [
-          { chunk_id: 1, doc_id: "NVDA-FY2024", item: "7", kind: "text", citation: "NVDA FY2024 Item 7", start_char: 0, end_char: 120, source_sha256: "a", body: "Data center revenue grew.", context_header: "Item 7", score: 0.9, section_title: "Management's Discussion and Analysis" },
-          { chunk_id: 2, doc_id: "NVDA-FY2024", item: "7", kind: "table", citation: "NVDA FY2024 Item 7 table", start_char: 120, end_char: 240, source_sha256: "a", body: "Revenue by segment.", context_header: "Item 7", score: 0.8, section_title: null },
-        ],
-        candidate_token: null,
-        candidate_expires_at: 0,
-        resolved_scope: null,
-      };
+
       return payload === undefined ? ordinaryFetch(input, init) : jsonResponse(payload);
     });
     render(<ServiceShell />);
 
-    await waitFor(() => expect(screen.getByText(/Answer model is off — evidence only\./)).toBeInTheDocument());
+    await screen.findByText("The answer model is unavailable. Failed execution requests are not retried automatically.");
     const textarea = screen.getByPlaceholderText("Ask a question about the filing corpus");
     fireEvent.change(textarea, { target: { value: "What drove NVIDIA data center revenue growth?" } });
     fireEvent.keyDown(textarea, { key: "Enter" });
 
-    await waitFor(() => expect(screen.getByText(/See Build › step 6\./)).toBeInTheDocument());
-    expect(screen.getByText("Answer not generated")).toBeInTheDocument();
-    expect(screen.getByText("Retrieved candidates — answer not generated · 2")).toBeInTheDocument();
-    expect(screen.getByText("table")).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([value]) => String(value).replace(/\/?(\?|$)/, "$1").endsWith("/retrieve"))).toBe(true);
+    await screen.findByText("Review engine 'openai' is not configured.");
+    expect(screen.queryByText("Retrieved candidates — answer not generated · 2")).toBeNull();
+    expect(fetchMock.mock.calls.filter(([input, init]) => requestRoute(input, init).startsWith("POST ")).map(([input, init]) => requestRoute(input, init))).toEqual(["POST /review/stream"]);
     expect(fetchMock.mock.calls.every(([value]) => !String(value).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(true);
   });
 

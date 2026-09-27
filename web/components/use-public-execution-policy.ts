@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { getReleaseLimits } from "@/lib/api";
+import { configureBrowserRequestLimits } from "@/lib/browser-request-limits";
 import type { Capabilities, ReviewSessionDraft } from "@/lib/types";
 
 /**
@@ -14,14 +15,15 @@ export function usePublicExecutionPolicy(developer: boolean, permissions: Capabi
   const [failed, setFailed] = useState(false);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
+    configureBrowserRequestLimits(developer ? undefined : null);
     if (developer || !permissions) return;
     let current = true;
     setPolicy(null); setFailed(false);
     void getReleaseLimits().then(limits => {
       if (!limits.prompt_policy?.workflow_budget) throw new Error("Public execution policy unavailable");
-      if (current) setPolicy(limits.prompt_policy);
+      if (current) { configureBrowserRequestLimits(limits); setPolicy(limits.prompt_policy); }
     }).catch(() => { if (current) setFailed(true); });
-    return () => { current = false; };
+    return () => { current = false; configureBrowserRequestLimits(undefined); };
   }, [developer, permissions?.environment, revision]);
   return { policy, failed, retry: () => setRevision(value => value + 1) };
 }

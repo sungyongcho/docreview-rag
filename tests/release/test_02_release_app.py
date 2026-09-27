@@ -189,10 +189,10 @@ def test_canned_mode_refuses_an_unconfigured_review_with_headers_set(monkeypatch
     ("mode", "environment"),
     [("canned", "dev"), ("runtime", "dev"), ("runtime", "prod")],
 )
-def test_release_modes_keep_provider_free_requests_free_and_persist_paid_limits(
+def test_release_modes_charge_all_requests_and_persist_limits(
     monkeypatch, tmp_path, mode, environment
 ) -> None:
-    """Canned requests cannot spend; runtime admission survives application recreation."""
+    """Even unavailable canned requests spend a slot; admission survives app recreation."""
     monkeypatch.chdir(tmp_path)
     settings = load_settings(
         ReleaseSettings,
@@ -214,7 +214,7 @@ def test_release_modes_keep_provider_free_requests_free_and_persist_paid_limits(
     if mode == "canned":
         with TestClient(app) as client:
             assert client.post("/review", json=request).status_code == 503
-            assert client.get("/limits").json()["remaining_minute"] == 1
+            assert client.get("/limits").json()["remaining_minute"] == 0
         return
 
     review = _MeteredReview(1, Decimal("0.001"))
@@ -265,14 +265,14 @@ def test_public_review_meters_every_provider_call_against_the_day_cap(
 def test_public_ai_routes_are_rate_limited_while_exempt_requests_pass(
     monkeypatch, tmp_path
 ) -> None:
-    """Rate limit public provider-bearing requests, leaving the operator and free work alone."""
+    """Public executions share a request window; private operator requests remain exempt."""
     monkeypatch.chdir(tmp_path)
     settings = ReleaseSettings(
         service_mode="runtime",
         admin_mode="live",
         host="127.0.0.1",
-        rate_limit_per_minute=1,
-        rate_limit_per_day=1,
+        rate_limit_per_minute=2,
+        rate_limit_per_day=2,
     )
     app = create_release_app(
         settings, services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
@@ -293,7 +293,7 @@ def test_public_ai_routes_are_rate_limited_while_exempt_requests_pass(
     assert [response.status_code for response in private] == [200, 200]
     assert all("x-ratelimit-remaining-minute" not in response.headers for response in private)
     assert free.status_code == 200
-    assert "x-ratelimit-remaining-minute" not in free.headers
+    assert free.headers["x-ratelimit-remaining-minute"] == "1"
     assert untouched["remaining_minute"] == 1
     assert admitted.status_code == 200
     assert admitted.headers["x-content-type-options"] == "nosniff"
@@ -304,7 +304,7 @@ def test_public_ai_routes_are_rate_limited_while_exempt_requests_pass(
     assert int(denied.headers["retry-after"]) > 0
     assert denied.headers["x-content-type-options"] == "nosniff"
     assert denied.headers["cache-control"] == "no-store"
-    assert free_after.status_code == 200
+    assert free_after.status_code == 429
     assert private_after.status_code == 200
 
 

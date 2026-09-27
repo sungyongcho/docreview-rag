@@ -23,7 +23,7 @@ An evidence-first bilingual RAG service for SEC 10-K and Korean DART filings. An
 - **Hybrid retrieval** — exact pgvector search fused with lexical ranking via RRF, with language-aware EN/KO routing
 - **Real corpus** — SEC EDGAR 10-K (NVIDIA, AMD, …) and DART annual reports (Samsung Electronics, SK hynix, NAVER) parsed into source-stable chunks
 - **Evaluation harness** — golden question sets, quick/matrix runs, cross-lingual parity gates, and snapshot comparison with no provider calls
-- **Public service guardrails** — per-IP rate limits and per-call cost ceilings, with each provider call charged against a shared UTC daily cap; prod mode exposes no admin API, and administration runs in local DEV
+- **Public service guardrails** — browser execution-request limits and server limits shared by Worker egress IP (10/minute, 50/rolling 24 hours), plus per-call cost ceilings and a global UTC daily AI cost cap; prod mode exposes no admin API, and administration runs in local DEV
 - 2,156 Python unit tests, 35 isolated PostgreSQL tests and 1,261 frontend tests
 
 ## Local Development

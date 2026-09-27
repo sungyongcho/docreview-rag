@@ -1,7 +1,7 @@
 """Exercise persistent public limits without provider or user-database calls."""
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import cast
@@ -11,8 +11,6 @@ from openai import AsyncOpenAI
 import pytest
 
 from app.release.ai_allowance import (
-    AIAllowanceError,
-    RequestAIAllowance,
     SharedAIAllowance,
     active_allowance,
 )
@@ -50,40 +48,42 @@ def test_rolling_windows_are_persistent_and_independent(tmp_path, monkeypatch):
         """Move the clock through both rolling windows."""
         path = tmp_path / "limits.sqlite3"
         limiter = SharedAIAllowance(path, Decimal("1"), 2, 3)
-        await RequestAIAllowance(limiter, "ip").reserve_amount(Decimal(0))
+        await limiter.admit("ip")
         now[0] += 10
-        await RequestAIAllowance(limiter, "ip").reserve_amount(Decimal(0))
+        await limiter.admit("ip")
         reopened = SharedAIAllowance(path, Decimal("1"), 2, 3)
-        with pytest.raises(AIAllowanceError) as refused:
-            await RequestAIAllowance(reopened, "ip").reserve_amount(Decimal(0))
-        assert refused.value.retry_after == 50
+        refused = await reopened.admit("ip")
+        assert not refused.allowed
+        assert refused.retry_after_seconds == 50
         assert (await reopened.peek("another-ip")).remaining_day == 3
-        now[0] += 51
-        assert (await RequestAIAllowance(reopened, "ip").reserve_amount(Decimal(0)))[0]
-        with pytest.raises(AIAllowanceError, match="request limit"):
-            await RequestAIAllowance(reopened, "ip").reserve_amount(Decimal(0))
-        now[0] += 86400
-        assert (await reopened.peek("ip")).remaining_day == 3
+        now[0] += 50  # Exactly 60 seconds releases the first request.
+        assert (await reopened.admit("ip")).allowed
+        refused = await reopened.admit("ip")
+        assert not refused.allowed
+        assert refused.retry_after_seconds == 86340
+        now[0] = 100000.0 + 86400  # Exactly 24 hours releases only the oldest request.
+        assert (await reopened.peek("ip")).remaining_day == 1
+        assert (await reopened.admit("ip")).allowed
 
     asyncio.run(scenario())
 
 
-def test_utc_reset_does_not_reset_ip_window(tmp_path):
+def test_utc_reset_does_not_reset_ip_window(tmp_path, monkeypatch):
     """Previous-day spend is excluded, while recent request timestamps remain."""
 
+    now = [datetime(2026, 9, 27, 23, 59, 59, tzinfo=UTC).timestamp()]
+    monkeypatch.setattr("app.release.ai_allowance.time.time", lambda: now[0])
+
     async def scenario():
-        """Seed a previous UTC reservation without touching real service state."""
+        """Cross midnight with both a spent cost cap and a live request window."""
         ledger = SharedAIAllowance(tmp_path / "limits.sqlite3", Decimal("1"), 5, 25)
-        yesterday = datetime.now(UTC).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ) - timedelta(seconds=1)
-        with ledger._connect() as connection:
-            connection.execute(
-                "INSERT INTO calls VALUES (?, 'openai', NULL, 1000000)", (yesterday.timestamp(),)
-            )
-        await RequestAIAllowance(ledger, "ip").reserve_amount(Decimal(0))
+        await ledger.admit("ip")
+        assert (await ledger.reserve_amount(Decimal("1")))[0]
+        assert not (await ledger.reserve_amount(Decimal("0.01")))[0]
+        now[0] += 1
         assert (await ledger.status())[0] == 1
         assert (await ledger.peek("ip")).remaining_day == 24
+        assert (await ledger.peek("ip")).remaining_minute == 4
 
     asyncio.run(scenario())
 
@@ -110,8 +110,35 @@ def test_embedding_is_blocked_before_openai(tmp_path):
     asyncio.run(scenario())
 
 
-def test_middleware_exempts_lexical_and_reports_server_reset(tmp_path):
-    """Only OpenAI-bearing paths consume persistent capacity; exhaustion has retry metadata."""
+@pytest.mark.parametrize("failure", [RuntimeError, asyncio.CancelledError])
+def test_failed_or_cancelled_provider_keeps_reserved_cost(tmp_path, failure):
+    """A dispatched call with an ambiguous outcome retains its conservative reservation."""
+
+    async def scenario():
+        """Inspect the actual embedding preflight before simulating failure or cancellation."""
+        path = tmp_path / "failure.sqlite3"
+        ledger = SharedAIAllowance(path, Decimal("1"), 10, 50)
+        create = AsyncMock(side_effect=failure)
+        provider = OpenAIEmbeddingProvider(
+            client=cast(AsyncOpenAI, SimpleNamespace(embeddings=SimpleNamespace(create=create)))
+        )
+        token = active_allowance.set(ledger)
+        try:
+            with pytest.raises(failure):
+                await provider.embed_query("A request with an uncertain provider outcome.")
+        finally:
+            active_allowance.reset(token)
+        create.assert_awaited_once()
+        remaining, _ = await ledger.status()
+        assert Decimal(0) < remaining < Decimal("1")
+        reopened = SharedAIAllowance(path, Decimal("1"), 10, 50)
+        assert (await reopened.status())[0] == remaining
+
+    asyncio.run(scenario())
+
+
+def test_middleware_charges_lexical_requests_but_reserves_only_actual_ai_cost(tmp_path):
+    """Every execution consumes a request slot, while only actual AI calls reserve dollars."""
     from fastapi import FastAPI, Request
     from fastapi.testclient import TestClient
 
@@ -162,30 +189,28 @@ def test_middleware_exempts_lexical_and_reports_server_reset(tmp_path):
         assert denied.json()["error"]["reset_at"]
         assert int(denied.headers["Retry-After"]) > 0
         assert client.post("/retrieve", json=lexical).status_code == 200
+        assert denied.headers["X-RateLimit-Remaining-Day"] == "22"
 
 
-def test_concurrent_calls_share_one_request_admission_and_denials_do_not_spend(tmp_path):
-    """One request shares its admission; another denied IP request cannot reserve dollars."""
-    from app.release.ai_allowance import AIAllowanceError, RequestAIAllowance
+def test_concurrent_request_admissions_are_atomic_and_persistent(tmp_path):
+    """Independent workers admit at most the shared limit, including across restarts."""
 
     async def scenario():
-        """Race calls within one request and inspect atomic refusal of a second request."""
-        ledger = SharedAIAllowance(tmp_path / "atomic.sqlite3", Decimal("1"), 1, 1)
-        first = RequestAIAllowance(ledger, "ip")
-        assert all(
-            row[0]
-            for row in await asyncio.gather(
-                *[first.reserve_amount(Decimal("0.1")) for _ in range(5)]
-            )
+        """Race request admission independently of all provider cost reservations."""
+        path = tmp_path / "requests.sqlite3"
+        first = SharedAIAllowance(path, Decimal("1"), 10, 50)
+        second = SharedAIAllowance(path, Decimal("1"), 10, 50)
+        decisions = await asyncio.gather(
+            *[(first if i % 2 else second).admit("worker-ip") for i in range(30)]
         )
-        assert (await ledger.peek("ip")).remaining_day == 0
-        assert (await ledger.status())[0] == Decimal("0.5")
-        with pytest.raises(AIAllowanceError, match="request limit"):
-            await RequestAIAllowance(ledger, "ip").reserve_amount(Decimal("0.1"))
-        assert (await ledger.status())[0] == Decimal("0.5")
-        empty = SharedAIAllowance(tmp_path / "empty.sqlite3", Decimal("0.01"), 1, 1)
-        assert not (await RequestAIAllowance(empty, "ip").reserve_amount(Decimal("0.1")))[0]
-        assert (await empty.peek("ip")).remaining_day == 1
+        assert sum(decision.allowed for decision in decisions) == 10
+        reopened = SharedAIAllowance(path, Decimal("1"), 10, 50)
+        assert reopened.salt == first.salt
+        assert (await reopened.peek("worker-ip")).remaining_day == 40
+        assert not (await reopened.admit("worker-ip")).allowed
+        assert (await reopened.peek("worker-ip")).remaining_day == 40
+        assert (await reopened.status())[0] == 1
+        assert (await reopened.admit("different-worker-ip")).allowed
 
     asyncio.run(scenario())
 
@@ -207,12 +232,13 @@ def _fake_openai():
     )
     create = AsyncMock(return_value=response)
     provider = OpenAILLMProvider(
-        model_name="gpt-5.6-luna", client=SimpleNamespace(responses=SimpleNamespace(create=create))
+        model_name="gpt-5.6-luna",
+        client=cast(AsyncOpenAI, SimpleNamespace(responses=SimpleNamespace(create=create))),
     )
     return provider, create
 
 
-def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
+def test_lexical_classifier_and_pure_lexical_share_request_limit(tmp_path):
     """Run actual intent classification behind the lexical request guard without a database."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -224,7 +250,7 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
     from app.release.middleware import ReleaseGuardMiddleware
     from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 
-    ledger = SharedAIAllowance(tmp_path / "lexical.sqlite3", Decimal("1"), 1, 1)
+    ledger = SharedAIAllowance(tmp_path / "lexical.sqlite3", Decimal("1"), 2, 2)
     provider, create = _fake_openai()
     runtime = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
@@ -270,7 +296,7 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
         assert denied.json()["error"]["code"] == "rate_limited"
         assert int(denied.headers["Retry-After"]) > 0
         assert create.await_count == 1
-        assert client.post("/retrieve", json={**payload, "query": "hello"}).status_code == 200
+        assert client.post("/retrieve", json={**payload, "query": "hello"}).status_code == 429
 
 
 def test_full_openai_input_and_output_cost_is_refused_before_dispatch(tmp_path):
@@ -355,8 +381,9 @@ def test_openai_preflight_includes_schema_and_allows_default_small_call(tmp_path
 
 
 @pytest.mark.parametrize("first_call", [True, False])
-def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
-    """Deny the first or a later streamed call through structured error/done events."""
+@pytest.mark.parametrize("failure", ["limit", "storage"])
+def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call, failure):
+    """After SSE starts, limits or a failed ledger stop calls through error/done events."""
     from fastapi.testclient import TestClient
 
     from app.api.app import create_api_app
@@ -365,15 +392,18 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
     from app.release.middleware import ReleaseGuardMiddleware
 
     ledger = SharedAIAllowance(tmp_path / "stream.sqlite3", Decimal("0.1"), 5, 25)
-    if first_call:
+    if first_call and failure == "limit":
         asyncio.run(ledger.reserve_amount(Decimal("0.1")))
 
     class Services:
         """Stand in for provider-bearing stream work without reads or writes to user state."""
 
         async def review(self, request, on_node):
-            """The second reservation fails after a first call used the remaining allowance."""
-            await reserve_openai(Decimal("0.1"))
+            """Make the ledger deny a cost reservation before its provider dispatch."""
+            if not first_call:
+                await reserve_openai(Decimal("0.1"))
+            if failure == "storage":
+                ledger.path = tmp_path
             await reserve_openai(Decimal("0.1"))
             raise AssertionError("an exhausted call must not dispatch")
 
@@ -391,18 +421,19 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
         )
     assert response.status_code == 200
     assert "event: error" in response.text
-    assert "daily_cost_limit" in response.text
+    assert ("daily_cost_limit" if failure == "limit" else "allowance_unavailable") in response.text
     assert "Retry after" in response.text
-    assert "Resets at" in response.text
+    if failure == "limit":
+        assert "Resets at" in response.text
     assert "event: done" in response.text
     assert "internal_error" not in response.text
+    assert response.headers["X-RateLimit-Remaining-Day"] == "24"
 
 
-def test_five_visitors_fit_two_three_call_questions_with_luna(tmp_path):
-    """Five visitors can each make two bounded questions within the $0.10 reservation cap."""
+def test_five_egress_ips_fit_two_three_call_requests_with_luna(tmp_path):
+    """Five egress IPs can each make two bounded requests within the shared $0.10 cap."""
     from app.llm.schemas import Prompt
     from app.query.intent import RoutingClassification
-    from app.release.ai_allowance import RequestAIAllowance, active_request_allowance
     from app.release.config import ReleaseSettings
 
     async def scenario():
@@ -420,21 +451,16 @@ def test_five_visitors_fit_two_three_call_questions_with_luna(tmp_path):
         try:
             for visitor in range(5):
                 for _ in range(2):
-                    request_token = active_request_allowance.set(
-                        RequestAIAllowance(allowance, f"visitor-{visitor}")
-                    )
-                    try:
-                        for _ in range(3):
-                            result = await provider.complete(
-                                Prompt(system="Classify.", user="Evidence " * 8000),
-                                RoutingClassification,
-                                budget,
-                            )
-                            assert result.status == "ok"
-                    finally:
-                        active_request_allowance.reset(request_token)
-                assert (await allowance.peek(f"visitor-{visitor}")).remaining_day == 48
-                assert (await allowance.peek(f"visitor-{visitor}")).remaining_minute == 8
+                    assert (await allowance.admit(f"egress-{visitor}")).allowed
+                    for _ in range(3):
+                        result = await provider.complete(
+                            Prompt(system="Classify.", user="Evidence " * 8000),
+                            RoutingClassification,
+                            budget,
+                        )
+                        assert result.status == "ok"
+                assert (await allowance.peek(f"egress-{visitor}")).remaining_day == 48
+                assert (await allowance.peek(f"egress-{visitor}")).remaining_minute == 8
         finally:
             active_allowance.reset(token)
         assert create.await_count == 30

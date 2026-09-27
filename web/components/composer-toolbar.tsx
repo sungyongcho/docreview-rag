@@ -144,12 +144,12 @@ export function composerBanner({ readiness, live, profile, resetAt, jobs = [], b
   if (readiness?.mode === "runtime" && readiness.review_enabled === false) {
     return {
       kind: "answer-model",
-      text: "Answer model is off — evidence only. Questions return retrieved filing evidence without a generated answer.",
-      action: "answer-model",
+      text: live ? "Answer model is off — evidence only. Questions return retrieved filing evidence without a generated answer." : "The answer model is unavailable. Failed execution requests are not retried automatically.",
+      action: live ? "answer-model" : undefined,
     };
   }
   if (resetAt) {
-    return { kind: "budget", text: `Daily answer budget is used up. Evidence still loads; answers resume at ${new Date(resetAt).toLocaleString()}.` };
+    return { kind: "budget", text: `The global AI cost limit is reached. AI calls resume at ${new Date(resetAt).toLocaleString()}.` };
   }
   return null;
 }
@@ -183,7 +183,7 @@ export function ComposerToolbar({ publicScopeStatus, profile, query = "", onChan
   const corpusLabel = readinessChipLabel(readiness, live);
   const corpusCount = live && corpusLabel.startsWith("Corpus total · ") ? readiness?.corpus.documents : undefined;
   const readinessStatus = !live && publicScopeStatus ? publicScopeStatus : readinessStatusLabel(readiness);
-  // A public surface has one answer model; show it with the chat allowances where DEV shows the engine picker.
+  // A public surface has one answer model; keep server balances distinct from browser counts.
   const publicModel = !live && !engineControls ? readiness?.active_review_model ?? null : null;
   const showRemainingUsage = Boolean(publicModel && readiness?.environment === "prod" && readiness.mode === "runtime");
   const [limits, setLimits] = useState<ReleaseLimits | null>(null);
@@ -215,12 +215,12 @@ export function ComposerToolbar({ publicScopeStatus, profile, query = "", onChan
   const modelControls = publicModel && <div className="composer-model-control composer-engine-field">
     <span className="composer-control-label">{t("Answer model")}<ControlHelp label={t("About chat limits")}>
       <p>{t("Questions on this website call OpenAI on the server. Model choice and per-call caps are fixed here; DEV mode adds local models.")}</p>
-      {showRemainingUsage && limits && <p>{t("{minute} questions per minute · {day} per day · shared daily budget ${cost}", { minute: limits.per_minute, day: limits.per_day, cost: limits.daily_cost_usd })}</p>}
+      {showRemainingUsage && limits && <p>{t("{minute} execution requests per minute · {day} per rolling 24 hours · global AI daily cost limit ${cost}", { minute: limits.per_minute, day: limits.per_day, cost: limits.daily_cost_usd })}</p>}
       {showRemainingUsage && limits && <p>{t("Per call: up to {input} input tokens, {output} output tokens, ${cost}", { input: limits.max_input_tokens.toLocaleString(locale), output: limits.max_output_tokens.toLocaleString(locale), cost: limits.max_cost_usd })}</p>}
-      {showRemainingUsage && <p>{t("Remaining request counts are shared by your IP address. Shared cost limits may also restrict availability. Counts refresh after a request and while this view is open.")}</p>}
+      {showRemainingUsage && <p>{t("Server execution request limits are shared by visitors using the same Worker exit IP. Browser limits and the global AI cost limit apply separately. Counts refresh after a request and while this view is open.")}</p>}
     </ControlHelp></span>
     <span className="chip composer-model-chip" title={publicModel}>{publicModel}</span>
-    {showRemainingUsage ? <span className={`composer-control-description composer-allowance${limits && (limits.remaining_minute === 0 || limits.remaining_day === 0) ? " exhausted" : ""}`} role="status" aria-live="polite">{limits ? <><span>{t("Remaining")}</span><span>{t("Minute {remaining}/{limit}", { remaining: limits.remaining_minute, limit: limits.per_minute })}</span><span>{t("Day {remaining}/{limit}", { remaining: limits.remaining_day, limit: limits.per_day })}</span></> : t(requestPending ? "Usage updates after this request" : limitsFailed ? "Remaining usage unavailable" : "Checking remaining usage…")}</span> : <span className="composer-control-description">{t("OpenAI · fixed model")}</span>}
+    {showRemainingUsage ? <span className={`composer-control-description composer-allowance${limits && (limits.remaining_minute === 0 || limits.remaining_day === 0) ? " exhausted" : ""}`} role="status" aria-live="polite">{limits ? <><span>{t("Server requests shared by multiple visitors")}</span><span>{t("Minute {remaining}/{limit}", { remaining: limits.remaining_minute, limit: limits.per_minute })}</span><span>{t("Rolling 24 hours {remaining}/{limit}", { remaining: limits.remaining_day, limit: limits.per_day })}</span></> : t(requestPending ? "Usage updates after this request" : limitsFailed ? "Remaining usage unavailable" : "Checking remaining usage…")}</span> : <span className="composer-control-description">{t("OpenAI · fixed model")}</span>}
   </div>;
 
 

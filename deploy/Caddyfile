@@ -12,6 +12,14 @@
 	@trailing_slash path_regexp trailing_slash ^(/.+)/$
 	rewrite @trailing_slash {re.trailing_slash.1}
 
+	@execution {
+		method POST
+		path /retrieve /retrieve/ /review /review/ /review/stream /review/stream/
+	}
+	request_body @execution {
+		max_size 256KiB
+	}
+
 	@blocked path /admin*
 	handle @blocked {
 		respond 404
@@ -20,6 +28,16 @@
 	@public path /health /ready /release /limits /capabilities /openapi.json /docs /docs/* /retrieve /review /review/stream /documents /eval /runs /runs/* /snapshots /snapshots/* /public/documents /public/documents/* /public/portfolio/preparation /public/portfolio/preparation/* /public/snapshots /public/snapshots/*
 	handle @public {
 		reverse_proxy app:8000 {
+			# Rate limits share the direct peer's Worker exit IP. Do not restore
+			# visitor IPs or trust client-supplied identity headers here.
+			header_up X-Forwarded-For {remote_host}
+			header_up -CF-Connecting-IP
+			header_up -CF-Connecting-IPv6
+			header_up -CF-Pseudo-IPv4
+			header_up -True-Client-IP
+			header_up -X-Real-IP
+			header_up -Forwarded
+
 			# The app treats requests carrying this header as public; it is what hides
 			# DEV controls; the production app also blocks administrator APIs itself.
 			header_up X-DocReview-Public true

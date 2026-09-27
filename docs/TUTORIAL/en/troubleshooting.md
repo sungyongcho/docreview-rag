@@ -41,6 +41,20 @@ compatible database for this checkout, then verify the original operation.
 
 [Environment setup](environment.md) and the [CLI reference](cli.md) describe safe startup and schema checks.
 
+## A public request is limited or too large {#public-limits}
+
+Read the reported limit before retrying. These limits count execution requests and provider cost separately; changing the question does not restore either allowance.
+
+| Error | Meaning | Next action |
+|---|---|---|
+| `browser_rate_limited` | This browser reached its minute or rolling 24-hour request limit; no request was sent. | Keep the preserved input and send again after the displayed retry time. |
+| `rate_limited` (`429`) | Visitors using the same Worker egress IP exhausted the shared server request limit. | Wait for the server's retry time (`Retry-After`). Browser capacity alone does not guarantee server capacity. |
+| `daily_cost_limit` | All visitors share an exhausted daily AI cost budget, across Worker egress IPs. | Wait for the displayed reset at UTC midnight. Repeated sends cannot replenish the budget. |
+| `413` | The proxy rejected a body larger than 256 KiB, including on a trailing-slash route. | Reduce the request content or conversation history before sending again; the warning does not depend on a JSON error body. |
+| `allowance_unavailable` | The ledger could not safely account for usage. Before the response starts, this returns `503`; after SSE starts, HTTP remains `200` but the stream reports the error followed by `done` and blocks the next provider call. | Retry only after service recovery; operators should inspect the ledger error without deleting its history. An HTTP `200` alone does not establish a successful streamed execution. |
+
+No automatic retry or refund follows an error or cancellation after transmission. A server-admitted request counts even if validation or the later AI cost check fails. Requests already rejected by the server request limit do not extend its wait. If the public execution policy itself cannot load, use its existing retry control. See [the three separate allowances](overview.md#allowance).
+
 ## Filters or retrieved evidence do not match the question {#retrieval}
 
 Check the conversation scope and Filters, then **Build → Documents**, then **Measure → 1. Search trial**.

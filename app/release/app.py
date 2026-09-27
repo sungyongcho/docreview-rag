@@ -82,8 +82,8 @@ def create_release_app(
         portfolio_reader=portfolio_reader,
         snapshot_details=snapshot_details,
     )
-    # One ledger meters every mode: per-client request windows plus the UTC-day cost cap,
-    # charged by each actual provider call rather than by a flat per-request reservation.
+    # One ledger retains request admission separately from the UTC-day cost cap,
+    # reserved by each actual provider call before dispatch.
     allowance = SharedAIAllowance(
         active_settings.public_allowance_path,
         active_settings.public_daily_cost_usd,

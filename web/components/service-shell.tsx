@@ -61,6 +61,8 @@ import { useConversationDraft } from "./use-conversation-draft";
 import { useHelpShortcut } from "./use-help-shortcut";
 import { useHelpTargetReveal } from "./use-help-target-reveal";
 import { usePublicExecutionPolicy } from "./use-public-execution-policy";
+import { useBrowserRequestLimits } from "./use-browser-request-limits";
+import { BrowserRequestStatus } from "./browser-request-status";
 import { useReviewRequests } from "./use-review-requests";
 
 /** Render the shared interface with the running server's DEV or PROD permissions. */
@@ -217,6 +219,7 @@ function ServiceSession() {
   }, [active?.messages, active?.id, view]);
 
   const { policy: publicPolicy, failed: publicPolicyFailed, retry: retryPublicPolicy } = usePublicExecutionPolicy(adminLive, permissions);
+  const browserAllowance = useBrowserRequestLimits(!adminLive);
 
   const storedSessionProfile = active?.profile ?? DEFAULT_SESSION_PROFILE;
   const publicCorpus = usePublishedCorpus(!adminLive);
@@ -261,7 +264,7 @@ function ServiceSession() {
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
   const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
   const settingsValidationError = conversationSettingsError(activeSessionProfile, builtins);
-  const sendBlocked = (!adminLive && !publicPolicy) || publicScopeBlocked || settingsValidationError !== null || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
+  const sendBlocked = (!adminLive && (!publicPolicy || (browserAllowance?.retry_after_seconds ?? 0) > 0)) || publicScopeBlocked || settingsValidationError !== null || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
   const { busy, activeReview, submit, reviewSelectedEvidence, markEvidence } = useReviewRequests({
     active, activeId, sessionProfile: activeSessionProfile, localModel, sendBlocked, developer: adminLive, view, query, setQuery,
     setConversations, reviewAbort, onReviewStarted: (target) => { lastReview.current = target; followReview.current = true; },
@@ -595,6 +598,7 @@ function ServiceSession() {
             {!adminLive && <p className="helper" role="status">{t(publicCorpus.status === "loading" ? "Loading published filings…" : publicCorpus.status === "error" ? "Published filings could not be loaded." : !publicCorpus.documents.length ? "No portfolio filings have been published yet." : publicScopeBlocked ? "Select at least one published filing to ask a question." : "Questions use the selected published filings.")}{unavailableScope && <> {t("Some saved filings are no longer published. Review your selection.")}</>}{publicCorpus.status === "error" && <button type="button" className="button ghost" onClick={publicCorpus.refresh}>{t("Retry")}</button>}</p>}
             {permissions && compatibilityIssue && <ProfileCompatibilityNotice key={`${activeId}:${compatibilityIssue}`} message={compatibilityIssue} conversationId={activeId} />}
             {!adminLive && !publicPolicy && <p className="helper" role="status">{t(publicPolicyFailed ? "Server execution limits could not be loaded. Browser defaults are not the applied policy." : "Loading server execution limits…")}{publicPolicyFailed && <button type="button" className="button ghost" onClick={retryPublicPolicy}>{t("Retry")}</button>}</p>}
+            {!adminLive && <BrowserRequestStatus />}
             <QuestionComposer
               inputRef={composerInput}
               query={query}
@@ -657,7 +661,7 @@ function ServiceSession() {
           ready={runtimeHealth.kind === "healthy"}
           profile={resolvedRetrievalProfile(activeSessionProfile, builtins)}
           publicProfile={activeSessionProfile}
-          publicScopeBlocked={publicScopeBlocked}
+          publicScopeBlocked={publicScopeBlocked || (!adminLive && !publicPolicy)}
           onProfileChange={updateLabProfile}
           onApplyProfile={applyProfile}
           onApplySnapshot={applySnapshot}

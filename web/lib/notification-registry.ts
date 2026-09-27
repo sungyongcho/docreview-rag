@@ -626,8 +626,8 @@ export function notificationErrorDetail(error: unknown): NotificationDetail | un
 export function notificationErrorMessage(error: unknown): string {
   if (error && typeof error === "object" && "failure" in error && error.failure && typeof error.failure === "object") {
     const failure = error.failure as Record<string, unknown>;
-    if (failure.code === "daily_cost_limit" || failure.code === "rate_limited") {
-      const message = failure.code === "daily_cost_limit" ? "The shared OpenAI allowance is exhausted." : "This connection has reached its request limit.";
+    if (["browser_rate_limited", "daily_cost_limit", "rate_limited"].includes(String(failure.code))) {
+      const message = failure.code === "browser_rate_limited" ? "This browser has reached its execution request limit." : failure.code === "daily_cost_limit" ? "The global AI cost limit is reached." : "The server request limit shared by multiple visitors is reached.";
       const reset = typeof failure.reset_at === "string" ? new Date(failure.reset_at) : null;
       return message + (reset && Number.isFinite(reset.getTime()) ? ` Resets: ${reset.toLocaleString()}.` : typeof failure.retry_after_seconds === "number" ? ` Retry in ${Math.ceil(failure.retry_after_seconds)} seconds.` : "");
     }

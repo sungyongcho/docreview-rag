@@ -29,6 +29,8 @@ What drove NVIDIA data center revenue growth in fiscal 2024?
 **답변 미리보기**는 모델 사용량과 실행 기록을 남기는 별도 답변 동작입니다. 검색 결과를 보기 위해
 누를 필요는 없습니다. 검색 미리보기는 평가 결과를 저장하거나 대화의 검색 설정을 바꾸지 않습니다.
 
+공개 화면의 검색 요청은 provider를 호출하지 않는 키워드 전용 검색도 대화 전송·재실행과 같은 [브라우저 한도와 서버 공유 요청 한도](overview.md#allowance)를 사용합니다. 브라우저 한도에 걸리면 질의를 유지하므로 표시된 대기 시간이 지난 뒤 다시 전송할 수 있습니다. AI 비용은 provider 호출 시 별도로 집계합니다.
+
 <!-- screenshot: search-trial-input-and-ranked-results -->
 
 ![검색 연습장에 질의를 입력하고 순위가 매겨진 결과 목록이 표시된 화면.](../assets/search-trial-input-and-ranked-results.ko.png)

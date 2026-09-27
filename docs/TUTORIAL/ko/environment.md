@@ -208,6 +208,28 @@ Cloudflare가 공개한 IPv4 대역만 허용하므로 다른 곳에서는 직�
 숨기는 것은 이 헤더이므로 외부에서 닿는 모든 포트 앞에는 Caddy가 있어야 합니다. 프로덕션은
 운영자 API를 노출하지 않으며, 관리는 로컬 DEV 환경에서 실행합니다.
 
+### 요청 한도의 프록시 경계 {#public-request-boundary}
+
+Caddy는 `X-Forwarded-For`를 직접 접속받은 주소인 `{remote_host}`로 덮어씁니다.
+Python으로 전달하기 전에 `CF-Connecting-IP`, `CF-Connecting-IPv6`, `CF-Pseudo-IPv4`,
+`True-Client-IP`, `X-Real-IP`, `Forwarded`를 제거하며, 방문자 원본 주소를 복원하는
+`trusted_proxies`는 설정하지 않습니다. 의도한 경로에서는 접속 주소가 Worker 출구
+IP이므로 같은 출구를 사용하는 방문자가 서버 요청 한도를 공유합니다. 이 IP는 우리
+Worker의 인증 정보나 방문자 식별자가 아닙니다.
+
+Caddy는 `POST /retrieve`, `/review`, `/review/stream`의 본문을 끝의 슬래시 유무와
+관계없이 256 KiB로 제한하며, 초과 시 `413`을 반환합니다. 브라우저는 프록시 응답이
+JSON이 아니어도 크기 초과를 안내합니다. 서버는 본문 해석 전에 요청 횟수를 제한하고
+각 provider 호출 직전에 AI 비용을 별도로 예약합니다. 갱신할 때 기존 SQLite 장부
+파일과 영구 볼륨을 유지하세요. 교체하면 기록된 사용량이 사라집니다.
+
+배포는 별도 작업입니다. 이 정책을 배포하기 전에 실제 Caddy가 보는 접속 주소와
+Cloudflare 전용 방화벽 경로를 확인하고, 전제가 다르면 배포를 보류하세요. 격리된
+Caddy 테스트는 로컬 근거이며 운영 경로 검증이 아닙니다. Cloudflare의 방문자별
+제한이 있다고 가정하지 않으며, 이 정책을 위해 별도 `gomoku` Worker나 Cloudflare
+계정 설정을 변경하지 않습니다. 방문자 IP 전달 헤더 제거는 Python으로의 전달을
+줄이는 조치이며 서비스 전체의 GDPR 면제나 준수 완료를 뜻하지 않습니다.
+
 ### 실행 순서 {#production-order}
 
 1. `.env`에 배포 값을 채웁니다. `DEPLOY_GCP_PROJECT`는 필수이고 first-install에는

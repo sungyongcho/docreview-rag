@@ -2,6 +2,8 @@
 
 from hashlib import blake2s
 from ipaddress import ip_address
+from math import ceil
+from time import monotonic
 from urllib.parse import urlsplit
 
 from fastapi import Request
@@ -14,10 +16,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.api.review.profiles import PromptPolicy, public_custom_retrieval_violation
 from app.release.ai_allowance import (
     AIAllowanceError,
-    RequestAIAllowance,
     SharedAIAllowance,
     active_allowance,
-    active_request_allowance,
 )
 
 SECURITY_HEADERS = {
@@ -30,6 +30,7 @@ SECURITY_HEADERS = {
 }
 # The routes whose POST handlers may reach an embedding or text provider.
 AI_ROUTES = frozenset({"/retrieve", "/review", "/review/stream"})
+EXECUTION_BODY_LIMIT = 256 * 1024
 
 
 class SecurityHeadersMiddleware:
@@ -59,9 +60,9 @@ class SecurityHeadersMiddleware:
 def client_host(request: Request, *, trust_proxy_headers: bool) -> str:
     """Resolve one client address, trusting forwarded input only when configured.
 
-    Exactly one trusted proxy hop is assumed: that proxy appends the address it saw to
-    X-Forwarded-For, so only the last entry is trusted. Earlier entries come from the
-    client and would let it mint a fresh identity per request.
+    The trusted Caddy hop overwrites X-Forwarded-For with its immediate peer, which
+    is a shared Worker egress address on the public path, not a visitor identity.
+    Only the last entry is used; other visitor-address headers are never consulted.
     """
     direct = request.client.host if request.client is not None else "unknown"
     if not trust_proxy_headers:
@@ -197,7 +198,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         }
 
     async def _review_policy_response(self, request: Request, *, public: bool) -> Response | None:
-        """Reject local or custom controls before rate and cost reservations are consumed."""
+        """Reject local or custom controls after admission but before execution or AI cost."""
         try:
             payload = await request.json()
         except ValueError:
@@ -212,6 +213,37 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
             if denial is not None:
                 return _forbidden("capability_disabled", denial)
         return None
+
+    async def _allowance_response(self, request: Request, error: AIAllowanceError) -> Response:
+        """Finish bounded body transfer before denial so Caddy can enforce its size limit.
+
+        Caddy 2.10 detects max_size while forwarding a body. An immediate upstream
+        response can win that race, so drain without parsing or executing anything.
+        Direct requests are bounded too; disconnects propagate without refunding admission.
+        """
+        retry_at = monotonic() + error.retry_after
+        size = 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > EXECUTION_BODY_LIMIT:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": {
+                            "code": "request_too_large",
+                            "message": "The execution request body exceeds 256 KiB.",
+                            "details": [],
+                        }
+                    },
+                )
+        detail = {"code": error.code, "message": str(error), "details": []}
+        if error.reset is not None:
+            detail["reset_at"] = error.reset.isoformat()
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"error": detail},
+            headers={"Retry-After": str(max(1, ceil(retry_at - monotonic())))},
+        )
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Gate one request through the public controls and the shared AI allowance.
@@ -228,13 +260,12 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         -------
         Response
             The downstream response with rate-limit headers, or a structured
-            403/429 error body that never reaches the application.
+            403/413/429/503 error body that never reaches the application.
 
         Notes
         -----
-        Only POST requests to the provider-bearing routes are metered, and the
-        per-client request slot is consumed by their first actual provider call, so
-        reads, static assets and provider-free work stay unmetered. When public
+        POST execution requests consume a slot before their bodies are parsed, including
+        invalid, cancelled, and provider-free requests. Reads stay unmetered. When public
         limits are not enforced, the loopback operator's own requests bypass the
         allowance entirely while proxy-marked public requests stay metered.
         """
@@ -250,35 +281,34 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
                 "origin_not_allowed",
                 "Local LLM and OpenAI cap settings require the configured local web origin.",
             )
-        if request.url.path in AI_ROUTES:
-            denied = await self._review_policy_response(request, public=public)
-            if denied is not None:
-                return denied
-        if request.method != "POST" or request.url.path not in AI_ROUTES:
+        path = request.url.path.rstrip("/")
+        if request.method != "POST" or path not in AI_ROUTES:
             return await call_next(request)
-        if not self._enforce_rate_limit and not public:
-            return await call_next(request)
-
-        admission = RequestAIAllowance(self._allowance, self._client_key(request))
-        token = active_allowance.set(self._allowance)
-        request_token = active_request_allowance.set(admission)
+        # Route both spellings directly, so a 307 cannot debit one submission twice.
+        request.scope["path"] = path
+        request.scope["raw_path"] = path.encode("ascii")
+        metered = self._enforce_rate_limit or public
+        decision = None
+        token = None
         try:
-            response = await call_next(request)
+            if metered:
+                decision = await self._allowance.admit(self._client_key(request))
+                if not decision.allowed:
+                    raise AIAllowanceError(
+                        "rate_limited",
+                        "The shared server request limit was reached.",
+                        decision.retry_after_seconds,
+                    )
+                token = active_allowance.set(self._allowance)
+            response = await self._review_policy_response(request, public=public)
+            if response is None:
+                response = await call_next(request)
         except AIAllowanceError as error:
-            detail = {"code": error.code, "message": str(error), "details": []}
-            if error.reset is not None:
-                detail["reset_at"] = error.reset.isoformat()
-            response = JSONResponse(
-                status_code=429,
-                content={"error": detail},
-                headers={"Retry-After": str(error.retry_after)},
-            )
+            response = await self._allowance_response(request, error)
         finally:
-            active_request_allowance.reset(request_token)
-            active_allowance.reset(token)
-        if admission.decision is not None:
-            response.headers["X-RateLimit-Remaining-Minute"] = str(
-                admission.decision.remaining_minute
-            )
-            response.headers["X-RateLimit-Remaining-Day"] = str(admission.decision.remaining_day)
+            if token is not None:
+                active_allowance.reset(token)
+        if decision is not None:
+            response.headers["X-RateLimit-Remaining-Minute"] = str(decision.remaining_minute)
+            response.headers["X-RateLimit-Remaining-Day"] = str(decision.remaining_day)
         return response

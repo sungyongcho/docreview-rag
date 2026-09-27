@@ -454,6 +454,9 @@ export function browserStorage(): Storage {
   return productionBrowserStorageEnabled() ? productionStorage : storageEnvironment === "dev" ? developmentStorage : rawBrowserStorage();
 }
 
+/** Persist public request timestamps with the existing memory fallback in either server environment. */
+export function persistentBrowserStorage(): Storage { return productionStorage; }
+
 /** Persist only the selected conversation identity; URL navigation still takes precedence. */
 export function loadActiveConversation(): string | null { return productionBrowserStorageEnabled() ? browserStorage().getItem(ACTIVE_CONVERSATION_KEY) : null; }
 export function saveActiveConversation(id: string): void { if (productionBrowserStorageEnabled() && id) browserStorage().setItem(ACTIVE_CONVERSATION_KEY, id); }

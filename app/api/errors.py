@@ -158,7 +158,7 @@ def install_error_handlers(app: FastAPI) -> None:
     async def ai_allowance_handler(request: Request, error: AIAllowanceError) -> JSONResponse:
         """Keep actual-call allowance denials typed with retry metadata."""
         return _response(
-            429,
+            error.status_code,
             ApiError(code=error.code, message=str(error)),
             headers={"Retry-After": str(error.retry_after)},
         )

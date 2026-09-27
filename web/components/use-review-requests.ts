@@ -4,6 +4,7 @@ import { useNotifications } from "@/components/notifications";
 import { candidateProgress, finishReviewProgress, initialReviewProgress, resolvedScopeFromServer, reviewProgressFromEvent } from "@/components/review-progress";
 import { terminalMessage } from "@/components/review-response";
 import { ApiError, getReleaseLimits, retrieveEvidence, streamReview } from "@/lib/api";
+import { assertBrowserRequestAllowed } from "@/lib/browser-request-limits";
 import { useI18n } from "@/lib/i18n";
 import type { NavigationTarget } from "@/lib/navigation";
 import { notificationErrorDetail, notificationErrorMessage, type NotificationDetail } from "@/lib/notification-registry";
@@ -144,6 +145,8 @@ export function useReviewRequests({
   async function submit() {
     const question = query.trim();
     if (!question || busy || !active || sendBlocked) return;
+    try { assertBrowserRequestAllowed(); }
+    catch (reason) { notify(t(notificationErrorMessage(reason)), "warning", "browser-rate-limited"); return; }
     setQuery("");
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: question };
     const request = beginReview(active, question, false, 0, userMessage);
@@ -175,6 +178,7 @@ export function useReviewRequests({
       );
       completeReview(request, execution, response, { evidence, question, candidateToken, pinnedChunkIds: [], excludedChunkIds: [] });
     } catch (reason) {
+      if (reason instanceof ApiError && reason.code === "browser_rate_limited" && currentConversationId.current === conversationId) setQuery((current) => current || query);
       execution = scopeFailureProgress(reason, execution);
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
       const scopeFailure = scopeFailurePatch(reason, developer);
@@ -189,9 +193,9 @@ export function useReviewRequests({
         return;
       }
       let evidence = preparedEvidence;
-      // The provider gate and the daily cost limiter both reject before retrieval runs,
-      // so fetch the evidence separately for the evidence-only reply.
-      if (reason instanceof ApiError && reason.code === "provider_unavailable" && !evidence.length) {
+      // Only the private admin surface may request an evidence-only fallback automatically.
+      // Public failures never dispatch a second charged execution request.
+      if (developer && reason instanceof ApiError && reason.code === "provider_unavailable" && !evidence.length) {
         try {
           const retrieved = await retrieveEvidence(question, selectedProfile);
           evidence = retrieved.candidates.length ? retrieved.candidates : retrieved.results;
@@ -203,7 +207,7 @@ export function useReviewRequests({
       noteDailyBudget(reason);
       const message =
         controller.signal.aborted ? t("Request cancelled") :
-        reason instanceof ApiError && reason.code === "daily_cost_limit"
+        reason instanceof ApiError && ["browser_rate_limited", "rate_limited", "daily_cost_limit", "request_too_large"].includes(reason.code)
           ? notificationErrorMessage(reason)
           : reason instanceof ApiError && reason.code === "provider_unavailable" && evidence.length
             ? "No answer model is configured. Retrieved filing evidence is shown below without a generated answer. See Build › step 6."
@@ -242,6 +246,8 @@ export function useReviewRequests({
 
   async function reviewSelectedEvidence(message: ChatMessage) {
     if (!active || !message.question || !message.candidateToken || busy || sendBlocked) return;
+    try { assertBrowserRequestAllowed(); }
+    catch (reason) { notify(t(notificationErrorMessage(reason)), "warning", "browser-rate-limited"); return; }
     const selected = (message.evidence ?? []).filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)).length;
     const request = beginReview(active, message.question, true, selected);
     const { conversationId, assistantId, controller, requestStarted } = request;
@@ -275,9 +281,9 @@ export function useReviewRequests({
         updateMessage(conversationId, assistantId, { ...scopeFailure, pending: false, execution }, notificationErrorDetail(reason));
         return;
       }
-      updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution }, notificationErrorDetail(reason));
+      updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? t(notificationErrorMessage(reason)) : t("Selected evidence review failed."), execution }, notificationErrorDetail(reason));
       noteDailyBudget(reason);
-      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Selected evidence review failed."), "error", "evidence-review", undefined, { event: "evidence-review-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? t(notificationErrorMessage(reason)) : t("Selected evidence review failed."), "error", "evidence-review", undefined, { event: "evidence-review-error", detail: notificationErrorDetail(reason) });
     } finally {
       settleReview(controller, active.profile.engine === "local");
     }

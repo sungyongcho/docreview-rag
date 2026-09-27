@@ -7,6 +7,8 @@ import { ReviewProgressSteps, initialReviewProgress, finishReviewProgress, type 
 
 import { Play, Search } from "lucide-react";
 import { useState } from "react";
+import { BrowserRequestStatus } from "./browser-request-status";
+import { useBrowserRequestLimits } from "./use-browser-request-limits";
 
 import { ApiError, previewRetrieval, previewReview, retrieveEvidence } from "@/lib/api";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
@@ -104,6 +106,8 @@ function toReviewSummary(run: ReviewRun): ReviewSummary {
 export function Playground({ publicProfile, publicScopeBlocked = false, live, profile, onProfileChange, onOpenSnapshots }: PlaygroundProps) {
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
+  const browserAllowance = useBrowserRequestLimits(!live);
+  const browserBlocked = (browserAllowance?.retry_after_seconds ?? 0) > 0;
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [busy, setBusy] = useState<"retrieval" | "review" | null>(null);
   const [retrieval, setRetrieval] = useState<RetrievalPreview | null>(null);
@@ -120,7 +124,7 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
   }
 
   async function runRetrieval() {
-    if (!question.trim() || busy || (!live && publicScopeBlocked)) return;
+    if (!question.trim() || busy || browserBlocked || (!live && publicScopeBlocked)) return;
     setBusy("retrieval");
     setLimitation(null);
     try {
@@ -139,7 +143,7 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
   }
 
   async function runReview() {
-    if (!question.trim() || busy || (!live && publicScopeBlocked)) return;
+    if (!question.trim() || busy || browserBlocked || (!live && publicScopeBlocked)) return;
     setBusy("review");
     setLimitation(null);
     try {
@@ -163,9 +167,10 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
         <label>{t("Question")}<textarea aria-label={t("Playground question")} data-help="measure.playground.question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} /></label>
         <fieldset className="playground-core"><legend>{t("Core search settings")}</legend>{!live && <p className="helper">{t("Search uses the current published filing scope.")}</p>}<ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.playground" fields="core" /></fieldset>
         <details><summary>{t("Advanced search settings")}</summary><ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.playground" fields="advanced" /></details>
+        {!live && <BrowserRequestStatus />}
         <div className="action-row">
-          <button className="button primary" type="button" data-help="measure.playground.preview_retrieval" disabled={busy !== null || !question.trim() || (!live && publicScopeBlocked)} onClick={() => void runRetrieval()}><Search size={15} /> {busy === "retrieval" ? t("Previewing…") : t("Preview retrieval")}</button>
-          {live ? <button className="button" type="button" data-help="measure.playground.preview_review" disabled={busy !== null || !question.trim() || (!live && publicScopeBlocked)} onClick={() => void runReview()}><Play size={15} /> {busy === "review" ? t("Reviewing…") : t("Preview review")}</button>
+          <button className="button primary" type="button" data-help="measure.playground.preview_retrieval" disabled={busy !== null || browserBlocked || !question.trim() || (!live && publicScopeBlocked)} onClick={() => void runRetrieval()}><Search size={15} /> {busy === "retrieval" ? t("Previewing…") : t("Preview retrieval")}</button>
+          {live ? <button className="button" type="button" data-help="measure.playground.preview_review" disabled={busy !== null || browserBlocked || !question.trim() || (!live && publicScopeBlocked)} onClick={() => void runReview()}><Play size={15} /> {busy === "review" ? t("Reviewing…") : t("Preview review")}</button>
             : <DevLockedButton reason="preview"><Play size={15} /> {t("Preview review")}</DevLockedButton>}
         </div>
         <p className="helper">{t(live ? "Preview review calls the answer model once and records provider usage." : "Search runs on the published corpus within the server's public ranges. Nothing is persisted.")}</p>

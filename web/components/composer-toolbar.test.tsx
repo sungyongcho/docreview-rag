@@ -58,7 +58,7 @@ describe("PROD remaining request allowance", () => {
     const load = vi.spyOn(api, "getReleaseLimits").mockResolvedValue(limits);
     renderToolbar({ live: false, readiness: readiness({}, { environment: "prod" }) });
     expect(await screen.findByText("Minute 7/10")).toBeInTheDocument();
-    expect(screen.getByText("Day 32/50")).toBeInTheDocument();
+    expect(screen.getByText("Rolling 24 hours 32/50")).toBeInTheDocument();
     load.mockResolvedValue({ ...limits, remaining_minute: 0 });
     fireEvent(window, new Event("focus"));
     await screen.findByText("Minute 0/10");
@@ -69,7 +69,7 @@ describe("PROD remaining request allowance", () => {
     expect(screen.queryByText("Minute 0/10")).toBeNull();
     load.mockResolvedValue({ ...limits, remaining_day: 31 });
     fireEvent(window, new Event("focus"));
-    await screen.findByText("Day 31/50");
+    await screen.findByText("Rolling 24 hours 31/50");
   });
 
   it.each([
@@ -172,7 +172,7 @@ describe("composerBanner", () => {
     const budget = composerBanner({ readiness: READINESS, live: true, profile: DEFAULT_SESSION_PROFILE, resetAt });
     expect(budget?.kind).toBe("budget");
     expect(budget?.action).toBeUndefined();
-    expect(budget?.text).toBe(`Daily answer budget is used up. Evidence still loads; answers resume at ${new Date(resetAt).toLocaleString()}.`);
+    expect(budget?.text).toBe(`The global AI cost limit is reached. AI calls resume at ${new Date(resetAt).toLocaleString()}.`);
   });
 
   it("renders the banner text and its action button", () => {

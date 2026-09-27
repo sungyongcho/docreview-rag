@@ -218,6 +218,30 @@ what hides `/admin/*`, so Caddy must stay in front of every externally
 reachable port. Production exposes no operator API; administration runs in the
 local DEV environment.
 
+### Request-limit boundary {#public-request-boundary}
+
+Caddy overwrites `X-Forwarded-For` with its directly connected peer, `{remote_host}`.
+It removes `CF-Connecting-IP`, `CF-Connecting-IPv6`, `CF-Pseudo-IPv4`, `True-Client-IP`,
+`X-Real-IP`, and `Forwarded` before proxying to Python. No `trusted_proxies` rule
+restores the visitor's original address. On the intended route, the peer is a Worker
+egress IP, so visitors using that egress share the server request allowance. This IP
+does not authenticate this site's Worker or identify a visitor.
+
+Caddy also caps `POST /retrieve`, `/review`, and `/review/stream` bodies at 256 KiB,
+including trailing-slash paths; oversized bodies return `413`. The browser presents
+a size warning even when that proxy response is not JSON. The server then enforces
+its request limit before body parsing and reserves AI cost separately at each
+provider call. Keep the existing SQLite ledger file and persistent volume when
+updating; replacing them would lose recorded usage.
+
+Deployment is a separate operation. Before deploying this policy, verify the peer
+address that the actual Caddy instance sees and the Cloudflare-only firewall path;
+hold deployment if those premises differ. An isolated Caddy test is local evidence,
+not verification of the production route. No visitor-specific Cloudflare rate rule
+is assumed, and this policy requires no change to the separate `gomoku` Worker or
+Cloudflare account settings. Removing forwarded visitor-IP headers reduces their
+delivery to Python; it does not establish service-wide GDPR exemption or compliance.
+
 ### Order of operations {#production-order}
 
 1. Fill `.env` with the deployment values: `DEPLOY_GCP_PROJECT` (required),
