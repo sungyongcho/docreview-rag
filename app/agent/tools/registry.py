@@ -1,4 +1,4 @@
-"""Tool registry that publishes one schema to the LLM, the MCP server, and the prompt."""
+"""Tool registry that publishes provider schemas and the model's tool manual."""
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -50,8 +50,8 @@ def safe_runtime_error(error: Exception, action: str) -> str:
 
     Notes
     -----
-    Every surface that reports a caught failure to a model or an MCP client shares
-    this projection, so redaction cannot drift between the loop and the server.
+    Tool dispatch and evidence extraction use this projection so unexpected
+    exception details cannot reach the model.
     """
     return f"{type(error).__name__}: {action} failed"
 
@@ -86,11 +86,9 @@ class Tool[ParamsT: BaseModel]:
 class ToolRegistry:
     """Named, immutable-by-convention collection of agent tools.
 
-    The registry is the single source for three consumers: the provider gets
-    strict function specs, the MCP server gets tolerant input schemas, and the
-    system prompt gets a generated manual. One registration feeds all three, so
-    the documentation the model reads can never drift from the schema it must
-    obey.
+    The provider gets strict function specs and the system prompt gets a
+    generated manual from the same registration, so the documentation the
+    model reads cannot drift from the schema it must obey.
     """
 
     def __init__(self) -> None:
@@ -137,23 +135,6 @@ class ToolRegistry:
                 }
             )
         return specs
-
-    def input_schemas(self) -> list[dict[str, Any]]:
-        """Return each tool's name, description, and tolerant JSON input schema.
-
-        Unlike :meth:`specs`, optional fields keep their defaults and stay
-        optional, so protocol-neutral consumers such as the MCP server accept an
-        idiomatic call that omits them, while the strict provider surface still
-        requires every field.
-        """
-        return [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.parameters.model_json_schema(),
-            }
-            for tool in self.tools
-        ]
 
     def manual(self) -> str:
         """Render the tool manual the system prompt feeds to the model."""
@@ -206,9 +187,7 @@ async def execute_tool(
 
     Notes
     -----
-    Both published surfaces — the agent loop and the MCP server — dispatch
-    through this function, so their error contracts cannot drift. A
-    :class:`~app.agent.tools.registry.ToolError` and a validation failure carry their
+    A :class:`~app.agent.tools.registry.ToolError` and a validation failure carry their
     model-actionable detail verbatim — both are authored against the caller's
     own input, never against provider payloads — while every unexpected
     exception is redacted through :func:`~app.agent.tools.registry.safe_runtime_error`.

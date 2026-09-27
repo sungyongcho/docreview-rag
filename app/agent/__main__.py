@@ -80,11 +80,6 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=lambda value: _bounded_int("--max-iterations", MAX_ITERATIONS_CEILING, value),
         default=8,
     )
-    parser.add_argument(
-        "--mcp",
-        action="store_true",
-        help="Serve the tool registry over MCP stdio instead of answering a question.",
-    )
     return parser.parse_args(argv)
 
 
@@ -216,41 +211,21 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     return result.model_dump(mode="json")
 
 
-async def _serve_mcp() -> None:
-    """Serve the registry tools over MCP stdio with per-call sessions."""
-    from app.agent.mcp_server import serve_stdio
-    from app.agent.tools.filings import build_default_registry
-    from app.db.session import Session, engine
-    from app.retrieval.embedding.provider import get_embedding_provider
-
-    try:
-        registry = build_default_registry(
-            Session,
-            embedding_provider=get_embedding_provider(),
-        )
-        await serve_stdio(registry)
-    finally:
-        await engine.dispose()
-
-
 def main(argv: Sequence[str] | None = None) -> None:
     """Run the filing agent and print machine-readable evidence.
 
     Raises
     ------
     SystemExit
-        With a usage message when no nonblank question was supplied outside MCP
-        mode — checked before any runtime module loads — and with exit code 1
+        With a usage message when no nonblank question was supplied
+        — checked before any runtime module loads — and with exit code 1
         when the run ends in a terminal failure status, so scripts gating on the
         exit code cannot mistake ``provider_error`` or ``budget_exceeded`` for a
         grounded answer.
     """
     args = arguments(argv)
-    if args.mcp:
-        asyncio.run(_serve_mcp())
-        return
     if not args.question or not args.question.strip():
-        raise SystemExit("--question is required unless --mcp is set")
+        raise SystemExit("--question is required")
     result = asyncio.run(_run(args))
     print(json.dumps(result, indent=2, ensure_ascii=False))
     if result["status"] != "ok":

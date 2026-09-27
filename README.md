@@ -12,7 +12,7 @@ An evidence-first bilingual RAG service for SEC 10-K and Korean DART filings. An
 |---|---|
 | Retrieval | PostgreSQL + pgvector, `ts_rank_cd` / BM25, RRF fusion, optional cross-encoder rerank, Korean n-gram lexical path |
 | LLM workflow | OpenAI role-pinned models, citation validation, per-call cost/token caps, fail-closed grading; local models via Ollama in dev |
-| Backend | Python, FastAPI, SSE streaming, MCP stdio agent |
+| Backend | Python, FastAPI, SSE streaming, tool-calling CLI agent |
 | Frontend | Next.js static export, TypeScript, Build / Measure / System workspaces |
 | Evaluation | Golden suites, Recall@k / Hit Rate@k / MRR, cross-lingual parity, ablation matrix, immutable snapshots |
 | Deployment | Firebase Hosting + shared Oracle Cloud A1 (Caddy → FastAPI → Postgres), dedicated DocReview Cloudflare Worker; GCP remains an alternative |
@@ -24,7 +24,7 @@ An evidence-first bilingual RAG service for SEC 10-K and Korean DART filings. An
 - **Real corpus** — SEC EDGAR 10-K (NVIDIA, AMD, …) and DART annual reports (Samsung Electronics, SK hynix, NAVER) parsed into source-stable chunks
 - **Evaluation harness** — golden question sets, quick/matrix runs, cross-lingual parity gates, and snapshot comparison with no provider calls
 - **Public service guardrails** — browser execution-request limits and server limits shared by Worker egress IP (10/minute, 50/rolling 24 hours), plus per-call cost ceilings and a global UTC daily AI cost cap; prod mode exposes no admin API, and administration runs in local DEV
-- 2,156 Python unit tests, 35 isolated PostgreSQL tests and 1,261 frontend tests
+- Python unit tests, isolated PostgreSQL integration tests, and frontend tests
 
 ## Local Development
 
@@ -56,7 +56,7 @@ readiness must pass; starting the web server alone does not prepare data. DEV ha
 
 ## Project Structure
 
-- **`app/`** — ingestion (EDGAR/DART), retrieval, LLM workflow, API, agent/MCP, release guardrails
+- **`app/`** — ingestion (EDGAR/DART), retrieval, LLM workflow, API, tool-calling agent, release guardrails
 - **`web/`** — Next.js App Router service (Ask, Build, Measure, System)
 - **`data/`** — corpus manifest, golden suites, evaluation artifacts
 - **`deploy/`** — Oracle/Firebase/Cloudflare deployment, alternate GCP deployment, Caddy config, Compose files

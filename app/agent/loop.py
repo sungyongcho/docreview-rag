@@ -133,9 +133,8 @@ async def _dispatch(
     -----
     Tool exceptions never escape into the agent loop: lookup, validation,
     execution, and serialization run through the shared
-    :func:`~app.agent.tools.registry.execute_tool` boundary, so this surface and the
-    MCP server report identical errors for identical failures. Evidence
-    extraction stays here because only the loop grounds citations.
+    :func:`~app.agent.tools.registry.execute_tool` boundary. Evidence extraction
+    stays here because the loop grounds citations against its observations.
     """
     try:
         tool = registry.get(call.name)
@@ -296,7 +295,7 @@ async def run_agent(
     question : str
         Nonblank filing question that starts the conversation.
     registry : ToolRegistry
-        Immutable-by-convention tool set shared with provider schemas and MCP.
+        Immutable-by-convention tool set shared with provider schemas and the prompt.
     provider : ToolCallingProvider
         Injected deterministic or OpenAI turn provider.
     budget : AgentBudget | None

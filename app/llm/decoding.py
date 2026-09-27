@@ -114,7 +114,7 @@ def _strict_schema(node: object, path: str) -> None:
             raise ValueError(f"strict schema does not support {keyword} at {path}")
     # Strict decoding requires every field, so a default can never fire on this
     # surface; it is dropped here rather than rejected so one parameters model can
-    # serve both the strict provider schema and tolerant surfaces such as MCP.
+    # serve both the strict provider schema and direct callers that omit defaults.
     node.pop("default", None)
     if node.get("type") == "object" or "properties" in node:
         node["additionalProperties"] = False

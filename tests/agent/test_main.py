@@ -18,7 +18,6 @@ def test_cli_arguments_default_to_the_offline_demo():
     assert args.provider == "deterministic"
     assert args.k == 5
     assert args.max_iterations == 8
-    assert args.mcp is False
 
 
 @pytest.mark.parametrize(
@@ -116,7 +115,7 @@ def test_missing_question_is_a_usage_error_even_under_invalid_settings() -> None
     )
 
     assert result.returncode != 0
-    assert "--question is required unless --mcp is set" in result.stderr
+    assert "--question is required" in result.stderr
     assert "ValidationError" not in result.stderr
 
 
@@ -181,44 +180,6 @@ def test_openai_provider_receives_the_mode_selected_key_and_the_engine_is_releas
     assert captured.get("api_key") == "sk-local-slot-test"
     assert captured["model"] == "gpt-5.6-luna"
     assert disposed == [True]
-
-
-@pytest.mark.parametrize("server_fails", [False, True], ids=["closed", "failed"])
-def test_mcp_dispatch_releases_the_engine_when_the_server_exits(monkeypatch, server_fails):
-    """Serve MCP without a question and release its pool on normal and exceptional exits."""
-    from app.agent import __main__ as entrypoint, mcp_server
-    import app.db.session as session_module
-    from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-
-    events = []
-
-    class FakeEngine:
-        """Record when the CLI releases its database pool."""
-
-        async def dispose(self):
-            """Record pool release after the server has exited."""
-            events.append("disposed")
-
-    async def serve(registry):
-        """Accept the real filing registry and simulate the MCP transport ending."""
-        assert "search_filings" in {spec["name"] for spec in registry.specs()}
-        events.append("served")
-        if server_fails:
-            raise RuntimeError("MCP transport failed")
-
-    monkeypatch.setattr(session_module, "engine", FakeEngine())
-    monkeypatch.setattr(
-        "app.retrieval.embedding.provider.get_embedding_provider", DeterministicEmbeddingProvider
-    )
-    monkeypatch.setattr(mcp_server, "serve_stdio", serve)
-
-    if server_fails:
-        with pytest.raises(RuntimeError, match="MCP transport failed"):
-            entrypoint.main(["--mcp"])
-    else:
-        entrypoint.main(["--mcp"])
-
-    assert events == ["served", "disposed"]
 
 
 def test_openai_provider_requires_the_mode_selected_key_slot(monkeypatch):

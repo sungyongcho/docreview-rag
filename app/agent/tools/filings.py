@@ -76,8 +76,8 @@ class ToolParams(BaseModel):
 class SearchFilingsParams(ToolParams):
     """Arguments for one hybrid retrieval call.
 
-    Optional fields default to ``None`` so tolerant surfaces (MCP clients) may
-    omit them; the strict provider schema still requires every field because
+    Optional fields default to ``None`` so direct callers may omit them;
+    the strict provider schema still requires every field because
     strict decoding strips defaults and marks all properties required. The field
     types are the retrieval contract's own, so a value retrieval would reject is
     reported as an invalid argument naming the field instead of surfacing later
@@ -170,8 +170,7 @@ def build_default_registry(
     session_factory : SessionFactory
         Callable producing one fresh ``AsyncSession`` per tool invocation, e.g.
         the application ``async_sessionmaker``. Because every call owns its own
-        session, concurrent tool calls (the MCP transport dispatches each request
-        in its own task) cannot interleave reads on shared state.
+        session, concurrent tool calls cannot interleave reads on shared state.
     embedding_provider : EmbeddingProvider | None
         Optional explicit query embedding provider.
     search_k : int
