@@ -26,6 +26,10 @@ An evidence-first bilingual RAG service for SEC 10-K and Korean DART filings. An
 - **Public service guardrails** — browser execution-request limits and server limits shared by Worker egress IP (10/minute, 50/rolling 24 hours), plus per-call cost ceilings and a global UTC daily AI cost cap; prod mode exposes no admin API, and administration runs in local DEV
 - Python unit tests, isolated PostgreSQL integration tests, and frontend tests
 
+## Project planning
+
+Personal plans, TODOs and progress are maintained in the maintainer's local Second Brain project hub and project TODO. Its MCP and LangGraph learning plan contains the migrated exercises and acceptance criteria. Product guides, deployment procedures, decisions and verification evidence remain in this repository.
+
 ## Local Development
 
 Requires [uv](https://docs.astral.sh/uv/) and Docker Compose v2.24.4+ (Node.js 24+ for web work).

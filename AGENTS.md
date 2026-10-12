@@ -16,6 +16,10 @@ For `gpt-6-astra` and `fable-5.1`: use this contract, not model-specific rituals
 - Report only outcomes, meaningful changes, blockers or next actions; classify checks as passed/failed/blocked/not run. Omit unchanged updates.
 - Keep queues, commit IDs and test counts in PRs/tasks. Instruction edits require a user request.
 
+## Personal project records
+
+For registered local DocReview work, read the Second Brain project hub, TODO and its linked plan (`Projects/docreview-rag/` in the local Vault) at task start, and compare them with the actual checkout. At normal completion, follow the second-brain skill's recording workflow for verified TODO, plan and log updates. Personal planning and progress belong there; code, product documentation, raw experiments, this repository's decision ledger and delivery evidence retain their existing owners and authorization rules.
+
 ## Project-specific contract — uneditable by default
 
 **Edit boundary:** change this section only when the user explicitly requests the corresponding project-rule change. Ordinary implementation or instruction cleanup is not permission to weaken, relocate or relabel protected rules. Apply the same boundary to WORKER.md and MODERATOR.md. Higher-priority instructions and explicit user directions still prevail.
