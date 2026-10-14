@@ -112,6 +112,19 @@ function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelinePr
 }
 
 describe("BuildPipeline", () => {
+  it("keeps a stale downloaded source eligible for explicit reingestion", () => {
+    const source = { ...selectionSource("NVDA", 2024), ingestion_status: "stale" as const };
+    const handlers = renderPipeline(liveInput(), { focusStage: "index", sources: [source], acquisition: acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]) });
+    expect(screen.getByText(/1 selected documents need reingestion/)).toBeVisible();
+    const year = screen.getByRole("button", { name: "NVDA FY2024 · On disk" });
+    expect(year).toHaveAccessibleDescription("Reingestion needed");
+    expect(year).toHaveAttribute("aria-pressed", "true");
+    expect(handlers.onIngestAll).not.toHaveBeenCalled();
+    const run = screen.getByRole("button", { name: "Parse & chunk selected sources" });
+    expect(run).toBeEnabled();
+    fireEvent.click(run);
+    expect(handlers.onIngestAll).toHaveBeenCalledOnce();
+  });
 
   it("shows the duration note only while inspecting embedding execution", () => {
     const handlers = renderPipeline(liveInput(), { focusStage: "embeddings" });
@@ -146,7 +159,7 @@ describe("BuildPipeline", () => {
 
 
   it("points at the next stage and wires its primary action", () => {
-    const handlers = renderPipeline(liveInput(), { sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))) });
+    const handlers = renderPipeline(liveInput(), { sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))) });
 
     expect(screen.getByText("Recommended next step")).toBeInTheDocument();
     expect(document.querySelector(".pipeline-guidance button")).toHaveTextContent("Parse & chunk");
@@ -279,7 +292,7 @@ it("links schema-blocked downstream selection back to step 2", () => {
 
 
 it("names missing company years, blocks the default ingest, and removes the Advanced bypass", () => {
-  renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, can_redownload: false, on_disk: true }] });
+  renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, can_redownload: false, on_disk: true }] });
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("4 documents · 1 ready · 3 to download");
   expect(screen.getByRole("button", { name: "NVDA FY2023 · Missing source" })).toHaveAttribute("aria-pressed", "true");
@@ -294,7 +307,7 @@ it("names missing company years, blocks the default ingest, and removes the Adva
 
 /** Keep source identities distinct from human-facing company/year labels. */
 function selectionSource(issuer: string, year: number, onDisk = true): SourceInventory {
-  return { registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, document_id: `raw-${issuer}-${year}`, filing_id: `raw-${issuer}-${year}`, can_redownload: !onDisk, name: issuer === "NVDA" ? "NVIDIA" : issuer, ready: onDisk, on_disk: onDisk, manifest: "manifest.json" };
+  return { registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, document_id: `raw-${issuer}-${year}`, filing_id: `raw-${issuer}-${year}`, can_redownload: !onDisk, name: issuer === "NVDA" ? "NVIDIA" : issuer, ready: onDisk, on_disk: onDisk, manifest: "manifest.json", ingestion_status: "not_ingested" };
 }
 
 it.each(["en", "ko"] as const)("summarizes 32 documents once with a shared compact grid (%s)", (locale) => {

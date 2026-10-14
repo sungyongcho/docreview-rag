@@ -45,6 +45,24 @@ Open **Build → Pipeline → Parse & chunk → Selected documents**. Review the
 
 Each Ingest action processes only its explicit selection while the common catalog remains intact. The operation stores source-linked structures and chunks and leaves embeddings and BM25 to Build steps 3 and 4; changing chunks invalidates existing BM25 statistics. Reuse work already completed by CLI against this same DB.
 
+## Check whether ingestion matches the stored source {#source-ingestion}
+
+In DEV, Filings and Parse & chunk show a separate ingestion label on each company/year. The download checkmark only confirms source availability. Documents also shows the ingestion comparison beside embedding readiness and in its detail panel.
+
+| Label | Meaning | Action |
+|---|---|---|
+| Not ingested | The available source has no current ingested document. | Select it and run **Parse & chunk selected sources**. |
+| Matches local source | The currently ingested input and document metadata match the locally stored source. | Check embeddings and BM25 separately. |
+| Reingestion needed | The stored source or metadata differs from the currently ingested version. | Select the filing and explicitly run **Parse & chunk selected sources** again. |
+| Source match unknown | Source integrity, availability, or DB access prevents a reliable comparison. | Inspect the source or connection error; do not treat this as a match. |
+
+These labels compare local source and ingestion state. They do not establish that the remote SEC/DART filing is the latest version, or that embeddings and BM25 are ready. A company/year with several filings can show more than one ingestion state.
+
+Changed originals stay selectable for explicit reingestion. The comparison does not automatically start work or block searches: existing results can still use the previous ingested version. A failed ingestion leaves the difference unresolved. After successful ingestion, refresh status and confirm **Matches local source**; success for an older pinned selection does not establish a match with a newer acquired source. Deleting the downloaded original preserves existing DB data but makes its source match unknown until a verifiable original is available again.
+
+### SCREENSHOT NEEDED
+<!-- Capture source-ingestion status in DEV, English, light mode: an available stale original in Filings and Parse & chunk, its explicit parse action, and the same stale document beside complete embeddings in Documents. -->
+
 ## Prepare embeddings {#step-6}
 
 > [!GOAL]

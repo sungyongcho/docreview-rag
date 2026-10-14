@@ -1473,6 +1473,7 @@ export interface components {
             fiscal_year: number;
             /** Form */
             form: string;
+            ingestion_status: components["schemas"]["IngestionStatus"];
             /** Issuer */
             issuer: string;
             /** Issuer Id */
@@ -1537,7 +1538,7 @@ export interface components {
         };
         /**
          * CorpusSnapshotResource
-         * @description Atomic typed preparation state with explicit source selections.
+         * @description Typed preparation state with explicit source selections and input comparisons.
          */
         CorpusSnapshotResource: {
             /**
@@ -2668,6 +2669,8 @@ export interface components {
             /** Removed Chunk Ids */
             removed_chunk_ids: number[];
         };
+        /** @enum {string} */
+        IngestionStatus: "not_ingested" | "current" | "stale" | "unknown";
         /**
          * JobHistoryRequest
          * @description An explicit history operation against a reviewed eligible count.
@@ -3976,6 +3979,7 @@ export interface components {
             filing_id: string;
             /** Fiscal Year */
             fiscal_year: number;
+            ingestion_status: components["schemas"]["IngestionStatus"];
             /** Issuer */
             issuer: string;
             /** Manifest */

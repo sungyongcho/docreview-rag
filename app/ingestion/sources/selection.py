@@ -111,6 +111,11 @@ def source_inventory(root: Path) -> tuple[SourceInventory, ...]:
         return ()  # The canonical manifest summary reports its invalid state separately.
     if manifest is None:
         return ()
+    return catalog_inventory(root, manifest)
+
+
+def catalog_inventory(root: Path, manifest: Manifest) -> tuple[SourceInventory, ...]:
+    """Inspect availability against one already loaded catalog revision."""
     rows = []
     for document in manifest.documents:
         if not approved_company(document.registry, document.issuer):

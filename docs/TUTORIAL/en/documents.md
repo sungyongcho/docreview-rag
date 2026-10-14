@@ -40,6 +40,8 @@ Open sidebar **Build → Documents**, or select the Documents tab in Build if yo
 
 The detail panel's **Next step** opens the relevant Pipeline stage, and **Open Jobs** shows related preparation records. Opening either view does not start the operation. Other companies and years do not need to be deleted to complete this check.
 
+In DEV, **Source ingestion** compares the currently stored original and metadata with the ingested version, independently of embedding coverage. **Reingestion needed** can appear beside **100% embedded**; **Next step** then opens Parse & chunk so you can explicitly select and reprocess that filing. **Source match unknown** never confirms a match. See [the four ingestion states](indexing.md#source-ingestion). The public portfolio does not claim a comparison with private local originals.
+
 Choose [source, companies, and years in step 3](acquisition.md#step-3) next. When those originals already exist, skip the matching download and continue with the first missing [indexing](indexing.md) step; if both retrieval paths are prepared, continue to [step 8: retrieval](retrieval.md#step-8).
 
 ## Search and filters {#filters}

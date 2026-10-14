@@ -788,6 +788,9 @@
             "title": "Form",
             "type": "string"
           },
+          "ingestion_status": {
+            "$ref": "#/components/schemas/IngestionStatus"
+          },
           "issuer": {
             "title": "Issuer",
             "type": "string"
@@ -852,6 +855,7 @@
           "source_url",
           "source_length",
           "source_sha256",
+          "ingestion_status",
           "chunk_count"
         ],
         "title": "CorpusDocumentResource",
@@ -1003,7 +1007,7 @@
       },
       "CorpusSnapshotResource": {
         "additionalProperties": false,
-        "description": "Atomic typed preparation state with explicit source selections.",
+        "description": "Typed preparation state with explicit source selections and input comparisons.",
         "properties": {
           "acquisition_companies": {
             "default": [],
@@ -3840,6 +3844,15 @@
         ],
         "title": "GradeReferencesFiltered",
         "type": "object"
+      },
+      "IngestionStatus": {
+        "enum": [
+          "not_ingested",
+          "current",
+          "stale",
+          "unknown"
+        ],
+        "type": "string"
       },
       "JobHistoryRequest": {
         "additionalProperties": false,
@@ -7169,6 +7182,9 @@
             "title": "Fiscal Year",
             "type": "integer"
           },
+          "ingestion_status": {
+            "$ref": "#/components/schemas/IngestionStatus"
+          },
           "issuer": {
             "title": "Issuer",
             "type": "string"
@@ -7208,7 +7224,8 @@
           "filing_id",
           "on_disk",
           "ready",
-          "can_redownload"
+          "can_redownload",
+          "ingestion_status"
         ],
         "title": "SourceInventoryResource",
         "type": "object"
