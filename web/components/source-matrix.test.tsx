@@ -5,12 +5,13 @@ import { SourceMatrix } from "./source-matrix";
 import type { AcquisitionForm, AcquisitionPair } from "./build-pipeline";
 import type { AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { acquisitionDraft, type SourceInventory } from "@/lib/source-selection";
+import { I18nProvider } from "@/lib/i18n";
 
 afterEach(cleanup);
 
 /** Build one distinct source document without hiding registry or disk state. */
 function source(issuer: string, year: number, onDisk = true, name = issuer): SourceInventory {
-  return { document_id: `${issuer}-${year}`, filing_id: `${issuer}-${year}`, can_redownload: !onDisk, registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, ready: onDisk, on_disk: onDisk, name, manifest: "manifest.json" };
+  return { document_id: `${issuer}-${year}`, filing_id: `${issuer}-${year}`, can_redownload: !onDisk, registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, ready: onDisk, on_disk: onDisk, name, manifest: "manifest.json", ingestion_status: "not_ingested" };
 }
 const inventory = [source("NVDA", 2024), source("005930", 2023, false, "Samsung"), source("AMD", 2023), source("NVDA", 2022)];
 
@@ -33,12 +34,33 @@ function selectYears(...years: number[]) {
 }
 
 describe("company and year source matrix", () => {
+  it.each([
+    ["not_ingested", "Not ingested", "미적재"],
+    ["current", "Matches local source", "보관 원문과 일치"],
+    ["stale", "Reingestion needed", "재적재 필요"],
+    ["unknown", "Source match unknown", "원문 일치 여부 미확인"],
+  ] as const)("separates %s ingestion from downloaded-source availability", (status, english, korean) => {
+    const download = vi.fn();
+    localStorage.setItem("docreview.locale", "en");
+    render(<I18nProvider><Harness sources={[{ ...source("NVDA", 2024), ingestion_status: status }]} download={download} /></I18nProvider>);
+    const year = screen.getByRole("button", { name: "NVDA FY2024 · On disk" });
+    expect(within(year).getByText(english)).toBeVisible();
+    expect(year).toHaveAccessibleDescription(english);
+    expect(year).toBeEnabled();
+    fireEvent.click(year);
+    expect(year).toHaveAttribute("aria-pressed", "true");
+    expect(download).not.toHaveBeenCalled();
+    fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: "ko" }));
+    expect(within(year).getByText(korean)).toBeVisible();
+    localStorage.clear();
+  });
+
   it("sorts compact rows, keeps registry/name identity and exposes readiness without captions", () => {
     render(<Harness companies={[{ registry: "sec", issuer: "NVDA", name: "NVIDIA" }]} />);
     const sec = screen.getByRole("region", { name: "SEC" });
     expect(within(sec).getAllByRole("group").map((row) => row.getAttribute("aria-label"))).toEqual(["AMD", "NVDA · NVIDIA"]);
     const chips = within(screen.getByRole("group", { name: "NVDA · NVIDIA" })).getAllByRole("button", { name: /^NVDA FY/ });
-    expect(chips.map((chip) => chip.textContent)).toEqual(["✓FY2022", "✓FY2024"]);
+    expect(chips.map((chip) => chip.textContent)).toEqual(["✓FY2022Not ingested", "✓FY2024Not ingested"]);
     expect(chips[1]).toHaveAccessibleName("NVDA FY2024 · On disk");
     expect(screen.getByRole("button", { name: "005930 FY2023 · Missing source" })).toBeVisible();
   });

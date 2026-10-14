@@ -838,7 +838,7 @@ it.each(["running", "queued", "failed"] as const)("hides stale %s jobs and block
 });
 
 it("retains completed parsing while flagging newly downloaded originals in a mixed manifest", () => {
-  const rows = [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `dart-${year}`, filing_id: `receipt-${year}`, registry: "dart" as const, issuer: "000660", name: "SK hynix", fiscal_year: year, on_disk: true, ready: true, can_redownload: false }));
+  const rows = [2023, 2024].map((year) => ({ manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: `dart-${year}`, filing_id: `receipt-${year}`, registry: "dart" as const, issuer: "000660", name: "SK hynix", fiscal_year: year, on_disk: true, ready: true, can_redownload: false }));
   const input = liveInput({ corpus: fullCorpus({ documents: 1, chunks: 10 }), registryCounts: { dart: 1 }, sourceInventory: rows });
   const index = stage(derivePipeline(input), "index");
   expect(index.status).toBe("done");

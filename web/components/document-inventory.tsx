@@ -14,8 +14,9 @@ import styles from "./master-detail.module.css";
 
 import { getAdminDocuments, getDocumentDetail, getDocumentFacets, getPublishedDocuments, getPublishedDocumentDetail, getPublishedDocumentFacets } from "@/lib/api";
 import { companyDisplayName, companyLabel } from "@/lib/company-labels";
-import type { AdminDocument, DocumentDetail, DocumentEmbeddingStatus, DocumentFacets } from "@/lib/types";
+import type { AdminDocument, CorpusDocument, DocumentDetail, DocumentEmbeddingStatus, DocumentFacets } from "@/lib/types";
 import { useNotifications } from "@/components/notifications";
+import { IngestionStatusBadge, INGESTION_STATUS_DESCRIPTIONS, type IngestionStatus } from "./ingestion-status";
 
 const EMPTY_DOCUMENT_FACETS: DocumentFacets = {
   registries: [],
@@ -34,14 +35,16 @@ interface DocumentInventoryProps {
   live: boolean;
   active?: boolean;
   refreshRevision?: string;
+  ingestedDocuments?: ReadonlyArray<Pick<CorpusDocument, "doc_id" | "ingestion_status">>;
   onOpenPipeline?: (stage?: string) => void;
   onInspectPipeline?: () => void;
   onOpenJobs?: () => void;
 }
 
-export function DocumentInventory({ live, onOpenPipeline, onOpenJobs, onInspectPipeline, active = true, refreshRevision = "" }: DocumentInventoryProps) {
+export function DocumentInventory({ live, onOpenPipeline, onOpenJobs, onInspectPipeline, active = true, refreshRevision = "", ingestedDocuments }: DocumentInventoryProps) {
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
+  const ingestionStatuses = useMemo(() => new Map(ingestedDocuments?.map((document) => [document.doc_id, document.ingestion_status])), [ingestedDocuments]);
   const [documents, setDocuments] = useState<AdminDocument[]>([]);
   const [documentQuery, setDocumentQuery] = useState("");
   const [documentRegistry, setDocumentRegistry] = useState("all");
@@ -240,7 +243,7 @@ export function DocumentInventory({ live, onOpenPipeline, onOpenJobs, onInspectP
               return <div key={document.doc_id} role="row" aria-selected={selectedId === document.doc_id} className={styles.documentRow} onClick={() => selectDocument(document.doc_id)}>
                 <div role="cell"><button className={styles.title} type="button" onClick={(event) => { event.stopPropagation(); selectDocument(document.doc_id); }}>{document.doc_id}</button><small>{document.registry.toUpperCase()} · {documentFormLabel(document.form, t)}</small></div>
                 <div role="cell"><span>{companyLabel(document.issuer, document.issuer_name, locale)}</span><small>{t("FY {year}", { year: document.fiscal_year })}</small></div>
-                <div role="cell"><span className={`coverage-badge ${document.embedding_status ?? "missing"}`}>{t(document.embedding_status === "complete" && chunks > 0 ? "Embedded" : document.parse_status)}</span><small>{t("{coverage}% embedded", { coverage })}</small></div>
+                <div role="cell"><span className={`coverage-badge ${document.embedding_status ?? "missing"}`}>{t(document.embedding_status === "complete" && chunks > 0 ? "Embedded" : document.parse_status)}</span><small>{t("{coverage}% embedded", { coverage })}</small>{live && <IngestionStatusBadge status={ingestionStatuses.get(document.doc_id) ?? "unknown"} />}</div>
                 <span role="cell" className={styles.count}>{chunks.toLocaleString(locale)}</span>
               </div>;
             })}
@@ -257,7 +260,7 @@ export function DocumentInventory({ live, onOpenPipeline, onOpenJobs, onInspectP
       {selectedExcluded ? <section className="surface" role="status"><h2>{t("Document outside current filters")}</h2><p className="helper">{t("The selected document is not in these results. Clear filters or choose another document.")}</p><button className="button" type="button" onClick={() => { resetDocumentFilters(); layout.closeDetail(); }}>{t("Reset filters")}</button></section>
         : detailLoading && !documentDetail ? <section className="surface" role="status">{t("Loading document details…")}</section>
         : detailError ? <section className="surface" role="alert"><h2>{t("Could not load document details.")}</h2><p className="helper">{detailError}</p><button className="button" type="button" onClick={() => setDetailRefresh((value) => value + 1)}>{t("Retry")}</button>{live && onInspectPipeline && <button className="button" type="button" onClick={onInspectPipeline}>{t("Inspect this step")}</button>}</section>
-        : documentDetail && <DocumentDetailPanel detail={documentDetail} onOpenPipeline={live ? onOpenPipeline : undefined} onOpenJobs={live ? onOpenJobs : undefined} />}
+        : documentDetail && <DocumentDetailPanel detail={documentDetail} ingestionStatus={live ? ingestionStatuses.get(documentDetail.document.doc_id) ?? "unknown" : undefined} onOpenPipeline={live ? onOpenPipeline : undefined} onOpenJobs={live ? onOpenJobs : undefined} />}
     </div>}
   </div>;
 }
@@ -316,20 +319,22 @@ function formatBytes(value: number, locale: string): string {
   return `${(value / 1_000_000).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
 }
 
-function DocumentDetailPanel({ detail, onOpenPipeline, onOpenJobs }: { detail: DocumentDetail; onOpenPipeline?: (stage?: string) => void; onOpenJobs?: () => void }) {
+function DocumentDetailPanel({ detail, ingestionStatus, onOpenPipeline, onOpenJobs }: { detail: DocumentDetail; ingestionStatus?: IngestionStatus; onOpenPipeline?: (stage?: string) => void; onOpenJobs?: () => void }) {
   const { t, locale } = useI18n();
   const { document } = detail;
   const company = companyDisplayName(document.issuer_name?.trim() || document.issuer || document.doc_id, locale);
   const missing = Math.max(document.chunk_count - detail.embedded_chunks, 0);
   const coverage = document.chunk_count > 0 ? Math.round(detail.embedded_chunks / document.chunk_count * 100) : 0;
+  const needsIngestion = ingestionStatus === "stale" || ingestionStatus === "not_ingested" || document.chunk_count === 0;
   return <section className="surface document-detail">
     <header className="document-detail-heading"><div className="document-identity"><p className="eyebrow">{document.registry.toUpperCase()} · {document.language.toUpperCase()}</p><div className="document-company-line"><h2 className="document-company">{company}</h2><span className="document-fiscal-year" aria-label={`${t("Fiscal year")}: ${document.fiscal_year}`}>{t("FY {year}", { year: document.fiscal_year })}</span></div><p className="document-identifier"><code>{document.doc_id}</code><span>{document.issuer} · {documentFormLabel(document.form, t)}</span></p></div><span className={`coverage-badge ${document.chunk_count > 0 && missing === 0 ? "complete" : detail.embedded_chunks > 0 ? "partial" : "missing"}`}>{t("{coverage}% embedded", { coverage })}</span></header>
     <section className="document-detail-section"><h3>{t("Original filing")}</h3><dl className="document-meta-grid"><div><dt>{t("Issuer identity")}</dt><dd>{document.issuer_id}</dd></div><div><dt>{t("Filing identity")}</dt><dd>{document.filing_id}</dd></div><div><dt>{t("Filed")}</dt><dd>{formatFilingDate(document.filing_date, locale)}</dd></div><div><dt>{t("Report period")}</dt><dd>{formatFilingDate(document.report_period, locale)}</dd></div><div><dt>{t("Source size")}</dt><dd>{formatBytes(document.source_length, locale)}</dd></div><div><dt>{t("Parse status")}</dt><dd>{t(document.parse_status)}</dd></div><div className="wide"><dt>{t("Source")}</dt><dd>{/^https?:\/\//i.test(document.source_url) ? <a href={document.source_url} target="_blank" rel="noreferrer">{t("Open original filing")}</a> : "—"}</dd></div><div className="wide"><dt>{t("Source SHA-256")}</dt><dd><code>{document.source_sha256}</code></dd></div></dl></section>
+    {ingestionStatus && <section className="document-detail-section"><h3>{t("Source ingestion")}</h3><IngestionStatusBadge status={ingestionStatus} /><p>{t(INGESTION_STATUS_DESCRIPTIONS[ingestionStatus])}</p></section>}
     <section className="document-detail-section"><h3>{t("Chunks & search readiness")}</h3><div className="document-stat-grid"><div><span>{t("Total chunks")}</span><strong>{document.chunk_count.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong></div><div><span>{t("Text / table")}</span><strong>{detail.text_chunks.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")} / {detail.table_chunks.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong></div><div><span>{t("Embedded")}</span><strong>{detail.embedded_chunks.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong></div><div><span>{t("Missing vectors")}</span><strong className={missing > 0 ? "negative" : "positive"}>{missing.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong></div></div></section>
     <section className="document-detail-section"><h3>{t("Section distribution")}</h3>{detail.item_counts.length ? <div className="document-section-list">{detail.item_counts.map((item) => <div key={item.item}><span>{item.item}</span><strong>{item.count.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong><progress max={document.chunk_count || 1} value={item.count} /></div>)}</div> : <p className="helper">{t("No section identities were recorded.")}</p>}</section>
     <section className="document-detail-section"><h3>{t("Embedding identities")}</h3>{detail.embedding_identities.length ? <div className="embedding-list">{detail.embedding_identities.map((identity) => <article key={`${identity.provider}:${identity.model}:${identity.dimensions}`}><strong>{identity.provider} · {identity.model}</strong><p>{t("{dimensions} dimensions · {count} chunks", { dimensions: identity.dimensions.toLocaleString(locale), count: identity.count.toLocaleString(locale) })}</p></article>)}</div> : <p className="helper">{t("No persisted embedding identity is available.")}</p>}</section>
     <section className="document-detail-section"><h3>{t("Index revisions & snapshot membership")}</h3>{detail.snapshot_memberships.length ? <div className="snapshot-memberships">{detail.snapshot_memberships.map((snapshot) => <article key={snapshot.snapshot_id}><div><strong>{t("Revision #")}{snapshot.snapshot_id} · {snapshot.label}</strong><p>{t(snapshot.status)} · {snapshot.public ? t("published") : t("private")} · {new Date(snapshot.created_at).toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</p></div></article>)}</div> : <p className="helper">{t("This filing is not frozen in an evaluation snapshot yet.")}</p>}</section>
-    {(onOpenPipeline || onOpenJobs) && <section className={`document-detail-section ${styles.next}`}><h3>{t("Related work & next step")}</h3><p>{t(document.chunk_count === 0 ? "Parse this filing to prepare searchable chunks." : missing > 0 ? "Some chunks need embeddings before semantic search is ready." : "All chunks have embeddings. Review index readiness in the pipeline.")}</p><div className="action-row">{onOpenPipeline && <button className="button" type="button" onClick={() => onOpenPipeline(document.chunk_count === 0 ? "index" : missing > 0 ? "embeddings" : "lexical")}>{t("Next step")}</button>}{onOpenJobs && <button className="button" type="button" onClick={onOpenJobs}>{t("Open Jobs")}</button>}</div></section>}
+    {(onOpenPipeline || onOpenJobs) && <section className={`document-detail-section ${styles.next}`}><h3>{t("Related work & next step")}</h3><p>{t(ingestionStatus === "stale" ? "Select this filing in Parse & chunk to replace the ingested version with the stored source." : needsIngestion ? "Parse this filing to prepare searchable chunks." : missing > 0 ? "Some chunks need embeddings before semantic search is ready." : "All chunks have embeddings. Review index readiness in the pipeline.")}</p><div className="action-row">{onOpenPipeline && <button className="button" type="button" onClick={() => onOpenPipeline(needsIngestion ? "index" : missing > 0 ? "embeddings" : "lexical")}>{t("Next step")}</button>}{onOpenJobs && <button className="button" type="button" onClick={onOpenJobs}>{t("Open Jobs")}</button>}</div></section>}
     <section className="document-detail-section"><h3>{t("Source-cited chunk previews")}</h3><div className="chunk-preview-list">{detail.chunks.map((chunk) => <article key={chunk.chunk_id}><header><strong>{t("Chunk {id} · ordinal {ordinal}", { id: chunk.chunk_id, ordinal: chunk.ordinal })}</strong><span>{chunk.span}</span></header><p className="chunk-citation">{chunk.citation}</p><p>{chunk.body}</p><code>{chunk.source_sha256}</code></article>)}</div></section>
   </section>;
 }

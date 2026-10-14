@@ -7,6 +7,7 @@ import type { AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { pairKey, sourceSelectionRows, type SourceInventory } from "@/lib/source-selection";
 import { useI18n } from "@/lib/i18n";
 import { companyDisplayName } from "@/lib/company-labels";
+import { IngestionStatusBadge, INGESTION_STATUS_LABELS } from "./ingestion-status";
 import "./source-matrix.css";
 
 interface Props {
@@ -59,13 +60,15 @@ export function SourceSelectionGrid({ sources, pairs, availablePairs = [], compa
           <div className={`source-matrix-years${columns ? " aligned" : ""}`} style={{ "--year-columns": years.length } as CSSProperties}>{row.cells.map((cell) => {
             const key = pairKey(cell.pair); const onDisk = ready.includes(cell); const included = selected.has(key);
             const blocked = cell.documents.some((source) => source.on_disk && source.ready === false);
+            const ingestionStates = scopeMode ? [] : [...new Set(cell.documents.map((source) => source.ingestion_status))];
+            const ingestionDescription = ingestionStates.map((status) => t(INGESTION_STATUS_LABELS[status])).join(" · ");
             const label = `${row.issuer} FY${cell.pair.year} · ${t(scopeMode ? outsideScope ? "Outside current scope" : !onDisk ? included ? "Selected · Not published" : "Not published" : included ? "In scope" : "Not in scope" : blocked ? "Source blocked" : onDisk ? "On disk" : "Missing source")}`;
             const title = `${cell.documents.find((source) => source.blocker)?.blocker ?? label}${cell.documents.length ? ` · ${cell.documents.map((source) => source.document_id).join(", ")}` : ""}`;
             const style = columns ? { gridColumn: years.indexOf(cell.pair.year) + 1 } : undefined;
             const checked = onDisk && !blocked && (!scopeMode || included && !outsideScope);
-            const content = <><span className={checked ? "year-downloaded-mark" : "year-missing-mark"} aria-hidden="true">{checked ? "✓" : "!"}</span><span>FY{cell.pair.year}</span>{scopeMode && !onDisk && <small>{t("Not published")}</small>}{cell.documents.length > 1 && <small>{cell.documents.filter((source) => source.on_disk).length}/{cell.documents.length}</small>}</>;
+            const content = <><span className={checked ? "year-downloaded-mark" : "year-missing-mark"} aria-hidden="true">{checked ? "✓" : "!"}</span><span>FY{cell.pair.year}</span>{scopeMode && !onDisk && <small>{t("Not published")}</small>}{cell.documents.length > 1 && <small>{cell.documents.filter((source) => source.on_disk).length}/{cell.documents.length}</small>}{ingestionStates.length > 0 && <span className="source-ingestion-states">{ingestionStates.map((status) => <IngestionStatusBadge key={status} status={status} />)}</span>}</>;
             const className = `source-matrix-year ${onDisk ? "on-disk" : "missing"}${included ? " selected" : ""}${blocked ? " source-blocked" : ""}`;
-            return onToggle ? <button key={key} type="button" disabled={disabled || outsideScope} style={style} title={title} className={className} aria-pressed={included} aria-label={label} onClick={() => onToggle([cell.pair], !included)}>{content}</button> : <span key={key} style={style} title={title} className={className} aria-label={label}>{content}</span>;
+            return onToggle ? <button key={key} type="button" disabled={disabled || outsideScope} style={style} title={title} className={className} aria-pressed={included} aria-label={label} aria-description={ingestionDescription || undefined} onClick={() => onToggle([cell.pair], !included)}>{content}</button> : <span key={key} style={style} title={title} className={className} aria-label={label} aria-description={ingestionDescription || undefined}>{content}</span>;
           })}</div>
           {(onEditCompany || onRemoveCompany) && <div className="source-company-controls">
             {onEditCompany && <button type="button" disabled={disabled || outsideScope} aria-label={t("Add years for {company}", { company: row.label })} onClick={() => onEditCompany({ registry, issuer: row.issuer })}><Plus size={14} aria-hidden="true" /></button>}

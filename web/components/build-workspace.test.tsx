@@ -270,7 +270,7 @@ describe("Build workspace", () => {
           documents: 29, chunks: 21927, embedded_chunks: 21927, pending_embeddings: 0,
           bm25_ready: true, writable: true, provider: "deterministic",
         },
-        sources: ["AMD", "NVDA"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))),
+        sources: ["AMD", "NVDA"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))),
         manifests: [{
           name: "manifest.json", corpus_id: "test", registries: ["sec", "dart"], documents: 30, valid: true, sources_present: 30,
           selections: [
@@ -387,7 +387,7 @@ describe("Build workspace", () => {
           documents: 30, chunks: 22367, embedded_chunks: 22367, pending_embeddings: 0,
           bm25_ready: true, writable: true, provider: "deterministic",
         },
-        sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))),
+        sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))),
         manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
         documents: [],
       });
@@ -413,6 +413,33 @@ describe("Build workspace", () => {
 });
 
 describe("preparation refresh after corpus jobs", () => {
+  it("invalidates retained source matches when the corpus refresh fails", async () => {
+    let failCorpus = false;
+    const source = { manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, on_disk: true, can_redownload: false, ingestion_status: "current" };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const route = requestRoute(input, init);
+      if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+      if (route === "GET /admin/documents") return jsonResponse({ documents: CANNED_CORPUS.documents, total: 2, next_cursor: null });
+      if (route === "GET /admin/corpus") {
+        if (failCorpus) throw new Error("Corpus refresh unavailable");
+        return jsonResponse({ ...ACQUISITION_CORPUS, status: READY_RUNTIME.corpus, sources: [source], documents: CANNED_CORPUS.documents.map((document) => ({ ...document, ingestion_status: "current" })), acquisition_draft: { ...SAMPLE_DRAFT, pairs: [{ registry: "sec", issuer: "NVDA", year: 2024 }] } });
+      }
+      return adminRead(input, init);
+    }));
+    const { rerender } = render(<Harness live readiness={READY_RUNTIME} focusStep={2} />);
+    const selection = await screen.findByRole("region", { name: "Selected documents" });
+    expect(await within(selection).findByText("Matches local source")).toBeVisible();
+    failCorpus = true;
+    const job: OperatorJob = { job_id: "ingest-failed", domain: "corpus", kind: "ingest_manifest", request: {}, status: "failed", stage: "parse", current: 0, total: 1, detail_current: null, detail_total: null, message: "Parsing failed", error_code: null, result_refs: {}, queue_position: null, can_cancel: false, can_retry: false, created_at: "2026-01-01", started_at: "2026-01-01", finished_at: "2026-01-01", updated_at: "2026-01-01" };
+    rerender(<Harness live readiness={READY_RUNTIME} focusStep={2} jobBoard={{ jobs: [job], active_count: 0, queued_count: 0 }} />);
+    expect(await within(selection).findByText("Source match unknown")).toBeVisible();
+    expect(within(selection).queryByText("Matches local source")).toBeNull();
+    expect(within(selection).getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+    const row = await screen.findByRole("row", { name: /NVDA-FY2024/ });
+    expect(within(row).getByText("Source match unknown")).toBeVisible();
+  });
+
   it("refreshes once after a corpus job ends, even as a failure, and ignores repeated polls", async () => {
     const status: OperatorJob["status"] = "failed";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -518,7 +545,7 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
 });
 
 it("initializes empty, accepts a server sample, and reconciles disk changes without overwriting an edited draft", async () => {
-  const sourceRows = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true })));
+  const sourceRows = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true })));
   let sources: typeof sourceRows = [];
   let preset: typeof SAMPLE_DRAFT = { identifiers: [], years: [], pairs: [], revision: "empty-v1" };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -708,7 +735,7 @@ describe("refresh hygiene", () => {
 });
 
 it.each([false, true])("queues exact sparse pairs and reports partial indexing submission: %s", async (failIndex) => {
-  const sources = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: !(issuer === "NVDA" && year === 2024) })));
+  const sources = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: `${issuer}-${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: !(issuer === "NVDA" && year === 2024) })));
   const submitted: Array<Record<string, unknown>> = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const route = requestRoute(input, init);
@@ -758,7 +785,7 @@ describe("connection readiness presentation", () => {
         ...ACQUISITION_CORPUS,
         status: READY_RUNTIME.corpus,
         acquisition_draft: { identifiers: ["NVDA"], years: [2024], pairs: [{ registry: "sec", issuer: "NVDA", year: 2024 }], revision: "one-filing" },
-        sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, can_redownload: false, on_disk: true }],
+        sources: [{ manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, can_redownload: false, on_disk: true }],
       });
 
       return adminRead(input, init);
@@ -821,8 +848,8 @@ it("queues a staged recoverable source and enables parsing after the verified re
       status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true },
       acquisition_draft: { identifiers: ["AMD"], years: [2023], pairs: [{ registry: "sec", issuer: "AMD", year: 2023 }], revision: "repair-source" },
       sources: [
-        { manifest: "manifest.json", document_id: "AMD-FY2023", filing_id: "AMD-FY2023", registry: "sec", issuer: "AMD", name: "AMD", fiscal_year: 2023, on_disk: true, ready: true, can_redownload: false },
-        { manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true, ready: recovered, can_redownload: !recovered, blocker: recovered ? null : "Download it again in Filings" },
+        { manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: "AMD-FY2023", filing_id: "AMD-FY2023", registry: "sec", issuer: "AMD", name: "AMD", fiscal_year: 2023, on_disk: true, ready: true, can_redownload: false },
+        { manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true, ready: recovered, can_redownload: !recovered, blocker: recovered ? null : "Download it again in Filings" },
       ],
     });
 
@@ -876,9 +903,9 @@ function stubSourceLifecycle(sources: Array<Record<string, unknown>>, submitted:
 /** Keep two SEC filings in one year separate from the DART acquisition batch. */
 function lifecycleSources() {
   return [
-    { registry: "sec", issuer: "NVDA", fiscal_year: 2024, document_id: "sec-filing-a", filing_id: "accession-a", manifest: "manifest.json", ready: true, can_redownload: false, on_disk: true },
-    { registry: "sec", issuer: "NVDA", fiscal_year: 2024, document_id: "sec-filing-b", filing_id: "accession-b", manifest: "manifest.json", ready: true, can_redownload: false, on_disk: true },
-    { registry: "dart", issuer: "005930", fiscal_year: 2023, document_id: "dart-filing-c", filing_id: "receipt-c", manifest: "manifest.json", ready: true, can_redownload: false, on_disk: true },
+    { registry: "sec", issuer: "NVDA", fiscal_year: 2024, document_id: "sec-filing-a", filing_id: "accession-a", manifest: "manifest.json", ingestion_status: "not_ingested" as const, ready: true, can_redownload: false, on_disk: true },
+    { registry: "sec", issuer: "NVDA", fiscal_year: 2024, document_id: "sec-filing-b", filing_id: "accession-b", manifest: "manifest.json", ingestion_status: "not_ingested" as const, ready: true, can_redownload: false, on_disk: true },
+    { registry: "dart", issuer: "005930", fiscal_year: 2023, document_id: "dart-filing-c", filing_id: "receipt-c", manifest: "manifest.json", ingestion_status: "not_ingested" as const, ready: true, can_redownload: false, on_disk: true },
   ];
 }
 

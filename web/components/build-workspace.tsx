@@ -184,13 +184,13 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
   /** A read-only server has no administrator inventory: rebuild the company grid from the published listing. */
   useEffect(() => {
     if (live) return;
-    const documents = publicCorpus.documents;
+    const documents = publicCorpus.documents.map((document) => ({ ...document, ingestion_status: "unknown" as const }));
     const companies = new Map<string, CorpusSnapshot["acquisition_companies"][number]>();
     for (const document of documents) {
       const key = `${document.registry}:${document.issuer}`;
       companies.set(key, { registry: document.registry as "sec" | "dart", issuer: document.issuer, name: document.issuer_name ?? document.issuer });
     }
-    const sources = documents.map((document) => ({ registry: document.registry as "sec" | "dart", issuer: document.issuer, name: document.issuer_name ?? document.issuer, fiscal_year: document.fiscal_year, filing_id: document.filing_id, document_id: document.doc_id, manifest: "", on_disk: true, ready: true, can_redownload: false, blocker: null }));
+    const sources = documents.map((document) => ({ registry: document.registry as "sec" | "dart", issuer: document.issuer, name: document.issuer_name ?? document.issuer, fiscal_year: document.fiscal_year, filing_id: document.filing_id, document_id: document.doc_id, manifest: "", ingestion_status: "unknown" as const, on_disk: true, ready: true, can_redownload: false, blocker: null }));
     setCorpus({ mode: "live", status: UNKNOWN_CORPUS, manifests: [], documents, sources, acquisition_companies: [...companies.values()] });
   }, [live, publicCorpus.documents]);
 
@@ -213,6 +213,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
       setAdminLoaded(true);
       clearRefresh("corpus");
     } else {
+      setCorpus((current) => current && ({ ...current, documents: current.documents.map((document) => ({ ...document, ingestion_status: "unknown" })), sources: current.sources.map((source) => ({ ...source, ingestion_status: "unknown" })) }));
       warnRefresh("corpus", t("Corpus status could not be refreshed: {message}", { message: reasonOf(corpusSnapshot) }));
       failures.push(reasonOf(corpusSnapshot));
     }
@@ -360,7 +361,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
   const status = useMemo(() => corpus?.status ?? UNKNOWN_CORPUS, [corpus]);
   const manifests = useMemo(() => corpus?.manifests ?? [], [corpus]);
   const corpusDocuments = useMemo<CorpusDocument[]>(() => {
-    if (!live) return publicCorpus.documents;
+    if (!live) return publicCorpus.documents.map((document) => ({ ...document, ingestion_status: "unknown" as const }));
     return corpus?.documents ?? [];
   }, [live, corpus, publicCorpus.documents]);
   const referenceCompanies = corpus?.acquisition_companies ?? [];
@@ -475,7 +476,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
         onRefresh={() => live ? refresh("manual") : publicCorpus.refresh()}
       /></RetainedPanel>
 
-      <RetainedPanel active={tab === "documents"}><DocumentInventory active={tab === "documents"} refreshRevision={documentRevision} onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
+      <RetainedPanel active={tab === "documents"}><DocumentInventory active={tab === "documents"} refreshRevision={documentRevision} ingestedDocuments={live ? corpus?.documents : undefined} onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
 
       <RetainedPanel active={tab === "jobs"}>{(live
         ? <JobCenter

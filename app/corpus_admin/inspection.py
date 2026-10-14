@@ -9,7 +9,7 @@ counts share the same reading.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import os
 from pathlib import Path
 import time
@@ -21,8 +21,10 @@ if TYPE_CHECKING:
     from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import (
     AdminDocument,
+    AdminSource,
     CorpusSnapshot,
     CorpusStatus,
+    IngestionStatus,
     ManifestIssuer,
     ManifestSummary,
     ProcessingSelectionSummary,
@@ -31,8 +33,9 @@ from app.corpus_admin.types import (
 from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility
 from app.db.models import Base, BM25CorpusStat, Chunk, ChunkEmbedding, Document, OperatorJob
 from app.db.queries import document_chunk_counts
+from app.ingestion.sources.catalog import acquired_catalog
 from app.ingestion.sources.models import Manifest
-from app.ingestion.sources.selection import acquisition_draft, source_inventory
+from app.ingestion.sources.selection import acquisition_draft, catalog_inventory
 from app.retrieval.indexing.embeddings import matching_embedding
 
 
@@ -94,6 +97,54 @@ def _manifest_issuers(manifest: Manifest) -> tuple[ManifestIssuer, ...]:
             document.registry, document.issuer, name
         )
     return tuple(issuers[key] for key in sorted(issuers))
+
+
+def _ingestion_status(
+    document: Document, manifest: Manifest | None, ready_ids: set[str]
+) -> IngestionStatus:
+    """Compare committed input provenance, never the parser's extracted-text hash."""
+    if manifest is None or document.doc_id not in ready_ids:
+        return "unknown"
+    reference = next(d for d in manifest.documents if d.document_id == document.doc_id)
+    primary = next(
+        a for a in manifest.artifacts if a.document_id == document.doc_id and a.role == "primary"
+    )
+    structure = document.current_parse.structure
+    if (structure.corpus_id, structure.artifact_id, structure.artifact_sha256) != (
+        manifest.corpus.corpus_id,
+        primary.artifact_id,
+        primary.sha256,
+    ):
+        return "stale"
+    metadata = reference.model_dump(mode="json", exclude={"document_id"})
+    return (
+        "current"
+        if all(getattr(document, key) == value for key, value in metadata.items())
+        else "stale"
+    )
+
+
+def _admin_document(document: Document, chunk_count: int, status: IngestionStatus) -> AdminDocument:
+    """Project the same committed document and parse used for the input comparison."""
+    structure = document.current_parse.structure
+    return AdminDocument(
+        doc_id=document.doc_id,
+        registry=document.registry,
+        language=document.language,
+        issuer=document.issuer,
+        issuer_id=document.issuer_id,
+        fiscal_year=document.fiscal_year,
+        form=document.form,
+        parse_status=structure.parse_status,
+        filing_date=document.filing_date,
+        report_period=document.report_period,
+        filing_id=document.filing_id,
+        source_url=document.source_url,
+        source_length=structure.source_length,
+        source_sha256=structure.source_sha256,
+        chunk_count=chunk_count,
+        ingestion_status=status,
+    )
 
 
 class CorpusInspector:
@@ -225,7 +276,7 @@ class CorpusInspector:
                 )
         return documents, chunks, embedded, bm25_ready
 
-    async def _documents(self, tables: set[str]) -> tuple[AdminDocument, ...]:
+    async def _documents(self, tables: set[str]) -> tuple[tuple[Document, int], ...]:
         """Return deterministic document rows from a compatible populated schema."""
         if not {"documents", "chunks"}.issubset(tables):
             return ()
@@ -234,26 +285,7 @@ class CorpusInspector:
         )
         async with self._service.session_factory() as session:
             rows = (await session.execute(statement)).all()
-        return tuple(
-            AdminDocument(
-                doc_id=document.doc_id,
-                registry=document.registry,
-                language=document.language,
-                issuer=document.issuer,
-                issuer_id=document.issuer_id,
-                fiscal_year=document.fiscal_year,
-                form=document.form,
-                parse_status=document.current_parse.structure.parse_status,
-                filing_date=document.filing_date,
-                report_period=document.report_period,
-                filing_id=document.filing_id,
-                source_url=document.source_url,
-                source_length=document.current_parse.structure.source_length,
-                source_sha256=document.current_parse.structure.source_sha256,
-                chunk_count=int(chunk_count),
-            )
-            for document, chunk_count in rows
-        )
+        return tuple((document, int(count)) for document, count in rows)
 
     async def _bm25_rebuild_recorded(self, tables: set[str]) -> bool:
         """Remember an explicit completed rebuild even after chunk changes invalidate its rows."""
@@ -347,7 +379,7 @@ class CorpusInspector:
     ) -> CorpusSnapshot:
         """Inspect live state while failing closed on schema drift or database errors."""
         probe = await self._probe_status(0.0)
-        rows: tuple[AdminDocument, ...] = ()
+        rows: tuple[tuple[Document, int], ...] = ()
         if probe.schema_status == "compatible":
             try:
                 rows = await self._documents(set(probe.tables))
@@ -358,9 +390,30 @@ class CorpusInspector:
                     schema_status="unavailable",
                     schema_message=self._service.redact(type(error).__name__),
                 )
+        # Read the catalog after the database query; availability and comparison use
+        # the same immutable manifest value, including when the UI filters documents.
+        try:
+            manifest = acquired_catalog(self._service.corpus_root)
+        except OSError, ValueError:
+            manifest = None  # The manifest summary reports invalid catalog details.
+        inventory = catalog_inventory(self._service.corpus_root, manifest) if manifest else ()
+        ready_ids = {source.document_id for source in inventory if source.ready}
+        documents = tuple(
+            _admin_document(document, count, _ingestion_status(document, manifest, ready_ids))
+            for document, count in rows
+        )
+        statuses: dict[str, IngestionStatus] = {
+            document.doc_id: document.ingestion_status for document in documents
+        }
+        sources = []
+        for source in inventory:
+            status: IngestionStatus = "unknown"
+            if probe.schema_status in {"compatible", "empty"} and source.ready:
+                status = statuses.get(source.document_id, "not_ingested")
+            sources.append(AdminSource(**asdict(source), ingestion_status=status))
         filtered = tuple(
             document
-            for document in rows
+            for document in documents
             if _matches(
                 document,
                 registry=registry,
@@ -370,12 +423,11 @@ class CorpusInspector:
                 parse_status=parse_status,
             )
         )
-        sources = source_inventory(self._service.corpus_root)
         return CorpusSnapshot(
             mode="live",
             status=self._status_from(probe),
             manifests=self.manifest_summaries(),
-            sources=sources,
+            sources=tuple(sources),
             acquisition_draft=acquisition_draft(self._service.corpus_root),
             documents=filtered,
         )

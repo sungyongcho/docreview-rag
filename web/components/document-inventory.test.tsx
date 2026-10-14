@@ -53,6 +53,28 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("DocumentInventory", () => {
+  it("shows source freshness separately from embeddings and routes stale documents to parsing", async () => {
+    const onOpenPipeline = vi.fn();
+    render(<I18nProvider><DocumentInventory live onOpenPipeline={onOpenPipeline} ingestedDocuments={[{ doc_id: "doc-a", ingestion_status: "stale" }, { doc_id: "doc-b", ingestion_status: "current" }]} /></I18nProvider>);
+    const row = await screen.findByRole("row", { name: /doc-a/ });
+    expect(within(row).getByText("Embedded")).toBeVisible();
+    expect(within(row).getByText("Reingestion needed")).toBeVisible();
+    expect(within(await screen.findByRole("row", { name: /doc-b/ })).getByText("Matches local source")).toBeVisible();
+    fireEvent.click(within(row).getByRole("button", { name: "doc-a" }));
+    expect(await screen.findByText(/Existing search results may still use the previous version/)).toBeVisible();
+    expect(onOpenPipeline).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+    expect(onOpenPipeline).toHaveBeenCalledWith("index");
+  });
+
+  it.each([true, false])("never claims a source match without a live corpus comparison (live=%s)", async (live) => {
+    render(<I18nProvider><DocumentInventory live={live} /></I18nProvider>);
+    const row = await screen.findByRole("row", { name: /doc-a/ });
+    expect(within(row).queryByText("Matches local source")).toBeNull();
+    if (live) expect(within(row).getByText("Source match unknown")).toBeVisible();
+    else expect(within(row).queryByText("Source match unknown")).toBeNull();
+  });
+
   it.each([true, false])("localizes Korean companies across detail, rows, facets and groups without changing filters (live=%s)", async (live) => {
     localStorage.clear(); localStorage.setItem("docreview.locale", "en");
     const document = { ...filing("samsung-2024"), registry: "dart", language: "ko", issuer: "005930", issuer_name: "삼성전자" };

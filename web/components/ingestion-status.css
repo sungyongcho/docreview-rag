@@ -1,0 +1,6 @@
+.ingestion-status { display: inline-block; max-width: 100%; font-size: 11px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; white-space: normal; }
+.ingestion-status.current { color: light-dark(#23794b, #79c99b); }
+.ingestion-status.stale { color: light-dark(#96520e, #e9b976); font-weight: 600; }
+.source-matrix-year .source-ingestion-states { display: flex; flex-direction: column; flex-basis: 100%; }
+.source-matrix-year .ingestion-status { font-size: 9px; }
+.source-selection-grid .source-matrix-year:has(.source-ingestion-states) { flex-wrap: wrap; max-width: 160px; }

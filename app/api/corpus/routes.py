@@ -14,7 +14,7 @@ from app.api.dependencies import AdminDependency
 from app.api.errors import translate_runtime_errors
 from app.api.review.schemas import ErrorResponse
 from app.contracts.validation import NonNegativeInt, StrictSchema, tuple_from_json_array
-from app.corpus_admin.types import AdminCommand
+from app.corpus_admin.types import AdminCommand, IngestionStatus
 
 
 class ProcessingSelectionResource(StrictSchema):
@@ -85,6 +85,7 @@ class CorpusDocumentResource(StrictSchema):
     source_url: str
     source_length: NonNegativeInt
     source_sha256: str
+    ingestion_status: IngestionStatus
     chunk_count: NonNegativeInt
 
 
@@ -141,6 +142,7 @@ class SourceInventoryResource(StrictSchema):
     ready: StrictBool
     blocker: str | None = None
     can_redownload: StrictBool
+    ingestion_status: IngestionStatus
 
 
 class AcquisitionPairResource(StrictSchema):
@@ -162,7 +164,7 @@ class AcquisitionDraftResource(StrictSchema):
 
 
 class CorpusSnapshotResource(StrictSchema):
-    """Atomic typed preparation state with explicit source selections."""
+    """Typed preparation state with explicit source selections and input comparisons."""
 
     mode: Literal["live", "canned"]
     status: CorpusStatusResource

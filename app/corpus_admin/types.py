@@ -30,6 +30,7 @@ type AdminJobKind = Literal[
 type AdminJobStatus = Literal[
     "queued", "running", "succeeded", "failed", "interrupted", "cancelled"
 ]
+type IngestionStatus = Literal["not_ingested", "current", "stale", "unknown"]
 type SchemaStatus = Literal["compatible", "empty", "drifted", "unavailable"]
 
 MAX_QUEUED_JOBS = 8
@@ -115,17 +116,25 @@ class AdminDocument:
     source_length: int
     source_sha256: str
     chunk_count: int
+    ingestion_status: IngestionStatus = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class AdminSource(SourceInventory):
+    """Keep local availability separate from the database input comparison."""
+
+    ingestion_status: IngestionStatus = "unknown"
 
 
 @dataclass(frozen=True, slots=True)
 class CorpusSnapshot:
-    """Atomic administrator projection used by one UI refresh."""
+    """Administrator projection of database and local sources for one UI refresh."""
 
     mode: Literal["live", "canned"]
     status: CorpusStatus
     manifests: tuple[ManifestSummary, ...]
     documents: tuple[AdminDocument, ...]
-    sources: tuple[SourceInventory, ...] = ()
+    sources: tuple[AdminSource, ...] = ()
     acquisition_draft: dict[str, object] | None = None
     acquisition_companies: tuple[AcquisitionCompany, ...] = ACQUISITION_COMPANIES
 

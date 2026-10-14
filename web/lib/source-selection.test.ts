@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { acquisitionBatches, acquisitionDraft, loadAcquisitionDraft, saveAcquisitionDraft, selectedSourceState, type SourceInventory } from "./source-selection";
 
-const rows: SourceInventory[] = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true })));
+const rows: SourceInventory[] = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", ingestion_status: "not_ingested" as const, document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true })));
 
 describe("current source selection", () => {
   it("resolves four downloaded sources without duplicate manifest memberships", () => {
