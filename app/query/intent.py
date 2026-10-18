@@ -512,6 +512,7 @@ class RoutingClassification(StrictSchema):
     intent: Literal["document_review", "service_help", "out_of_scope"]
     reason: NonBlank
     requested_issuers: Annotated[tuple[NonBlank, ...], Field(max_length=20)]
+    mentioned_companies: Annotated[tuple[NonBlank, ...], Field(max_length=20)] = ()
     target_scope: Literal["explicit", "context", "all", "unclear"]
 
     @model_validator(mode="after")
@@ -533,6 +534,7 @@ class ConversationDecision(StrictSchema):
     rationale: NonBlank
     canned_answer: NonBlank | None = None
     requested_issuers: tuple[NonBlank, ...] = ()
+    mentioned_companies: tuple[NonBlank, ...] = ()
     target_scope: Literal["explicit", "context", "all", "unclear"] = "unclear"
 
 
