@@ -105,8 +105,15 @@ it("reads evaluation pages while settings remain a browser-only experiment and k
   expect(requests.every(row => row.method === "GET")).toBe(true);
 });
 
+/** Two DART Korean runs that differ only in the lexical ranker, under arbitrary labels. */
+function rankerPair(candidateSettings: Record<string, unknown> = {}): PublishedSnapshot[] {
+  return snapshots.map((row, index) => ({ ...row, label: `dart-ko publication ${index + 3}`,
+    profile: { strategy: "lexical", k: 5, candidate_k: 20, lexical_ranker: index === 0 ? "bm25" : "ts_rank_cd", ...(index === 1 ? candidateSettings : {}) },
+    eval_result: { ...row.eval_result, suite: "dart-ko" } }));
+}
+
 it("reads the registered measured pair without executing evaluations", async () => {
-  const registered = snapshots.map((row, index) => ({ ...row, label: index === 0 ? "DART Korean comparison example — baseline — bm25 k5" : "DART Korean comparison example — candidate — ts_rank_cd k5" }));
+  const registered = rankerPair();
   render(<PublicEvaluationWorkspace tab="compare" snapshots={registered} loading={false} error={false} onRefresh={vi.fn()} />);
   expect(screen.getByLabelText("Evaluation dataset")).toBeDisabled();
   expect(screen.getByLabelText("Baseline")).toBeDisabled();
@@ -128,6 +135,13 @@ it("reads the registered measured pair without executing evaluations", async () 
   expect(requests.every(row => row.method === "GET" && !row.url.pathname.includes("/admin/"))).toBe(true);
   expect(requests[0].method).toBe("GET");
   expect(requests[0].url.pathname).toMatch(/snapshots\/compare\/?$/);
+});
+
+it("does not pair runs whose settings differ beyond the lexical ranker", () => {
+  render(<PublicEvaluationWorkspace tab="compare" snapshots={rankerPair({ candidate_k: 40 })} loading={false} error={false} onRefresh={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Explore an example" })).toBeDisabled();
+  expect(screen.getByText("The recorded comparison pair is not available yet.")).toBeVisible();
+  expect(requests).toHaveLength(0);
 });
 
 it("does not replace failed published evidence with an illustrative example", async () => {

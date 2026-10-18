@@ -10,7 +10,7 @@ import { useI18n } from "@/lib/i18n";
 import { publishedDatasetLabel } from "@/lib/evaluation-labels";
 import { presetError } from "@/lib/saved-presets";
 import { browserStorage, subscribeStorageRestored } from "@/lib/storage";
-import { snapshotDatasetIdentity } from "@/lib/comparison-example";
+import { comparisonExamplePair } from "@/lib/comparison-example";
 import { compareSnapshots, getPublicSnapshotDataset, getPublicSnapshotEvaluation } from "@/lib/api";
 import { DEFAULT_PROFILE, type PublishedSnapshot, type PublicSnapshotDataset, type PublicSnapshotEvaluation, type RetrievalProfile, type SnapshotComparison } from "@/lib/types";
 import { DevLockedButton } from "./dev-locked-button";
@@ -164,9 +164,10 @@ function PublicComparison({ snapshots }: { snapshots: PublishedSnapshot[] }) {
   const [comparison, setComparison] = useState<SnapshotComparison | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const baseline = snapshots.find(row => row.label === "DART Korean comparison example — baseline — bm25 k5");
-  const candidate = snapshots.find(row => row.label === "DART Korean comparison example — candidate — ts_rank_cd k5");
-  const compatible = Boolean(baseline && candidate && baseline.eval_result.suite === candidate.eval_result.suite && snapshotDatasetIdentity(baseline) && snapshotDatasetIdentity(baseline) === snapshotDatasetIdentity(candidate) && baseline.corpus_fingerprint === candidate.corpus_fingerprint);
+  const pair = comparisonExamplePair(snapshots);
+  const baseline = pair?.baseline;
+  const candidate = pair?.candidate;
+  const compatible = Boolean(pair);
   /** Fetch only the registered pair's stored measurements. */
   async function openExample() {
     if (!compatible || !baseline || !candidate || busy || comparison) return;
