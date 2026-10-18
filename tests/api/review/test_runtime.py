@@ -1157,6 +1157,46 @@ def test_routing_stops_before_search_and_answer(
     assert not responses
 
 
+def test_company_named_in_a_disclosure_does_not_stop_its_filer(classified_service):
+    """A supplier named inside a filer's disclosure is recorded, not required in the corpus."""
+    from app.api.review.schemas import RetrieveRequest
+    from app.observability.stages import record_stages
+
+    service, responses, prompts = classified_service
+    responses.append(
+        {
+            "intent": "document_review",
+            "reason": "A supply-risk question about one filer.",
+            "requested_issuers": ["Nvidia"],
+            "mentioned_companies": ["TSMC"],
+            "target_scope": "explicit",
+        }
+    )
+    events = []
+
+    async def observe(event):
+        """Collect the actual server scope before the database boundary."""
+        events.append(event)
+
+    async def exercise():
+        """Run the real entry point and stop at the existing retrieval boundary."""
+        with record_stages(observe), pytest.raises(LookupError, match="retrieval boundary"):
+            query = "What specific supply risk did Nvidia identify involving TSMC?"
+            await service.retrieve(RetrieveRequest(query=query))
+
+    asyncio.run(exercise())
+    path = next(
+        event.path_decision for event in events if event.node == "route" and event.phase == "end"
+    )
+    assert path["source"] == "classifier"
+    assert path["requested_issuers"] == ["Nvidia"]
+    assert path["mentioned_companies"] == ["TSMC"]
+    assert path["missing_issuers"] == []
+    assert path["resolved_scope"]["filters"]["issuers"] == ["NVDA"]
+    assert len(prompts) == 1
+    assert not responses
+
+
 @pytest.mark.parametrize(
     "query,names,target,calls",
     [
