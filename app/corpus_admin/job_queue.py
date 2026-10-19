@@ -296,6 +296,11 @@ class CorpusJobQueue:
             finished = self._failed(self._jobs[job_id], error)
         else:
             finished = self._succeeded(self._jobs[job_id], outcome)
+        if self._jobs[job_id].status == "cancelled":
+            # cancel() already answered and persisted this terminal state. An operation
+            # that ends after its last progress boundary must not overwrite it.
+            self._invalidate_status()
+            return
         self._jobs[job_id] = finished
         self._invalidate_status()
         await self._persister.write_final(job_id, partial(self._persist_job, finished))
