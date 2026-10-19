@@ -52,6 +52,8 @@ class ResolvedQueryScope(BaseModel):
     inferred_issuers: tuple[str, ...] = ()
     inferred_registries: tuple[str, ...] = ()
     inferred_languages: tuple[str, ...] = ()
+    # Fiscal years the question itself asks about, absolute or relative to today.
+    requested_fiscal_years: tuple[int, ...] = ()
     filters: RetrievalFilters
 
 

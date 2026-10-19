@@ -3374,6 +3374,11 @@ export interface components {
              */
             matched_aliases: components["schemas"]["MatchedAlias"][];
             /**
+             * Requested Fiscal Years
+             * @default []
+             */
+            requested_fiscal_years: number[];
+            /**
              * Source
              * @enum {string}
              */

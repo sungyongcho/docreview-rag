@@ -5643,6 +5643,14 @@
             "title": "Matched Aliases",
             "type": "array"
           },
+          "requested_fiscal_years": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Requested Fiscal Years",
+            "type": "array"
+          },
           "source": {
             "enum": [
               "explicit",
