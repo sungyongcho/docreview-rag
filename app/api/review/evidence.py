@@ -240,7 +240,7 @@ def select_evidence(
             status_code=409,
         )
     pinned = tuple(by_id[chunk_id] for chunk_id in selection.pinned_chunk_ids)
-    if len({candidate.body for candidate in pinned}) != len(pinned):
+    if len({candidate.index_text for candidate in pinned}) != len(pinned):
         raise EvidenceSnapshotError(
             "duplicate_pinned_evidence",
             "pinned evidence must not duplicate the same source text",

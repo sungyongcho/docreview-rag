@@ -204,6 +204,20 @@ def test_retrieve_collapses_text_twins_caps_one_document_and_still_fills_k():
     assert quota.max_hits_per_document == state.max_hits_per_document
 
 
+def test_text_twins_from_different_contexts_both_remain_evidence():
+    """Keep one body that two companies report, since its header carries whose value it is."""
+    body = "| Total | 100 |"
+    hits = []
+    for chunk_id, header in ((1, "AMD FY2024 · Item 8"), (2, "NVDA FY2024 · Item 8")):
+        values = {**_hit(chunk_id).model_dump(), "body": body, "context_header": header}
+        hits.append(ChunkHit.model_validate({**values, "index_text": f"{header}\n\n{body}"}))
+
+    result = retrieve_node(_state(), hits)
+
+    assert tuple(hit.chunk_id for hit in result.evidence) == (1, 2)
+    assert not [r for r in result.reasons if isinstance(r, DuplicateEvidenceText)]
+
+
 def test_document_quota_yields_rather_than_starve_a_single_filing_query():
     """Fill every slot from one filing when no other document can take them."""
     state = _state()

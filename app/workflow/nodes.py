@@ -64,19 +64,23 @@ def _unique_hits(hits: Sequence[ChunkHit]) -> tuple[tuple[ChunkHit, ...], tuple[
 def _text_unique_hits(
     hits: tuple[ChunkHit, ...],
 ) -> tuple[tuple[ChunkHit, ...], tuple[int, ...], tuple[int, ...]]:
-    """Collapse hits whose whitespace-normalized body repeats, naming the id that kept it."""
+    """Collapse hits whose whitespace-normalized text repeats, naming the id that kept it.
+
+    The context header is part of the text: one table body can belong to two
+    companies or periods, and only the header says whose value it is.
+    """
     kept: list[ChunkHit] = []
     removed: list[int] = []
     superseded_by: list[int] = []
-    owner_by_text: dict[str, int] = {}
+    owner_by_text: dict[tuple[str, str], int] = {}
     for hit in hits:
-        body = " ".join(hit.body.split())
-        owner = owner_by_text.get(body)
+        text = (" ".join(hit.context_header.split()), " ".join(hit.body.split()))
+        owner = owner_by_text.get(text)
         if owner is not None:
             removed.append(hit.chunk_id)
             superseded_by.append(owner)
             continue
-        owner_by_text[body] = hit.chunk_id
+        owner_by_text[text] = hit.chunk_id
         kept.append(hit)
     return tuple(kept), tuple(removed), tuple(superseded_by)
 
