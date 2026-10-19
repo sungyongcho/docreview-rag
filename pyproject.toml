@@ -25,9 +25,13 @@ dependencies = [
 
 
 [project.optional-dependencies]
-# uv sync --extra cpu      # development and deployment default
-# uv sync --extra rocm     # AMD; see docs before enabling on an iGPU
-# uv sync --extra cu130    # NVIDIA
+# PyTorch is optional on the host: the Docker image installs --extra cpu, and host
+# commands do not need it. Install one extra only for host-side local embeddings or
+# reranking, and pass the same extra on every later `uv sync`, which is exact and
+# removes an extra it is not given. `uv run` and `rag-dev start` keep it.
+# uv sync --locked --extra cpu     # CPU; the Docker image default
+# uv sync --locked --extra rocm    # AMD; see docs before enabling on an iGPU
+# uv sync --locked --extra cu130   # NVIDIA
 cpu = [
     "torch>=2.12",
     "sentence-transformers>=3.0",

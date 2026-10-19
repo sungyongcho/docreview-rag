@@ -168,6 +168,17 @@ uv sync --locked
 if [ ! -f .env ]; then cp .env.example .env; fi
 ```
 
+`uv sync --locked` prepares the base environment, which has no PyTorch. The commands in this
+guide do not need it on the host; the API container installs its own. To run local embeddings
+or reranking on the host, add one extra and **repeat the same extra on every later sync**:
+
+```bash
+uv sync --locked --extra cpu    # or --extra cu130 (NVIDIA) / --extra rocm (AMD)
+```
+
+`uv sync` is exact: a later sync without the extra uninstalls torch and sentence-transformers
+again. `uv run` and `rag-dev start` keep an installed extra.
+
 Edit `.env` locally. Replace the development-key placeholder with a real key, and leave unused keys empty.
 Use your real name and reachable email for SEC access. Do not put secrets in terminal commands, screenshots, or Git.
 

@@ -175,6 +175,17 @@ uv sync --locked
 if [ ! -f .env ]; then cp .env.example .env; fi
 ```
 
+`uv sync --locked`는 기본 환경을 준비하며, 여기에는 PyTorch가 없습니다. 이 안내의 명령은 호스트에서
+PyTorch가 필요 없고, API 컨테이너는 자체적으로 설치합니다. 호스트에서 로컬 임베딩이나 재정렬을 실행하려면
+extra 하나를 추가하고, **이후 sync할 때마다 같은 extra를 반복**합니다.
+
+```bash
+uv sync --locked --extra cpu    # 또는 --extra cu130 (NVIDIA) / --extra rocm (AMD)
+```
+
+`uv sync`는 정확히 맞추는(exact) 동기화라서, 나중에 extra 없이 sync하면 torch와 sentence-transformers가
+다시 제거됩니다. `uv run`과 `rag-dev start`는 설치된 extra를 유지합니다.
+
 `.env`를 편집기로 열어 다음 항목을 맞춥니다. `OPENAI_API_KEY_LOCAL`의 placeholder는
 **실제 개발용 키로 교체**하고, 사용하지 않는 키는 아래처럼 비워 둡니다. 키를 명령행·스크린샷·Git에 남기지 않습니다.
 

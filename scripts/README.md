@@ -1,7 +1,10 @@
 # Script packages
 
-Run Python modules from the repository root after `uv sync --locked`. Registered `rag-*` helpers
-select their own checkout from any directory. There are no compatibility modules or re-export
+Run Python modules from the repository root after `uv sync --locked`. That base environment has
+no PyTorch; if you added an extra (`--extra cpu|cu130|rocm`), repeat it on every later `uv sync`,
+because a sync without it uninstalls torch. `uv run` and `rag-dev start` keep it.
+
+Registered `rag-*` helpers select their own checkout from any directory. There are no compatibility modules or re-export
 packages. Schema preparation lives in `app.db.startup`, the container gate; Quick Start and
 `scripts.schema` call that shared code.
 

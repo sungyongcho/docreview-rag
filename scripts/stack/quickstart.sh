@@ -53,6 +53,8 @@ cd "$root"
 printf '%s\n' 'Checking prerequisites: uv, Docker Engine, Docker Compose.'
 docker info >/dev/null 2>&1 || { printf 'Docker Engine is unavailable. Check access, then rerun rag-%s start.\n' "$mode" >&2; exit 1; }
 docker compose version --short >/dev/null
+# --inexact keeps an accelerator extra (torch) that the developer installed; an exact
+# sync without that extra would uninstall it on every start.
 printf '%s\n' '+-- [PYTHON] Prepare the local runner --+' 'Install locked dependencies; configuration is checked next. No model request is made.'
-uv run --quiet --no-project --isolated --python 3.14 -- python -m scripts.stack.terminal "Install Python dependencies" -- uv sync --locked
+uv run --quiet --no-project --isolated --python 3.14 -- python -m scripts.stack.terminal "Install Python dependencies" -- uv sync --locked --inexact
 exec .venv/bin/python -m scripts.stack.cli "$mode" start "${start_args[@]}"

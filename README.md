@@ -43,6 +43,18 @@ rag-dev start          # env template, dependencies, dev stack
 
 Open `http://localhost:8000/docreview-rag/`. Full walkthrough: [English](docs/TUTORIAL/en/quickstart-dev.md) · [한국어](docs/TUTORIAL/ko/quickstart-dev.md)
 
+**Python environment and PyTorch.** The base environment (`uv sync --locked`, which
+`rag-dev start` prepares) has no PyTorch. Host commands do not need it, and the API
+container installs its own. Add an extra only for host-side local embeddings or
+reranking, and repeat that same extra on every later sync:
+
+```bash
+uv sync --locked --extra cpu    # or --extra cu130 / --extra rocm
+```
+
+A plain `uv sync` is exact and uninstalls torch and sentence-transformers again.
+`uv run` and `rag-dev start` keep an installed extra.
+
 To try the visitor experience with a saved public deployment bundle instead of
 preparing DEV data yourself:
 
