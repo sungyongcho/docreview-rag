@@ -1,9 +1,10 @@
 """Resolve issuer selections and each routed request's retrieval scope against the manifest."""
 
 import asyncio
+from collections.abc import Callable
+from datetime import date
 import logging
 from pathlib import Path
-import re
 from typing import cast
 
 from app.api.errors import ApiProblemError
@@ -18,6 +19,7 @@ from app.observability.types import JsonObject
 from app.operator.jobs.store import JobStore
 from app.query.diagnostics import manifest_problem
 from app.query.intent import CORPUS_WIDE_CUES
+from app.query.periods import question_fiscal_years, utc_today
 from app.query.scope import (
     ManifestScopeIndex,
     QueryScopeError,
@@ -46,6 +48,8 @@ class ScopeResolver:
         Whether a manifest failure carries diagnostic detail and recent job context.
     secret_values : tuple[str, ...]
         Configured secrets redacted from diagnostic detail.
+    today : Callable[[], date]
+        Calendar date that relative period wording such as "last year" resolves against.
     """
 
     def __init__(
@@ -56,8 +60,10 @@ class ScopeResolver:
         bm25: ServerBM25,
         developer: bool,
         secret_values: tuple[str, ...],
+        today: Callable[[], date] = utc_today,
     ) -> None:
         self._corpus_root = corpus_root
+        self._today = today
         self._scope_index: ManifestScopeIndex | None = None
         self._scope_signature: tuple[int, int, int, int, int] | None = None
         self._session_factory = session_factory
@@ -239,12 +245,9 @@ class ScopeResolver:
                     code="query_scope_conflict",
                     message="The requested company is outside the selected document scope.",
                 )
+            years = question_fiscal_years(query, self._today())
+            scope = scope.model_copy(update={"requested_fiscal_years": years})
             if not scope.filters.fiscal_years:
-                years = tuple(
-                    sorted(
-                        {int(year) for year in re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", query)}
-                    )
-                )
                 scope = scope.model_copy(
                     update={"filters": scope.filters.model_copy(update={"fiscal_years": years})}
                 )

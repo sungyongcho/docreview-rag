@@ -41,6 +41,18 @@ describe("API client", () => {
     expect(response.body?.locked).toBe(false);
   });
 
+  it("parses CRLF frames whose CR and LF arrive in different chunks", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse([
+      "event: report\r\ndata: {\"status\":\"ok\",\"report\":{\"answer\":\"done\"}}\r",
+      "\n\r",
+      "\nevent: done\r\ndata: {}\r\n\r\n",
+    ])));
+
+    const report = await streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined);
+
+    expect(report.status).toBe("ok");
+  });
+
   it("fails closed when a stream ends without done", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse([
       "event: report\ndata: {\"status\":\"ok\"}\n\n",
@@ -114,6 +126,21 @@ describe("review response body cancellation", () => {
     await rejected;
     expect(fetch).toHaveBeenCalledTimes(preaborted ? 0 : 1);
     expect(cancellation).toHaveBeenCalledTimes(preaborted ? 0 : 1);
+    expect(response.body?.locked).toBe(false);
+  });
+
+  it("cancels the open body when a frame cannot be parsed", async () => {
+    const cancellation = vi.fn();
+    const response = new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode("event: surprise\ndata: {}\n\n")); },
+      cancel: cancellation,
+    }), { headers: { "content-type": "text/event-stream" } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    await expect(
+      streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined),
+    ).rejects.toThrow("unknown event");
+    expect(cancellation).toHaveBeenCalledOnce();
     expect(response.body?.locked).toBe(false);
   });
 

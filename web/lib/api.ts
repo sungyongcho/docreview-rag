@@ -133,10 +133,11 @@ interface RetrievePayload {
   resolved_scope: Record<string, unknown> | null;
 }
 
-export async function retrieveEvidence(query: string, sessionProfile: ReviewSessionProfile): Promise<RetrievePayload> {
+export async function retrieveEvidence(query: string, sessionProfile: ReviewSessionProfile, signal?: AbortSignal): Promise<RetrievePayload> {
   return request<RetrievePayload>("/retrieve", {
     method: "POST",
     body: JSON.stringify({ query, session_profile: sessionProfile }),
+    signal,
   });
 }
 
@@ -239,7 +240,8 @@ export async function streamReview(
     while (true) {
       const { done: streamDone, value } = await reader.read();
       if (signal?.aborted) throw new DOMException("Request cancelled", "AbortError");
-      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !streamDone }).replaceAll("\r\n", "\n");
+      // Normalize after joining: a CRLF pair can be split across network chunks.
+      buffer = (buffer + decoder.decode(value ?? new Uint8Array(), { stream: !streamDone })).replaceAll("\r\n", "\n");
       let boundary = buffer.indexOf("\n\n");
       while (boundary >= 0) {
         const frame = buffer.slice(0, boundary);
@@ -252,6 +254,10 @@ export async function streamReview(
     if (buffer.trim()) await consume(buffer);
     if (!done || !terminal) throw new Error("Review stream ended without a terminal report and done event.");
     return terminal;
+  } catch (error) {
+    // Releasing the lock alone would leave a still-open response body streaming.
+    void reader.cancel().catch(() => undefined);
+    throw error;
   } finally {
     signal?.removeEventListener("abort", abort);
     reader.releaseLock();

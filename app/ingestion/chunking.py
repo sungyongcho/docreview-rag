@@ -218,7 +218,7 @@ def section_units(
 
         if block.kind == table_kind:
             flush_pending()
-            table = structured_table(block.html)
+            table = structured_table(block.html, block.cell_spans)
             markdown = table.render()
             captions = table.captions if not markdown else ()
             if markdown:
@@ -337,13 +337,29 @@ def _text_pieces(text: str, context: str, budget: InputBudget) -> list[str]:
     return pieces
 
 
+def _select_table_columns(table: StructuredTable, columns: tuple[int, ...]) -> StructuredTable:
+    """Project rendered columns while retaining their full-table source identities."""
+
+    def project(row: TableRow) -> TableRow:
+        """Keep original cell column numbers separate from projected tuple positions."""
+        return replace(row, cells=tuple(row.cells[column] for column in columns))
+
+    return replace(
+        table,
+        headers=tuple(project(row) for row in table.headers),
+        rows=tuple(project(row) for row in table.rows),
+    )
+
+
 def _table_pieces(
     table: StructuredTable,
     context: str,
     budget: InputBudget,
     caption_sources: tuple[CaptionSource, ...] = (),
 ) -> list[tuple[str, TableFragment]]:
-    """Pack rows, then cells and sentences, preserving enclosing source ownership."""
+    """Pack columns, rows, cells and sentences with their original source ownership."""
+    if not table.rows:
+        return []
     result: list[tuple[str, TableFragment]] = []
     pending: list[TableRow] = []
     header_cells = tuple(
@@ -382,6 +398,33 @@ def _table_pieces(
 
     if fits(table.rows):
         return [(table.render(), membership(table.rows))]
+    empty_row = replace(
+        table.rows[0], cells=tuple(replace(cell, text="") for cell in table.rows[0].cells)
+    )
+    if len(empty_row.cells) > 2 and not fits((empty_row,)):
+        # A header wider than the budget cannot shrink by splitting body cells.
+        # Repeat the label column with only the selected columns' matching headers.
+        groups: list[tuple[int, ...]] = []
+        columns = (0,)
+        for column in range(1, len(empty_row.cells)):
+            candidate = (*columns, column)
+            projected = _select_table_columns(table, candidate)
+            if len(columns) > 1 and not all(
+                budget.accepts(compose_index_text(context, projected.render((row,))), target=True)
+                for row in projected.rows
+            ):
+                groups.append(columns)
+                columns = (0, column)
+            else:
+                columns = candidate
+        groups.append(columns)
+        for columns in groups:
+            result.extend(
+                _table_pieces(
+                    _select_table_columns(table, columns), context, budget, caption_sources
+                )
+            )
+        return result
     for row in table.rows:
         if fits((row,)):
             if pending and not fits((*pending, row)):
@@ -392,22 +435,22 @@ def _table_pieces(
         # A wide row is represented as multiple sparse rows with the same row id.
         # Column headers remain in every fragment; the original label repeats when
         # it fits, so values remain meaningful without claiming new HTML spans.
-        for cell in row.cells:
+        for position, cell in enumerate(row.cells):
             if not cell.text:
                 continue
             blank = tuple(replace(value, text="") for value in row.cells)
             label = row.cells[0]
             base = list(blank)
-            if cell.column != 0 and label.text:
+            if position != 0 and label.text:
                 base[0] = label
             candidate = list(base)
-            candidate[cell.column] = cell
+            candidate[position] = cell
             candidate_row = replace(row, cells=tuple(candidate))
             if fits((candidate_row,)):
                 result.append((table.render((candidate_row,)), membership((candidate_row,))))
                 continue
             # Avoid making a long narrative label mandatory context for all values.
-            if cell.column != 0:
+            if position != 0:
                 base[0] = blank[0]
             atoms = re.split(r"(?<=[.!?。！？])(?=\s)", cell.text)
             offset = 0
@@ -422,19 +465,20 @@ def _table_pieces(
                 cell: TableCell = cell,
                 row: TableRow = row,
                 label: TableCell = label,
+                position: int = position,
             ) -> None:
                 """Emit a sentence-aligned interval of this normalized source cell."""
                 if not text:
                     return
                 values = list(base)
-                values[cell.column] = replace(cell, text=text)
+                values[position] = replace(cell, text=text)
                 part = replace(row, cells=tuple(values))
                 members = [
                     CellFragment(
                         row.source_row, cell.column, start, start + len(text), cell.sources
                     )
                 ]
-                if cell.column != 0 and values[0].text:
+                if position != 0 and values[0].text:
                     members.append(
                         CellFragment(row.source_row, 0, 0, len(label.text), label.sources)
                     )
@@ -452,14 +496,14 @@ def _table_pieces(
 
             for atom in atoms:
                 values = list(base)
-                values[cell.column] = replace(cell, text=atom)
+                values[position] = replace(cell, text=atom)
                 if not fits((replace(row, cells=tuple(values)),), target=False):
                     raise ValueError(
                         f"Table row {row.source_row}, column {cell.column}: an indivisible "
                         "sentence with repeated headers exceeds the embedding token/character "
                         "limit; supply a finer structural source boundary."
                     )
-                values[cell.column] = replace(cell, text=text + atom)
+                values[position] = replace(cell, text=text + atom)
                 if text and not fits((replace(row, cells=tuple(values)),)):
                     emit(text, start)
                     text = ""

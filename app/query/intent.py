@@ -110,6 +110,7 @@ _EN_FILLER_WORDS = (
     r"some|all|each|every|available|per|company|companies|firms?|"
     r"corp(?:oration)?|inc|ltd|co|"
     r"please|years?|annual(?:ly)?|quarter(?:ly|s)?|q[1-4]|h[12]|fiscal|fy|"
+    r"last|previous|prior|current|ago|"
     r"monthly|yoy|qoq|ytd|full|half|first|second|third|fourth|than|then|also|"
     r"too|that|this|these|those|it|s|both|respective|again|korean|english|"
     r"repeat|translate|rephrase|restate|elaborate|clarify|discuss|further|"
@@ -301,6 +302,9 @@ _KO_FILLER_WORDS = (
     "때문",
     "올해",
     "작년",
+    "재작년",
+    "전년",
+    "전전년",
     "내년",
     "금년",
     "지난해",

@@ -23,6 +23,7 @@ from app.evals.contracts import (
 )
 from app.evals.results.artifacts import EvaluationArtifacts, cases_by_id
 from app.evals.results.regression import SCORING_CONFIG_KEY
+from app.evals.results.scoring import TABLE_SCORING
 
 
 def compare_ranks(
@@ -62,6 +63,7 @@ async def compatible_baseline(
             and identity.get("corpus_fingerprint") == corpus_fingerprint
             and isinstance(scoring, dict)
             and scoring.get("k") == k
+            and scoring.get("table_scoring") == TABLE_SCORING
         ):
             return row
     return None
@@ -89,6 +91,8 @@ async def compare_stored_results(
         raise ValueError("evaluation scoring metadata must be an object")
     if candidate_scoring.get("k") != baseline_scoring.get("k"):
         raise ValueError("evaluation cutoffs are not compatible")
+    if candidate_scoring.get("table_scoring") != baseline_scoring.get("table_scoring"):
+        raise ValueError("evaluation table scoring methods are not compatible")
     artifacts = EvaluationArtifacts(artifact_dir)
     candidate_payload = artifacts.read(candidate.raw_artifact_path)
     baseline_payload = artifacts.read(baseline.raw_artifact_path)

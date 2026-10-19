@@ -195,14 +195,16 @@ export function useReviewRequests({
       let evidence = preparedEvidence;
       // Only the private admin surface may request an evidence-only fallback automatically.
       // Public failures never dispatch a second charged execution request.
-      if (developer && reason instanceof ApiError && reason.code === "provider_unavailable" && !evidence.length) {
+      if (developer && reason instanceof ApiError && reason.code === "provider_unavailable" && !evidence.length && !controller.signal.aborted) {
         try {
-          const retrieved = await retrieveEvidence(question, selectedProfile);
+          const retrieved = await retrieveEvidence(question, selectedProfile, controller.signal);
           evidence = retrieved.candidates.length ? retrieved.candidates : retrieved.results;
           execution = { ...execution, resolvedScope: resolvedScopeFromServer(retrieved.resolved_scope) ?? execution.resolvedScope };
         } catch {
           // Preserve the original provider error when retrieval is also unavailable.
         }
+        // Stop during the fallback cancels the request whose failure was recorded above.
+        if (controller.signal.aborted) execution = finishReviewProgress(execution, "cancelled", Date.now() - requestStarted);
       }
       noteDailyBudget(reason);
       const message =

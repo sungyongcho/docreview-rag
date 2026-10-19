@@ -453,6 +453,37 @@ def test_followups_reach_retrieval_with_replaced_scope(classified_service, query
     assert prompts == []
 
 
+def test_relative_year_wording_scopes_retrieval_and_the_requested_period(classified_service):
+    """Resolve "last year" against the question date into both the filter and the request."""
+    from datetime import date
+
+    from app.api.review.schemas import RetrieveRequest
+    from app.observability.stages import record_stages
+
+    service, _, prompts = classified_service
+    service._scope._today = lambda: date(2025, 3, 1)
+    events = []
+
+    async def observe(event):
+        """Collect the actual server scope before the database boundary."""
+        events.append(event)
+
+    async def exercise():
+        """Run the real retrieval entry point for a relative-year question."""
+        with record_stages(observe), pytest.raises(LookupError, match="retrieval boundary"):
+            await service.retrieve(
+                RetrieveRequest(query="What drove NVIDIA data center revenue growth last year?")
+            )
+
+    asyncio.run(exercise())
+    path = next(
+        event.path_decision for event in events if event.node == "route" and event.phase == "end"
+    )
+    assert path["resolved_scope"]["filters"]["fiscal_years"] == [2024]
+    assert path["resolved_scope"]["requested_fiscal_years"] == [2024]
+    assert prompts == []
+
+
 @pytest.mark.parametrize(
     "endpoint,query,issuer",
     [

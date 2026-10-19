@@ -9,16 +9,19 @@ segmentation lives in the adapter modules (``app.ingestion.parsing.sec``,
 
 from collections.abc import Sequence
 import hashlib
+from html.parser import HTMLParser
 import re
 import warnings
 
 from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
+from bs4.element import NavigableString, PreformattedString
 
 from app.ingestion.parsing.tables import CELL_TAGS
 
 HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")
 LEAF_BLOCK_TAGS = ("div", "p", "table", *HEADING_TAGS)
 STYLESHEET_WEIGHT_KEY = "_parser_stylesheet_font_weight"
+SOURCE_HTML_KEY = "_parser_source_html"
 STYLESHEET_RULE_RE = re.compile(r"(?P<selectors>[^{}]+)\{(?P<body>[^{}]*)\}")
 STYLESHEET_WEIGHT_RE = re.compile(
     r"font-weight\s*:\s*(?P<weight>bold(?:er)?|[1-9]00)\b",
@@ -44,7 +47,7 @@ LAYOUT_CELL_CHARS = 300  # any cell this long makes the table a layout table
 # Check length before numeric density to exclude Intel infographic tables (B05).
 NUMERIC_CELL_CHARS = 30  # longer text is prose containing a number, not a numeric cell
 DATA_TABLE_MIN_NUMERIC = 4  # minimum number of numeric cells
-DATA_TABLE_NUMERIC_DIVISOR = 4  # numeric cells must also be at least one quarter of all cells
+DATA_TABLE_NUMERIC_DIVISOR = 4  # numeric density is measured over nonempty cells
 
 REPORTED_TITLE_MAX = 150  # maximum stored Section.reported_title length
 
@@ -76,6 +79,26 @@ def source_pos(el: Tag, offsets: list[int]) -> int | None:
     if el.sourceline is None or el.sourcepos is None:
         return None
     return offsets[el.sourceline - 1] + el.sourcepos
+
+
+def cell_source_spans(
+    table: Tag, offsets: list[int] | None, end: int | None
+) -> tuple[tuple[int, int], ...] | None:
+    """Return each cell's half-open source span in document order, or None.
+
+    A cell spans from its own start tag to the next cell's start tag, and the last
+    cell to the table block's end: the same enclosing rule ``block_source_spans``
+    applies to blocks, since the parser records no end positions.
+    """
+    if offsets is None or end is None:
+        return None
+    starts: list[int] = []
+    for cell in table.find_all(list(CELL_TAGS)):
+        start = source_pos(cell, offsets)
+        if start is None:
+            return None
+        starts.append(start)
+    return tuple(zip(starts, [*starts[1:], end], strict=True))
 
 
 def _record_stylesheet_font_weights(soup: BeautifulSoup) -> None:
@@ -122,6 +145,7 @@ def normalize(html: str) -> BeautifulSoup:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
         soup = BeautifulSoup(html, "html.parser", store_line_numbers=True)
+    soup.__dict__[SOURCE_HTML_KEY] = html
     _record_stylesheet_font_weights(soup)
     for tag in soup.find_all(["script", "style", "noscript", "img"]):
         tag.decompose()  # remove the node and all descendants
@@ -135,16 +159,118 @@ def normalize(html: str) -> BeautifulSoup:
     return soup
 
 
+class _UncoveredCellText(HTMLParser):
+    """Anchor mixed layout-cell text runs that the selected DOM blocks omit.
+
+    BeautifulSoup retains tag positions but not bare-string positions. Read raw
+    data event positions only when needed, rather than guessing offsets for text
+    before or after a nested table. Selected blocks remain the structure owner.
+    """
+
+    def __init__(self, covered: set[tuple[int | None, int | None]]) -> None:
+        """Track source tag ancestry and accumulate only uncovered cell text."""
+        super().__init__(convert_charrefs=True)
+        self.covered = covered
+        self.stack: list[tuple[str, bool]] = []
+        self.pending: list[str] = []
+        self.start: tuple[int, int] | None = None
+        self.blocks: list[Tag] = []
+
+    def flush(self) -> None:
+        """Emit one inline text run at its exact original data-event start."""
+        text = "".join(self.pending)
+        if text.strip() and self.start is not None:
+            line, column = self.start
+            block = Tag(name="span", sourceline=line, sourcepos=column)
+            block.append(text)
+            self.blocks.append(block)
+        self.pending.clear()
+        self.start = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Separate structural boundaries while keeping inline words intact."""
+        if self.getpos() in self.covered or tag in {*LEAF_BLOCK_TAGS, *CELL_TAGS, "br"}:
+            self.flush()
+        blocked = self.getpos() in self.covered or tag in {
+            "script",
+            "style",
+            "noscript",
+            "ix:header",
+        }
+        if tag not in {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
+        }:
+            self.stack.append((tag, blocked))
+
+    def handle_endtag(self, tag: str) -> None:
+        """End a structural run and leave the matching raw-source ancestor."""
+        if tag in {*LEAF_BLOCK_TAGS, *CELL_TAGS}:
+            self.flush()
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
+
+    def handle_data(self, data: str) -> None:
+        """Retain visible text inside cells outside all selected block ancestors."""
+        if any(blocked for _, blocked in self.stack):
+            return
+        if not any(tag in CELL_TAGS for tag, _ in self.stack):
+            return
+        if self.start is None:
+            self.start = self.getpos()
+        self.pending.append(data)
+
+
+def _uncovered_cell_text(soup: BeautifulSoup, blocks: list[Tag]) -> list[Tag]:
+    """Recover mixed cell text only when the ordinary leaf pass left it uncovered."""
+    selected = {id(block) for block in blocks}
+    orphan = any(
+        isinstance(node, NavigableString)
+        and not isinstance(node, PreformattedString)
+        and node.strip()
+        and node.find_parent(list(CELL_TAGS)) is not None
+        and not any(id(parent) in selected for parent in node.parents)
+        for node in soup.descendants
+    )
+    if not orphan:
+        return []
+    raw = soup.__dict__.get(SOURCE_HTML_KEY)
+    if raw is None:
+        raise ValueError("mixed layout-cell extraction requires normalize() source positions")
+    parser = _UncoveredCellText({(block.sourceline, block.sourcepos) for block in blocks})
+    parser.feed(raw)
+    parser.close()
+    parser.flush()
+    return parser.blocks
+
+
 def _is_data_table(tbl: Tag) -> bool:
     """Return whether a table has the shape and numeric density of financial data."""
-    cells = tbl.find_all(list(CELL_TAGS))
+    # Nested grids own their cells. Counting those cells for an outer layout
+    # table promotes the wrapper and flattens the inner row/column relationships.
+    cells = [c for c in tbl.find_all(list(CELL_TAGS)) if c.find_parent("table") is tbl]
     if len(cells) < DATA_TABLE_MIN_CELLS:
         return False
-    texts = [c.get_text(" ", strip=True) for c in cells]
+    texts = [text for c in cells if (text := c.get_text(" ", strip=True))]
     if any(len(t) > LAYOUT_CELL_CHARS for t in texts):  # a long prose cell means layout
         return False
-    numeric = sum(1 for t in texts if t and len(t) < NUMERIC_CELL_CHARS and re.search(r"\d", t))
-    return numeric >= max(DATA_TABLE_MIN_NUMERIC, len(cells) // DATA_TABLE_NUMERIC_DIVISOR)
+    # Empty spacer cells encode presentation, not evidence against a financial grid.
+    numeric = sum(1 for t in texts if len(t) < NUMERIC_CELL_CHARS and re.search(r"\d", t))
+    return numeric >= max(DATA_TABLE_MIN_NUMERIC, len(texts) // DATA_TABLE_NUMERIC_DIVISOR)
 
 
 def leaf_blocks(soup: BeautifulSoup, tags: Sequence[str] = LEAF_BLOCK_TAGS) -> list[Tag]:
@@ -165,19 +291,34 @@ def leaf_blocks(soup: BeautifulSoup, tags: Sequence[str] = LEAF_BLOCK_TAGS) -> l
         Ordered list of block-level elements considered leaf nodes for parsing.
     """
     block_tags = list(tags)
-    data_ids: set[int] = set()
-    for t in soup.find_all("table"):
-        if _is_data_table(t) and not any(id(p) in data_ids for p in t.find_parents("table")):
-            data_ids.add(id(t))  # keep only the outermost nested table
+    table_ids: set[int] = set()
+    tables = soup.find_all("table")
+    data_tables = {id(t) for t in tables if _is_data_table(t)}
+    for t in tables:
+        # An independently shaped inner grid must not become one flattened outer
+        # cell. Unselected wrapper text is recovered with its source positions.
+        if any(id(inner) in data_tables for inner in t.find_all("table")):
+            continue
+        if not any(id(p) in table_ids for p in t.find_parents("table")) and (
+            id(t) in data_tables or t.find(block_tags) is None
+        ):
+            table_ids.add(id(t))
 
     out = []
-    for el in soup.find_all(block_tags):
-        inside_data = any(id(p) in data_ids for p in el.find_parents("table"))
+    # Rejected layout tables can mix paragraph blocks and bare cell text. Include
+    # terminal cells too, instead of silently dropping their text.
+    for el in soup.find_all([*block_tags, *CELL_TAGS]):
+        if any(id(p) in table_ids for p in el.find_parents("table")):
+            continue
         if el.name == "table":
-            if not inside_data and (id(el) in data_ids or el.find(block_tags) is None):
-                out.append(el)  # keep a data table or legacy leaf table as one block
-        elif not inside_data and el.find(block_tags) is None:
+            if id(el) in table_ids:
+                out.append(el)
+        elif el.find(block_tags) is None and (el.name not in CELL_TAGS or el.get_text(strip=True)):
             out.append(el)
+    extra = _uncovered_cell_text(soup, out)
+    if extra:
+        out.extend(extra)
+        out.sort(key=lambda block: (block.sourceline or 0, block.sourcepos or 0))
     return out
 
 

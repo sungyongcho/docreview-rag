@@ -81,7 +81,8 @@ def _validate_evaluation(path: Path) -> dict:
     if config.get("evaluated_golden_sha256") != hashlib.sha256(encoded).hexdigest():
         raise ValueError(f"Evaluated golden identity mismatch: {path.name}")
     k = metrics.get("k")
-    if type(k) is not int or k <= 0 or config.get("scoring") != {"k": k, "coverage_threshold": 0.5}:
+    current = {"k": k, "coverage_threshold": 0.5, "table_scoring": "cell_spans"}
+    if type(k) is not int or k <= 0 or config.get("scoring") != current:
         raise ValueError(f"Missing or inconsistent current scoring settings: {path.name}")
     identity = config.get("admin_identity")
     original_digest = identity.get("golden_sha256") if isinstance(identity, dict) else None
@@ -222,9 +223,9 @@ def validate_database(
     expected_paths = sorted(f"/app/data/eval_runs/{name}" for name in bundle.evaluations)
     if report["documents"] != expected_ids:
         raise ValueError("Restored document identities differ from the source manifest")
-    if report["chunks"] != 10586 or report["matching_embeddings"] != 10586:
-        raise ValueError("Expected 10,586 chunks and matching OpenAI 384-dimensional vectors")
-    if report["embeddings"] != 10586:
+    if report["chunks"] != 10659 or report["matching_embeddings"] != 10659:
+        raise ValueError("Expected 10,659 chunks and matching OpenAI 384-dimensional vectors")
+    if report["embeddings"] != 10659:
         raise ValueError("Unexpected embeddings exist in the restored database")
     if (
         report["snapshots"] != 4

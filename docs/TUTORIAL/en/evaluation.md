@@ -122,6 +122,8 @@ Quick uses the current index. **Matrix · isolated corpus** tests configured chu
 | Recall@k / hit rate | Coverage within the stated cutoff and evaluated cases. Compare like-for-like conditions. |
 | Latency | Recorded search time; judge it alongside quality and the effective configuration. |
 
+A table result counts only when the table cells it carries contain the expected source span; another piece of the same table does not. Evaluating requires an index whose table pieces record their cells' source positions, so an index built before that is refused with a re-index message. Results scored the old way are not offered as baselines for new ones.
+
 Follow per-case changes rather than only the aggregate score. **Use selected set** applies a selected result's search settings to the conversation; it does not generate a new answer. [Snapshots](snapshots.md) explain how to preserve and compare the result with its search data.
 
 ## Workflow and management tabs {#workflow-and-management-tabs}

@@ -53,6 +53,31 @@ def test_partial_coverage_includes_the_threshold_and_rejects_the_step_below():
     assert score_case("q1", [golden()], [below_threshold], 1).hit_at_k == 0.0
 
 
+def test_table_fragments_sharing_one_table_span_score_only_by_their_cells():
+    """Credit the fragment holding the answer cell, not every fragment of its table."""
+    table = {"kind": "table", "start_char": 0, "end_char": 1_000}
+    without_answer = hit(chunk_id=1, **table)
+    with_answer = hit(chunk_id=2, **table)
+    cell_spans = {1: ((0, 100), (200, 300)), 2: ((0, 100), (100, 200))}
+
+    assert span_coverage(golden(), without_answer) == 1.0
+    assert span_coverage(golden(), without_answer, cell_spans[1]) == 0.0
+    assert span_coverage(golden(), with_answer, cell_spans[2]) == 1.0
+    score = score_case("q1", [golden()], [without_answer, with_answer], 2, cell_spans)
+    assert (score.hit_at_k, score.first_relevant_rank) == (1.0, 2)
+
+
+def test_overlapping_cell_spans_are_counted_once():
+    """Measure the union of a fragment's cells so repeated cells cannot inflate coverage."""
+    assert span_coverage(golden(), hit(kind="table"), ((100, 130), (110, 140))) == 0.4
+
+
+def test_a_table_hit_without_cell_spans_is_refused():
+    """Refuse a table hit from an index built before cell spans were recorded."""
+    with pytest.raises(ValueError, match="no cell source spans"):
+        score_case("q1", [golden()], [hit(kind="table")], 1)
+
+
 @pytest.mark.parametrize("cut", [101, 150])
 def test_one_chunk_boundary_inside_a_gold_span_never_makes_it_unscoreable(cut):
     """Keep a split gold span reachable, because one side always holds at least half."""
@@ -172,7 +197,11 @@ def test_suite_metrics_are_macro_averages_with_deterministic_case_order():
     assert suite.k == 2
     assert suite.case_count == 3
     assert [case.case_id for case in suite.cases] == ["a", "b", "c"]
-    assert suite.parameters == {"k": 2, "coverage_threshold": COVERAGE_THRESHOLD}
+    assert suite.parameters == {
+        "k": 2,
+        "coverage_threshold": COVERAGE_THRESHOLD,
+        "table_scoring": "cell_spans",
+    }
 
 
 @pytest.mark.parametrize("k", [0, True, 1.0])

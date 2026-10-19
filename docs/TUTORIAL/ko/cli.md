@@ -560,6 +560,7 @@ rag-dev corpus readiness
 | embedding 누락·stale | 데이터 준비의 provider·pending·모델 정체성 | OpenAI 설정과 키를 확인하고 필요한 누락 임베딩 생성 실행; 유료이므로 manifest와 명시적 선택 범위 확인 |
 | BM25 미준비 | 파싱·청킹 뒤 통계가 없는 정상 준비 단계 | 4단계 BM25 계산/재계산 필요. 하이브리드·키워드는 대기, 벡터는 임베딩만 필요 |
 | `NOT_IN_DOCS` | corpus·기업·연도 필터와 검색된 근거 | 문서와 인용 후보 확인 후 문서에 실제 있는 질문으로 재시도 |
+| `PERIOD_MISMATCH` | `period_mismatch` 사유의 요청 연도와 인용 수치의 연도 | 인용 수치가 다른 연도의 값임; 그 연도로 다시 묻거나 요청 연도를 보고한 공시를 선택 |
 | `provider_failure` | 실행 트레이스의 status·attempts·details·node | 키·모델 접근 권한·연결·한도를 확인; DB 재생성으로 해결하지 않음 |
 | `budget_exceeded` | resource·limit·observed·blocked_node | 대화 설정 → 실행 한도에서 해당 한도만 조정; 재시도는 추가 비용 가능 |
 | `node_error` | error_type·message·node | 해당 검색·파싱 등 단계의 원인을 해결한 뒤 재시도 |

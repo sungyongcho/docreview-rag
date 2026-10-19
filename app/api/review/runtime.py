@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequence
 from contextlib import asynccontextmanager
+from functools import partial
 import hashlib
 from pathlib import Path
 import secrets
@@ -61,6 +62,7 @@ from app.query.language import detect_query_language
 from app.query.resolution import ScopeResolver
 from app.query.translation import QueryTranslationError, route_query
 from app.retrieval.embedding.provider import EmbeddingProvider
+from app.retrieval.fragments import load_table_fragments
 from app.retrieval.ranking.reranker import RerankProvider, shared_cross_encoder
 from app.retrieval.search.plan import SearchPlan
 from app.retrieval.search.profiles import RetrievalProfile, ServerBM25
@@ -891,6 +893,7 @@ class RuntimeApiServices:
             ),
             routing_queries=routed_queries,
             system_prompt=policy.system_prompt,
+            requested_fiscal_years=scope.requested_fiscal_years,
         )
         async with translate_runtime_errors():
             async with self._session_factory() as session:
@@ -984,6 +987,11 @@ class RuntimeApiServices:
                         retriever=retrieve_for_workflow,
                         provider=llm_provider,
                         on_node=record_node,
+                        fragment_loader=partial(
+                            load_table_fragments,
+                            session,
+                            snapshot_id=scope.filters.snapshot_id,
+                        ),
                     )
                 except BilledRunAllowanceError as denial:
                     # Calls were billed before the denial: keep that run on record,

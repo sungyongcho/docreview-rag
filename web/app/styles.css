@@ -4015,6 +4015,10 @@ select.chip {
   color: var(--warn);
 }
 
+.verdict.period-mismatch {
+  color: var(--warn);
+}
+
 .verdict.unsupported-request {
   color: var(--warn);
 }
@@ -4113,6 +4117,12 @@ select.chip {
 }
 
 .verdict.not-in-docs {
+  color: var(--text);
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+}
+
+.verdict.period-mismatch {
   color: var(--text);
   border-color: var(--warn);
   background: color-mix(in srgb, var(--warn) 16%, transparent);

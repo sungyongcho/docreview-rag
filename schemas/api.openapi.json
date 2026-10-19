@@ -3335,6 +3335,31 @@
         "title": "ExecutionStageResult",
         "type": "object"
       },
+      "FiguresUnverified": {
+        "additionalProperties": false,
+        "description": "A supported answer stated figures its cited evidence could not confirm.\n\nA figure is confirmed by a cited table cell from a requested period, or, when the\nquestion names no period, by appearing in the cited evidence at all. Running text\ncannot show which period a figure belongs to, so it never confirms a requested one.",
+        "properties": {
+          "code": {
+            "const": "figures_unverified",
+            "default": "figures_unverified",
+            "title": "Code",
+            "type": "string"
+          },
+          "figures": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Figures",
+            "type": "array"
+          }
+        },
+        "required": [
+          "figures"
+        ],
+        "title": "FiguresUnverified",
+        "type": "object"
+      },
       "GoldenCanonicalResource": {
         "additionalProperties": false,
         "description": "Validated read-only canonical JSON for one golden suite.",
@@ -5013,6 +5038,49 @@
         "title": "OperatorJobsResponse",
         "type": "object"
       },
+      "PeriodMismatch": {
+        "additionalProperties": false,
+        "description": "Every figure of a supported answer came from a period other than the requested one.",
+        "properties": {
+          "code": {
+            "const": "period_mismatch",
+            "default": "period_mismatch",
+            "title": "Code",
+            "type": "string"
+          },
+          "evidenced_fiscal_years": {
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Evidenced Fiscal Years",
+            "type": "array"
+          },
+          "figures": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Figures",
+            "type": "array"
+          },
+          "requested_fiscal_years": {
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Requested Fiscal Years",
+            "type": "array"
+          }
+        },
+        "required": [
+          "requested_fiscal_years",
+          "evidenced_fiscal_years",
+          "figures"
+        ],
+        "title": "PeriodMismatch",
+        "type": "object"
+      },
       "PresetCatalog": {
         "additionalProperties": false,
         "description": "Versioned directory snapshot; unchanged reads omit the catalog payload.",
@@ -5641,6 +5709,14 @@
               "$ref": "#/components/schemas/MatchedAlias"
             },
             "title": "Matched Aliases",
+            "type": "array"
+          },
+          "requested_fiscal_years": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Requested Fiscal Years",
             "type": "array"
           },
           "source": {
@@ -7913,9 +7989,11 @@
             "document_quota_applied": "#/components/schemas/DocumentQuotaApplied",
             "duplicate_evidence_text": "#/components/schemas/DuplicateEvidenceText",
             "duplicate_retrieved_chunks": "#/components/schemas/DuplicateRetrievedChunks",
+            "figures_unverified": "#/components/schemas/FiguresUnverified",
             "grade_coverage_incomplete": "#/components/schemas/GradeCoverageIncomplete",
             "grade_references_filtered": "#/components/schemas/GradeReferencesFiltered",
             "node_error": "#/components/schemas/NodeError",
+            "period_mismatch": "#/components/schemas/PeriodMismatch",
             "provider_failure": "#/components/schemas/ProviderFailure",
             "relevance_below_threshold": "#/components/schemas/RelevanceBelowThreshold",
             "retrieval_empty": "#/components/schemas/RetrievalEmpty",
@@ -7955,6 +8033,12 @@
             "$ref": "#/components/schemas/SupportDowngraded"
           },
           {
+            "$ref": "#/components/schemas/FiguresUnverified"
+          },
+          {
+            "$ref": "#/components/schemas/PeriodMismatch"
+          },
+          {
             "$ref": "#/components/schemas/ProviderFailure"
           },
           {
@@ -7981,7 +8065,8 @@
           "label": {
             "enum": [
               "SUPPORTED",
-              "NOT_IN_DOCS"
+              "NOT_IN_DOCS",
+              "PERIOD_MISMATCH"
             ],
             "title": "Label",
             "type": "string"

@@ -172,35 +172,53 @@ def test_final_answer_rejection_names_the_broken_field():
     assert 'exactly the string "NOT_IN_DOCS"' in rejection
 
 
-def test_tool_failures_become_explicit_observations():
-    """Turn an unknown tool, bad arguments and a raising tool into three stated errors."""
+def test_correctable_tool_failures_become_explicit_observations():
+    """Return an unknown tool and bad arguments to the model as stated errors."""
     turns = [
         turn(
             tool_calls=(
                 call("missing_tool", {"query": "x"}, call_id="call-1"),
                 call("search_notes", {"wrong": "shape"}, call_id="call-2"),
-                call("search_notes", {"query": "revenue"}, call_id="call-3"),
             ),
         ),
-        turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-4"),)),
+        turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-3"),)),
     ]
-    registry = registry_with_search(fail=True)
 
-    result, provider = run_loop(turns, registry=registry)
+    result, provider = run_loop(turns)
 
     observations = result.steps[0].observations
     assert "unknown tool: missing_tool" in (observations[0].error or "")
     assert "invalid arguments for search_notes" in (observations[1].error or "")
     assert "wrong" in (observations[1].error or "")
-    assert "RuntimeError: tool search_notes failed" in (observations[2].error or "")
     replay = provider.requests[1][1]
     outputs = [item["output"] for item in replay if item.get("type") == "function_call_output"]
     assert all(output.startswith("ERROR:") for output in outputs)
-    # The failing search produced no evidence, so the cited final answer is
-    # rejected and the exhausted turn queue surfaces as a typed provider error.
+    # No search ran, so the cited final answer is rejected and the exhausted turn
+    # queue surfaces as a typed provider error.
     assert result.status == "provider_error"
     assert "99" not in (result.steps[1].observations[0].error or "")
     assert "7" in (result.steps[1].observations[0].error or "")
+
+
+def test_system_tool_failure_ends_the_run_instead_of_reaching_not_in_docs():
+    """Stop as a tool error after a failed search, so the model cannot report absence."""
+    turns = [
+        turn(tool_calls=(call("search_notes", {"query": "revenue"}, call_id="call-1"),)),
+        turn(
+            tool_calls=(
+                call("final_answer", answer_arguments(label="NOT_IN_DOCS"), call_id="call-2"),
+            ),
+        ),
+    ]
+
+    result, provider = run_loop(turns, registry=registry_with_search(fail=True))
+
+    assert result.status == "tool_error"
+    assert result.answer is None
+    assert result.failure == "RuntimeError: tool search_notes failed"
+    assert len(result.steps) == 1
+    assert result.steps[0].observations[0].error == result.failure
+    assert len(provider.requests) == 1
 
 
 def test_strict_argument_json_rejects_duplicates_and_non_finite_values():
@@ -489,8 +507,8 @@ def test_old_observations_are_compacted_out_of_the_replay():
     assert COMPACTED_OUTPUT not in third_request.values()
 
 
-def test_malformed_evidence_extractor_becomes_an_observation():
-    """State a broken evidence extractor as an observation instead of failing the run."""
+def test_malformed_evidence_extractor_ends_the_run_as_a_tool_error():
+    """Record a broken evidence extractor and stop, since its hits cannot become evidence."""
     registry = registry_with_search()
     tool = registry.get("search_notes")
     registry = ToolRegistry()
@@ -518,8 +536,9 @@ def test_malformed_evidence_extractor_becomes_an_observation():
 
     result, _ = run_loop(turns, registry=registry)
 
-    assert result.status == "ok"
+    assert result.status == "tool_error"
     assert "evidence extraction failed" in (result.steps[0].observations[0].error or "")
+    assert result.failure == result.steps[0].observations[0].error
 
 
 def test_zero_cost_ceiling_with_a_zero_priced_provider_is_not_exhausted():
@@ -543,3 +562,79 @@ def test_content_filter_cutoff_is_a_provider_failure_not_a_budget_stop():
     assert "output-token ceiling" not in (result.failure or "")
     assert result.iterations == 1
     assert len(provider.requests) == 1
+
+
+def _figures_run(answer_text, *, reader, then=None):
+    """Answer with one figure citing chunk 7, optionally followed by a second final answer."""
+    supported = {**answer_arguments(), "answer": answer_text}
+    turns = [
+        turn(tool_calls=(call("search_notes", {"query": "revenue"}),)),
+        turn(tool_calls=(call("final_answer", supported, call_id="call-2"),)),
+    ]
+    if then is not None:
+        turns.append(turn(tool_calls=(call("final_answer", then, call_id="call-3"),)))
+    provider = RecordingToolProvider(turns)
+    result = asyncio.run(
+        run_agent(
+            "What was AMD's 2024 net revenue?",
+            registry=registry_with_search(),
+            provider=provider,
+            requested_fiscal_years=(2024,),
+            evidence_reader=reader,
+        )
+    )
+    return result, provider
+
+
+def _table_reader():
+    """Read chunk 7 as the AMD income table the real chunker produces."""
+    from app.contracts.figures import EvidenceText
+    from tests.workflow.support import income_table_hit
+
+    table, fragment = income_table_hit()
+
+    async def read(chunk_ids):
+        """Return the cited table's text and stored fragment."""
+        assert chunk_ids == (7,)
+        return {7: EvidenceText(7, table.body, table.context_header, fragment)}
+
+    return read
+
+
+def test_a_comparative_column_figure_ends_as_a_period_mismatch():
+    """Report the 2023 column's figure as another period instead of 2024 revenue."""
+    result, _ = _figures_run("2024 net revenue was $22,680 million.", reader=_table_reader())
+
+    assert result.status == "ok"
+    assert result.answer is not None and result.answer.label == "PERIOD_MISMATCH"
+    assert [citation.chunk_id for citation in result.answer.citations] == [7]
+    assert result.period_mismatch is not None
+    assert result.period_mismatch.evidenced_fiscal_years == (2023,)
+
+
+def test_an_unconfirmed_figure_is_returned_to_the_model():
+    """Refuse a figure the cited table does not state, then accept the corrected absence."""
+    result, provider = _figures_run(
+        "2024 net revenue was $26,000 million.",
+        reader=_table_reader(),
+        then=answer_arguments(label="NOT_IN_DOCS"),
+    )
+
+    assert result.status == "ok"
+    assert result.answer is not None and result.answer.label == "NOT_IN_DOCS"
+    rejection = result.steps[1].observations[0].error or ""
+    assert "26,000" in rejection and "2024" in rejection
+    assert len(provider.requests) == 3
+
+
+def test_a_failed_evidence_read_ends_the_run_as_a_tool_error():
+    """Stop as a tool error when the cited evidence cannot be read."""
+
+    async def broken(chunk_ids):
+        """Fail the way an unavailable database does."""
+        raise RuntimeError("database unavailable")
+
+    result, _ = _figures_run("2024 net revenue was $25,785 million.", reader=broken)
+
+    assert result.status == "tool_error"
+    assert result.failure == "RuntimeError: cited evidence read failed"

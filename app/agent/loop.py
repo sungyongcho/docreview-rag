@@ -1,6 +1,6 @@
 """Hand-rolled Thought → Tool → Observation loop with fail-closed budgets."""
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from decimal import Decimal
 import functools
 import time
@@ -18,6 +18,8 @@ from app.agent.tools.registry import (
 from app.agent.types import (
     AgentAnswer,
     AgentBudget,
+    AgentPeriodMismatch,
+    AgentReportAnswer,
     AgentResult,
     AgentStatus,
     AgentStep,
@@ -26,7 +28,10 @@ from app.agent.types import (
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
+from app.contracts.figures import EvidenceText, FiguresResult, check_figures
 from app.llm.decoding import strict_json_loads, strict_response_format, validation_errors
+
+type EvidenceReader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, EvidenceText]]]
 
 # The Responses API rejects max_output_tokens below 16, so a smaller remaining
 # allowance can only buy a failed request: the run is out of budget, and saying
@@ -107,7 +112,7 @@ def _parse_arguments(arguments_json: str) -> dict[str, Any]:
 async def _dispatch(
     call: ToolCall,
     registry: ToolRegistry,
-) -> tuple[Observation, tuple[EvidenceCitation, ...]]:
+) -> tuple[Observation, tuple[EvidenceCitation, ...], bool]:
     """Run one tool call and return an explicit, identity-checked observation.
 
     Parameters
@@ -119,9 +124,10 @@ async def _dispatch(
 
     Returns
     -------
-    tuple[Observation, tuple[EvidenceCitation, ...]]
+    tuple[Observation, tuple[EvidenceCitation, ...], bool]
         JSON observation plus complete evidence identities, or an error and no
-        evidence when lookup, validation, execution, serialization, or extraction fails.
+        evidence when lookup, validation, execution, serialization, or extraction
+        fails. The flag marks a system failure the model cannot correct.
 
     Notes
     -----
@@ -134,15 +140,16 @@ async def _dispatch(
     try:
         tool = registry.get(call.name)
     except ValueError as error:
-        return Observation(call_id=call.call_id, name=call.name, error=str(error)), ()
+        return Observation(call_id=call.call_id, name=call.name, error=str(error)), (), False
     try:
         arguments = _parse_arguments(call.arguments_json)
     except ValueError as error:
         message = f"invalid arguments for {call.name}: {error}"
-        return Observation(call_id=call.call_id, name=call.name, error=message), ()
+        return Observation(call_id=call.call_id, name=call.name, error=message), (), False
     outcome = await execute_tool(registry, call.name, arguments)
     if outcome.error is not None:
-        return Observation(call_id=call.call_id, name=call.name, error=outcome.error), ()
+        observation = Observation(call_id=call.call_id, name=call.name, error=outcome.error)
+        return observation, (), outcome.system_error
     output = outcome.output
     output_json = outcome.output_json
     if output_json is None:
@@ -158,10 +165,11 @@ async def _dispatch(
             raise ValueError("evidence extractor returned duplicate chunk ids")
     except Exception as error:
         message = safe_runtime_error(error, f"tool {call.name} evidence extraction")
-        return Observation(call_id=call.call_id, name=call.name, error=message), ()
+        return Observation(call_id=call.call_id, name=call.name, error=message), (), True
     return (
         Observation(call_id=call.call_id, name=call.name, output_json=output_json),
         evidence,
+        False,
     )
 
 
@@ -212,6 +220,43 @@ def _final_answer(
     return answer, ""
 
 
+def _figures_problem(figures: FiguresResult, requested: Sequence[int]) -> str:
+    """Tell the model which figures its cited evidence could not confirm."""
+    unverified = ", ".join(c.figure for c in figures.checks if c.verdict == "unverified")
+    period = ", ".join(str(year) for year in requested) or "any period"
+    return (
+        f"final_answer states figures its cited evidence does not confirm for {period}: "
+        f"{unverified}. Quote each figure exactly from a cited table cell of the requested "
+        "period, or answer NOT_IN_DOCS."
+    )
+
+
+def _mismatch_answer(
+    answer: AgentAnswer, figures: FiguresResult, requested: Sequence[int]
+) -> tuple[AgentReportAnswer, AgentPeriodMismatch]:
+    """Report the cited figures' own period instead of the answer that misdated them."""
+    mismatched = [c for c in figures.checks if c.verdict == "period_mismatch"]
+    mismatch = AgentPeriodMismatch(
+        requested_fiscal_years=tuple(requested),
+        evidenced_fiscal_years=tuple(
+            sorted({year for check in mismatched for year in check.evidenced_years})
+        ),
+        figures=tuple(check.figure for check in mismatched),
+    )
+    requested_text = ", ".join(str(year) for year in mismatch.requested_fiscal_years)
+    evidenced_text = ", ".join(str(year) for year in mismatch.evidenced_fiscal_years)
+    report = AgentReportAnswer(
+        label="PERIOD_MISMATCH",
+        answer=(
+            f"The cited evidence does not report this for {requested_text}. "
+            f"The figures {', '.join(mismatch.figures)} are for {evidenced_text}."
+        ),
+        citations=answer.citations,
+        rationale="The cited figures belong to a different period than the question asks about.",
+    )
+    return report, mismatch
+
+
 def _compact_exchanges(
     input_items: list[dict[str, Any]],
     exchange_ends: list[int],
@@ -241,8 +286,10 @@ async def run_agent(
     registry: ToolRegistry,
     provider: ToolCallingProvider,
     budget: AgentBudget | None = None,
+    requested_fiscal_years: Sequence[int] = (),
+    evidence_reader: EvidenceReader | None = None,
 ) -> AgentResult:
-    """Run the agent loop until final_answer, a budget stop, or a provider failure.
+    """Run the agent loop until final_answer, a budget stop, or a provider or tool failure.
 
     Parameters
     ----------
@@ -254,6 +301,12 @@ async def run_agent(
         Injected deterministic or OpenAI turn provider.
     budget : AgentBudget | None
         Optional cumulative turn and token limits.
+    requested_fiscal_years : Sequence[int]
+        Fiscal years the question asks about; a supported answer's figures must come
+        from them.
+    evidence_reader : EvidenceReader | None
+        Reads the body, context header and stored table fragment of cited chunks. Without
+        it no figure can be confirmed, so an answer that states figures is refused.
 
     Returns
     -------
@@ -275,7 +328,10 @@ async def run_agent(
     and after an ``incomplete`` turn the output ceiling cut off — a truncated turn
     can never produce an accepted answer. A turn the provider cut off for another
     reason, such as a content filter, ends as ``provider_error`` because no budget
-    change can repair it. Observation payloads older than
+    change can repair it. A tool call that fails unexpectedly, such as a search
+    the database could not run, ends the run as ``tool_error`` after its step is
+    recorded; lookup, argument and tool-authored errors return to the model as
+    observations it can correct. Observation payloads older than
     ``KEEP_OUTPUT_EXCHANGES`` exchanges are compacted out of the replay to keep
     input tokens linear in run length.
     """
@@ -306,13 +362,20 @@ async def run_agent(
         *,
         answer: AgentAnswer | None = None,
         failure: str | None = None,
+        period_mismatch: AgentPeriodMismatch | None = None,
     ) -> AgentResult:
         """Build the terminal result, letting the model reject impossible success states."""
+        report = (
+            answer
+            if answer is None or isinstance(answer, AgentReportAnswer)
+            else AgentReportAnswer.model_validate(answer.model_dump())
+        )
         return AgentResult.model_validate(
             {
                 "status": status,
-                "answer": answer,
+                "answer": report,
                 "failure": failure,
+                "period_mismatch": period_mismatch,
                 "iterations": len(steps),
                 "total_input_tokens": total_input,
                 "total_output_tokens": total_output,
@@ -459,6 +522,26 @@ async def run_agent(
             continue
         if final_call is not None:
             answer, problem = _final_answer(final_call, evidence)
+            if answer is not None and answer.label == "SUPPORTED":
+                cited = tuple(citation.chunk_id for citation in answer.citations)
+                try:
+                    texts = await evidence_reader(cited) if evidence_reader is not None else {}
+                except Exception as error:
+                    record_step(turn, (), usage)
+                    return finish(
+                        "tool_error", failure=safe_runtime_error(error, "cited evidence read")
+                    )
+                figures = check_figures(
+                    answer.answer,
+                    [texts[chunk_id] for chunk_id in cited if chunk_id in texts],
+                    requested_fiscal_years,
+                )
+                if figures.verdict == "unverified":
+                    answer, problem = None, _figures_problem(figures, requested_fiscal_years)
+                elif figures.verdict == "period_mismatch":
+                    record_step(turn, (), usage)
+                    report, mismatch = _mismatch_answer(answer, figures, requested_fiscal_years)
+                    return finish("ok", answer=report, period_mismatch=mismatch)
             if answer is not None:
                 record_step(turn, (), usage)
                 return finish("ok", answer=answer)
@@ -487,8 +570,11 @@ async def run_agent(
 
         observations: list[Observation] = []
         outputs: dict[str, str] = {}
+        system_failure: str | None = None
         for call in turn.tool_calls:
-            observation, citations = await _dispatch(call, registry)
+            observation, citations, system_failed = await _dispatch(call, registry)
+            if system_failed and system_failure is None:
+                system_failure = observation.error
             observations.append(observation)
             conflict = next(
                 (
@@ -515,6 +601,10 @@ async def run_agent(
             else:
                 outputs[call.call_id] = observation.output_json
         record_step(turn, tuple(observations), usage)
+        if system_failure is not None:
+            # A failed search is not an empty search: the model could only answer
+            # NOT_IN_DOCS from it, so the run ends as the system error it is.
+            return finish("tool_error", failure=system_failure)
         _append_exchange(input_items, turn, outputs)
         mark_exchange()
 

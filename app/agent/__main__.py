@@ -4,6 +4,7 @@ import argparse
 import asyncio
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
+from functools import partial
 import json
 from typing import TYPE_CHECKING
 
@@ -166,10 +167,11 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     """
     from app.agent.loop import run_agent
     from app.agent.provider import OpenAIToolProvider, ToolCallingProvider
-    from app.agent.tools.filings import build_default_registry
+    from app.agent.tools.filings import build_default_registry, read_cited_evidence
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.db.session import Session, engine
+    from app.query.periods import question_fiscal_years, utc_today
     from app.retrieval.embedding.provider import get_embedding_provider
 
     openai_provider: OpenAIToolProvider | None = None
@@ -204,6 +206,8 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
                 max_iterations=args.max_iterations,
                 max_total_cost_usd=args.max_cost_usd,
             ),
+            requested_fiscal_years=question_fiscal_years(args.question, utc_today()),
+            evidence_reader=partial(read_cited_evidence, Session),
         )
     finally:
         if openai_provider is not None:

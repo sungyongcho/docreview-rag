@@ -6,7 +6,12 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, StrictInt, StrictStr
 from pydantic.functional_validators import model_validator
 
-from app.contracts.evidence import AnswerLabel, EvidenceCitation, validate_answer_citations
+from app.contracts.evidence import (
+    AnswerLabel,
+    EvidenceCitation,
+    ReportLabel,
+    validate_answer_citations,
+)
 from app.contracts.validation import (
     NonBlank,
     NonNegativeDecimal,
@@ -17,7 +22,15 @@ from app.contracts.validation import (
 )
 from app.llm.schemas import TokenUsageDetails
 
-type AgentStatus = Literal["ok", "budget_exceeded", "provider_error"]
+type AgentStatus = Literal["ok", "budget_exceeded", "provider_error", "tool_error"]
+
+
+class AgentPeriodMismatch(StrictSchema):
+    """Every figure of a supported answer came from a period other than the requested one."""
+
+    requested_fiscal_years: tuple[PositiveInt, ...]
+    evidenced_fiscal_years: tuple[PositiveInt, ...]
+    figures: tuple[NonBlank, ...]
 
 
 class AgentBudget(StrictSchema):
@@ -125,12 +138,19 @@ class AgentAnswer(StrictSchema):
         return self
 
 
+class AgentReportAnswer(AgentAnswer):
+    """The answer a run reports. Only the loop, never the model, reports a period mismatch."""
+
+    label: ReportLabel
+
+
 class AgentResult(StrictSchema):
     """One terminal agent run: an answer or a typed failure, never both."""
 
     status: AgentStatus
-    answer: AgentAnswer | None
+    answer: AgentReportAnswer | None
     failure: NonBlank | None
+    period_mismatch: AgentPeriodMismatch | None = None
     iterations: NonNegativeInt
     total_input_tokens: NonNegativeInt
     total_output_tokens: NonNegativeInt

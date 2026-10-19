@@ -114,3 +114,41 @@ def retriever_returning(hits: Sequence[ChunkHit]):
         return retrieval_result(hits)
 
     return retrieve
+
+
+# AMD FY2024 consolidated statement of operations, as the filing lays it out.
+INCOME_TABLE = (
+    "<table><tr><td>(In millions)</td><td>December 28, 2024</td>"
+    "<td>December 30, 2023</td></tr>"
+    "<tr><td>Net revenue</td><td>$ 25,785</td><td>$ 22,680</td></tr></table>"
+)
+
+
+def income_table_hit(chunk_id=7) -> tuple[ChunkHit, dict[str, object]]:
+    """Chunk the AMD income table through the real chunker as one retrieved table hit."""
+    from dataclasses import asdict
+
+    from app.ingestion.chunking import chunk_filing, compose_index_text
+    from app.ingestion.parsing.models import Block
+    from tests.ingestion.chunk.support import build_filing
+
+    block = Block("table", "", html=INCOME_TABLE, source_pos=0, end_pos=len(INCOME_TABLE))
+    filing = build_filing([block])
+    filing.source_length = len(INCOME_TABLE)
+    (chunk,) = chunk_filing(filing)
+    assert chunk.table_fragment is not None
+    table = ChunkHit(
+        chunk_id=chunk_id,
+        doc_id="AMD-FY2024",
+        item="8",
+        kind="table",
+        citation="AMD FY2024 · Item 8",
+        start_char=0,
+        end_char=len(INCOME_TABLE),
+        source_sha256=SOURCE_SHA256,
+        body=chunk.body,
+        context_header=chunk.context_header,
+        index_text=compose_index_text(chunk.context_header, chunk.body),
+        score=1.0,
+    )
+    return table, asdict(chunk.table_fragment)

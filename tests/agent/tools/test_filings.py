@@ -175,6 +175,11 @@ def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
             {"query": "   ", "issuer": "NVDA", "fiscal_years": [2023, 2024]},
             "query",
         ),
+        ("search_filings", {"query": "revenue", "k": True}, "k"),
+        ("search_filings", {"query": "revenue", "k": "2"}, "k"),
+        ("search_filings", {"query": "revenue", "fiscal_years": ["2024"]}, "fiscal_years"),
+        ("fetch_chunk", {"chunk_id": True}, "chunk_id"),
+        ("fetch_chunk", {"chunk_id": "7"}, "chunk_id"),
     ],
 )
 def test_filter_violations_are_reported_as_invalid_arguments(name, arguments, field):

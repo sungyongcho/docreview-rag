@@ -9,8 +9,9 @@ export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "
   let evidenceLabel: ChatMessage["evidenceLabel"];
   let citations: number | undefined;
   if (report && "label" in report) {
-    text = report.label === "SUPPORTED" ? report.answer : report.rationale;
-    evidenceLabel = report.label === "SUPPORTED" ? "Cited evidence" : "Related evidence — not direct support";
+    // A period mismatch answer is the server's statement of which period the cited figures belong to.
+    text = report.label === "NOT_IN_DOCS" ? report.rationale : report.answer;
+    evidenceLabel = report.label === "SUPPORTED" ? "Cited evidence" : report.label === "PERIOD_MISMATCH" ? "Cited evidence — different period" : "Related evidence — not direct support";
     citations = report.citations.length;
   } else if (report?.report_kind === "conversation") {
     text = report.answer;

@@ -451,7 +451,7 @@ const PLAYGROUND: HelpTopic[] = [
     id: "measure.playground.review",
     title: "Review preview",
     body: [
-      "The report label (SUPPORTED or NOT_IN_DOCS), the generated answer and the citations the model made, or the provider failure when the answer could not be produced.",
+      "The report label (SUPPORTED, PERIOD_MISMATCH or NOT_IN_DOCS), the generated answer and the citations the model made, or the provider failure when the answer could not be produced.",
     ],
     seeAlso: ["measure.playground.preview_review"],
     optional: true,

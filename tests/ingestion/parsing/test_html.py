@@ -3,6 +3,8 @@
 import hashlib
 from types import ModuleType
 
+import pytest
+
 from tests.ingestion.chunk.support import source_text, tokens
 
 
@@ -72,6 +74,88 @@ def test_leaf_blocks_groups_a_legacy_table_as_one_block(parser_module: ModuleTyp
     assert len(blocks) == 1
     assert blocks[0].name == "table"
     assert "Revenue" in blocks[0].get_text(" ", strip=True)
+
+
+@pytest.mark.parametrize("spacers", [0, 20])
+@pytest.mark.parametrize("cell_tag", ["td", "te"])
+def test_financial_table_detection_ignores_empty_layout_cells(parser_module, spacers, cell_tag):
+    """Keep SEC/DART financial grids when publishers insert empty spacer cells."""
+    gap = "<td>&nbsp;</td>" * spacers
+    html = (
+        "<table><tr><td></td><td>2024</td><td>2023</td></tr>"
+        f"<tr><td><div>Net revenue</div></td>{gap}<td>25,785</td><td>22,680</td></tr>"
+        "</table>"
+    )
+    html = html.replace("<td>", f"<{cell_tag}>").replace("</td>", f"</{cell_tag}>")
+    soup = parser_module.normalize(html)
+    assert parser_module._is_data_table(soup.table)
+    assert parser_module.leaf_blocks(soup) == [soup.table]
+
+
+def test_layout_table_keeps_bare_cells_alongside_nested_paragraphs(parser_module):
+    """Reject prose-heavy layout as data without dropping its unwrapped cells."""
+    prose = "Business description with operating context. " * 10
+    raw = (
+        f"<table><tr><td><div>{prose}</div></td><td><span>2024</span></td>"
+        "<td>2023</td><td>2022</td></tr>"
+        "<tr><td>Revenue</td><td>$25,785</td><td>$22,680</td><td>$23,601</td></tr></table>"
+    )
+    soup = parser_module.normalize(raw)
+    assert not parser_module._is_data_table(soup.table)
+    blocks = parser_module.leaf_blocks(soup)
+    assert [block.get_text(" ", strip=True) for block in blocks] == [
+        prose.strip(),
+        "2024",
+        "2023",
+        "2022",
+        "Revenue",
+        "$25,785",
+        "$22,680",
+        "$23,601",
+    ]
+    spans = parser_module.block_source_spans(blocks, parser_module.line_offsets(raw), len(raw))
+    for block, (start, end) in zip(blocks, spans, strict=True):
+        assert tokens(source_text(raw, start, end)) == tokens(block.get_text(" ", strip=True))
+
+
+def test_nested_financial_table_keeps_surrounding_units_and_notes(parser_module):
+    """Keep a layout wrapper's context and the inner grid's row/column identity."""
+    html = (
+        "<table><tr><td>Amounts in millions</td>" + "<td></td>" * 40 + "<td><table>"
+        "<tr><td>Year</td><td>2024</td><td>2023</td></tr>"
+        "<tr><td>Revenue</td><td>100</td><td>90</td></tr>"
+        "<tr><td>Income</td><td>10</td><td>9</td></tr>"
+        "</table></td><td>Unaudited</td></tr></table>"
+    )
+    soup = parser_module.normalize(html)
+    outer, inner = soup.find_all("table")
+    assert not parser_module._is_data_table(outer)
+    assert parser_module._is_data_table(inner)
+    blocks = parser_module.leaf_blocks(soup)
+    assert [block.name for block in blocks] == ["td", "table", "td"]
+    assert blocks[1] is inner
+    assert blocks[0].get_text() == "Amounts in millions"
+    assert blocks[2].get_text() == "Unaudited"
+
+
+def test_mixed_layout_text_keeps_exact_positions_around_a_nested_grid(parser_module):
+    """Retain inline units and notes without flattening or duplicating the grid."""
+    raw = (
+        "<table><tr><td>Amounts &amp; units in <b>millions</b>\n<table>"
+        "<tr><td>Year</td><td>2024</td><td>2023</td></tr>"
+        "<tr><td>Revenue</td><td>100</td><td>90</td></tr>"
+        "<tr><td>Income</td><td>10</td><td>9</td></tr>"
+        "</table><i>Un</i>audited<!-- not evidence --></td></tr></table>"
+    )
+    soup = parser_module.normalize(raw)
+    blocks = parser_module.leaf_blocks(soup)
+    assert [block.name for block in blocks] == ["span", "table", "span"]
+    assert blocks[0].get_text(strip=True) == "Amounts & units in millions"
+    assert blocks[2].get_text(strip=True) == "Unaudited"
+    spans = parser_module.block_source_spans(blocks, parser_module.line_offsets(raw), len(raw))
+    for block, (start, end) in zip(blocks, spans, strict=True):
+        cited = parser_module.normalize(raw[start:end]).get_text()
+        assert " ".join(cited.split()) == " ".join(block.get_text().split())
 
 
 def test_decoded_source_preserves_crlf_for_source_offsets(

@@ -171,12 +171,15 @@ class ToolOutcome:
 
     Exactly one of ``error`` and ``output_json`` is set. ``output`` carries the
     unserialized payload for consumers that inspect it further, such as the
-    loop's evidence extraction.
+    loop's evidence extraction. ``system_error`` marks an unexpected failure, such
+    as a database error, as opposed to a lookup, validation or :class:`ToolError`
+    failure the caller can correct.
     """
 
     output: Any = None
     output_json: str | None = None
     error: str | None = None
+    system_error: bool = False
 
 
 async def execute_tool(
@@ -215,7 +218,9 @@ async def execute_tool(
     except ValueError as error:
         return ToolOutcome(error=str(error))
     try:
-        parameters = tool.parameters.model_validate(dict(arguments))
+        # Validate as strict JSON so the call honours the published schema: lax
+        # Python validation would coerce true or "7" into an integer argument.
+        parameters = tool.parameters.model_validate_json(json.dumps(dict(arguments)), strict=True)
     except ValidationError as error:
         details = "; ".join(validation_errors(error))
         return ToolOutcome(error=f"invalid arguments for {name}: {details}")
@@ -227,9 +232,11 @@ async def execute_tool(
         message = str(error).strip() or safe_runtime_error(error, f"tool {name}")
         return ToolOutcome(error=message)
     except Exception as error:
-        return ToolOutcome(error=safe_runtime_error(error, f"tool {name}"))
+        return ToolOutcome(error=safe_runtime_error(error, f"tool {name}"), system_error=True)
     try:
         output_json = json.dumps(output, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
     except (TypeError, ValueError, RecursionError) as error:
-        return ToolOutcome(error=safe_runtime_error(error, f"tool {name} serialization"))
+        return ToolOutcome(
+            error=safe_runtime_error(error, f"tool {name} serialization"), system_error=True
+        )
     return ToolOutcome(output=output, output_json=output_json)

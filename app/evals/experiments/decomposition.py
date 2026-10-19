@@ -20,6 +20,7 @@ from app.evals.execution.evaluator import (
     write_evaluation_artifact,
 )
 from app.evals.execution.models import Decomposition, EvaluationRetrieval
+from app.evals.execution.retrievers import table_cell_spans
 from app.evals.golden.models import GoldenCase
 from app.evals.results.identity import artifact_filename
 from app.evals.results.scoring import group_scores_by_category
@@ -181,10 +182,12 @@ def make_decomposed_retriever(
         ranked_lists = await asyncio.gather(
             *(retrieve_one(sub_question, k) for sub_question in decomposition.sub_questions)
         )
-        return EvaluationRetrieval(
-            hits=tuple(fuse_ranked_lists(ranked_lists, k, rrf_k=rrf_k)),
-            decomposition=decomposition,
-        )
+        hits = tuple(fuse_ranked_lists(ranked_lists, k, rrf_k=rrf_k))
+        cell_spans = {}
+        if any(hit.kind == "table" for hit in hits):
+            async with session_factory() as session:
+                cell_spans = await table_cell_spans(session, hits)
+        return EvaluationRetrieval(hits=hits, decomposition=decomposition, cell_spans=cell_spans)
 
     return retrieve_decomposed
 

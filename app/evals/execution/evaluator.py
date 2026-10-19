@@ -289,7 +289,11 @@ async def evaluate_retriever(
         if elapsed_ms < 0:
             raise ValueError("clock must be monotonic")
         latencies.append(elapsed_ms)
-        case_score = score_case(case.id, case.answers, hits, k) if case.answers else None
+        case_score = (
+            score_case(case.id, case.answers, hits, k, retrieved.cell_spans)
+            if case.answers
+            else None
+        )
         if case_score is not None:
             scores.append(case_score)
         results.append(

@@ -60,9 +60,11 @@ def test_table_rows_and_header_cells_exist_in_source(corpus, chunks_by_doc):
             compact_tokens = _compact_cell_tokens(source_html)
             lines = chunk.body.splitlines()
             for cell in markdown_cells(lines[0]):
-                assert counter_contains(visible_tokens, tokens(cell)), (
-                    f"{doc_id} chunk {chunk.ordinal}: synthetic table header token"
-                )
+                # Inline markup can split a word ("Tra" + "ding") in the spaced
+                # view. Headers, like body cells, may use the compact cell view.
+                assert counter_contains(visible_tokens, tokens(cell)) or counter_contains(
+                    compact_tokens, tokens(cell)
+                ), f"{doc_id} chunk {chunk.ordinal}: synthetic table header token"
             data_tokens = [token for row in lines[2:] for token in tokens(row)]
             missing = _ungrounded_table_tokens(data_tokens, visible_tokens, compact_tokens)
             assert not missing, f"{doc_id} chunk {chunk.ordinal}: synthetic table data token"

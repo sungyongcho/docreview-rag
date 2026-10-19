@@ -11,19 +11,73 @@ from app.config import BM25Idf, LexicalRanker
 from app.evals.execution.models import EvaluationRetrieval
 from app.query.language import lexical_corpus_language, lexical_plan
 from app.retrieval.embedding.provider import EmbeddingProvider
+from app.retrieval.fragments import load_table_fragments
 from app.retrieval.ranking.fusion import DEFAULT_RRF_K
 from app.retrieval.search.bm25 import bm25_search, validate_bm25_parameters
 from app.retrieval.search.lexical import lexical_search
 from app.retrieval.search.plan import RetrievalStrategy, SearchPlan
 from app.retrieval.search.service import normalize_query, retrieve
 from app.retrieval.search.vector import vector_search
-from app.retrieval.types import RetrievalFilters
+from app.retrieval.types import ChunkHit, RetrievalFilters
 
 type Retriever = Callable[[str, int], Awaitable[EvaluationRetrieval]]
 type BM25Parameters = tuple[float, float, BM25Idf]
 
 RETRIEVAL_STRATEGIES: tuple[RetrievalStrategy, ...] = ("lexical", "vector", "hybrid")
 LEXICAL_RANKERS: tuple[LexicalRanker, ...] = get_args(LexicalRanker)
+
+
+def _fragment_cell_spans(fragment: object) -> tuple[tuple[int, int], ...] | None:
+    """Return the sorted source spans of everything a stored fragment renders, or None.
+
+    A fragment renders its member cells, its column header cells and its captions, so
+    an answer in any of them is inside the chunk. A caption inside the table counts by
+    its own cells, because its block span is the whole table's; a caption paragraph
+    before the table counts by its block span. None means a cell lacks a span.
+    """
+    if not isinstance(fragment, dict) or not isinstance(cells := fragment.get("cells"), list):
+        return None
+    sources: list[object] = [
+        source
+        for member in cells
+        for source in (member.get("sources", [None]) if isinstance(member, dict) else [None])
+    ]
+    sources.extend(fragment.get("header_cells") or [])
+    for caption in fragment.get("caption_sources") or []:
+        if not isinstance(caption, dict):
+            return None
+        sources.extend(caption.get("cells") or [caption])
+    spans: set[tuple[int, int]] = set()
+    for source in sources:
+        if not isinstance(source, dict):
+            return None
+        start, end = source.get("start_char"), source.get("end_char")
+        if not isinstance(start, int) or not isinstance(end, int):
+            return None
+        spans.add((start, end))
+    return tuple(sorted(spans)) or None
+
+
+async def table_cell_spans(
+    session: AsyncSession,
+    hits: tuple[ChunkHit, ...],
+    filters: RetrievalFilters | None = None,
+) -> dict[int, tuple[tuple[int, int], ...]]:
+    """Load each table hit's fragment cell spans from the index the hits came from.
+
+    A fragment stored before cell spans were recorded is left out, so scoring refuses
+    that hit instead of crediting it with its whole table's span.
+    """
+    fragments = await load_table_fragments(
+        session,
+        (hit.chunk_id for hit in hits if hit.kind == "table"),
+        None if filters is None else filters.snapshot_id,
+    )
+    return {
+        chunk_id: spans
+        for chunk_id, fragment in fragments.items()
+        if (spans := _fragment_cell_spans(fragment)) is not None
+    }
 
 
 def resolve_bm25_parameters(
@@ -133,6 +187,12 @@ def make_retriever(
         raise ValueError(f"{strategy} retrieval requires an embedding provider")
     lexical = lexical_plan(lexical_corpus_language(filters)) if strategy == "lexical" else None
 
+    async def spanned(hits: tuple[ChunkHit, ...]) -> EvaluationRetrieval:
+        """Attach the table hits' cell spans from the same session and index."""
+        return EvaluationRetrieval(
+            hits=hits, cell_spans=await table_cell_spans(session, hits, filters)
+        )
+
     async def run(query: str, k: int) -> EvaluationRetrieval:
         """Execute the bound lane over one normalized query."""
         plan.candidate_limit(k)
@@ -161,15 +221,15 @@ def make_retriever(
                     filters,
                     text_search_config=lexical.text_search_config,
                 )
-            return EvaluationRetrieval(hits=tuple(hits))
+            return await spanned(tuple(hits))
         assert provider is not None
         if strategy == "vector":
             vector = await provider.embed_query(query)
             hits = await vector_search(
                 session, vector, k=k, filters=filters, identity=provider.identity
             )
-            return EvaluationRetrieval(hits=tuple(hits))
+            return await spanned(tuple(hits))
         result = await retrieve(session, query, provider=provider, k=k, filters=filters, plan=plan)
-        return EvaluationRetrieval(hits=result.hits)
+        return await spanned(result.hits)
 
     return run

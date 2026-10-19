@@ -7,6 +7,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
+from app.retrieval.types import ChunkHit
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
 from app.workflow.prompts import build_check_prompt, build_grade_prompt, evidence_chars
 from app.workflow.types import (
@@ -15,8 +16,10 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
+    FiguresUnverified,
     GradeCoverageIncomplete,
     GradeReferencesFiltered,
+    PeriodMismatch,
     RetrievalEmpty,
     SupportDowngraded,
     WorkflowRequest,
@@ -24,6 +27,7 @@ from app.workflow.types import (
 )
 from tests.workflow.support import (
     hit as _hit,
+    income_table_hit,
     ok_result as _ok_result,
     provider_budget as _provider_budget,
 )
@@ -144,6 +148,33 @@ def test_context_budget_is_measured_against_the_evidence_the_prompt_sends():
     assert len(payload) > len("".join(hit.index_text for hit in result.evidence))
 
 
+def test_grade_and_check_evidence_keep_the_context_header():
+    """Send the header that carries a table's unit, so a bare body value keeps its scale."""
+    header = "Samsung FY2023 · 매출 현황 (단위 : 백만원)"
+    body = "| Revenue | 300,870,903 |"
+    table = ChunkHit.model_validate(
+        {
+            **_hit(1).model_dump(),
+            "body": body,
+            "context_header": header,
+            "index_text": f"{header}\n\n{body}",
+        }
+    )
+    state = retrieve_node(_state(), [table])
+    graded = grade_node(
+        state,
+        _ok_result(
+            RelevanceJudgment(
+                grades=(ChunkRelevance(chunk_id=1, relevant=True, reason="Reports revenue."),)
+            )
+        ),
+    )
+
+    for prompt in (build_grade_prompt(state), build_check_prompt(graded)):
+        evidence = json.loads(prompt.user.rsplit("vidence JSON: ", maxsplit=1)[1])
+        assert evidence[0]["context_header"] == header
+
+
 def test_retrieve_collapses_text_twins_caps_one_document_and_still_fills_k():
     """Refill the slots dedup and the document cap free, never shrink the evidence.
 
@@ -174,6 +205,20 @@ def test_retrieve_collapses_text_twins_caps_one_document_and_still_fills_k():
     quota = next(r for r in result.reasons if isinstance(r, DocumentQuotaApplied))
     assert quota.dropped_chunk_ids == (4,)
     assert quota.max_hits_per_document == state.max_hits_per_document
+
+
+def test_text_twins_from_different_contexts_both_remain_evidence():
+    """Keep one body that two companies report, since its header carries whose value it is."""
+    body = "| Total | 100 |"
+    hits = []
+    for chunk_id, header in ((1, "AMD FY2024 · Item 8"), (2, "NVDA FY2024 · Item 8")):
+        values = {**_hit(chunk_id).model_dump(), "body": body, "context_header": header}
+        hits.append(ChunkHit.model_validate({**values, "index_text": f"{header}\n\n{body}"}))
+
+    result = retrieve_node(_state(), hits)
+
+    assert tuple(hit.chunk_id for hit in result.evidence) == (1, 2)
+    assert not [r for r in result.reasons if isinstance(r, DuplicateEvidenceText)]
 
 
 def test_document_quota_yields_rather_than_starve_a_single_filing_query():
@@ -267,6 +312,61 @@ def test_citation_downgrade_explains_the_stop_in_the_original_question_language(
         report.rationale == "인용한 청크가 검증을 통과하지 못해 답변을 근거 부족으로 처리했습니다."
     )
     assert report.citations == ()
+
+
+def _table_state(requested_fiscal_years=(2024,)):
+    """Grade the AMD income table as the only relevant evidence for a dated question."""
+    table, fragment = income_table_hit()
+    state = _state().model_copy(update={"requested_fiscal_years": requested_fiscal_years})
+    state = retrieve_node(state, [table])
+    judgment = RelevanceJudgment(
+        grades=(ChunkRelevance(chunk_id=table.chunk_id, relevant=True, reason="Revenue."),)
+    )
+    return grade_node(state, _ok_result(judgment)), {table.chunk_id: fragment}
+
+
+def _revenue_answer(figure):
+    """Answer 2024 revenue with one figure, citing the table."""
+    return AnswerDecision(
+        label="SUPPORTED",
+        answer=f"AMD's 2024 net revenue was ${figure} million.",
+        citation_chunk_ids=(7,),
+        reason="The income statement reports it.",
+    )
+
+
+def test_a_figure_from_the_requested_period_is_reported_as_supported():
+    """Keep a supported answer whose figure sits in the requested period's column."""
+    state, fragments = _table_state()
+    report = report_node(check_node(state, _ok_result(_revenue_answer("25,785")), fragments)).report
+    assert report is not None
+    assert report.label == "SUPPORTED"
+
+
+def test_a_comparative_column_figure_is_reported_as_a_period_mismatch():
+    """Report the 2023 column's 22,680 as a different period, not as 2024 revenue."""
+    state, fragments = _table_state()
+    checked = check_node(state, _ok_result(_revenue_answer("22,680")), fragments)
+    report = report_node(checked).report
+    assert report is not None
+    assert report.label == "PERIOD_MISMATCH"
+    assert [citation.chunk_id for citation in report.citations] == [7]
+    assert "22,680" in report.answer and "2023" in report.answer and "2024" in report.answer
+    mismatch = report.reasons[-1]
+    assert isinstance(mismatch, PeriodMismatch)
+    assert mismatch.requested_fiscal_years == (2024,)
+    assert mismatch.evidenced_fiscal_years == (2023,)
+    assert mismatch.figures == ("22,680",)
+
+
+def test_a_figure_the_evidence_cannot_confirm_downgrades_to_absence():
+    """Refuse support for a figure no cited cell states, or a table read without its fragment."""
+    state, fragments = _table_state()
+    for figure, available in (("26,000", fragments), ("25,785", None)):
+        report = report_node(check_node(state, _ok_result(_revenue_answer(figure)), available))
+        assert report.report is not None
+        assert report.report.label == "NOT_IN_DOCS"
+        assert isinstance(report.report.reasons[-1], FiguresUnverified)
 
 
 def test_report_exposes_only_validated_machine_citations():

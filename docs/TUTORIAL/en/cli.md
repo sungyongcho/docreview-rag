@@ -499,6 +499,7 @@ System status, Jobs, and the answer's Run trace. If the web itself is unavailabl
 | Missing/stale embeddings | provider, identity, pending | Correct configuration and run needed paid backfill after checking the manifest and explicit selection |
 | BM25 not ready | Normal intermediate state after parsing/chunking | Run Compute/Recompute BM25 (step 4); hybrid/lexical wait, vector needs embeddings only |
 | NOT_IN_DOCS | scope, company/year filters, evidence | Inspect Documents and candidates; ask something actually supported by the corpus |
+| PERIOD_MISMATCH | requested year, the cited figures' year in the `period_mismatch` reason | The cited figures belong to another year; ask for that year or select filings that report the requested one |
 | provider_failure | status, attempts, details, node | Fix key/access/connectivity/limits; schema recreation does not fix this |
 | budget_exceeded | resource, limit, observed, blocked_node | Adjust the specific limit under Review settings → Run limits; retries can cost more |
 | node_error | error_type, message, node | Fix the named non-model stage before retrying |

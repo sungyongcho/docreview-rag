@@ -10,9 +10,8 @@ from app.api.review.profiles import ResolvedRetrievalProfile
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
 
-def hit(chunk_id: int, body: str = "evidence") -> ChunkHit:
+def hit(chunk_id: int, body: str = "evidence", header: str = "ACME FY2024 · Item 7") -> ChunkHit:
     """Build one source-bound snapshot candidate."""
-    header = "ACME FY2024 · Item 7"
     return ChunkHit(
         chunk_id=chunk_id,
         doc_id="ACME-FY2024",
@@ -117,3 +116,34 @@ def test_snapshot_rejects_tampering_and_outside_ids() -> None:
         assert error.code == "invalid_evidence_selection"
     else:
         raise AssertionError("outside evidence id was accepted")
+
+
+def test_pins_with_one_body_are_duplicates_only_in_the_same_context() -> None:
+    """Accept one table body pinned for two companies; reject the same chunk text twice."""
+    codec = CandidateSnapshotCodec(b"s" * 32, clock=lambda: 100.0)
+    body = "| Total | 100 |"
+    candidates = (
+        hit(1, body, "AMD FY2024 · Item 8"),
+        hit(2, body, "NVDA FY2024 · Item 8"),
+        hit(3, body, "AMD FY2024 · Item 8"),
+    )
+    token, snapshot = codec.issue(
+        query="query",
+        profile=profile(),
+        filters=RetrievalFilters(),
+        candidates=candidates,
+        routing_queries={},
+    )
+
+    def pin(*chunk_ids: int) -> tuple[ChunkHit, ...]:
+        """Select the given pins from the signed snapshot."""
+        selection = EvidenceSelection(candidate_token=token, pinned_chunk_ids=chunk_ids)
+        return select_evidence(snapshot, selection, candidates, k=2, max_context_chars=10_000)
+
+    assert tuple(item.chunk_id for item in pin(1, 2)) == (1, 2)
+    try:
+        pin(1, 3)
+    except EvidenceSnapshotError as error:
+        assert error.code == "duplicate_pinned_evidence"
+    else:
+        raise AssertionError("the same source text in the same context was pinned twice")

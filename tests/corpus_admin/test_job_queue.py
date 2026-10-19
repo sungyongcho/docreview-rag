@@ -256,6 +256,42 @@ def test_running_backfill_cancels_after_saving_in_flight_usage(tmp_path: Path) -
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("ending", ["returns", "raises"])
+def test_acknowledged_cancellation_survives_a_late_operation_ending(
+    tmp_path: Path, ending: str
+) -> None:
+    """Keep the cancelled record once acknowledged, even after the last progress boundary."""
+
+    async def scenario() -> None:
+        """Cancel during the final check, then let the operation end without progress."""
+        checking = asyncio.Event()
+        finish = asyncio.Event()
+        store = LedgerStore()
+
+        async def runner(command, publish, on_usage=None) -> OperationOutcome:
+            """Publish the last batch, then run a postcondition with no progress boundary."""
+            publish(OperationProgress("embedding", 2, 2, "last batch"))
+            checking.set()
+            await finish.wait()
+            if ending == "raises":
+                raise RuntimeError("postcondition failed")
+            return OperationOutcome("backfill complete")
+
+        service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
+        service._job_queue._run_operation = runner
+        job = await service.enqueue(AdminCommand("backfill_embeddings"))
+        await checking.wait()
+        assert (await service.cancel(job.job_id)).status == "cancelled"
+        finish.set()
+        await asyncio.wait_for(service._job_queue._queue.join(), 2)
+
+        terminal = store.rows[job.job_id]
+        assert (terminal.status, terminal.error_code) == ("cancelled", "cancelled")
+        assert terminal.message == "Cancelled by operator."
+
+    asyncio.run(scenario())
+
+
 def test_worker_survives_ledger_failures_and_lands_the_terminal_state(tmp_path: Path) -> None:
     """Keep the queue alive when ledger writes fail, coalesce progress, and persist success last."""
 

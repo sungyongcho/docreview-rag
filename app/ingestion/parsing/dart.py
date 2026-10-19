@@ -22,6 +22,7 @@ from app.ingestion.parsing.html import (
     HEADING_TAGS,
     REPORTED_TITLE_MAX,
     block_source_spans,
+    cell_source_spans,
     leaf_blocks,
     line_offsets,
     normalize,
@@ -96,10 +97,17 @@ def _is_part_heading(element: Tag) -> bool:
     )
 
 
-def _block(element: Tag, text: str, start: int, end: int) -> Block:
+def _block(element: Tag, text: str, start: int, end: int, offsets: list[int]) -> Block:
     """Build one source-positioned block from a DART element."""
     if element.name == "table":
-        return Block("table", text, html=str(element), source_pos=start, end_pos=end)
+        return Block(
+            "table",
+            text,
+            html=str(element),
+            source_pos=start,
+            end_pos=end,
+            cell_spans=cell_source_spans(element, offsets, end),
+        )
     if element.name == "title" or element.name in HEADING_TAGS:
         # Part headings never reach here (segment() keeps them out of the blocks),
         # so every heading block is a narrative subheading.
@@ -176,7 +184,7 @@ def segment(elements: list[Tag], source: str) -> tuple[list[Section], list[str]]
             continue  # cover material outside the numbered divisions
         if not text and element.name != "table":
             continue
-        current.blocks.append(_block(element, text, start, end))
+        current.blocks.append(_block(element, text, start, end, offsets))
 
     if not sections:
         raise DartParseError("no numbered top-level division found in the source")

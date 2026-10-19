@@ -23,7 +23,7 @@ from app.evals.execution.evaluator import (
     write_evaluation_artifact,
 )
 from app.evals.execution.models import EvaluationRetrieval
-from app.evals.execution.retrievers import Retriever, make_retriever
+from app.evals.execution.retrievers import Retriever, make_retriever, table_cell_spans
 from app.evals.experiments.matrix import run_matrix
 from app.evals.golden.binding import matrix_scope
 from app.evals.golden.catalog import SUITES, suite_paths
@@ -84,7 +84,8 @@ def quick_retriever(
             filters=filters,
             reranker=reranker,
         )
-        return EvaluationRetrieval(hits=result.hits)
+        cell_spans = await table_cell_spans(session, result.hits, filters)
+        return EvaluationRetrieval(hits=result.hits, cell_spans=cell_spans)
 
     return run
 

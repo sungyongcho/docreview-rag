@@ -8,7 +8,10 @@ from pydantic import Field, StrictStr, model_validator
 from app.contracts.validation import NonBlank, NonNegativeInt, PositiveInt, StrictSchema
 
 SourceSha256 = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
+# What a model may answer. Only the server reports a period mismatch, after checking
+# the answer's figures against the periods of the cells it cites.
 AnswerLabel = Literal["SUPPORTED", "NOT_IN_DOCS"]
+ReportLabel = Literal["SUPPORTED", "NOT_IN_DOCS", "PERIOD_MISMATCH"]
 
 
 class EvidenceCitation(StrictSchema):
@@ -29,15 +32,15 @@ class EvidenceCitation(StrictSchema):
         return self
 
 
-def validate_answer_citations(label: AnswerLabel, answer: str, chunk_ids: Sequence[int]) -> None:
-    """Require unique evidence for support and no evidence for an absent answer."""
+def validate_answer_citations(label: ReportLabel, answer: str, chunk_ids: Sequence[int]) -> None:
+    """Require unique evidence for cited answers and no evidence for an absent answer."""
     if len(chunk_ids) != len(set(chunk_ids)):
         raise ValueError("citation chunk ids must be unique")
-    if label == "SUPPORTED":
+    if label != "NOT_IN_DOCS":
         if not chunk_ids:
-            raise ValueError("SUPPORTED answers require at least one citation")
+            raise ValueError(f"{label} answers require at least one citation")
         if answer == "NOT_IN_DOCS":
-            raise ValueError("SUPPORTED answers require a supported answer")
+            raise ValueError(f"{label} answers require a supported answer")
     else:
         if answer != "NOT_IN_DOCS":
             raise ValueError(

@@ -28,17 +28,19 @@ def measured[T](actual: Mapping[str, T], baseline: Mapping[str, T]) -> dict[str,
 
 
 # Final check 2: (all document characters, characters assigned to sections).
+# Sparse-table recovery is included: empty layout cells no longer dilute numeric
+# density. Source-token comparison confirmed no loss against the previous baseline.
 COVERAGE = {
-    "sec-0000002488-20-000008": (358178, 352812),
-    "sec-0001628280-21-001185": (362278, 355792),
-    "sec-0000002488-22-000016": (343224, 336569),
-    "sec-0000002488-23-000047": (380277, 373047),
-    "sec-0000002488-24-000012": (382481, 375210),
-    "sec-0001045810-20-000010": (258346, 247153),
-    "sec-0001045810-21-000010": (294000, 282319),
-    "sec-0001045810-22-000036": (296849, 285038),
-    "sec-0001045810-23-000017": (306714, 295261),
-    "sec-0001045810-24-000029": (329808, 318319),
+    "sec-0000002488-20-000008": (359712, 354251),
+    "sec-0001628280-21-001185": (371684, 364903),
+    "sec-0000002488-22-000016": (351460, 344511),
+    "sec-0000002488-23-000047": (391845, 384325),
+    "sec-0000002488-24-000012": (391701, 384083),
+    "sec-0001045810-20-000010": (260193, 248914),
+    "sec-0001045810-21-000010": (303035, 291126),
+    "sec-0001045810-22-000036": (304625, 292682),
+    "sec-0001045810-23-000017": (317646, 305957),
+    "sec-0001045810-24-000029": (338078, 326326),
 }
 
 # Expected Item counts grow as SEC Items 1C and 9C become applicable.
@@ -85,20 +87,19 @@ NVDA_FY2024_OFFSETS = {
 # the corpus has no <th>, and colspan positions content. A logical three-column
 # income statement arrives as 12 physical columns.
 #
-# The stages are 221,730 expanded cells, 70,358 cells after empty-axis removal,
-# and 47,918 cells after unit folding. A higher final count leaves layout behind;
-# a lower count removes content. The 26 empty outputs are layout-only spacer tables.
+# These totals include recovered sparse grids. Changes must be checked against
+# original cells and source coverage, not interpreted as rendering loss from counts alone.
 TABLES = {
-    "sec-0000002488-20-000008": (0, 3628, 2494),
-    "sec-0001628280-21-001185": (4, 10644, 1995),
-    "sec-0000002488-22-000016": (4, 10098, 1799),
-    "sec-0000002488-23-000047": (1, 11577, 2220),
-    "sec-0000002488-24-000012": (1, 9603, 1925),
-    "sec-0001045810-20-000010": (0, 3689, 2337),
-    "sec-0001045810-21-000010": (0, 10473, 1821),
-    "sec-0001045810-22-000036": (0, 12090, 1986),
-    "sec-0001045810-23-000017": (0, 11100, 1924),
-    "sec-0001045810-24-000029": (0, 11937, 2108),
+    "sec-0000002488-20-000008": (0, 8929, 5170),
+    "sec-0001628280-21-001185": (4, 13872, 2534),
+    "sec-0000002488-22-000016": (4, 13146, 2334),
+    "sec-0000002488-23-000047": (1, 14985, 2846),
+    "sec-0000002488-24-000012": (1, 15324, 2954),
+    "sec-0001045810-20-000010": (0, 9916, 5322),
+    "sec-0001045810-21-000010": (0, 18210, 2933),
+    "sec-0001045810-22-000036": (0, 19401, 2964),
+    "sec-0001045810-23-000017": (0, 20925, 3202),
+    "sec-0001045810-24-000029": (0, 20649, 3138),
 }
 
 # The one NVDA-FY2024 table holding both "Gross profit" and "Net income per share" is the

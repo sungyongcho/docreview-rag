@@ -5,9 +5,11 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import field_validator
+from sqlalchemy import select
 
 from app.agent.tools.registry import Tool, ToolError, ToolRegistry
 from app.contracts.evidence import EvidenceCitation
+from app.contracts.figures import EvidenceText
 from app.contracts.validation import NonBlank, PositiveInt
 from app.db.models import Chunk
 from app.db.session_factory import SessionFactory
@@ -289,3 +291,23 @@ def build_default_registry(
         )
     )
     return registry
+
+
+async def read_cited_evidence(
+    session_factory: SessionFactory, chunk_ids: tuple[int, ...]
+) -> dict[int, EvidenceText]:
+    """Read cited chunks' text and stored table fragments for the answer figure check."""
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(Chunk.id, Chunk.body, Chunk.context_header, Chunk.table_fragment).where(
+                    Chunk.id.in_(chunk_ids)
+                )
+            )
+        ).all()
+    return {
+        chunk_id: EvidenceText(
+            chunk_id, body, context_header, fragment if isinstance(fragment, dict) else None
+        )
+        for chunk_id, body, context_header, fragment in rows
+    }
