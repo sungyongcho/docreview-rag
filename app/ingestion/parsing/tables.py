@@ -43,9 +43,18 @@ TEXT_ALIGN_RE = re.compile(r"text-align\s*:\s*([a-zA-Z-]+)")
 # which pushes real data rows into the inferred header.
 NUMERIC_CELL_RE = re.compile(r"^[\s\d.,()\[\]%$€¥£₩+\-–—/△▲]*\d[\s\d.,()\[\]%$€¥£₩+\-–—/△▲]*$")
 
-# A bare four-digit year is a column label, not a value, so it must not stop header
-# inference in tables headed "(In millions) | 2024 | 2023".
-YEAR_CELL_RE = re.compile(r"^(?:19|20)\d{2}$")
+# A period is a column label, not a value, so it must not stop header inference in
+# tables headed "(In millions) | 2024 | 2023". Filings also title columns with a
+# footnoted year ("2017(1)(2)") or a numeric date ("1/28/2024", "2024.12.31").
+PERIOD_CELL_RE = re.compile(
+    r"^(?:(?:19|20)\d{2}(?:\(\d+\))*"
+    r"|\d{1,2}/\d{1,2}/(?:19|20)\d{2}"
+    r"|(?:19|20)\d{2}[./-]\d{1,2}(?:[./-]\d{1,2})?\.?)$"
+)
+
+# Financial statements also render a missing/zero amount as a dash, with an
+# optional currency or percent marker. It is still a body value, not a title.
+DASH_VALUE_RE = re.compile(r"^[\s$€¥£₩%]*[-–—][\s$€¥£₩%]*$")
 
 # DART tables carry their unit inside the grid as a spanned annotation row such as
 # "(단위 : 백만원)". Left in place it reads as a labelled first row, which corrupts
@@ -363,7 +372,9 @@ def split_unit_captions(grid: Grid) -> tuple[list[str], Grid]:
 def _is_value(cell: str) -> bool:
     """Return whether a cell reads as a number rather than as a label."""
     text = cell.strip()
-    return bool(NUMERIC_CELL_RE.match(text)) and not YEAR_CELL_RE.match(text)
+    return bool(DASH_VALUE_RE.fullmatch(text)) or (
+        bool(NUMERIC_CELL_RE.fullmatch(text)) and not PERIOD_CELL_RE.fullmatch(text)
+    )
 
 
 def split_header(grid: Grid) -> tuple[Grid, Grid]:
@@ -400,9 +411,11 @@ def split_header(grid: Grid) -> tuple[Grid, Grid]:
     for row in grid:
         if not row or not any(cell.strip() for cell in row[1:]):
             break
+        if any(_is_value(cell) for cell in row):
+            break
         if row[0].strip():
             # A labelled row states column titles at most once; a second one is data.
-            if labelled or any(_is_value(cell) for cell in row):
+            if labelled:
                 break
             labelled = True
         n += 1

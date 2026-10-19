@@ -1,6 +1,7 @@
 """HTML table detection, span expansion, and markdown rendering."""
 
 from bs4 import BeautifulSoup, Tag
+import pytest
 
 from app.ingestion.parsing.tables import (
     MAX_SPAN,
@@ -148,6 +149,28 @@ def test_no_header_shape_returns_everything_as_body() -> None:
     """Return the full grid as body when no inferred header exists."""
     grid = [["Revenue", "1"], ["Cost", "2"]]
     assert split_header(grid) == ([], grid)
+
+
+def test_unlabelled_numeric_rows_remain_separate_body_rows() -> None:
+    """Preserve exhibit number/description pairs despite an empty first column."""
+    grid = [["", "10.13", "First agreement"], ["", "10.14", "Second agreement"], ["", "", ""]]
+    assert split_header(grid) == ([], grid)
+
+
+def test_dash_amounts_do_not_become_column_titles() -> None:
+    """Keep zero/missing monetary amounts in the body under the year headings."""
+    grid = [["", "2024", "2023"], ["Opening liability", "$ —", "—"], ["Charges", "100", "90"]]
+    assert split_header(grid) == ([grid[0]], grid[1:])
+
+
+@pytest.mark.parametrize(
+    "periods",
+    [["2024.12.31", "2023.12.31"], ["1/28/2024", "1/29/2023"], ["2020(1)", "2017(1)(2)"]],
+)
+def test_numeric_period_titles_remain_column_headers(periods) -> None:
+    """Read dated and footnoted period titles as labels, not as amounts."""
+    grid = [["", *periods], ["Revenue", "100", "90"]]
+    assert split_header(grid) == ([grid[0]], [grid[1]])
 
 
 def test_returned_header_rows_do_not_alias_the_input() -> None:
