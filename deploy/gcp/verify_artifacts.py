@@ -81,7 +81,8 @@ def _validate_evaluation(path: Path) -> dict:
     if config.get("evaluated_golden_sha256") != hashlib.sha256(encoded).hexdigest():
         raise ValueError(f"Evaluated golden identity mismatch: {path.name}")
     k = metrics.get("k")
-    if type(k) is not int or k <= 0 or config.get("scoring") != {"k": k, "coverage_threshold": 0.5}:
+    current = {"k": k, "coverage_threshold": 0.5, "table_scoring": "cell_spans"}
+    if type(k) is not int or k <= 0 or config.get("scoring") != current:
         raise ValueError(f"Missing or inconsistent current scoring settings: {path.name}")
     identity = config.get("admin_identity")
     original_digest = identity.get("golden_sha256") if isinstance(identity, dict) else None
