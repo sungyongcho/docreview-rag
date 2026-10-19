@@ -362,6 +362,17 @@ rag-dev corpus status
 
 Use its returned selection ID for ingestion. SEC and DART share `manifest.json`.
 
+### MCP servers {#mcp-servers}
+
+Two stdio MCP servers expose existing functions to an MCP client. An MCP client starts them as subprocesses from the repository root; they do not open a port.
+
+```bash
+uv run python -m app.mcp.catalog_server   # list_corpus: registered filings from manifest.json
+uv run python -m app.mcp.filings_server   # search_filings, compare_years, fetch_chunk
+```
+
+`catalog_server` reads only `manifest.json`. `filings_server` uses the configured database and, for search, the configured embedding provider, so searches can incur provider usage. A failed call returns `isError`; a database or other system failure also carries `_meta["docreview/system_error"]`, so a client can stop instead of treating it as "no evidence". `final_answer` is not a server tool; the agent loop owns it.
+
 ### Option help {#option-help}
 
 ```bash

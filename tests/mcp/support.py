@@ -33,3 +33,20 @@ def write_catalog(directory: Path, document_count: int) -> list[str]:
 def text_of(result) -> str:
     """Join the text blocks of one tool result."""
     return "".join(item.text for item in result.content if item.type == "text")
+
+
+def controlled_filings(log_path: Path):
+    """Launch the filings server with controlled retrieval logging to ``log_path``."""
+    log_path.touch()
+    return module_server("tests.mcp.controlled_filings", str(log_path))
+
+
+def logged_events(log_path: Path, start: int = 0) -> list[dict]:
+    """Read data-layer events recorded after line ``start``."""
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines[start:]]
+
+
+def is_system_error(result) -> bool:
+    """Report whether a failed result carries the system-failure marker."""
+    return bool((result.meta or {}).get("docreview/system_error"))

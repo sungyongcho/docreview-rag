@@ -382,6 +382,17 @@ rag-dev corpus status
 
 반환된 선택 ID로 DB 적재를 요청합니다. SEC와 DART는 같은 `manifest.json`을 사용합니다.
 
+### MCP 서버 {#mcp-servers}
+
+두 stdio MCP 서버가 기존 기능을 MCP 클라이언트에 공개합니다. MCP 클라이언트가 저장소 루트에서 하위 프로세스로 실행하며, 포트를 열지 않습니다.
+
+```bash
+uv run python -m app.mcp.catalog_server   # list_corpus: manifest.json의 등록 공시 목록
+uv run python -m app.mcp.filings_server   # search_filings, compare_years, fetch_chunk
+```
+
+`catalog_server`는 `manifest.json`만 읽습니다. `filings_server`는 설정된 DB를 쓰고, 검색에는 설정된 embedding 제공자를 사용하므로 검색에 사용량이 발생할 수 있습니다. 실패한 호출은 `isError`로 돌아오며, DB 등 시스템 실패에는 `_meta["docreview/system_error"]`가 함께 붙어 클라이언트가 "근거 없음"으로 오인하지 않고 멈출 수 있습니다. `final_answer`는 서버 도구가 아니며 agent loop가 담당합니다.
+
 <!-- heading-alias: 옵션-도움말 -->
 ### 옵션 도움말 {#option-help}
 
