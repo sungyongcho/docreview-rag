@@ -107,7 +107,7 @@ def _parse_arguments(arguments_json: str) -> dict[str, Any]:
 async def _dispatch(
     call: ToolCall,
     registry: ToolRegistry,
-) -> tuple[Observation, tuple[EvidenceCitation, ...]]:
+) -> tuple[Observation, tuple[EvidenceCitation, ...], bool]:
     """Run one tool call and return an explicit, identity-checked observation.
 
     Parameters
@@ -119,9 +119,10 @@ async def _dispatch(
 
     Returns
     -------
-    tuple[Observation, tuple[EvidenceCitation, ...]]
+    tuple[Observation, tuple[EvidenceCitation, ...], bool]
         JSON observation plus complete evidence identities, or an error and no
-        evidence when lookup, validation, execution, serialization, or extraction fails.
+        evidence when lookup, validation, execution, serialization, or extraction
+        fails. The flag marks a system failure the model cannot correct.
 
     Notes
     -----
@@ -134,15 +135,16 @@ async def _dispatch(
     try:
         tool = registry.get(call.name)
     except ValueError as error:
-        return Observation(call_id=call.call_id, name=call.name, error=str(error)), ()
+        return Observation(call_id=call.call_id, name=call.name, error=str(error)), (), False
     try:
         arguments = _parse_arguments(call.arguments_json)
     except ValueError as error:
         message = f"invalid arguments for {call.name}: {error}"
-        return Observation(call_id=call.call_id, name=call.name, error=message), ()
+        return Observation(call_id=call.call_id, name=call.name, error=message), (), False
     outcome = await execute_tool(registry, call.name, arguments)
     if outcome.error is not None:
-        return Observation(call_id=call.call_id, name=call.name, error=outcome.error), ()
+        observation = Observation(call_id=call.call_id, name=call.name, error=outcome.error)
+        return observation, (), outcome.system_error
     output = outcome.output
     output_json = outcome.output_json
     if output_json is None:
@@ -158,10 +160,11 @@ async def _dispatch(
             raise ValueError("evidence extractor returned duplicate chunk ids")
     except Exception as error:
         message = safe_runtime_error(error, f"tool {call.name} evidence extraction")
-        return Observation(call_id=call.call_id, name=call.name, error=message), ()
+        return Observation(call_id=call.call_id, name=call.name, error=message), (), True
     return (
         Observation(call_id=call.call_id, name=call.name, output_json=output_json),
         evidence,
+        False,
     )
 
 
@@ -242,7 +245,7 @@ async def run_agent(
     provider: ToolCallingProvider,
     budget: AgentBudget | None = None,
 ) -> AgentResult:
-    """Run the agent loop until final_answer, a budget stop, or a provider failure.
+    """Run the agent loop until final_answer, a budget stop, or a provider or tool failure.
 
     Parameters
     ----------
@@ -275,7 +278,10 @@ async def run_agent(
     and after an ``incomplete`` turn the output ceiling cut off — a truncated turn
     can never produce an accepted answer. A turn the provider cut off for another
     reason, such as a content filter, ends as ``provider_error`` because no budget
-    change can repair it. Observation payloads older than
+    change can repair it. A tool call that fails unexpectedly, such as a search
+    the database could not run, ends the run as ``tool_error`` after its step is
+    recorded; lookup, argument and tool-authored errors return to the model as
+    observations it can correct. Observation payloads older than
     ``KEEP_OUTPUT_EXCHANGES`` exchanges are compacted out of the replay to keep
     input tokens linear in run length.
     """
@@ -487,8 +493,11 @@ async def run_agent(
 
         observations: list[Observation] = []
         outputs: dict[str, str] = {}
+        system_failure: str | None = None
         for call in turn.tool_calls:
-            observation, citations = await _dispatch(call, registry)
+            observation, citations, system_failed = await _dispatch(call, registry)
+            if system_failed and system_failure is None:
+                system_failure = observation.error
             observations.append(observation)
             conflict = next(
                 (
@@ -515,6 +524,10 @@ async def run_agent(
             else:
                 outputs[call.call_id] = observation.output_json
         record_step(turn, tuple(observations), usage)
+        if system_failure is not None:
+            # A failed search is not an empty search: the model could only answer
+            # NOT_IN_DOCS from it, so the run ends as the system error it is.
+            return finish("tool_error", failure=system_failure)
         _append_exchange(input_items, turn, outputs)
         mark_exchange()
 

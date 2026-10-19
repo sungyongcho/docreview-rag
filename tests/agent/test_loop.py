@@ -172,35 +172,53 @@ def test_final_answer_rejection_names_the_broken_field():
     assert 'exactly the string "NOT_IN_DOCS"' in rejection
 
 
-def test_tool_failures_become_explicit_observations():
-    """Turn an unknown tool, bad arguments and a raising tool into three stated errors."""
+def test_correctable_tool_failures_become_explicit_observations():
+    """Return an unknown tool and bad arguments to the model as stated errors."""
     turns = [
         turn(
             tool_calls=(
                 call("missing_tool", {"query": "x"}, call_id="call-1"),
                 call("search_notes", {"wrong": "shape"}, call_id="call-2"),
-                call("search_notes", {"query": "revenue"}, call_id="call-3"),
             ),
         ),
-        turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-4"),)),
+        turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-3"),)),
     ]
-    registry = registry_with_search(fail=True)
 
-    result, provider = run_loop(turns, registry=registry)
+    result, provider = run_loop(turns)
 
     observations = result.steps[0].observations
     assert "unknown tool: missing_tool" in (observations[0].error or "")
     assert "invalid arguments for search_notes" in (observations[1].error or "")
     assert "wrong" in (observations[1].error or "")
-    assert "RuntimeError: tool search_notes failed" in (observations[2].error or "")
     replay = provider.requests[1][1]
     outputs = [item["output"] for item in replay if item.get("type") == "function_call_output"]
     assert all(output.startswith("ERROR:") for output in outputs)
-    # The failing search produced no evidence, so the cited final answer is
-    # rejected and the exhausted turn queue surfaces as a typed provider error.
+    # No search ran, so the cited final answer is rejected and the exhausted turn
+    # queue surfaces as a typed provider error.
     assert result.status == "provider_error"
     assert "99" not in (result.steps[1].observations[0].error or "")
     assert "7" in (result.steps[1].observations[0].error or "")
+
+
+def test_system_tool_failure_ends_the_run_instead_of_reaching_not_in_docs():
+    """Stop as a tool error after a failed search, so the model cannot report absence."""
+    turns = [
+        turn(tool_calls=(call("search_notes", {"query": "revenue"}, call_id="call-1"),)),
+        turn(
+            tool_calls=(
+                call("final_answer", answer_arguments(label="NOT_IN_DOCS"), call_id="call-2"),
+            ),
+        ),
+    ]
+
+    result, provider = run_loop(turns, registry=registry_with_search(fail=True))
+
+    assert result.status == "tool_error"
+    assert result.answer is None
+    assert result.failure == "RuntimeError: tool search_notes failed"
+    assert len(result.steps) == 1
+    assert result.steps[0].observations[0].error == result.failure
+    assert len(provider.requests) == 1
 
 
 def test_strict_argument_json_rejects_duplicates_and_non_finite_values():
@@ -489,8 +507,8 @@ def test_old_observations_are_compacted_out_of_the_replay():
     assert COMPACTED_OUTPUT not in third_request.values()
 
 
-def test_malformed_evidence_extractor_becomes_an_observation():
-    """State a broken evidence extractor as an observation instead of failing the run."""
+def test_malformed_evidence_extractor_ends_the_run_as_a_tool_error():
+    """Record a broken evidence extractor and stop, since its hits cannot become evidence."""
     registry = registry_with_search()
     tool = registry.get("search_notes")
     registry = ToolRegistry()
@@ -518,8 +536,9 @@ def test_malformed_evidence_extractor_becomes_an_observation():
 
     result, _ = run_loop(turns, registry=registry)
 
-    assert result.status == "ok"
+    assert result.status == "tool_error"
     assert "evidence extraction failed" in (result.steps[0].observations[0].error or "")
+    assert result.failure == result.steps[0].observations[0].error
 
 
 def test_zero_cost_ceiling_with_a_zero_priced_provider_is_not_exhausted():

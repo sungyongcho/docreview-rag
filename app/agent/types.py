@@ -17,7 +17,7 @@ from app.contracts.validation import (
 )
 from app.llm.schemas import TokenUsageDetails
 
-type AgentStatus = Literal["ok", "budget_exceeded", "provider_error"]
+type AgentStatus = Literal["ok", "budget_exceeded", "provider_error", "tool_error"]
 
 
 class AgentBudget(StrictSchema):
