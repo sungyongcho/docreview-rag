@@ -391,7 +391,7 @@ uv run python -m app.mcp.catalog_server   # list_corpus: manifest.json의 등록
 uv run python -m app.mcp.filings_server   # search_filings, compare_years, fetch_chunk
 ```
 
-`catalog_server`는 `manifest.json`만 읽습니다. `filings_server`는 설정된 DB를 쓰고, 검색에는 설정된 embedding 제공자를 사용하므로 검색에 사용량이 발생할 수 있습니다. 실패한 호출은 `isError`로 돌아오며, DB 등 시스템 실패에는 `_meta["docreview/system_error"]`가 함께 붙어 클라이언트가 "근거 없음"으로 오인하지 않고 멈출 수 있습니다. `final_answer`는 서버 도구가 아니며 agent loop가 담당합니다.
+`catalog_server`는 `manifest.json`만 읽습니다. `filings_server`는 설정된 DB를 쓰고, 검색에는 설정된 embedding 제공자를 사용하므로 검색에 사용량이 발생할 수 있습니다. 개발용 도구라서 개발 키(`OPENAI_API_KEY_LOCAL`)로만 실행하며, `MODE=prod`이면 시작하지 않고 종료 코드 2로 끝납니다. 실패한 호출은 `isError`로 돌아오며, DB 등 시스템 실패에는 `_meta["docreview/system_error"]`가 함께 붙어 클라이언트가 "근거 없음"으로 오인하지 않고 멈출 수 있습니다. `final_answer`는 서버 도구가 아니며 agent loop가 담당합니다.
 
 <!-- heading-alias: 옵션-도움말 -->
 ### 옵션 도움말 {#option-help}

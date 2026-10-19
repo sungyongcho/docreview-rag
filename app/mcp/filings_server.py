@@ -1,6 +1,7 @@
 """Expose existing DocReview search, chunk reading, and year-grouped evidence over MCP."""
 
 import asyncio
+import sys
 
 from mcp.server import Server
 from mcp.server.context import ServerRequestContext
@@ -16,6 +17,7 @@ from mcp.types import (
 
 from app.agent.tools.filings import build_default_registry
 from app.agent.tools.registry import ToolRegistry, execute_tool
+from app.config import get_settings
 from app.db.session_factory import default_session_factory
 
 EXPOSED_TOOLS = ("search_filings", "compare_years", "fetch_chunk")
@@ -97,7 +99,15 @@ async def serve(registry: ToolRegistry) -> None:
 
 
 async def main() -> None:
-    """Use the product database configuration and release its pool on shutdown."""
+    """Use the product database configuration and release its pool on shutdown.
+
+    The server is a development tool run with the developer's own key, so it
+    refuses ``MODE=prod`` before touching the database or a provider credential.
+    """
+    if get_settings().environment == "prod":
+        # stdout carries the MCP protocol; the refusal goes to stderr only.
+        print("The MCP filings server is a development tool; refusing MODE=prod.", file=sys.stderr)
+        raise SystemExit(2)
     from app.db.session import engine
 
     try:

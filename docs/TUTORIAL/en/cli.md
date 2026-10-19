@@ -371,7 +371,7 @@ uv run python -m app.mcp.catalog_server   # list_corpus: registered filings from
 uv run python -m app.mcp.filings_server   # search_filings, compare_years, fetch_chunk
 ```
 
-`catalog_server` reads only `manifest.json`. `filings_server` uses the configured database and, for search, the configured embedding provider, so searches can incur provider usage. A failed call returns `isError`; a database or other system failure also carries `_meta["docreview/system_error"]`, so a client can stop instead of treating it as "no evidence". `final_answer` is not a server tool; the agent loop owns it.
+`catalog_server` reads only `manifest.json`. `filings_server` uses the configured database and, for search, the configured embedding provider, so searches can incur provider usage. It is a development tool that runs only with the development key (`OPENAI_API_KEY_LOCAL`); under `MODE=prod` it refuses to start and exits with code 2. A failed call returns `isError`; a database or other system failure also carries `_meta["docreview/system_error"]`, so a client can stop instead of treating it as "no evidence". `final_answer` is not a server tool; the agent loop owns it.
 
 ### Option help {#option-help}
 
