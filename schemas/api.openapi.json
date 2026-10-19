@@ -469,7 +469,6 @@
                 "type": "integer"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -508,7 +507,6 @@
                 "type": "integer"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -4649,7 +4647,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -6636,7 +6633,6 @@
             "type": "integer"
           },
           "total_estimated_cost_usd": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Estimated Cost Usd",
             "type": "string"
           },
@@ -7003,6 +6999,7 @@
         "type": "object"
       },
       "SourceCheck": {
+        "additionalProperties": false,
         "description": "One evidence-document requirement and its current source validation result.",
         "properties": {
           "company_name": {
@@ -7445,7 +7442,6 @@
             "title": "Error"
           },
           "estimated_cost_usd": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Estimated Cost Usd",
             "type": "string"
           },
@@ -7658,7 +7654,6 @@
             "type": "string"
           },
           "estimated_cost_usd": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Estimated Cost Usd",
             "type": "string"
           },
@@ -7758,7 +7753,6 @@
             "type": "string"
           },
           "estimated_cost_usd": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Estimated Cost Usd",
             "type": "string"
           },
@@ -7854,7 +7848,6 @@
             "type": "integer"
           },
           "estimated_cost_usd": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Estimated Cost Usd",
             "type": "string"
           },

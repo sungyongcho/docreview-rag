@@ -1,7 +1,5 @@
 """Explicit read joins for current filing parses."""
 
-from typing import Any
-
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import contains_eager
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -10,9 +8,9 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.db.models import Chunk, Document, DocumentParse, ParsedStructure
 
 
-def join_current_parse(
-    statement: Select[Any], *, load: bool = False, grouped: bool = False
-) -> Select[Any]:
+def join_current_parse[*Columns](
+    statement: Select[*Columns], *, load: bool = False, grouped: bool = False
+) -> Select[*Columns]:
     """Join the selected structural parse, optionally loading its ORM relationships."""
     statement = statement.join(DocumentParse, DocumentParse.doc_id == Document.doc_id).join(
         ParsedStructure, ParsedStructure.structure_id == DocumentParse.structure_id
@@ -39,7 +37,7 @@ def current_source_matches(
     )
 
 
-def document_chunk_counts() -> Select[tuple[Document, int]]:
+def document_chunk_counts() -> Select[Document, int]:
     """Read current filing metadata and chunk counts for API and corpus inventories."""
     statement = (
         select(Document, func.count(Chunk.id).label("chunk_count"))

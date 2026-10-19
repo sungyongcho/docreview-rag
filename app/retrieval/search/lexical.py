@@ -30,7 +30,7 @@ def lexical_statement(
     filters: RetrievalFilters | None = None,
     *,
     text_search_config: str = TEXT_SEARCH_CONFIG,
-) -> Select[Any]:
+) -> Select[*tuple[Any, ...]]:
     """Build a safe PostgreSQL FTS statement ranked by cover density.
 
     Parameters
@@ -48,7 +48,7 @@ def lexical_statement(
 
     Returns
     -------
-    Select[Any]
+    Select[*tuple[Any, ...]]
         Projected, filtered, and deterministically ordered FTS statement.
 
     Raises

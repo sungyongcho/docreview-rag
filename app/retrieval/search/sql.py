@@ -160,21 +160,21 @@ def needs_document_join(filters: RetrievalFilters, source: ChunkSource = Chunk) 
     )
 
 
-def apply_filters(
-    statement: Select[Any], filters: RetrievalFilters, source: ChunkSource = Chunk
-) -> Select[Any]:
+def apply_filters[*Columns](
+    statement: Select[*Columns], filters: RetrievalFilters, source: ChunkSource = Chunk
+) -> Select[*Columns]:
     """Apply shared joins and exact-match predicates to a retrieval statement.
 
     Parameters
     ----------
-    statement : Select[Any]
+    statement : Select[*Columns]
         Chunk-based statement to restrict.
     filters : RetrievalFilters
         Canonical restrictions shared by every retrieval path.
 
     Returns
     -------
-    Select[Any]
+    Select[*Columns]
         Statement with the required join and predicates.
     """
     if needs_document_join(filters, source):

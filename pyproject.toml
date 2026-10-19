@@ -16,7 +16,7 @@ dependencies = [
     "pgvector>=0.5.0",
     "pydantic-settings>=2.14.2",
     "python-dotenv>=1.2.2",
-    "sqlalchemy>=2.0.51",
+    "sqlalchemy[asyncio]>=2.1.5",
     "starlette<2",
     "tiktoken>=0.14.0",
     "tqdm>=4.67",

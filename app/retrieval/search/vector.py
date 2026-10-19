@@ -59,7 +59,7 @@ def vector_search_statement(
     k: int,
     filters: RetrievalFilters | None = None,
     identity: EmbeddingIdentity,
-) -> Select[Any]:
+) -> Select[*tuple[Any, ...]]:
     """Build the exact cosine query used by runtime and SQL contract tests.
 
     Parameters
@@ -73,7 +73,7 @@ def vector_search_statement(
 
     Returns
     -------
-    Select[Any]
+    Select[*tuple[Any, ...]]
         Projected, filtered, and deterministically ordered SQL statement.
 
     Raises

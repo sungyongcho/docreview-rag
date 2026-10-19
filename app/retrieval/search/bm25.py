@@ -138,7 +138,7 @@ def bm25_statement(
     b: float = DEFAULT_BM25_B,
     idf: BM25Idf = DEFAULT_BM25_IDF,
     text_search_config: str = TEXT_SEARCH_CONFIG,
-) -> Select[Any]:
+) -> Select[*tuple[Any, ...]]:
     """Build a bound BM25 query with shared filters and deterministic ordering.
 
     Parameters
@@ -158,7 +158,7 @@ def bm25_statement(
 
     Returns
     -------
-    Select[Any]
+    Select[*tuple[Any, ...]]
         Projected, filtered, and deterministically ordered SQL statement.
 
     Raises
@@ -360,7 +360,9 @@ async def bm25_search(
     ]
 
 
-def _with_readiness(hits_statement: Select[Any], filters: RetrievalFilters) -> Select[Any]:
+def _with_readiness(
+    hits_statement: Select[*tuple[Any, ...]], filters: RetrievalFilters
+) -> Select[*tuple[Any, ...]]:
     """Attach the corpus-statistics count to the ranked hits in one statement.
 
     The count is the outer side of a left join, so the statement returns one
