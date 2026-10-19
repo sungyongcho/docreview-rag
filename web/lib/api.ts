@@ -133,10 +133,11 @@ interface RetrievePayload {
   resolved_scope: Record<string, unknown> | null;
 }
 
-export async function retrieveEvidence(query: string, sessionProfile: ReviewSessionProfile): Promise<RetrievePayload> {
+export async function retrieveEvidence(query: string, sessionProfile: ReviewSessionProfile, signal?: AbortSignal): Promise<RetrievePayload> {
   return request<RetrievePayload>("/retrieve", {
     method: "POST",
     body: JSON.stringify({ query, session_profile: sessionProfile }),
+    signal,
   });
 }
 
