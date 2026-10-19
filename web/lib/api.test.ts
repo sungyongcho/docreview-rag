@@ -41,6 +41,18 @@ describe("API client", () => {
     expect(response.body?.locked).toBe(false);
   });
 
+  it("parses CRLF frames whose CR and LF arrive in different chunks", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse([
+      "event: report\r\ndata: {\"status\":\"ok\",\"report\":{\"answer\":\"done\"}}\r",
+      "\n\r",
+      "\nevent: done\r\ndata: {}\r\n\r\n",
+    ])));
+
+    const report = await streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined);
+
+    expect(report.status).toBe("ok");
+  });
+
   it("fails closed when a stream ends without done", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse([
       "event: report\ndata: {\"status\":\"ok\"}\n\n",
