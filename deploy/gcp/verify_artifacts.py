@@ -223,9 +223,9 @@ def validate_database(
     expected_paths = sorted(f"/app/data/eval_runs/{name}" for name in bundle.evaluations)
     if report["documents"] != expected_ids:
         raise ValueError("Restored document identities differ from the source manifest")
-    if report["chunks"] != 10586 or report["matching_embeddings"] != 10586:
-        raise ValueError("Expected 10,586 chunks and matching OpenAI 384-dimensional vectors")
-    if report["embeddings"] != 10586:
+    if report["chunks"] != 10659 or report["matching_embeddings"] != 10659:
+        raise ValueError("Expected 10,659 chunks and matching OpenAI 384-dimensional vectors")
+    if report["embeddings"] != 10659:
         raise ValueError("Unexpected embeddings exist in the restored database")
     if (
         report["snapshots"] != 4

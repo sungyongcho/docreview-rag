@@ -132,9 +132,9 @@ def database_report(bundle):
     ]
     return {
         "documents": sorted(row["document_id"] for row in manifest["documents"]),
-        "chunks": 10586,
-        "embeddings": 10586,
-        "matching_embeddings": 10586,
+        "chunks": 10659,
+        "embeddings": 10659,
+        "matching_embeddings": 10659,
         "snapshots": 4,
         "public_ready_snapshots": 4,
         "complete_snapshot_documents": 4,

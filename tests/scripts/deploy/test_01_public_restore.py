@@ -39,7 +39,7 @@ def test_restored_public_portfolio_matches_checked_artifacts(tmp_path):
             await connection.close()
 
     report = asyncio.run(read_report())
-    assert json.loads(report)["matching_embeddings"] == 10586
+    assert json.loads(report)["matching_embeddings"] == 10659
     report_path = tmp_path / "database-report.json"
     report_path.write_text(report)
     result = subprocess.run(

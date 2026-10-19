@@ -312,4 +312,4 @@ def test_prepared_local_prod_has_verified_sources_vectors_and_foreign_keys():
             "'chunks', (SELECT count(*) FROM chunks))"
         )
     )
-    assert counts["bm25_documents"] == counts["lengths"] == counts["chunks"] == 10586
+    assert counts["bm25_documents"] == counts["lengths"] == counts["chunks"] == 10659
