@@ -13,6 +13,7 @@ from app.db.models import EvalResult
 from app.evals.admin.service import EvaluationAdminService
 from app.evals.results.comparison import compatible_baseline
 from app.evals.results.regression import SCORING_CONFIG_KEY
+from app.evals.results.scoring import TABLE_SCORING
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from tests.support import load_settings
 
@@ -162,16 +163,23 @@ def test_artifact_outside_the_configured_directory_is_refused(tmp_path: Path) ->
 def test_compatible_baseline_reads_the_scoring_stamp_that_persistence_writes(
     tmp_path: Path,
 ) -> None:
-    """The baseline lookup reads the key ``persist_eval_result`` stamps into the config."""
+    """The baseline lookup reads the key ``persist_eval_result`` stamps into the config.
+
+    A run scored before table hits used cell spans is never a baseline for one after.
+    """
     runs = tmp_path / "runs"
     runs.mkdir()
     identity = {"golden_sha256": "a" * 64, "corpus_fingerprint": "b" * 64}
-    config = {"admin_identity": identity, SCORING_CONFIG_KEY: {"k": 5}}
+    config = {
+        "admin_identity": identity,
+        SCORING_CONFIG_KEY: {"k": 5, "table_scoring": TABLE_SCORING},
+    }
     row = _Row(1, _artifact(runs / "one.json", 1), config)
+    legacy = _Row(2, _artifact(runs / "two.json", 1), {**config, SCORING_CONFIG_KEY: {"k": 5}})
 
     async def lookup(k: int) -> EvalResult | None:
         """Ask for the newest baseline scored at cutoff ``k``."""
-        async with _Session({1: row}) as session:
+        async with _Session({2: legacy, 1: row}) as session:
             return await compatible_baseline(
                 cast(Any, session),
                 suite="sec-en",

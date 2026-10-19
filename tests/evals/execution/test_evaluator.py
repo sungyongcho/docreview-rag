@@ -59,7 +59,7 @@ def test_runner_records_all_cases_but_scores_only_source_bearing_positives():
     assert {key: evaluation.config[key] for key in ("provider", "k", "scoring")} == {
         "provider": "deterministic",
         "k": 5,
-        "scoring": {"k": 5, "coverage_threshold": 0.5},
+        "scoring": {"k": 5, "coverage_threshold": 0.5, "table_scoring": "cell_spans"},
     }
 
 
@@ -100,7 +100,11 @@ def test_raw_artifact_preserves_hits_spans_latency_and_review_provenance(tmp_pat
     assert payload["cases"][0]["hits"][0]["start_char"] == 90
     assert payload["cases"][0]["latency_ms"] == 1.0
     assert payload["cases"][1]["score"] is None
-    assert payload["config"]["scoring"] == {"k": 5, "coverage_threshold": 0.5}
+    assert payload["config"]["scoring"] == {
+        "k": 5,
+        "coverage_threshold": 0.5,
+        "table_scoring": "cell_spans",
+    }
     assert all("decomposition" not in case for case in payload["cases"])
 
 

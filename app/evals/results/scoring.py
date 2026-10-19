@@ -1,6 +1,6 @@
 """Deterministic span-level scoring for retrieval evaluation suites."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, get_args
 
@@ -8,6 +8,10 @@ from app.evals.golden.models import GoldenCase, GoldenCategory, GoldenSpan
 from app.retrieval.types import ChunkHit
 
 COVERAGE_THRESHOLD: Final[float] = 0.5
+# Table hits are scored against the source spans of the cells their fragment carries.
+TABLE_SCORING: Final[str] = "cell_spans"
+
+type CellSpans = tuple[tuple[int, int], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,17 +40,21 @@ class SuiteScore:
     cases: tuple[CaseScore, ...]
 
     @property
-    def parameters(self) -> dict[str, float]:
+    def parameters(self) -> dict[str, float | str]:
         """Return the scoring settings two runs must share to be comparable.
 
         Every metric above moves with the cutoff and with the relevance threshold,
         so a stored baseline is only meaningful against a run that used the same
         values. The evaluator records this mapping in both artifact and stored config.
         """
-        return {"k": self.k, "coverage_threshold": COVERAGE_THRESHOLD}
+        return {
+            "k": self.k,
+            "coverage_threshold": COVERAGE_THRESHOLD,
+            "table_scoring": TABLE_SCORING,
+        }
 
 
-def span_coverage(golden: GoldenSpan, hit: ChunkHit) -> float:
+def span_coverage(golden: GoldenSpan, hit: ChunkHit, cell_spans: CellSpans | None = None) -> float:
     """Return the fraction of one gold answer span that a retrieved chunk contains.
 
     The denominator is the gold span alone, never the chunk, so the score answers
@@ -60,12 +68,25 @@ def span_coverage(golden: GoldenSpan, hit: ChunkHit) -> float:
     without retrieving better, and nothing here can detect that. A run's stored
     configuration must therefore record the chunk settings it used: two runs that
     chunked differently are two experiments, not a baseline and a regression.
+
+    Every fragment of one table shares that table's whole span, so a table hit passes
+    ``cell_spans``: the source spans of the cells its fragment carries. Only their
+    union counts, and a fragment without the answer cells covers nothing of it. A
+    sentence-split cell contributes its whole cell span.
     """
     if golden.doc_id != hit.doc_id or golden.source_sha256 != hit.source_sha256:
         return 0.0
 
-    overlap = max(0, min(golden.end_char, hit.end_char) - max(golden.start_char, hit.start_char))
-    return overlap / (golden.end_char - golden.start_char)
+    spans = ((hit.start_char, hit.end_char),) if cell_spans is None else cell_spans
+    covered = 0
+    cursor = golden.start_char
+    for start, end in sorted(spans):
+        start = max(start, cursor)
+        end = min(end, golden.end_char)
+        if end > start:
+            covered += end - start
+            cursor = end
+    return covered / (golden.end_char - golden.start_char)
 
 
 def score_case(
@@ -73,6 +94,7 @@ def score_case(
     golden_spans: Sequence[GoldenSpan],
     retrieved_hits: Sequence[ChunkHit],
     k: int,
+    cell_spans: Mapping[int, CellSpans] | None = None,
 ) -> CaseScore:
     """Score the top-k hits for one positive golden case.
 
@@ -90,6 +112,9 @@ def score_case(
     k : int
         Positive cutoff shared by every metric.
 
+    cell_spans : Mapping[int, CellSpans] | None
+        Source cell spans of each table hit's fragment, keyed by chunk id.
+
     Returns
     -------
     CaseScore
@@ -98,8 +123,9 @@ def score_case(
     Raises
     ------
     ValueError
-        If ``k`` is not a positive integer, ``case_id`` is blank, or
-        ``golden_spans`` is empty or contains duplicates.
+        If ``k`` is not a positive integer, ``case_id`` is blank,
+        ``golden_spans`` is empty or contains duplicates, or a top-k table hit has
+        no cell spans (an index built before cell spans were recorded).
 
     Notes
     -----
@@ -124,10 +150,24 @@ def score_case(
         raise ValueError("golden_spans must be unique")
 
     top_hits = retrieved_hits[:k]
+    spans_by_chunk = cell_spans or {}
+    hit_cell_spans: list[CellSpans | None] = []
+    for hit in top_hits:
+        if hit.kind != "table":
+            hit_cell_spans.append(None)
+        elif (spans := spans_by_chunk.get(hit.chunk_id)) is not None:
+            hit_cell_spans.append(spans)
+        else:
+            raise ValueError(
+                f"table hit {hit.chunk_id} has no cell source spans; re-index the corpus"
+            )
     # One coverage pass feeds both recall and the first relevant rank, so the two
     # can never disagree about which pairs matched.
     relevant = [
-        [span_coverage(golden, hit) >= COVERAGE_THRESHOLD for hit in top_hits]
+        [
+            span_coverage(golden, hit, spans) >= COVERAGE_THRESHOLD
+            for hit, spans in zip(top_hits, hit_cell_spans, strict=True)
+        ]
         for golden in golden_spans
     ]
 

@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import get_args
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import BM25Idf, LexicalRanker
+from app.db.models import Chunk, SnapshotChunk
 from app.evals.execution.models import EvaluationRetrieval
 from app.query.language import lexical_corpus_language, lexical_plan
 from app.retrieval.embedding.provider import EmbeddingProvider
@@ -17,13 +19,57 @@ from app.retrieval.search.lexical import lexical_search
 from app.retrieval.search.plan import RetrievalStrategy, SearchPlan
 from app.retrieval.search.service import normalize_query, retrieve
 from app.retrieval.search.vector import vector_search
-from app.retrieval.types import RetrievalFilters
+from app.retrieval.types import ChunkHit, RetrievalFilters
 
 type Retriever = Callable[[str, int], Awaitable[EvaluationRetrieval]]
 type BM25Parameters = tuple[float, float, BM25Idf]
 
 RETRIEVAL_STRATEGIES: tuple[RetrievalStrategy, ...] = ("lexical", "vector", "hybrid")
 LEXICAL_RANKERS: tuple[LexicalRanker, ...] = get_args(LexicalRanker)
+
+
+def _fragment_cell_spans(fragment: object) -> tuple[tuple[int, int], ...] | None:
+    """Return the sorted source spans of a stored fragment's cells, or None if any lacks one."""
+    if not isinstance(fragment, dict) or not isinstance(cells := fragment.get("cells"), list):
+        return None
+    spans: set[tuple[int, int]] = set()
+    for member in cells:
+        for source in member.get("sources", []) if isinstance(member, dict) else [None]:
+            if not isinstance(source, dict):
+                return None
+            start, end = source.get("start_char"), source.get("end_char")
+            if not isinstance(start, int) or not isinstance(end, int):
+                return None
+            spans.add((start, end))
+    return tuple(sorted(spans)) or None
+
+
+async def table_cell_spans(
+    session: AsyncSession,
+    hits: tuple[ChunkHit, ...],
+    filters: RetrievalFilters | None = None,
+) -> dict[int, tuple[tuple[int, int], ...]]:
+    """Load each table hit's fragment cell spans from the index the hits came from.
+
+    A fragment stored before cell spans were recorded is left out, so scoring refuses
+    that hit instead of crediting it with its whole table's span.
+    """
+    chunk_ids = [hit.chunk_id for hit in hits if hit.kind == "table"]
+    if not chunk_ids:
+        return {}
+    if filters is None or filters.snapshot_id is None:
+        query = select(Chunk.id, Chunk.table_fragment).where(Chunk.id.in_(chunk_ids))
+    else:
+        query = select(SnapshotChunk.chunk_id, SnapshotChunk.table_fragment).where(
+            SnapshotChunk.snapshot_id == filters.snapshot_id,
+            SnapshotChunk.chunk_id.in_(chunk_ids),
+        )
+    rows = (await session.execute(query)).all()
+    return {
+        chunk_id: spans
+        for chunk_id, fragment in rows
+        if (spans := _fragment_cell_spans(fragment)) is not None
+    }
 
 
 def resolve_bm25_parameters(
@@ -133,6 +179,12 @@ def make_retriever(
         raise ValueError(f"{strategy} retrieval requires an embedding provider")
     lexical = lexical_plan(lexical_corpus_language(filters)) if strategy == "lexical" else None
 
+    async def spanned(hits: tuple[ChunkHit, ...]) -> EvaluationRetrieval:
+        """Attach the table hits' cell spans from the same session and index."""
+        return EvaluationRetrieval(
+            hits=hits, cell_spans=await table_cell_spans(session, hits, filters)
+        )
+
     async def run(query: str, k: int) -> EvaluationRetrieval:
         """Execute the bound lane over one normalized query."""
         plan.candidate_limit(k)
@@ -161,15 +213,15 @@ def make_retriever(
                     filters,
                     text_search_config=lexical.text_search_config,
                 )
-            return EvaluationRetrieval(hits=tuple(hits))
+            return await spanned(tuple(hits))
         assert provider is not None
         if strategy == "vector":
             vector = await provider.embed_query(query)
             hits = await vector_search(
                 session, vector, k=k, filters=filters, identity=provider.identity
             )
-            return EvaluationRetrieval(hits=tuple(hits))
+            return await spanned(tuple(hits))
         result = await retrieve(session, query, provider=provider, k=k, filters=filters, plan=plan)
-        return EvaluationRetrieval(hits=result.hits)
+        return await spanned(result.hits)
 
     return run

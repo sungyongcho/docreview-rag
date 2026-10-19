@@ -87,6 +87,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     """
     from app.config import get_settings
     from app.db.session import Session
+    from app.evals.execution.retrievers import table_cell_spans
     from app.evals.experiments.decomposition import make_decomposed_retriever
     from app.retrieval.embedding.provider import get_embedding_provider
     from app.retrieval.search.plan import SearchPlan
@@ -106,7 +107,8 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                 k=k,
                 plan=SearchPlan(candidate_k=args.candidate_k, rrf_k=args.rrf_k),
             )
-            return EvaluationRetrieval(hits=result.hits)
+            cell_spans = await table_cell_spans(session, result.hits)
+            return EvaluationRetrieval(hits=result.hits, cell_spans=cell_spans)
 
     llm_provider, provider_budget = decomposition_boundary(args.model)
     shared_config = {

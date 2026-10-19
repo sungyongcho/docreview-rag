@@ -341,7 +341,11 @@ def test_current_evaluator_config_roundtrips_through_persistence_and_public_deta
         artifact = json.loads(evidence.path.read_text())
         assert persisted.result_id == 2
         assert artifact["config"] == stored[0].config == evaluation.config
-        assert artifact["config"]["scoring"] == {"k": 3, "coverage_threshold": 0.5}
+        assert artifact["config"]["scoring"] == {
+            "k": 3,
+            "coverage_threshold": 0.5,
+            "table_scoring": "cell_spans",
+        }
         assert "scoring" not in config
         if tamper == "missing_scoring":
             del artifact["config"]["scoring"]

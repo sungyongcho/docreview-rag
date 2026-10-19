@@ -14,6 +14,7 @@ from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from app.retrieval.search import service
 from app.retrieval.search.plan import RetrievalStrategy
 from app.retrieval.types import RetrievalFilters
+from tests.evals.support import relevant_hit
 
 
 class _Provider(DeterministicEmbeddingProvider):
@@ -287,3 +288,34 @@ def test_lexical_lane_tokenizes_for_the_filtered_corpus_language(monkeypatch, fi
     asyncio.run(retriever(query, 1))
 
     assert calls == [sent]
+
+
+def test_stored_fragments_yield_cell_spans_only_when_every_cell_has_one():
+    """Read spans from a current fragment and leave out one stored before spans existed."""
+
+    def cell(row: int, column: int, span: tuple[int, int] | None) -> dict[str, object]:
+        """Build one stored fragment member with a single source cell."""
+        source = {"row": row, "column": column, "rowspan": 1, "colspan": 1, "text": "1"}
+        if span is not None:
+            source |= {"start_char": span[0], "end_char": span[1]}
+        return {"row": row, "column": column, "text_start": 0, "text_end": 1, "sources": [source]}
+
+    class Rows:
+        """Session double returning stored table fragments by chunk id."""
+
+        async def execute(self, _statement: object) -> SimpleNamespace:
+            """Return one current and one legacy fragment."""
+            current = {"cells": [cell(2, 1, (30, 40)), cell(1, 1, (10, 20))]}
+            legacy = {"cells": [cell(1, 1, None)]}
+            return SimpleNamespace(all=lambda: [(7, current), (8, legacy)])
+
+    base = relevant_hit()
+    hits = (
+        base.model_copy(update={"chunk_id": 7, "kind": "table"}),
+        base.model_copy(update={"chunk_id": 8, "kind": "table"}),
+        base.model_copy(update={"chunk_id": 9}),
+    )
+
+    spans = asyncio.run(arms.table_cell_spans(cast(AsyncSession, Rows()), hits))
+
+    assert spans == {7: ((10, 20), (30, 40))}
