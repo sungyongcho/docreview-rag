@@ -4,6 +4,7 @@ from types import ModuleType
 
 import pytest
 
+from app.ingestion.parsing.html import normalize
 from tests.ingestion.golden import (
     ALWAYS_OPTIONAL,
     COVERAGE,
@@ -82,7 +83,16 @@ def test_nvda_fy2024_item15_contains_the_financial_statement_body(parsed: dict) 
         section for section in parsed["sec-0001045810-24-000029"].sections if section.item == "15"
     )
 
-    assert sum(len(block.text) for block in section.blocks) > NVDA_FY2024_ITEM15_MIN_CHARS
+    # Recovered grids move from paragraph text into table HTML; count both forms.
+    assert (
+        sum(
+            len(normalize(block.html).get_text(" ", strip=True))
+            if block.kind == "table"
+            else len(block.text)
+            for block in section.blocks
+        )
+        > NVDA_FY2024_ITEM15_MIN_CHARS
+    )
     assert sum(block.kind == "table" for block in section.blocks) > 30
 
 

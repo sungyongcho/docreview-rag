@@ -1,9 +1,62 @@
 """Table chunking and source-citation tests."""
 
 import app.ingestion.chunking as chunking
+from app.ingestion.parsing.html import line_offsets, normalize, source_pos
 from app.ingestion.parsing.models import Block
 from app.ingestion.parsing.tables import structured_table
 from tests.ingestion.chunk.support import build_filing, markdown_cells
+
+
+def test_amd_2024_financial_tables_keep_revenue_headers_units_and_source(corpus, chunks_by_doc):
+    """Recover every reported revenue table from the exact AMD filing, through chunking."""
+    doc_id = "sec-0000002488-25-000012"
+    filing, raw = corpus[doc_id]
+    assert filing.source_sha256 == (
+        "a56e68cfe5f9cbb84451c9bb7ffe95e287c84ea616570e392f052474e0400664"
+    )
+    tables = normalize(raw).find_all("table")
+    offsets = line_offsets(raw)
+    # These are independently inspected tables in the pinned source, not parser output IDs.
+    for index in (8, 9, 12, 22, 24):
+        start = source_pos(tables[index], offsets)
+        matching = [c for c in chunks_by_doc[doc_id] if c.kind == "table" and c.start_char == start]
+        assert matching, f"source table {index} was dropped"
+        revenue = next(c for c in matching if "25,785" in c.body and "22,680" in c.body)
+        assert "December 28, 2024" in revenue.body
+        assert "December 30, 2023" in revenue.body
+        assert "million" in revenue.body
+        assert "$ 25,785" in revenue.body
+        assert "$ 22,680" in revenue.body
+        assert revenue.source_sha256 == filing.source_sha256
+        assert revenue.doc_id == doc_id
+        assert revenue.start_char < revenue.end_char <= len(raw)
+        cited = raw[revenue.start_char : revenue.end_char]
+        assert "25,785" in cited and "22,680" in cited
+        assert revenue.table_fragment is not None
+        if index == 12:
+            assert "Consolidated Statements of Operations" in revenue.context_header
+            assert "| Net revenue | $ 25,785 | $ 22,680 | $ 23,601 |" in revenue.body
+            assert revenue.citation == "AMD FY2024 · Item 8"
+            assert "AMD" in revenue.content
+            assert "| Net revenue | $ 25,785 | $ 22,680 | $ 23,601 |" in revenue.content
+
+
+def test_nvda_inventory_grid_reaches_indexing_with_years_units_and_source(corpus, chunks_by_doc):
+    """Recover another issuer's sparse table as usable, source-bound retrieval input."""
+    doc_id = "sec-0001045810-24-000029"
+    filing, raw = corpus[doc_id]
+    table = normalize(raw).find_all("table")[41]
+    start = source_pos(table, line_offsets(raw))
+    chunk = next(c for c in chunks_by_doc[doc_id] if c.kind == "table" and c.start_char == start)
+    assert "Jan 28, 2024" in chunk.content
+    assert "Jan 29, 2023" in chunk.content
+    assert "(In millions)" in chunk.content
+    assert "| Total inventories | $ 5,282 | $ 5,159 |" in chunk.content
+    assert chunk.citation == "NVDA FY2024 · Item 15"
+    assert chunk.source_sha256 == filing.source_sha256
+    assert chunk.table_fragment is not None
+    cited = raw[chunk.start_char : chunk.end_char]
+    assert "5,282" in cited and "5,159" in cited
 
 
 def test_each_renderable_source_table_has_complete_fragment_coverage(corpus, chunks_by_doc):
