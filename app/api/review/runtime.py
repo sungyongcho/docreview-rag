@@ -123,7 +123,7 @@ def _document_resource(document: Document, chunk_count: int) -> DocumentResource
     """Project one stored document and its chunk count onto the resource."""
     return DocumentResource(
         doc_id=document.doc_id,
-        registry=document.registry,
+        registry=document.filing_registry,
         language=document.language,
         issuer=document.issuer,
         issuer_id=document.issuer_id,

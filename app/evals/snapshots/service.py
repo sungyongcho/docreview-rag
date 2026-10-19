@@ -242,7 +242,7 @@ class SnapshotService:
                         literal(snapshot.id),
                         Chunk.id,
                         Chunk.doc_id,
-                        Document.registry,
+                        Document.filing_registry,
                         Chunk.language,
                         Document.issuer,
                         Document.fiscal_year,

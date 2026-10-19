@@ -235,7 +235,7 @@ def test_snapshot_rankers_preserve_evidence_and_scores_after_live_data_changes(t
                 stable_key=first.stable_key,
                 index_text_sha256=first.index_text_sha256,
                 doc_id=first.doc_id,
-                registry="sec",
+                filing_registry="sec",
                 language="en",
                 issuer="NVDA",
                 fiscal_year=2024,

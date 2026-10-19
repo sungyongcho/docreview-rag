@@ -100,7 +100,7 @@ def filter_predicates(
         predicates.append(source.language.in_(filters.languages))
     if filters.registries:
         predicates.append(
-            (Document.registry if source is Chunk else SnapshotChunk.registry).in_(
+            (Document.filing_registry if source is Chunk else SnapshotChunk.filing_registry).in_(
                 filters.registries
             )
         )

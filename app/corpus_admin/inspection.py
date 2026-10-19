@@ -54,6 +54,11 @@ class _StatusProbe:
     bm25_rebuild_recorded: bool = False
 
 
+# Manifest field names that differ from the ORM attribute: `registry` is reserved by
+# SQLAlchemy Declarative, so the stored column is mapped as `filing_registry`.
+_ORM_ATTRIBUTE = {"registry": "filing_registry"}
+
+
 def _matches(
     document: AdminDocument,
     *,
@@ -119,7 +124,10 @@ def _ingestion_status(
     metadata = reference.model_dump(mode="json", exclude={"document_id"})
     return (
         "current"
-        if all(getattr(document, key) == value for key, value in metadata.items())
+        if all(
+            getattr(document, _ORM_ATTRIBUTE.get(key, key)) == value
+            for key, value in metadata.items()
+        )
         else "stale"
     )
 
@@ -129,7 +137,7 @@ def _admin_document(document: Document, chunk_count: int, status: IngestionStatu
     structure = document.current_parse.structure
     return AdminDocument(
         doc_id=document.doc_id,
-        registry=document.registry,
+        registry=document.filing_registry,
         language=document.language,
         issuer=document.issuer,
         issuer_id=document.issuer_id,
@@ -281,7 +289,7 @@ class CorpusInspector:
         if not {"documents", "chunks"}.issubset(tables):
             return ()
         statement = document_chunk_counts().order_by(
-            Document.registry, Document.issuer, Document.fiscal_year, Document.doc_id
+            Document.filing_registry, Document.issuer, Document.fiscal_year, Document.doc_id
         )
         async with self._service.session_factory() as session:
             rows = (await session.execute(statement)).all()

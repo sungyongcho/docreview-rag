@@ -188,7 +188,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     doc_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    registry: Mapped[str] = mapped_column(String(16), nullable=False)
+    filing_registry: Mapped[str] = mapped_column("registry", String(16), nullable=False)
     language: Mapped[str] = mapped_column(String(8), nullable=False)
     issuer: Mapped[str] = mapped_column(Text, nullable=False)
     issuer_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -492,7 +492,7 @@ class SnapshotChunk(Base):
     table_fragment: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     text_fragment: Mapped[list[int] | None] = mapped_column(JSONB, nullable=True)
     doc_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    registry: Mapped[str] = mapped_column(String(16), nullable=False)
+    filing_registry: Mapped[str] = mapped_column("registry", String(16), nullable=False)
     language: Mapped[str] = mapped_column(String(8), nullable=False)
     issuer: Mapped[str] = mapped_column(String(32), nullable=False)
     fiscal_year: Mapped[int] = mapped_column(nullable=False)

@@ -100,6 +100,7 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
                     )
                     metadata = reference.model_dump(mode="json")
                     metadata.pop("document_id")
+                    metadata["filing_registry"] = metadata.pop("registry")
                     metadata["source_url"] = "/home/private/source.html"
                     session.add(Document(doc_id=name, **metadata))
                     await session.flush()

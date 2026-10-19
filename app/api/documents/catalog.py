@@ -128,7 +128,7 @@ class DocumentCatalog:
         if query:
             pattern = f"%{query.strip()}%"
             matching_companies = [
-                (Document.registry == registry_name) & (Document.issuer == code)
+                (Document.filing_registry == registry_name) & (Document.issuer == code)
                 for (registry_name, code), name in names.items()
                 if query.strip().casefold() in name.casefold()
             ]
@@ -140,7 +140,7 @@ class DocumentCatalog:
                 )
             )
         for column, value in (
-            (Document.registry, registry),
+            (Document.filing_registry, registry),
             (Document.issuer, issuer),
             (Document.language, language),
             (Document.form, form),
@@ -252,10 +252,10 @@ class DocumentCatalog:
         documents = tuple(
             AdminDocumentResource(
                 doc_id=document.doc_id,
-                registry=document.registry,
+                registry=document.filing_registry,
                 language=document.language,
                 issuer=document.issuer,
-                issuer_name=names.get((document.registry, document.issuer)),
+                issuer_name=names.get((document.filing_registry, document.issuer)),
                 issuer_id=document.issuer_id,
                 fiscal_year=document.fiscal_year,
                 form=document.form,
@@ -301,7 +301,7 @@ class DocumentCatalog:
     async def document_facets(self, registry: str = "") -> DocumentFacetsResponse:
         """Return deterministic live filter values and counts."""
         names = self._company_names()
-        registry_filters = (Document.registry == registry,) if registry else ()
+        registry_filters = (Document.filing_registry == registry,) if registry else ()
         document_filters = (*self._document_filters(), *registry_filters)
 
         async def values(
@@ -354,7 +354,11 @@ class DocumentCatalog:
             coverage_rows = (
                 await session.execute(
                     select(
-                        Document.doc_id, Document.registry, Document.issuer, chunk_count, embedded
+                        Document.doc_id,
+                        Document.filing_registry,
+                        Document.issuer,
+                        chunk_count,
+                        embedded,
                     )
                     .outerjoin(Chunk, Chunk.doc_id == Document.doc_id)
                     .where(*document_filters)
@@ -400,7 +404,7 @@ class DocumentCatalog:
             )
             status_counts[status] += 1
         return DocumentFacetsResponse(
-            registries=await values(Document.registry),
+            registries=await values(Document.filing_registry),
             issuers=tuple(
                 DocumentFacetValue(
                     value=issuer,
@@ -510,25 +514,22 @@ class DocumentCatalog:
                 identity = (str(provider), str(model), int(dimensions), str(tokenizer))
                 embeddings[identity] = embeddings.get(identity, 0) + int(embedded)
         metadata = {
-            name: getattr(document, name)
-            for name in (
-                "doc_id",
-                "registry",
-                "language",
-                "issuer",
-                "issuer_id",
-                "fiscal_year",
-                "form",
-                "filing_date",
-                "report_period",
-                "filing_id",
-            )
+            "doc_id": document.doc_id,
+            "registry": document.filing_registry,
+            "language": document.language,
+            "issuer": document.issuer,
+            "issuer_id": document.issuer_id,
+            "fiscal_year": document.fiscal_year,
+            "form": document.form,
+            "filing_date": document.filing_date,
+            "report_period": document.report_period,
+            "filing_id": document.filing_id,
         }
         metadata.update(
             parse_status=document.current_parse.structure.parse_status,
             source_length=document.current_parse.structure.source_length,
             source_sha256=document.current_parse.structure.source_sha256,
-            issuer_name=self._company_names().get((document.registry, document.issuer)),
+            issuer_name=self._company_names().get((document.filing_registry, document.issuer)),
             source_url=public_source_url(document.source_url)
             if self._public_only
             else document.source_url,
