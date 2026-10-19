@@ -291,7 +291,7 @@ def test_lexical_lane_tokenizes_for_the_filtered_corpus_language(monkeypatch, fi
 
 
 def test_stored_fragments_yield_cell_spans_only_when_every_cell_has_one():
-    """Read spans from a current fragment and leave out one stored before spans existed."""
+    """Read every rendered cell's span, and leave out a fragment stored before spans existed."""
 
     def cell(row: int, column: int, span: tuple[int, int] | None) -> dict[str, object]:
         """Build one stored fragment member with a single source cell."""
@@ -305,7 +305,16 @@ def test_stored_fragments_yield_cell_spans_only_when_every_cell_has_one():
 
         async def execute(self, _statement: object) -> SimpleNamespace:
             """Return one current and one legacy fragment."""
-            current = {"cells": [cell(2, 1, (30, 40)), cell(1, 1, (10, 20))]}
+            unit = cell(0, 0, (1, 3))["sources"][0]
+            current = {
+                "cells": [cell(2, 1, (30, 40)), cell(1, 1, (10, 20))],
+                "header_cells": [cell(0, 1, (5, 9))["sources"][0]],
+                "caption_sources": [
+                    # An in-table caption counts by its cells, never its whole-table block.
+                    {"start_char": 0, "end_char": 100, "text": "(unit)", "cells": [unit]},
+                    {"start_char": 200, "end_char": 220, "text": "Note", "cells": []},
+                ],
+            }
             legacy = {"cells": [cell(1, 1, None)]}
             return SimpleNamespace(all=lambda: [(7, current), (8, legacy)])
 
@@ -318,4 +327,4 @@ def test_stored_fragments_yield_cell_spans_only_when_every_cell_has_one():
 
     spans = asyncio.run(arms.table_cell_spans(cast(AsyncSession, Rows()), hits))
 
-    assert spans == {7: ((10, 20), (30, 40))}
+    assert spans == {7: ((1, 3), (5, 9), (10, 20), (30, 40), (200, 220))}

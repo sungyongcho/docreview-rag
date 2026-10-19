@@ -28,18 +28,33 @@ LEXICAL_RANKERS: tuple[LexicalRanker, ...] = get_args(LexicalRanker)
 
 
 def _fragment_cell_spans(fragment: object) -> tuple[tuple[int, int], ...] | None:
-    """Return the sorted source spans of a stored fragment's cells, or None if any lacks one."""
+    """Return the sorted source spans of everything a stored fragment renders, or None.
+
+    A fragment renders its member cells, its column header cells and its captions, so
+    an answer in any of them is inside the chunk. A caption inside the table counts by
+    its own cells, because its block span is the whole table's; a caption paragraph
+    before the table counts by its block span. None means a cell lacks a span.
+    """
     if not isinstance(fragment, dict) or not isinstance(cells := fragment.get("cells"), list):
         return None
+    sources: list[object] = [
+        source
+        for member in cells
+        for source in (member.get("sources", [None]) if isinstance(member, dict) else [None])
+    ]
+    sources.extend(fragment.get("header_cells") or [])
+    for caption in fragment.get("caption_sources") or []:
+        if not isinstance(caption, dict):
+            return None
+        sources.extend(caption.get("cells") or [caption])
     spans: set[tuple[int, int]] = set()
-    for member in cells:
-        for source in member.get("sources", []) if isinstance(member, dict) else [None]:
-            if not isinstance(source, dict):
-                return None
-            start, end = source.get("start_char"), source.get("end_char")
-            if not isinstance(start, int) or not isinstance(end, int):
-                return None
-            spans.add((start, end))
+    for source in sources:
+        if not isinstance(source, dict):
+            return None
+        start, end = source.get("start_char"), source.get("end_char")
+        if not isinstance(start, int) or not isinstance(end, int):
+            return None
+        spans.add((start, end))
     return tuple(sorted(spans)) or None
 
 
