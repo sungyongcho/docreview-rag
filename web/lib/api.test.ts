@@ -129,6 +129,21 @@ describe("review response body cancellation", () => {
     expect(response.body?.locked).toBe(false);
   });
 
+  it("cancels the open body when a frame cannot be parsed", async () => {
+    const cancellation = vi.fn();
+    const response = new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode("event: surprise\ndata: {}\n\n")); },
+      cancel: cancellation,
+    }), { headers: { "content-type": "text/event-stream" } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    await expect(
+      streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined),
+    ).rejects.toThrow("unknown event");
+    expect(cancellation).toHaveBeenCalledOnce();
+    expect(response.body?.locked).toBe(false);
+  });
+
 });
 
 

@@ -253,6 +253,10 @@ export async function streamReview(
     if (buffer.trim()) await consume(buffer);
     if (!done || !terminal) throw new Error("Review stream ended without a terminal report and done event.");
     return terminal;
+  } catch (error) {
+    // Releasing the lock alone would leave a still-open response body streaming.
+    void reader.cancel().catch(() => undefined);
+    throw error;
   } finally {
     signal?.removeEventListener("abort", abort);
     reader.releaseLock();
