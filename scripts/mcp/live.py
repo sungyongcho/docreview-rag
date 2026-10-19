@@ -5,12 +5,14 @@ Usage, from the repository root::
     python -m scripts.mcp.live RUN_ID search --issuer AMD --year 2024 --query "total net revenue"
     python -m scripts.mcp.live RUN_ID compare --issuer AMD --years 2023 2024 --query "revenue"
     python -m scripts.mcp.live RUN_ID fetch --chunk-id 19306
-    python -m scripts.mcp.live RUN_ID agent --question "Compare AMD revenue in 2023 and 2024."
+    python -m scripts.mcp.live RUN_ID agent --issuer AMD --years 2023 2024 \
+        --question "Compare AMD revenue in 2023 and 2024."
 
-``search``, ``compare`` and ``agent`` can incur OpenAI usage. Each run writes under
-``--out/RUN_ID`` (outside the repository by default), and an attempt marker is
-created exclusively before the server starts, so a run whose paid outcome is
-uncertain is never repeated under the same ID. Requests are never retried, and
+``search``, ``compare`` and ``agent`` can incur OpenAI usage, so they first check
+that the named issuer and years have chunks embedded by the configured model.
+Each run writes under ``--out/RUN_ID`` (outside the repository by default), and an
+attempt marker is created exclusively before the server starts, so a run whose
+paid outcome is uncertain is never repeated under the same ID. Requests are never retried, and
 every paid request reserves its estimated cost against a cap first.
 """
 
@@ -302,10 +304,14 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     run_dir = args.out / args.run_id
     if args.command == "search":
         await require_indexed(args.issuer, [args.year])
-    elif args.command == "compare":
+    elif args.command in {"compare", "agent"}:
         await require_indexed(args.issuer, args.years)
     request = tool_request(args)
-    payload = request if request is not None else {"question": args.question}
+    payload = (
+        request
+        if request is not None
+        else {"question": args.question, "issuer": args.issuer, "years": args.years}
+    )
     claim_attempt(run_dir, {"command": args.command, "request": payload})
     server = StdioServerParameters(
         command=sys.executable,
@@ -364,6 +370,9 @@ def parser() -> argparse.ArgumentParser:
     fetch = commands.add_parser("fetch", help="one fetch_chunk call checked against the DB")
     fetch.add_argument("--chunk-id", type=int, required=True)
     agent = commands.add_parser("agent", help="one run_agent question over MCP")
+    # Checked for indexed chunks before any paid call; not a search filter for the model.
+    agent.add_argument("--issuer", required=True, help="issuer the question is about")
+    agent.add_argument("--years", type=int, nargs="+", required=True, help="years it asks about")
     agent.add_argument("--question", required=True)
     agent.add_argument("--model-cap", default="0.09", help="model reservation cap in USD")
     agent.add_argument("--model-attempts", type=int, default=8)
