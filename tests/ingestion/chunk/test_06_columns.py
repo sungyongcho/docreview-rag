@@ -120,7 +120,7 @@ def test_samsung_2023_subsidiary_table_chunks_with_bounded_matching_headers():
         for block in section.blocks
         if block.kind == "table" and block.source_pos == 413409
     )
-    table = structured_table(block.html)
+    table = structured_table(block.html, block.cell_spans)
     assert len(table.rows[0].cells) == 240
 
     chunks = chunk_filing(filing)
@@ -138,6 +138,7 @@ def test_samsung_2023_subsidiary_table_chunks_with_bounded_matching_headers():
         for member in fragment.cells:
             expected = cells[member.row, member.column]
             assert member.sources == expected.sources
+            assert all(source.start_char is not None for source in member.sources)
             assert expected.text[member.text_start : member.text_end] in chunk.body
             if expected.text:
                 covered.add((member.row, member.column))

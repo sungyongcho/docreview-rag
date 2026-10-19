@@ -22,6 +22,7 @@ from app.ingestion.parsing.html import (
     REPORTED_TITLE_MAX,
     STYLESHEET_WEIGHT_KEY,
     block_source_spans,
+    cell_source_spans,
     leaf_blocks,
     line_offsets,
     normalize,
@@ -322,6 +323,7 @@ def _body_block(
     end_char: int | None = None,
     source_group: int = 0,
     source_heading: str | None = None,
+    offsets: list[int] | None = None,
 ) -> Block:
     """Convert a source element into a parsed `Block`.
 
@@ -339,6 +341,8 @@ def _body_block(
         Group index for contiguous narrative ranges.
     source_heading
         Optional narrative heading associated with this block.
+    offsets
+        Optional line offsets, used to record each table cell's source span.
 
     Returns
     -------
@@ -354,6 +358,7 @@ def _body_block(
             end_pos=end_char,
             source_group=source_group,
             source_heading=source_heading,
+            cell_spans=cell_source_spans(el, offsets, end_char),
         )
     if len(text) <= SUBHEADING_MAX_CHARS and block_props(el)["font_weight"] >= 700:
         return Block(
@@ -424,7 +429,7 @@ def segment_by_heading(
             )
             sections.append(current)
         elif current is not None:
-            current.blocks.append(_body_block(el, text, *source_spans[i]))
+            current.blocks.append(_body_block(el, text, *source_spans[i], offsets=offsets))
         # Before the first Item, discard cover and TOC blocks that belong to no section.
     if current is not None:
         current.block_range = (current.block_index or 0, len(blocks))
@@ -619,6 +624,7 @@ def segment_by_xref(
                         *source_spans[j],
                         source_group=source_group,
                         source_heading=_title,
+                        offsets=offsets,
                     )
                 )
         sections.append(sec)

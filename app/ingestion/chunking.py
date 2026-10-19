@@ -218,7 +218,7 @@ def section_units(
 
         if block.kind == table_kind:
             flush_pending()
-            table = structured_table(block.html)
+            table = structured_table(block.html, block.cell_spans)
             markdown = table.render()
             captions = table.captions if not markdown else ()
             if markdown:

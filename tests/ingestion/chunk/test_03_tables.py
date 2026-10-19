@@ -4,7 +4,7 @@ import app.ingestion.chunking as chunking
 from app.ingestion.parsing.html import line_offsets, normalize, source_pos
 from app.ingestion.parsing.models import Block
 from app.ingestion.parsing.tables import structured_table
-from tests.ingestion.chunk.support import build_filing, markdown_cells
+from tests.ingestion.chunk.support import build_filing, markdown_cells, source_text
 
 
 def test_amd_2024_financial_tables_keep_revenue_headers_units_and_source(corpus, chunks_by_doc):
@@ -57,6 +57,25 @@ def test_nvda_inventory_grid_reaches_indexing_with_years_units_and_source(corpus
     assert chunk.table_fragment is not None
     cited = raw[chunk.start_char : chunk.end_char]
     assert "5,282" in cited and "5,159" in cited
+
+
+def test_fragment_cells_locate_their_text_in_the_original_source(corpus, chunks_by_doc):
+    """Bound every fragment cell to an original-source span inside its table that holds its text."""
+    checked = 0
+    for doc_id, (_filing, raw) in corpus.items():
+        for chunk in chunks_by_doc[doc_id]:
+            if chunk.table_fragment is None:
+                continue
+            for member in chunk.table_fragment.cells:
+                for cell in member.sources:
+                    assert cell.start_char is not None and cell.end_char is not None
+                    assert chunk.start_char <= cell.start_char < cell.end_char <= chunk.end_char
+                    # Inline markup can split a word ("Report" + "s"), so compare
+                    # whitespace-free text rather than tokens.
+                    cited = "".join(source_text(raw, cell.start_char, cell.end_char).split())
+                    assert "".join(cell.text.split()) in cited, (doc_id, cell)
+                    checked += 1
+    assert checked
 
 
 def test_each_renderable_source_table_has_complete_fragment_coverage(corpus, chunks_by_doc):

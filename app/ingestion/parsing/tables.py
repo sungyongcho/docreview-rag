@@ -135,13 +135,18 @@ def _rows(table: Tag) -> list[Tag]:
     return rows
 
 
-def place_cells(table: Tag) -> tuple[Grid, list[SourceCell]]:
+def place_cells(
+    table: Tag, cell_spans: tuple[tuple[int, int], ...] | None = None
+) -> tuple[Grid, list[SourceCell]]:
     """Expand an HTML table into a dense matrix with span handling.
 
     Parameters
     ----------
     table
         Parsed table node.
+    cell_spans
+        Optional original-source span of every cell tag under ``table``, in document
+        order, recorded on the returned source cells.
 
     Returns
     -------
@@ -161,6 +166,12 @@ def place_cells(table: Tag) -> tuple[Grid, list[SourceCell]]:
     structured.
     """
     source_cells: list[SourceCell] = []
+    span_of: dict[int, tuple[int, int]] = {}
+    if cell_spans is not None:
+        tags = table.find_all(list(CELL_TAGS))
+        if len(tags) != len(cell_spans):
+            raise ValueError(f"table has {len(tags)} cells but {len(cell_spans)} source cell spans")
+        span_of = {id(tag): span for tag, span in zip(tags, cell_spans, strict=True)}
     placed: Grid = []
     # Centered spans, resolved after the content columns of the table are known.
     spread: list[tuple[int, int, int, str]] = []
@@ -180,7 +191,9 @@ def place_cells(table: Tag) -> tuple[Grid, list[SourceCell]]:
             text = _cell_text(cell)
             cspan = _span(cell, "colspan")
             rspan = _span(cell, "rowspan")
-            source_cells.append(SourceCell(r, col, rspan, cspan, text))
+            source_cells.append(
+                SourceCell(r, col, rspan, cspan, text, *span_of.get(id(cell), (None, None)))
+            )
             end = col + cspan
 
             missing = end - len(row)
@@ -445,13 +458,19 @@ def is_unit_caption(text: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class SourceCell:
-    """One original HTML cell and its zero-based source grid coverage."""
+    """One original HTML cell, its zero-based source grid coverage and source span.
+
+    ``start_char``/``end_char`` locate the cell in the original filing when the
+    parser supplied cell spans; they stay ``None`` for a table built from text alone.
+    """
 
     row: int
     column: int
     rowspan: int
     colspan: int
     text: str
+    start_char: int | None = None
+    end_char: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -504,8 +523,14 @@ class StructuredTable:
         return "\n".join(lines)
 
 
-def structured_table(table: str | Tag | None) -> StructuredTable:
+def structured_table(
+    table: str | Tag | None, cell_spans: tuple[tuple[int, int], ...] | None = None
+) -> StructuredTable:
     """Retain source cell relationships while applying the existing table transforms.
+
+    ``cell_spans`` are the parser's original-source spans for the table's cell tags in
+    document order; ``html`` is a re-serialization, so its own positions are not
+    source offsets.
 
     Numbers are passed through verbatim: ``(1,234)`` remains parenthesized rather
     than becoming ``-1234``. The citation has to match what a reader sees in the
@@ -514,7 +539,7 @@ def structured_table(table: str | Tag | None) -> StructuredTable:
     node = _table_node(table)
     if node is None:
         return StructuredTable((), (), ())
-    grid, source_cells = place_cells(node)
+    grid, source_cells = place_cells(node, cell_spans)
     if not grid:
         return StructuredTable((), (), ())
     retained = [i for i, row in enumerate(grid) if any(value.strip() for value in row)]

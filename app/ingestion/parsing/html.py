@@ -81,6 +81,26 @@ def source_pos(el: Tag, offsets: list[int]) -> int | None:
     return offsets[el.sourceline - 1] + el.sourcepos
 
 
+def cell_source_spans(
+    table: Tag, offsets: list[int] | None, end: int | None
+) -> tuple[tuple[int, int], ...] | None:
+    """Return each cell's half-open source span in document order, or None.
+
+    A cell spans from its own start tag to the next cell's start tag, and the last
+    cell to the table block's end: the same enclosing rule ``block_source_spans``
+    applies to blocks, since the parser records no end positions.
+    """
+    if offsets is None or end is None:
+        return None
+    starts: list[int] = []
+    for cell in table.find_all(list(CELL_TAGS)):
+        start = source_pos(cell, offsets)
+        if start is None:
+            return None
+        starts.append(start)
+    return tuple(zip(starts, [*starts[1:], end], strict=True))
+
+
 def _record_stylesheet_font_weights(soup: BeautifulSoup) -> None:
     """Attach non-serialized font weights from simple internal class rules."""
     for style in soup.find_all("style"):

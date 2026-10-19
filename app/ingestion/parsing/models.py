@@ -20,6 +20,8 @@ class Block:
     end_pos: int | None = None  # exclusive end offset in the original HTML
     source_group: int = 0  # contiguous narrative range within one Section
     source_heading: str | None = None  # title of that narrative range
+    # Original-source span of each table cell, in the html's document order.
+    cell_spans: tuple[tuple[int, int], ...] | None = None
 
 
 @dataclass
