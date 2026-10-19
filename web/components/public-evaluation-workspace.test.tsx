@@ -105,10 +105,11 @@ it("reads evaluation pages while settings remain a browser-only experiment and k
   expect(requests.every(row => row.method === "GET")).toBe(true);
 });
 
-/** Two DART Korean runs that differ only in the lexical ranker, under arbitrary labels. */
+/** Two DART Korean runs shaped like published configurations, differing only in the lexical ranker. */
 function rankerPair(candidateSettings: Record<string, unknown> = {}): PublishedSnapshot[] {
   return snapshots.map((row, index) => ({ ...row, label: `dart-ko publication ${index + 3}`,
-    profile: { strategy: "lexical", k: 5, candidate_k: 20, lexical_ranker: index === 0 ? "bm25" : "ts_rank_cd", ...(index === 1 ? candidateSettings : {}) },
+    profile: { search_scope: { registry: "dart", language: "ko" }, scoring: { k: 5 },
+      retrieval_profile: { strategy: "lexical", k: 5, candidate_k: 20, lexical_ranker: index === 0 ? "bm25" : "ts_rank_cd", ...(index === 1 ? candidateSettings : {}) } },
     eval_result: { ...row.eval_result, suite: "dart-ko" } }));
 }
 
