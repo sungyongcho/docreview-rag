@@ -13,6 +13,7 @@ packages. Schema preparation lives in `app.db.startup`, the container gate; Quic
 | `diagnostics` | `python -m scripts.diagnostics.ollama` checks model connectivity; `python -m scripts.diagnostics.readiness` measures health/readiness during ingestion; `python -m scripts.diagnostics.local_grade` runs the explicit local-model benchmark |
 | `release` | `python -m scripts.release.api_schema [--check]`, `python -m scripts.release.web_build`, `python -m scripts.release.container_startup IMAGE PORT`, `bash scripts/release/clean_checkout.sh` |
 | `deploy` | `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh` builds, stages and publishes Firebase Hosting in one command |
+| `mcp` | `python -m scripts.mcp.scope_check` checks question-scoped fetches over real MCP and the read-only DB without a model; `python -m scripts.mcp.live RUN_ID search\|compare\|fetch\|agent` runs one capped, never-retried live experiment and writes outside the repository |
 
 Shell remains only for dependency bootstrap, the SSH web environment, release orchestration and
 Firebase deployment. The shell helper invokes Python modules directly. Tests follow these groups
