@@ -562,3 +562,79 @@ def test_content_filter_cutoff_is_a_provider_failure_not_a_budget_stop():
     assert "output-token ceiling" not in (result.failure or "")
     assert result.iterations == 1
     assert len(provider.requests) == 1
+
+
+def _figures_run(answer_text, *, reader, then=None):
+    """Answer with one figure citing chunk 7, optionally followed by a second final answer."""
+    supported = {**answer_arguments(), "answer": answer_text}
+    turns = [
+        turn(tool_calls=(call("search_notes", {"query": "revenue"}),)),
+        turn(tool_calls=(call("final_answer", supported, call_id="call-2"),)),
+    ]
+    if then is not None:
+        turns.append(turn(tool_calls=(call("final_answer", then, call_id="call-3"),)))
+    provider = RecordingToolProvider(turns)
+    result = asyncio.run(
+        run_agent(
+            "What was AMD's 2024 net revenue?",
+            registry=registry_with_search(),
+            provider=provider,
+            requested_fiscal_years=(2024,),
+            evidence_reader=reader,
+        )
+    )
+    return result, provider
+
+
+def _table_reader():
+    """Read chunk 7 as the AMD income table the real chunker produces."""
+    from app.contracts.figures import EvidenceText
+    from tests.workflow.support import income_table_hit
+
+    table, fragment = income_table_hit()
+
+    async def read(chunk_ids):
+        """Return the cited table's text and stored fragment."""
+        assert chunk_ids == (7,)
+        return {7: EvidenceText(7, table.body, table.context_header, fragment)}
+
+    return read
+
+
+def test_a_comparative_column_figure_ends_as_a_period_mismatch():
+    """Report the 2023 column's figure as another period instead of 2024 revenue."""
+    result, _ = _figures_run("2024 net revenue was $22,680 million.", reader=_table_reader())
+
+    assert result.status == "ok"
+    assert result.answer is not None and result.answer.label == "PERIOD_MISMATCH"
+    assert [citation.chunk_id for citation in result.answer.citations] == [7]
+    assert result.period_mismatch is not None
+    assert result.period_mismatch.evidenced_fiscal_years == (2023,)
+
+
+def test_an_unconfirmed_figure_is_returned_to_the_model():
+    """Refuse a figure the cited table does not state, then accept the corrected absence."""
+    result, provider = _figures_run(
+        "2024 net revenue was $26,000 million.",
+        reader=_table_reader(),
+        then=answer_arguments(label="NOT_IN_DOCS"),
+    )
+
+    assert result.status == "ok"
+    assert result.answer is not None and result.answer.label == "NOT_IN_DOCS"
+    rejection = result.steps[1].observations[0].error or ""
+    assert "26,000" in rejection and "2024" in rejection
+    assert len(provider.requests) == 3
+
+
+def test_a_failed_evidence_read_ends_the_run_as_a_tool_error():
+    """Stop as a tool error when the cited evidence cannot be read."""
+
+    async def broken(chunk_ids):
+        """Fail the way an unavailable database does."""
+        raise RuntimeError("database unavailable")
+
+    result, _ = _figures_run("2024 net revenue was $25,785 million.", reader=broken)
+
+    assert result.status == "tool_error"
+    assert result.failure == "RuntimeError: cited evidence read failed"

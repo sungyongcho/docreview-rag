@@ -129,7 +129,7 @@ def test_result_keeps_success_and_failure_mutually_exclusive():
     """Require the status to agree with whether a failure is present."""
     values = {
         "status": "ok",
-        "answer": supported_answer(),
+        "answer": supported_answer().model_dump(),
         "failure": None,
         "iterations": 1,
         "total_input_tokens": 10,
