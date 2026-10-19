@@ -16,6 +16,8 @@ _ENVELOPE_CHARS = 2
 def _entry(hit: ChunkHit) -> dict[str, object]:
     """Describe one evidence chunk with only the fields the model can act on.
 
+    The context header is sent because a table body alone can omit its scale: a
+    DART unit caption such as ``(단위 : 백만원)`` lives only in the header.
     Spans and the source hash are deliberately withheld: the model returns chunk ids
     and nothing else, and ``report_node`` reads provenance from the retrieved hit
     rather than from the completion. Sending them would enlarge every prompt and
@@ -25,6 +27,7 @@ def _entry(hit: ChunkHit) -> dict[str, object]:
         "body": hit.body,
         "chunk_id": hit.chunk_id,
         "citation": hit.citation,
+        "context_header": hit.context_header,
         "doc_id": hit.doc_id,
     }
 
@@ -34,8 +37,7 @@ def evidence_chars(hit: ChunkHit) -> int:
 
     This is the measurement ``max_context_chars`` is enforced against, so it must be
     taken from the same serialization the prompt sends. Measuring the retrieval index
-    text instead would charge for a context header the prompt omits and would miss the
-    JSON scaffolding it adds.
+    text instead would miss the JSON scaffolding the prompt adds.
     """
     return len(canonical_json(_entry(hit))) + 1
 

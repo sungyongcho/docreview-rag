@@ -7,6 +7,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
+from app.retrieval.types import ChunkHit
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
 from app.workflow.prompts import build_check_prompt, build_grade_prompt, evidence_chars
 from app.workflow.types import (
@@ -142,6 +143,33 @@ def test_context_budget_is_measured_against_the_evidence_the_prompt_sends():
     payload = build_grade_prompt(result).user.split("Evidence JSON: ", maxsplit=1)[1]
     assert len(payload) <= budget
     assert len(payload) > len("".join(hit.index_text for hit in result.evidence))
+
+
+def test_grade_and_check_evidence_keep_the_context_header():
+    """Send the header that carries a table's unit, so a bare body value keeps its scale."""
+    header = "Samsung FY2023 · 매출 현황 (단위 : 백만원)"
+    body = "| Revenue | 300,870,903 |"
+    table = ChunkHit.model_validate(
+        {
+            **_hit(1).model_dump(),
+            "body": body,
+            "context_header": header,
+            "index_text": f"{header}\n\n{body}",
+        }
+    )
+    state = retrieve_node(_state(), [table])
+    graded = grade_node(
+        state,
+        _ok_result(
+            RelevanceJudgment(
+                grades=(ChunkRelevance(chunk_id=1, relevant=True, reason="Reports revenue."),)
+            )
+        ),
+    )
+
+    for prompt in (build_grade_prompt(state), build_check_prompt(graded)):
+        evidence = json.loads(prompt.user.rsplit("vidence JSON: ", maxsplit=1)[1])
+        assert evidence[0]["context_header"] == header
 
 
 def test_retrieve_collapses_text_twins_caps_one_document_and_still_fills_k():
