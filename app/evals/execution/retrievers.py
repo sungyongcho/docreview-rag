@@ -5,14 +5,13 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import get_args
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import BM25Idf, LexicalRanker
-from app.db.models import Chunk, SnapshotChunk
 from app.evals.execution.models import EvaluationRetrieval
 from app.query.language import lexical_corpus_language, lexical_plan
 from app.retrieval.embedding.provider import EmbeddingProvider
+from app.retrieval.fragments import load_table_fragments
 from app.retrieval.ranking.fusion import DEFAULT_RRF_K
 from app.retrieval.search.bm25 import bm25_search, validate_bm25_parameters
 from app.retrieval.search.lexical import lexical_search
@@ -54,20 +53,14 @@ async def table_cell_spans(
     A fragment stored before cell spans were recorded is left out, so scoring refuses
     that hit instead of crediting it with its whole table's span.
     """
-    chunk_ids = [hit.chunk_id for hit in hits if hit.kind == "table"]
-    if not chunk_ids:
-        return {}
-    if filters is None or filters.snapshot_id is None:
-        query = select(Chunk.id, Chunk.table_fragment).where(Chunk.id.in_(chunk_ids))
-    else:
-        query = select(SnapshotChunk.chunk_id, SnapshotChunk.table_fragment).where(
-            SnapshotChunk.snapshot_id == filters.snapshot_id,
-            SnapshotChunk.chunk_id.in_(chunk_ids),
-        )
-    rows = (await session.execute(query)).all()
+    fragments = await load_table_fragments(
+        session,
+        (hit.chunk_id for hit in hits if hit.kind == "table"),
+        None if filters is None else filters.snapshot_id,
+    )
     return {
         chunk_id: spans
-        for chunk_id, fragment in rows
+        for chunk_id, fragment in fragments.items()
         if (spans := _fragment_cell_spans(fragment)) is not None
     }
 

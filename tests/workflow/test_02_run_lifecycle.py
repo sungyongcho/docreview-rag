@@ -15,6 +15,7 @@ from app.workflow.types import ProviderFailure, WorkflowRequest
 from tests.llm.support import DeterministicLLMProvider, TickClock, raw as _raw
 from tests.workflow.support import (
     hit as _hit,
+    income_table_hit,
     pricing as _pricing,
     provider_budget as _provider_budget,
     report_of,
@@ -102,6 +103,38 @@ def test_successful_runner_preserves_raw_traces_when_the_token_budget_is_exactly
     run, traces = report_to_records(result)
     assert run.report == result.report
     assert tuple(trace.llm_output for trace in traces) == (grade, check)
+
+
+def test_runner_reads_table_fragments_to_report_a_period_mismatch():
+    """Load the relevant table's fragment before check and report a comparative-column figure."""
+    table, fragment = income_table_hit()
+    grade = '{"grades":[{"chunk_id":7,"relevant":true,"reason":"Income statement."}]}'
+    check = (
+        '{"label":"SUPPORTED","answer":"2024 net revenue was $22,680 million.",'
+        '"citation_chunk_ids":[7],"reason":"The income statement reports it."}'
+    )
+    requested = []
+
+    async def load(chunk_ids):
+        """Return the stored fragment of each requested table chunk."""
+        requested.append(chunk_ids)
+        return {7: fragment}
+
+    request = _request().model_copy(update={"requested_fiscal_years": (2024,)})
+    result = asyncio.run(
+        run_workflow(
+            request,
+            retriever=retriever_returning([table]),
+            provider=_provider([_raw(grade), _raw(check)]),
+            clock=SequenceClock(),
+            fragment_loader=load,
+        )
+    )
+
+    assert result.status == "ok"
+    assert requested == [(7,)]
+    assert report_of(result)["label"] == "PERIOD_MISMATCH"
+    assert report_of(result)["reasons"][-1]["evidenced_fiscal_years"] == [2023]
 
 
 def test_no_evidence_short_circuits_both_provider_calls():

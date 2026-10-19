@@ -7,7 +7,7 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, StrictInt
 from pydantic.functional_validators import model_validator
 
-from app.contracts.evidence import EvidenceCitation, validate_answer_citations
+from app.contracts.evidence import EvidenceCitation, ReportLabel, validate_answer_citations
 from app.contracts.validation import NonBlank, NonNegativeInt, PositiveInt, StrictSchema
 from app.llm.schemas import AnswerDecision, BudgetExceeded, ProviderBudget
 from app.observability.types import Budget, RunId, RunStatus, StepTrace, WorkflowNode
@@ -136,6 +136,27 @@ class SupportDowngraded(StrictSchema):
     kept_chunk_ids: tuple[PositiveInt, ...]
 
 
+class FiguresUnverified(StrictSchema):
+    """A supported answer stated figures its cited evidence could not confirm.
+
+    A figure is confirmed by a cited table cell from a requested period, or, when the
+    question names no period, by appearing in the cited evidence at all. Running text
+    cannot show which period a figure belongs to, so it never confirms a requested one.
+    """
+
+    code: Literal["figures_unverified"] = "figures_unverified"
+    figures: tuple[NonBlank, ...]
+
+
+class PeriodMismatch(StrictSchema):
+    """Every figure of a supported answer came from a period other than the requested one."""
+
+    code: Literal["period_mismatch"] = "period_mismatch"
+    requested_fiscal_years: tuple[PositiveInt, ...]
+    evidenced_fiscal_years: tuple[PositiveInt, ...]
+    figures: tuple[NonBlank, ...]
+
+
 class ProviderFailure(StrictSchema):
     """A typed provider refusal stopped grade or check."""
 
@@ -181,6 +202,8 @@ type WorkflowReason = Annotated[
     | RelevanceBelowThreshold
     | CitationsFiltered
     | SupportDowngraded
+    | FiguresUnverified
+    | PeriodMismatch
     | ProviderFailure
     | NodeError,
     Field(discriminator="code"),
@@ -191,7 +214,7 @@ class WorkflowReport(StrictSchema):
     """The guarded answer and its complete degradation provenance."""
 
     report_kind: Literal["document_review"] = "document_review"
-    label: Literal["SUPPORTED", "NOT_IN_DOCS"]
+    label: ReportLabel
     answer: NonBlank
     citations: tuple[EvidenceCitation, ...]
     rationale: NonBlank
@@ -221,6 +244,8 @@ class WorkflowRequest(StrictSchema):
     max_hits_per_document: PositiveInt = 2
     routing_queries: dict[str, NonBlank] = Field(default_factory=dict)
     system_prompt: NonBlank = DEFAULT_SYSTEM_PROMPT
+    # Fiscal years the question asks about; the answer's figures must come from them.
+    requested_fiscal_years: tuple[PositiveInt, ...] = ()
 
 
 class WorkflowState(StrictSchema):
@@ -243,10 +268,13 @@ class WorkflowState(StrictSchema):
     max_hits_per_document: PositiveInt
     system_prompt: NonBlank
     routing_queries: dict[str, NonBlank] = Field(default_factory=dict)
+    requested_fiscal_years: tuple[PositiveInt, ...] = ()
     retrieved_hits: tuple[ChunkHit, ...] = ()
     evidence: tuple[ChunkHit, ...] = ()
     relevant_chunk_ids: tuple[PositiveInt, ...] = ()
     decision: AnswerDecision | None = None
+    # Set by check when a supported answer's figures all came from other periods.
+    period_mismatch: PeriodMismatch | None = None
     reasons: tuple[WorkflowReason, ...] = ()
     failure: ProviderFailure | NodeError | None = None
     node_path: tuple[WorkflowNode, ...] = ()
@@ -267,6 +295,7 @@ def initial_state(request: WorkflowRequest) -> WorkflowState:
         max_hits_per_document=request.max_hits_per_document,
         system_prompt=request.system_prompt,
         routing_queries=request.routing_queries,
+        requested_fiscal_years=request.requested_fiscal_years,
     )
 
 

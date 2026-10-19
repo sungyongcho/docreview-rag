@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel
 
 from app.contracts.evidence import EvidenceCitation
+from app.contracts.figures import EvidenceText, check_figures
 from app.llm.schemas import (
     AnswerDecision,
     BudgetExceeded,
@@ -24,9 +25,11 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
+    FiguresUnverified,
     GradeCoverageIncomplete,
     GradeOrCheckNode,
     GradeReferencesFiltered,
+    PeriodMismatch,
     ProviderFailure,
     RelevanceBelowThreshold,
     RetrievalEmpty,
@@ -37,6 +40,9 @@ from app.workflow.types import (
 
 DOWNGRADE_REASON = (
     "The supported answer was downgraded because a cited chunk did not survive validation."
+)
+FIGURES_REASON = (
+    "The answer stated figures its cited evidence could not confirm for the requested period."
 )
 
 
@@ -383,8 +389,9 @@ def grade_node(
 def check_node(
     state: WorkflowState,
     result: ProviderResult[AnswerDecision],
+    table_fragments: Mapping[int, Mapping[str, object]] | None = None,
 ) -> WorkflowState:
-    """Guard a decision against the citations the grader actually accepted.
+    """Guard a decision against the citations the grader accepted and their figures.
 
     Parameters
     ----------
@@ -392,6 +399,9 @@ def check_node(
         Graded state whose relevant ids define allowed citations.
     result : ProviderResult[AnswerDecision]
         Typed answer decision or refusal.
+    table_fragments : Mapping[int, Mapping[str, object]] | None
+        Stored fragments of the cited table chunks, by chunk id. A table chunk without
+        one is read as running text, which can only make the figure check stricter.
 
     Returns
     -------
@@ -409,6 +419,11 @@ def check_node(
     The answer and rationale justify the citation set as a whole, so keeping them
     against a reduced set would publish a claim whose surviving evidence may not
     contain it, and no check available here can tell whether it still does.
+
+    A supported decision then has every figure of its answer checked against its cited
+    evidence. A figure the evidence cannot confirm for the requested period downgrades
+    it to absence; figures that all come from other periods record a period mismatch,
+    which the report states instead of the answer.
     """
     if result.status != "ok":
         return _refused(state, "check", result)
@@ -442,9 +457,50 @@ def check_node(
         )
     else:
         guarded = decision
+
+    mismatch: PeriodMismatch | None = None
+    if guarded.label == "SUPPORTED":
+        evidence_by_id = {hit.chunk_id: hit for hit in state.evidence}
+        fragments = table_fragments or {}
+        figures = check_figures(
+            guarded.answer,
+            [
+                EvidenceText(hit.chunk_id, hit.body, hit.context_header, fragments.get(chunk_id))
+                for chunk_id in guarded.citation_chunk_ids
+                if (hit := evidence_by_id.get(chunk_id)) is not None
+            ],
+            state.requested_fiscal_years,
+        )
+        if figures.verdict == "unverified":
+            reasons.append(
+                FiguresUnverified(
+                    figures=tuple(c.figure for c in figures.checks if c.verdict == "unverified")
+                )
+            )
+            guarded = AnswerDecision(
+                label="NOT_IN_DOCS",
+                answer="NOT_IN_DOCS",
+                citation_chunk_ids=(),
+                reason=_fixed_rationale(
+                    state,
+                    FIGURES_REASON,
+                    "답변의 수치를 인용 근거에서 요청한 기간의 값으로 확인하지 못했습니다.",
+                ),
+            )
+        elif figures.verdict == "period_mismatch":
+            mismatched = [c for c in figures.checks if c.verdict == "period_mismatch"]
+            mismatch = PeriodMismatch(
+                requested_fiscal_years=state.requested_fiscal_years,
+                evidenced_fiscal_years=tuple(
+                    sorted({year for check in mismatched for year in check.evidenced_years})
+                ),
+                figures=tuple(check.figure for check in mismatched),
+            )
+            reasons.append(mismatch)
     return state.model_copy(
         update={
             "decision": guarded,
+            "period_mismatch": mismatch,
             "reasons": tuple(reasons),
             "node_path": (*state.node_path, "check"),
         }
@@ -475,6 +531,19 @@ def _absence_rationale(state: WorkflowState) -> str:
         state,
         "The guarded decision did not establish supported evidence.",
         "검증 결과 답변을 뒷받침할 근거가 확인되지 않았습니다.",
+    )
+
+
+def _mismatch_answer(state: WorkflowState, mismatch: PeriodMismatch) -> str:
+    """State which period the cited figures belong to instead of the requested one."""
+    requested = ", ".join(str(year) for year in mismatch.requested_fiscal_years)
+    evidenced = ", ".join(str(year) for year in mismatch.evidenced_fiscal_years)
+    figures = ", ".join(mismatch.figures)
+    return _fixed_rationale(
+        state,
+        f"The cited evidence does not report this for {requested}. "
+        f"The figures {figures} are for {evidenced}.",
+        f"인용 근거에는 {requested}년 값이 없습니다. {figures}은(는) {evidenced}년 값입니다.",
     )
 
 
@@ -524,11 +593,18 @@ def report_node(state: WorkflowState) -> WorkflowState:
             )
             for hit in (evidence_by_id[chunk_id] for chunk_id in state.decision.citation_chunk_ids)
         )
+        mismatch = state.period_mismatch
         report = WorkflowReport(
-            label="SUPPORTED",
-            answer=state.decision.answer,
+            label="SUPPORTED" if mismatch is None else "PERIOD_MISMATCH",
+            answer=state.decision.answer if mismatch is None else _mismatch_answer(state, mismatch),
             citations=citations,
-            rationale=state.decision.reason,
+            rationale=state.decision.reason
+            if mismatch is None
+            else _fixed_rationale(
+                state,
+                "The cited figures belong to a different period than the question asks about.",
+                "인용한 수치가 질문한 기간이 아닌 다른 기간의 값입니다.",
+            ),
             reasons=state.reasons,
         )
     else:

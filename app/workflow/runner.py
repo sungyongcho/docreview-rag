@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 import time
 
 from pydantic import BaseModel, JsonValue
@@ -48,6 +48,7 @@ from app.workflow.types import (
 type Clock = Callable[[], float]
 type NodeObserver = Callable[[WorkflowNode, WorkflowState], Awaitable[None]]
 type Retriever = Callable[[str, int, RetrievalFilters], Awaitable[RetrievalResult]]
+type FragmentLoader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, Mapping[str, object]]]]
 
 
 def _elapsed(clock: Clock, started: float) -> float:
@@ -271,6 +272,7 @@ async def run_workflow(
     provider: LLMProvider,
     clock: Clock = time.perf_counter,
     on_node: NodeObserver | None = None,
+    fragment_loader: FragmentLoader | None = None,
 ) -> RunReport:
     """Execute the guarded retrieve, grade, check, and report sequence.
 
@@ -287,6 +289,10 @@ async def run_workflow(
     on_node : NodeObserver | None
         Optional observer called after every committed node transition, including one
         that records a failure.
+    fragment_loader : FragmentLoader | None
+        Reads the stored fragments of the graded table evidence so ``check_node`` can
+        read each cited figure's column period. Without it, table evidence is read as
+        running text and cannot confirm a requested period.
 
     Returns
     -------
@@ -438,7 +444,19 @@ async def run_workflow(
                     decided = await provider.complete(
                         build_check_prompt(current), AnswerDecision, allowance
                     )
-                    current = check_node(_traced(current, decided, node), decided)
+                    fragments = (
+                        await fragment_loader(
+                            tuple(
+                                hit.chunk_id
+                                for hit in current.evidence
+                                if hit.kind == "table"
+                                and hit.chunk_id in current.relevant_chunk_ids
+                            )
+                        )
+                        if fragment_loader is not None
+                        else None
+                    )
+                    current = check_node(_traced(current, decided, node), decided, fragments)
             except BilledAttemptAllowanceError as error:
                 denied = error
                 failure = _allowance_failure(node, error, attempts=error.metadata.requests)

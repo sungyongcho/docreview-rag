@@ -2437,6 +2437,23 @@ export interface components {
             rejected_chunk_ids?: number[] | null;
         };
         /**
+         * FiguresUnverified
+         * @description A supported answer stated figures its cited evidence could not confirm.
+         *
+         *     A figure is confirmed by a cited table cell from a requested period, or, when the
+         *     question names no period, by appearing in the cited evidence at all. Running text
+         *     cannot show which period a figure belongs to, so it never confirms a requested one.
+         */
+        FiguresUnverified: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            code: "figures_unverified";
+            /** Figures */
+            figures: string[];
+        };
+        /**
          * GoldenCanonicalResource
          * @description Validated read-only canonical JSON for one golden suite.
          */
@@ -3093,6 +3110,23 @@ export interface components {
             jobs: components["schemas"]["OperatorJobResource"][];
             /** Queued Count */
             queued_count: number;
+        };
+        /**
+         * PeriodMismatch
+         * @description Every figure of a supported answer came from a period other than the requested one.
+         */
+        PeriodMismatch: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            code: "period_mismatch";
+            /** Evidenced Fiscal Years */
+            evidenced_fiscal_years: number[];
+            /** Figures */
+            figures: string[];
+            /** Requested Fiscal Years */
+            requested_fiscal_years: number[];
         };
         /**
          * PresetCatalog
@@ -4291,7 +4325,7 @@ export interface components {
             /** Message */
             message: string;
         };
-        WorkflowReason: components["schemas"]["RetrievalEmpty"] | components["schemas"]["DuplicateRetrievedChunks"] | components["schemas"]["DuplicateEvidenceText"] | components["schemas"]["DocumentQuotaApplied"] | components["schemas"]["ContextTruncated"] | components["schemas"]["GradeReferencesFiltered"] | components["schemas"]["GradeCoverageIncomplete"] | components["schemas"]["RelevanceBelowThreshold"] | components["schemas"]["CitationsFiltered"] | components["schemas"]["SupportDowngraded"] | components["schemas"]["ProviderFailure"] | components["schemas"]["NodeError"];
+        WorkflowReason: components["schemas"]["RetrievalEmpty"] | components["schemas"]["DuplicateRetrievedChunks"] | components["schemas"]["DuplicateEvidenceText"] | components["schemas"]["DocumentQuotaApplied"] | components["schemas"]["ContextTruncated"] | components["schemas"]["GradeReferencesFiltered"] | components["schemas"]["GradeCoverageIncomplete"] | components["schemas"]["RelevanceBelowThreshold"] | components["schemas"]["CitationsFiltered"] | components["schemas"]["SupportDowngraded"] | components["schemas"]["FiguresUnverified"] | components["schemas"]["PeriodMismatch"] | components["schemas"]["ProviderFailure"] | components["schemas"]["NodeError"];
         /**
          * WorkflowReport
          * @description The guarded answer and its complete degradation provenance.
@@ -4305,7 +4339,7 @@ export interface components {
              * Label
              * @enum {string}
              */
-            label: "SUPPORTED" | "NOT_IN_DOCS";
+            label: "SUPPORTED" | "NOT_IN_DOCS" | "PERIOD_MISMATCH";
             /** Rationale */
             rationale: string;
             /** Reasons */

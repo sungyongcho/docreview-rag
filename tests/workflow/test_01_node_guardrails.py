@@ -16,8 +16,10 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
+    FiguresUnverified,
     GradeCoverageIncomplete,
     GradeReferencesFiltered,
+    PeriodMismatch,
     RetrievalEmpty,
     SupportDowngraded,
     WorkflowRequest,
@@ -25,6 +27,7 @@ from app.workflow.types import (
 )
 from tests.workflow.support import (
     hit as _hit,
+    income_table_hit,
     ok_result as _ok_result,
     provider_budget as _provider_budget,
 )
@@ -309,6 +312,61 @@ def test_citation_downgrade_explains_the_stop_in_the_original_question_language(
         report.rationale == "인용한 청크가 검증을 통과하지 못해 답변을 근거 부족으로 처리했습니다."
     )
     assert report.citations == ()
+
+
+def _table_state(requested_fiscal_years=(2024,)):
+    """Grade the AMD income table as the only relevant evidence for a dated question."""
+    table, fragment = income_table_hit()
+    state = _state().model_copy(update={"requested_fiscal_years": requested_fiscal_years})
+    state = retrieve_node(state, [table])
+    judgment = RelevanceJudgment(
+        grades=(ChunkRelevance(chunk_id=table.chunk_id, relevant=True, reason="Revenue."),)
+    )
+    return grade_node(state, _ok_result(judgment)), {table.chunk_id: fragment}
+
+
+def _revenue_answer(figure):
+    """Answer 2024 revenue with one figure, citing the table."""
+    return AnswerDecision(
+        label="SUPPORTED",
+        answer=f"AMD's 2024 net revenue was ${figure} million.",
+        citation_chunk_ids=(7,),
+        reason="The income statement reports it.",
+    )
+
+
+def test_a_figure_from_the_requested_period_is_reported_as_supported():
+    """Keep a supported answer whose figure sits in the requested period's column."""
+    state, fragments = _table_state()
+    report = report_node(check_node(state, _ok_result(_revenue_answer("25,785")), fragments)).report
+    assert report is not None
+    assert report.label == "SUPPORTED"
+
+
+def test_a_comparative_column_figure_is_reported_as_a_period_mismatch():
+    """Report the 2023 column's 22,680 as a different period, not as 2024 revenue."""
+    state, fragments = _table_state()
+    checked = check_node(state, _ok_result(_revenue_answer("22,680")), fragments)
+    report = report_node(checked).report
+    assert report is not None
+    assert report.label == "PERIOD_MISMATCH"
+    assert [citation.chunk_id for citation in report.citations] == [7]
+    assert "22,680" in report.answer and "2023" in report.answer and "2024" in report.answer
+    mismatch = report.reasons[-1]
+    assert isinstance(mismatch, PeriodMismatch)
+    assert mismatch.requested_fiscal_years == (2024,)
+    assert mismatch.evidenced_fiscal_years == (2023,)
+    assert mismatch.figures == ("22,680",)
+
+
+def test_a_figure_the_evidence_cannot_confirm_downgrades_to_absence():
+    """Refuse support for a figure no cited cell states, or a table read without its fragment."""
+    state, fragments = _table_state()
+    for figure, available in (("26,000", fragments), ("25,785", None)):
+        report = report_node(check_node(state, _ok_result(_revenue_answer(figure)), available))
+        assert report.report is not None
+        assert report.report.label == "NOT_IN_DOCS"
+        assert isinstance(report.report.reasons[-1], FiguresUnverified)
 
 
 def test_report_exposes_only_validated_machine_citations():
