@@ -215,7 +215,9 @@ async def execute_tool(
     except ValueError as error:
         return ToolOutcome(error=str(error))
     try:
-        parameters = tool.parameters.model_validate(dict(arguments))
+        # Validate as strict JSON so the call honours the published schema: lax
+        # Python validation would coerce true or "7" into an integer argument.
+        parameters = tool.parameters.model_validate_json(json.dumps(dict(arguments)), strict=True)
     except ValidationError as error:
         details = "; ".join(validation_errors(error))
         return ToolOutcome(error=f"invalid arguments for {name}: {details}")
