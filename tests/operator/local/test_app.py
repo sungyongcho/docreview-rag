@@ -78,6 +78,10 @@ def test_operator_api_requires_exact_origin_and_token(tmp_path):
     with TestClient(application) as client:
         assert client.get("/commands").status_code == 403
         assert client.get("/commands", headers={"origin": ORIGIN}).status_code == 401
+        wrong = {"origin": ORIGIN, "authorization": f"Bearer {TOKEN}x"}
+        assert client.get("/commands", headers=wrong).status_code == 401
+        non_ascii = {"origin": ORIGIN, "authorization": "Bearer t\xf6ken".encode("latin-1")}
+        assert client.get("/commands", headers=non_ascii).status_code == 401
         assert client.get("/commands", headers=HEADERS).status_code == 200
 
 

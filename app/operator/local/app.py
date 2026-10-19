@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+import secrets
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -95,7 +96,9 @@ def create_operator_app(
         """Require the launch token and a loopback origin on the configured web port."""
         if request.headers.get("origin") not in allowed_origins:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "operator origin rejected")
-        if request.headers.get("authorization") != f"Bearer {token}":
+        # Compare bytes in constant time: any header text, even non-ASCII, is a plain 401.
+        supplied = request.headers.get("authorization", "").encode()
+        if not secrets.compare_digest(supplied, f"Bearer {token}".encode()):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "operator token rejected")
 
     @application.get("/wipe/capability")
