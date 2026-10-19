@@ -6,11 +6,13 @@ import functools
 import time
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.agent.provider import ProviderTurn, ToolCallingProvider
+from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import (
     FINAL_ANSWER_NAME,
+    ToolError,
     ToolRegistry,
     execute_tool,
     safe_runtime_error,
@@ -59,6 +61,9 @@ observation — every fact must come from a tool result in this conversation.
 chunk_id values returned by earlier tool calls in this run. When the filings \
 do not contain the answer, set label to NOT_IN_DOCS, set answer to exactly \
 the string "NOT_IN_DOCS", and cite nothing.
+
+Call fetch_chunk only for chunk IDs returned by successful retrievals in this run.
+A new question starts with no retrieved IDs, even when the connection is reused.
 
 Call final_answer exactly once, only after the evidence in hand actually
 supports the answer."""
@@ -112,6 +117,7 @@ def _parse_arguments(arguments_json: str) -> dict[str, Any]:
 async def _dispatch(
     call: ToolCall,
     registry: ToolRegistry,
+    before_run: Callable[[BaseModel], None],
 ) -> tuple[Observation, tuple[EvidenceCitation, ...], bool]:
     """Run one tool call and return an explicit, identity-checked observation.
 
@@ -121,6 +127,8 @@ async def _dispatch(
         Provider-requested tool identity and raw strict-JSON arguments.
     registry : ToolRegistry
         Single source of executable tools and parameter schemas.
+    before_run : Callable[[BaseModel], None]
+        Question-local policy checked after validation, before the tool runs.
 
     Returns
     -------
@@ -145,7 +153,7 @@ async def _dispatch(
     except ValueError as error:
         message = f"invalid arguments for {call.name}: {error}"
         return Observation(call_id=call.call_id, name=call.name, error=message), (), False
-    outcome = await execute_tool(registry, call.name, arguments)
+    outcome = await execute_tool(registry, call.name, arguments, before_run=before_run)
     if outcome.error is not None:
         observation = Observation(call_id=call.call_id, name=call.name, error=outcome.error)
         return observation, (), outcome.system_error
@@ -344,6 +352,14 @@ async def run_agent(
     exchange_ends: list[int] = []
     steps: list[AgentStep] = []
     evidence: dict[int, EvidenceCitation] = {}
+
+    def require_retrieved_chunk(parameters: BaseModel) -> None:
+        """Reject fetches outside this run's accepted evidence before any tool I/O."""
+        if isinstance(parameters, FetchChunkParams) and parameters.chunk_id not in evidence:
+            raise ToolError(
+                f"chunk {parameters.chunk_id} was not retrieved in this question; search first"
+            )
+
     total_input = 0
     total_output = 0
     total_cached_input = 0
@@ -571,7 +587,9 @@ async def run_agent(
         outputs: dict[str, str] = {}
         system_failure: str | None = None
         for call in turn.tool_calls:
-            observation, citations, system_failed = await _dispatch(call, registry)
+            observation, citations, system_failed = await _dispatch(
+                call, registry, require_retrieved_chunk
+            )
             if system_failed and system_failure is None:
                 system_failure = observation.error
             observations.append(observation)

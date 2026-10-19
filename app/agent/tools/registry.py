@@ -167,6 +167,8 @@ async def execute_tool(
     registry: ToolRegistry,
     name: str,
     arguments: Mapping[str, Any],
+    *,
+    before_run: Callable[[BaseModel], None] | None = None,
 ) -> ToolOutcome:
     """Validate, run, and serialize one registered tool behind the shared error taxonomy.
 
@@ -178,6 +180,9 @@ async def execute_tool(
         Requested tool name.
     arguments : Mapping[str, Any]
         Already-parsed JSON-object arguments.
+    before_run : Callable[[BaseModel], None] | None
+        Optional caller-owned policy checked after validation, before execution.
+        It rejects a call by raising :class:`ToolError`.
 
     Returns
     -------
@@ -206,6 +211,8 @@ async def execute_tool(
     except ValueError as error:
         return ToolOutcome(error=f"invalid arguments for {name}: {error}")
     try:
+        if before_run is not None:
+            before_run(parameters)
         output = await tool.run(parameters)
     except ToolError as error:
         message = str(error).strip() or safe_runtime_error(error, f"tool {name}")

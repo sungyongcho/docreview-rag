@@ -10,6 +10,7 @@ import pytest
 
 from app.agent.loop import COMPACTED_OUTPUT, run_agent
 from app.agent.provider import ToolCallingProvider
+from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import EvidenceExtractor, Tool, ToolRegistry
 from app.agent.types import AgentBudget, ToolCall
 from app.contracts.evidence import EvidenceCitation
@@ -638,3 +639,114 @@ def test_a_failed_evidence_read_ends_the_run_as_a_tool_error():
 
     assert result.status == "tool_error"
     assert result.failure == "RuntimeError: cited evidence read failed"
+
+
+def register_fetch(registry, calls):
+    """Register the existing fetch parameter contract with an observable reader."""
+
+    async def read(params):
+        """Record actual reads so a rejected request cannot masquerade as a guard."""
+        calls.append(params.chunk_id)
+        return citation_values(params.chunk_id) | {"body": "Revenue table"}
+
+    registry.register(
+        Tool(
+            name="fetch_chunk",
+            description="Read a previously retrieved chunk.",
+            parameters=FetchChunkParams,
+            run=read,
+            evidence_ids=lambda output: (
+                EvidenceCitation.model_validate({key: output[key] for key in citation_values()}),
+            ),
+        )
+    )
+
+
+def test_fetch_scope_accumulates_within_question_but_not_across_runs():
+    """Reuse one registry; only the question that searched may read its chunks."""
+    registry = registry_with_staged_hits([[citation_values(7)], [citation_values(8)]])
+    reads = []
+    register_fetch(registry, reads)
+    first, _ = run_loop(
+        [
+            turn(tool_calls=(call("fetch_chunk", {"chunk_id": 7}),)),
+            turn(tool_calls=(call("search_notes", {"query": "2023"}),)),
+            turn(tool_calls=(call("search_notes", {"query": "2024"}),)),
+            turn(
+                tool_calls=(
+                    call("fetch_chunk", {"chunk_id": 7}, call_id="read-7"),
+                    call("fetch_chunk", {"chunk_id": 8}, call_id="read-8"),
+                )
+            ),
+            turn(tool_calls=(call("final_answer", answer_arguments()),)),
+        ],
+        registry=registry,
+    )
+    assert first.status == "ok"
+    assert first.steps[0].observations[0].error is not None
+    assert reads == [7, 8]
+    second, _ = run_loop(
+        [
+            turn(tool_calls=(call("fetch_chunk", {"chunk_id": 7}),)),
+            turn(tool_calls=(call("final_answer", answer_arguments(label="NOT_IN_DOCS")),)),
+        ],
+        registry=registry,
+    )
+    assert second.status == "ok"
+    assert second.steps[0].observations[0].error is not None
+    assert reads == [7, 8]
+    assert first.answer is not None
+    assert first.answer.citations[0].chunk_id == 7
+
+
+def test_empty_retrieval_does_not_enable_fetch():
+    """An empty search result grants no body access."""
+    registry = registry_with_staged_hits([[]])
+    reads = []
+    register_fetch(registry, reads)
+    result, _ = run_loop(
+        [
+            turn(tool_calls=(call("search_notes", {"query": "revenue"}),)),
+            turn(tool_calls=(call("fetch_chunk", {"chunk_id": 7}),)),
+            turn(tool_calls=(call("final_answer", answer_arguments(label="NOT_IN_DOCS")),)),
+        ],
+        registry=registry,
+    )
+    assert result.steps[1].observations[0].error is not None
+    assert reads == []
+
+
+def test_malformed_retrieval_evidence_ends_the_run_before_any_fetch():
+    """Duplicate evidence identities stop the run, so no body is read afterwards."""
+    registry = registry_with_staged_hits([[citation_values(7), citation_values(7)]])
+    reads = []
+    register_fetch(registry, reads)
+    result, _ = run_loop(
+        [
+            turn(tool_calls=(call("search_notes", {"query": "revenue"}),)),
+            turn(tool_calls=(call("fetch_chunk", {"chunk_id": 7}),)),
+        ],
+        registry=registry,
+    )
+    assert result.status == "tool_error"
+    assert len(result.steps) == 1
+    assert reads == []
+
+
+@pytest.mark.parametrize("invalid_id", [0, [], {}, True, "7"])
+def test_invalid_fetch_arguments_keep_existing_validation_errors(invalid_id):
+    """Validate the public schema before attempting membership or a body read."""
+    registry = registry_with_search()
+    reads = []
+    register_fetch(registry, reads)
+    result, _ = run_loop(
+        [
+            turn(tool_calls=(call("fetch_chunk", {"chunk_id": invalid_id}),)),
+            turn(tool_calls=(call("final_answer", answer_arguments(label="NOT_IN_DOCS")),)),
+        ],
+        registry=registry,
+    )
+    error = result.steps[0].observations[0].error
+    assert error is not None
+    assert "invalid arguments" in error
+    assert reads == []
