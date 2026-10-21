@@ -228,13 +228,20 @@ def _final_answer(
 
 
 def _figures_problem(figures: FiguresResult, requested: Sequence[int]) -> str:
-    """Tell the model which figures its cited evidence could not confirm."""
-    unverified = ", ".join(c.figure for c in figures.checks if c.verdict == "unverified")
+    """Tell the model which figures its cited evidence could not confirm, and for which item."""
+    unverified = ", ".join(
+        f"{c.figure} ({c.item or 'no recognized item'})"
+        for c in figures.checks
+        if c.verdict == "unverified"
+    )
     period = ", ".join(str(year) for year in requested) or "any period"
     return (
         f"final_answer states figures its cited evidence does not confirm for {period}: "
-        f"{unverified}. Quote each figure exactly from a cited table cell of the requested "
-        "period, or answer NOT_IN_DOCS."
+        f"{unverified}. Name each figure's financial item in its own clause (for example "
+        "revenue or net income) and state the value of that item's row in a cited table "
+        "cell of the requested period. A unit may be converted (25,785 million as 25.8 "
+        "billion) and rounded to its last digit when at least three significant digits "
+        "remain; computed values are not confirmed. Otherwise answer NOT_IN_DOCS."
     )
 
 

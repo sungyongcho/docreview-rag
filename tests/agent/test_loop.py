@@ -628,6 +628,47 @@ def test_an_unconfirmed_figure_is_returned_to_the_model():
     assert len(provider.requests) == 3
 
 
+def test_a_converted_and_rounded_figure_is_supported_without_a_revision():
+    """Accept 2024 revenue restated in billions at three significant digits."""
+    result, provider = _figures_run("2024 net revenue was $25.8 billion.", reader=_table_reader())
+
+    assert result.status == "ok"
+    assert result.answer is not None and result.answer.label == "SUPPORTED"
+    assert len(provider.requests) == 2
+
+
+@pytest.mark.parametrize(
+    ("answer_text", "named"),
+    [
+        ("2024 net income was $25,785 million.", "25,785 (net income)"),
+        ("In 2024 it was $25,785 million.", "25,785 (no recognized item)"),
+        ("2024 net revenue was $99,999mn.", "99,999 (revenue)"),
+        (
+            "2024 net revenue was $25,785 million and adjusted EBITDA was $25,785 million.",
+            "25,785 (no recognized item)",
+        ),
+        (
+            "2024년 매출은 25,785백만 달러이고 조정 EBITDA는 25,785백만 달러다.",
+            "25,785 (no recognized item)",
+        ),
+        ("2024 operating revenue was $25,785 million.", "25,785 (no recognized item)"),
+        ("2024 net revenue was $2024mn.", "2024 (revenue)"),
+        ("2024 net revenue was 99999xyz.", "99999 (no recognized item)"),
+        ("2024 net revenue was 25785M.", "25785 (no recognized item)"),
+    ],
+)
+def test_a_figure_without_its_item_value_is_returned_for_revision(answer_text, named):
+    """Refuse a wrong row, a missing item or a glued invented amount, then accept the fix."""
+    corrected = {**answer_arguments(), "answer": "2024 net revenue was $25,785 million."}
+    result, provider = _figures_run(answer_text, reader=_table_reader(), then=corrected)
+
+    assert result.status == "ok"
+    assert result.answer is not None and result.answer.label == "SUPPORTED"
+    rejection = result.steps[1].observations[0].error or ""
+    assert named in rejection and "converted" in rejection and "NOT_IN_DOCS" in rejection
+    assert len(provider.requests) == 3
+
+
 def test_a_failed_evidence_read_ends_the_run_as_a_tool_error():
     """Stop as a tool error when the cited evidence cannot be read."""
 

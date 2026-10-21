@@ -582,6 +582,7 @@ rag-dev corpus readiness
 | embedding 누락·stale | 데이터 준비의 provider·pending·모델 정체성 | OpenAI 설정과 키를 확인하고 필요한 누락 임베딩 생성 실행; 유료이므로 manifest와 명시적 선택 범위 확인 |
 | BM25 미준비 | 파싱·청킹 뒤 통계가 없는 정상 준비 단계 | 4단계 BM25 계산/재계산 필요. 하이브리드·키워드는 대기, 벡터는 임베딩만 필요 |
 | `NOT_IN_DOCS` | corpus·기업·연도 필터와 검색된 근거 | 문서와 인용 후보 확인 후 문서에 실제 있는 질문으로 재시도 |
+| `figures_unverified` 사유 또는 거절된 수치 | 인용 표 기준 각 수치의 항목·단위·기간 | 수치 바로 앞 문구가 지원하는 항목(매출, 순이익 등)을 밝히고 단위 환산 뒤 그 행의 해당 기간 셀 하나와 맞아야 인정됨. 수식어가 붙거나 지원하지 않는 문구, 표 금액에 대한 증가율·비율 수치, 연도가 중요한 경우의 본문 문장은 거절됨 |
 | `PERIOD_MISMATCH` | `period_mismatch` 사유의 요청 연도와 인용 수치의 연도 | 인용 수치가 다른 연도의 값임; 그 연도로 다시 묻거나 요청 연도를 보고한 공시를 선택 |
 | `provider_failure` | 실행 트레이스의 status·attempts·details·node | 키·모델 접근 권한·연결·한도를 확인; DB 재생성으로 해결하지 않음 |
 | `budget_exceeded` | resource·limit·observed·blocked_node | 대화 설정 → 실행 한도에서 해당 한도만 조정; 재시도는 추가 비용 가능 |
