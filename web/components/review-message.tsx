@@ -27,12 +27,14 @@ interface ReviewMessageProps {
 }
 
 /** Verdict pill derived from the terminal label; conversation replies carry no label and get no pill. */
-function verdictPill(message: ChatMessage): { className: string; text: string } | null {
+export function verdictPill(message: ChatMessage): { className: string; text: string } | null {
   if (message.evidenceLabel === "Cited evidence") {
     const count = message.citations ?? message.evidence?.length ?? 0;
     return { className: "supported", text: `Supported · ${count} citation${count === 1 ? "" : "s"}` };
   }
   if (message.evidenceLabel === "Cited evidence — different period") return { className: "period-mismatch", text: "Different period" };
+  // Withheld figures share the caution style of a period mismatch; the text names the hold.
+  if (message.evidenceLabel === "Cited evidence — unit not confirmed") return { className: "period-mismatch unit-unverified", text: "Unit not confirmed" };
   if (message.evidenceLabel === "Related evidence — not direct support") return { className: "not-in-docs", text: "Not in documents" };
   if (message.evidenceLabel === "Retrieved candidates — answer not generated") return { className: "failed", text: "Answer not generated" };
   const decision = message.execution?.pathDecision;

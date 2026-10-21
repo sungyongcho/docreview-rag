@@ -116,25 +116,28 @@ def retriever_returning(hits: Sequence[ChunkHit]):
     return retrieve
 
 
-# AMD FY2024 consolidated statement of operations, as the filing lays it out.
+# AMD FY2024 consolidated statement of operations, as the filing lays it out: its note
+# states a scale but no currency, and its cells carry only the ambiguous "$".
 INCOME_TABLE = (
     "<table><tr><td>(In millions)</td><td>December 28, 2024</td>"
     "<td>December 30, 2023</td></tr>"
     "<tr><td>Net revenue</td><td>$ 25,785</td><td>$ 22,680</td></tr></table>"
 )
+# The same table with an explicit currency added to its note, for checks of other behavior.
+USD_INCOME_TABLE = INCOME_TABLE.replace("(In millions)", "(In millions of U.S. dollars)")
 
 
-def income_table_hit(chunk_id=7) -> tuple[ChunkHit, dict[str, object]]:
-    """Chunk the AMD income table through the real chunker as one retrieved table hit."""
+def income_table_hit(chunk_id=7, html=INCOME_TABLE) -> tuple[ChunkHit, dict[str, object]]:
+    """Chunk an income table (by default AMD's, as filed) as one retrieved table hit."""
     from dataclasses import asdict
 
     from app.ingestion.chunking import chunk_filing, compose_index_text
     from app.ingestion.parsing.models import Block
     from tests.ingestion.chunk.support import build_filing
 
-    block = Block("table", "", html=INCOME_TABLE, source_pos=0, end_pos=len(INCOME_TABLE))
+    block = Block("table", "", html=html, source_pos=0, end_pos=len(html))
     filing = build_filing([block])
-    filing.source_length = len(INCOME_TABLE)
+    filing.source_length = len(html)
     (chunk,) = chunk_filing(filing)
     assert chunk.table_fragment is not None
     table = ChunkHit(
@@ -144,7 +147,7 @@ def income_table_hit(chunk_id=7) -> tuple[ChunkHit, dict[str, object]]:
         kind="table",
         citation="AMD FY2024 · Item 8",
         start_char=0,
-        end_char=len(INCOME_TABLE),
+        end_char=len(html),
         source_sha256=SOURCE_SHA256,
         body=chunk.body,
         context_header=chunk.context_header,

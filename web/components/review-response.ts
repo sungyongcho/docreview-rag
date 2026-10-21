@@ -1,6 +1,17 @@
 import { failureReport } from "@/lib/pipeline";
 import type { ChatMessage, ReviewRun } from "@/lib/types";
 
+/** The document-review report labels, taken from the generated API contract. */
+type ReportLabel = Extract<NonNullable<ReviewRun["report"]>, { label: unknown }>["label"];
+
+/** Evidence heading for each report label; withheld figures keep their citations but are not support. */
+const EVIDENCE_LABELS: Record<ReportLabel, NonNullable<ChatMessage["evidenceLabel"]>> = {
+  SUPPORTED: "Cited evidence",
+  PERIOD_MISMATCH: "Cited evidence — different period",
+  UNVERIFIED: "Cited evidence — unit not confirmed",
+  NOT_IN_DOCS: "Related evidence — not direct support",
+};
+
 /** Decode the current terminal wire report once for both review request paths. */
 export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "text" | "performance" | "evidenceLabel" | "citations" | "trace" | "diagnostics" | "failureFix"> {
   const report = run.report;
@@ -9,9 +20,10 @@ export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "
   let evidenceLabel: ChatMessage["evidenceLabel"];
   let citations: number | undefined;
   if (report && "label" in report) {
-    // A period mismatch answer is the server's statement of which period the cited figures belong to.
+    // A period mismatch answer is the server's statement of which period the cited figures belong to;
+    // an UNVERIFIED answer is the server's notice that the figures are withheld, never the model's numbers.
     text = report.label === "NOT_IN_DOCS" ? report.rationale : report.answer;
-    evidenceLabel = report.label === "SUPPORTED" ? "Cited evidence" : report.label === "PERIOD_MISMATCH" ? "Cited evidence — different period" : "Related evidence — not direct support";
+    evidenceLabel = EVIDENCE_LABELS[report.label];
     citations = report.citations.length;
   } else if (report?.report_kind === "conversation") {
     text = report.answer;

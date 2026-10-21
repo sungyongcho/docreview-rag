@@ -587,12 +587,15 @@ def _figures_run(answer_text, *, reader, then=None):
     return result, provider
 
 
-def _table_reader():
-    """Read chunk 7 as the AMD income table the real chunker produces."""
-    from app.contracts.figures import EvidenceText
-    from tests.workflow.support import income_table_hit
+def _table_reader(as_filed=False):
+    """Read chunk 7 as the AMD income table the real chunker produces.
 
-    table, fragment = income_table_hit()
+    By default its note names U.S. dollars; ``as_filed`` keeps AMD's "$"-only table.
+    """
+    from app.contracts.figures import EvidenceText
+    from tests.workflow.support import INCOME_TABLE, USD_INCOME_TABLE, income_table_hit
+
+    table, fragment = income_table_hit(html=INCOME_TABLE if as_filed else USD_INCOME_TABLE)
 
     async def read(chunk_ids):
         """Return the cited table's text and stored fragment."""
@@ -653,8 +656,11 @@ def test_a_converted_and_rounded_figure_is_supported_without_a_revision():
         ),
         ("2024 operating revenue was $25,785 million.", "25,785 (no recognized item)"),
         ("2024 net revenue was $2024mn.", "2024 (revenue)"),
-        ("2024 net revenue was 99999xyz.", "99999 (no recognized item)"),
+        ("2024 net revenue was 99999xyz.", "99999 (revenue)"),
         ("2024 net revenue was 25785M.", "25785 (no recognized item)"),
+        ("2024 net revenue was ₩25,785 million.", "25,785 (revenue)"),
+        ("2024 net revenue was USD 2024.", "2024 (revenue)"),
+        ("2024 net revenue was 25,785 million euros.", "25,785 (revenue)"),
     ],
 )
 def test_a_figure_without_its_item_value_is_returned_for_revision(answer_text, named):
@@ -667,6 +673,86 @@ def test_a_figure_without_its_item_value_is_returned_for_revision(answer_text, n
     rejection = result.steps[1].observations[0].error or ""
     assert named in rejection and "converted" in rejection and "NOT_IN_DOCS" in rejection
     assert len(provider.requests) == 3
+
+
+def _unitless_reader(caption=None):
+    """Read chunk 7 as a 2024 revenue table whose unit comes only from ``caption``."""
+    from app.contracts.figures import EvidenceText
+
+    captions = [{"start_char": 0, "end_char": len(caption), "text": caption}] if caption else []
+    fragment = {
+        "header_cells": [{"row": 0, "column": 1, "text": "December 28, 2024"}],
+        "caption_sources": captions,
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": "Net revenue"}]},
+            {"sources": [{"row": 1, "column": 1, "text": "$ 25,785"}]},
+        ],
+    }
+
+    async def read(chunk_ids):
+        """Return the cited table's text and stored fragment."""
+        return {7: EvidenceText(7, "| Net revenue | $ 25,785 |", "AMD FY2024 · Item 8", fragment)}
+
+    return read
+
+
+@pytest.mark.parametrize(
+    ("answer_text", "reader"),
+    [
+        ("2024 net revenue was $25,785 million.", _unitless_reader()),
+        ("2024 net revenue was 25,785.", _table_reader()),
+        ("2024 net revenue was $99,999 million.", _unitless_reader()),
+        ("2024 net revenue was 25,785 and net income was $99,999 million.", _table_reader()),
+        ("2024 net revenue was $25,785 million.", _table_reader(as_filed=True)),
+        ("2024 net revenue was 25,785 million.", _table_reader()),
+    ],
+)
+def test_an_uncertain_unit_ends_as_unverified_without_stating_the_figure(answer_text, reader):
+    """Withhold a figure whose unit is uncertain, keeping the citation and no number."""
+    result, provider = _figures_run(answer_text, reader=reader)
+
+    assert result.status == "ok"
+    assert result.answer is not None and result.answer.label == "UNVERIFIED"
+    assert [citation.chunk_id for citation in result.answer.citations] == [7]
+    assert not any(character.isdigit() for character in result.answer.answer)
+    assert result.unit_unverified is not None
+    held = answer_text.split("was ")[1].split(" ")[0].lstrip("$").rstrip(".")
+    assert result.unit_unverified.figures == (held,)
+    assert result.period_mismatch is None
+    assert len(provider.requests) == 2
+
+
+@pytest.mark.parametrize(
+    ("answer_text", "held"),
+    [
+        ("2024 net revenue was USD KRW 25,785 million.", "25,785"),
+        ("2024 net revenue was ₹2024.", "2024"),
+        ("2024 net revenue was 25,785 million USD 22,680 million in 2023.", "25,785"),
+    ],
+)
+def test_contradictory_or_unknown_currency_markers_end_as_unverified(answer_text, held):
+    """Withhold an answer whose figure carries conflicting, unknown or shared markers."""
+    result, provider = _figures_run(answer_text, reader=_table_reader())
+
+    assert result.answer is not None and result.answer.label == "UNVERIFIED"
+    assert not any(character.isdigit() for character in result.answer.answer)
+    assert result.unit_unverified is not None and held in result.unit_unverified.figures
+    assert [citation.chunk_id for citation in result.answer.citations] == [7]
+    assert len(provider.requests) == 2
+
+
+def test_the_withheld_answer_is_supported_once_the_table_states_its_unit():
+    """Support the same answer only when a linked caption gives both scale and currency."""
+    answer = "2024 net revenue was $25,785 million."
+    scale_only, _ = _figures_run(answer, reader=_unitless_reader("(In millions)"))
+    assert scale_only.answer is not None and scale_only.answer.label == "UNVERIFIED"
+
+    result, _ = _figures_run(answer, reader=_unitless_reader("(In millions of U.S. dollars)"))
+
+    assert result.answer is not None and result.answer.label == "SUPPORTED"
+    assert result.answer.answer == answer
+    assert [citation.chunk_id for citation in result.answer.citations] == [7]
+    assert result.unit_unverified is None
 
 
 def test_a_failed_evidence_read_ends_the_run_as_a_tool_error():

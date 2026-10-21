@@ -16,6 +16,7 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
+    FiguresUnitUnverified,
     FiguresUnverified,
     GradeCoverageIncomplete,
     GradeReferencesFiltered,
@@ -26,6 +27,8 @@ from app.workflow.types import (
     initial_state,
 )
 from tests.workflow.support import (
+    INCOME_TABLE,
+    USD_INCOME_TABLE,
     hit as _hit,
     income_table_hit,
     ok_result as _ok_result,
@@ -314,9 +317,12 @@ def test_citation_downgrade_explains_the_stop_in_the_original_question_language(
     assert report.citations == ()
 
 
-def _table_state(requested_fiscal_years=(2024,)):
-    """Grade the AMD income table as the only relevant evidence for a dated question."""
-    table, fragment = income_table_hit()
+def _table_state(requested_fiscal_years=(2024,), html=USD_INCOME_TABLE):
+    """Grade an income table as the only relevant evidence for a dated question.
+
+    By default its note names U.S. dollars; pass AMD's table as filed to drop that.
+    """
+    table, fragment = income_table_hit(html=html)
     state = _state().model_copy(update={"requested_fiscal_years": requested_fiscal_years})
     state = retrieve_node(state, [table])
     judgment = RelevanceJudgment(
@@ -367,6 +373,94 @@ def test_a_figure_the_evidence_cannot_confirm_downgrades_to_absence():
         assert report.report is not None
         assert report.report.label == "NOT_IN_DOCS"
         assert isinstance(report.report.reasons[-1], FiguresUnverified)
+
+
+def test_a_known_different_currency_is_refused_not_converted():
+    """Refuse KRW stated for the USD cell, and keep the exact supported answer for USD."""
+    state, fragments = _table_state()
+    won = _revenue_answer("25,785").model_copy(
+        update={"answer": "AMD's 2024 net revenue was ₩25,785 million."}
+    )
+    refused = report_node(check_node(state, _ok_result(won), fragments)).report
+    assert refused is not None and refused.label == "NOT_IN_DOCS"
+    assert isinstance(refused.reasons[-1], FiguresUnverified)
+    supported = report_node(check_node(state, _ok_result(_revenue_answer("25,785")), fragments))
+    assert supported.report is not None and supported.report.label == "SUPPORTED"
+    assert supported.report.answer == "AMD's 2024 net revenue was $25,785 million."
+    assert [citation.chunk_id for citation in supported.report.citations] == [7]
+
+
+def _unitless_fragment():
+    """Store chunk 7 as a 2024 revenue table that states no unit anywhere."""
+    return {
+        "header_cells": [{"row": 0, "column": 1, "text": "December 28, 2024"}],
+        "caption_sources": [],
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": "Net revenue"}]},
+            {"sources": [{"row": 1, "column": 1, "text": "$ 25,785"}]},
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("answer", "table"),
+    [
+        ("AMD's 2024 net revenue was $25,785 million.", "unitless"),
+        ("AMD's 2024 net revenue was 25,785.", "usd"),
+        ("AMD's 2024 net revenue was 25,785 and net revenue was $26,000 million.", "usd"),
+        ("AMD's 2024 net revenue was $25,785 million.", "as_filed"),
+        ("AMD's 2024 net revenue was 25,785 million.", "usd"),
+        ("AMD's 2024 net revenue was USD KRW 25,785 million.", "usd"),
+        ("AMD's 2024 net revenue was 25,785 million NZD.", "usd"),
+    ],
+)
+def test_an_uncertain_unit_is_reported_as_unverified_not_absence(answer, table):
+    """Withhold the figure with UNVERIFIED, keep the citation, and state no number.
+
+    AMD's table as filed names no currency, so even its correct "$" figure is withheld.
+    """
+    state, fragments = _table_state(html=INCOME_TABLE if table == "as_filed" else USD_INCOME_TABLE)
+    if table == "unitless":
+        fragments = {7: _unitless_fragment()}
+    decision = AnswerDecision(
+        label="SUPPORTED", answer=answer, citation_chunk_ids=(7,), reason="Model reason."
+    )
+    checked = check_node(state, _ok_result(decision), fragments)
+    report = report_node(checked).report
+    assert report is not None
+    assert report.label == "UNVERIFIED"
+    assert [citation.chunk_id for citation in report.citations] == [7]
+    assert "25,785" not in report.answer and report.answer != "NOT_IN_DOCS"
+    held = report.reasons[-1]
+    assert isinstance(held, FiguresUnitUnverified)
+    assert held.figures == ("25,785",)
+    assert checked.period_mismatch is None
+
+
+def test_a_currency_bearing_year_like_amount_is_never_dropped():
+    """Withhold "₹2024" and refuse "USD 2024" instead of reading them as years."""
+    state, fragments = _table_state()
+    for text, label in (("₹2024", "UNVERIFIED"), ("USD 2024", "NOT_IN_DOCS")):
+        decision = _revenue_answer("25,785").model_copy(
+            update={"answer": f"AMD's 2024 net revenue was {text}."}
+        )
+        report = report_node(check_node(state, _ok_result(decision), fragments)).report
+        assert report is not None and report.label == label, text
+        reason = report.reasons[-1]
+        assert isinstance(reason, FiguresUnitUnverified | FiguresUnverified), text
+        assert reason.figures == ("2024",), text
+
+
+def test_the_unverified_notice_follows_the_question_language():
+    """Localize the hold statement from the original question."""
+    state, _ = _table_state()
+    state = state.model_copy(update={"original_query": "AMD의 2024년 매출은?"})
+    decision = _revenue_answer("25,785").model_copy(
+        update={"answer": "2024년 매출액은 25,785이다."}
+    )
+    report = report_node(check_node(state, _ok_result(decision), {7: _unitless_fragment()})).report
+    assert report is not None and report.label == "UNVERIFIED"
+    assert report.answer.startswith("인용 근거에 해당 항목은 있지만")
 
 
 def test_report_exposes_only_validated_machine_citations():

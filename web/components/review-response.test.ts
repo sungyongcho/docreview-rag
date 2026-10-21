@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { verdictPill } from "./review-message";
 import { terminalMessage } from "./review-response";
 import type { ReviewRun } from "@/lib/types";
 
@@ -29,6 +30,35 @@ describe("terminal review message", () => {
     expect(message.text).toBe("The cited evidence does not report this for 2024. The figures 22,680 are for 2023.");
     expect(message.evidenceLabel).toBe("Cited evidence — different period");
     expect(message.citations).toBe(1);
+  });
+
+  it("shows the server's hold notice for withheld figures, distinct from absence", () => {
+    const notice = "The cited evidence names this item, but the unit of its figures could not be confirmed, so no figure is reported.";
+    const message = terminalMessage(run({
+      label: "UNVERIFIED",
+      answer: notice,
+      citations: [citation],
+      rationale: "The cited table states no readable unit.",
+      reasons: [{ code: "figures_unit_unverified", figures: ["25,785"] }],
+    }));
+
+    expect(message.text).toBe(notice);
+    expect(message.text).not.toContain("25,785");
+    expect(message.evidenceLabel).toBe("Cited evidence — unit not confirmed");
+    expect(message.evidenceLabel).not.toBe("Related evidence — not direct support");
+    expect(message.citations).toBe(1);
+    const pill = verdictPill({ id: "a", role: "assistant", ...message });
+    expect(pill?.text).toBe("Unit not confirmed");
+    expect(pill?.className).toContain("unit-unverified");
+  });
+
+  it("gives every report label its own verdict pill", () => {
+    const pills = ["SUPPORTED", "PERIOD_MISMATCH", "UNVERIFIED", "NOT_IN_DOCS"].map((label) => {
+      const absent = label === "NOT_IN_DOCS";
+      const message = terminalMessage(run({ label, answer: absent ? "NOT_IN_DOCS" : "Notice.", citations: absent ? [] : [citation], rationale: "Reason." }));
+      return verdictPill({ id: label, role: "assistant", ...message })?.text;
+    });
+    expect(pills).toEqual(["Supported · 1 citation", "Different period", "Unit not confirmed", "Not in documents"]);
   });
 
   it("keeps supported answers and absence explanations unchanged", () => {

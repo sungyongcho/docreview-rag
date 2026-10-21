@@ -25,6 +25,7 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
+    FiguresUnitUnverified,
     FiguresUnverified,
     GradeCoverageIncomplete,
     GradeOrCheckNode,
@@ -43,6 +44,13 @@ DOWNGRADE_REASON = (
 )
 FIGURES_REASON = (
     "The answer stated figures its cited evidence could not confirm for the requested period."
+)
+UNIT_UNVERIFIED_ANSWER = (
+    "The cited evidence names this item, but the unit of its figures could not be "
+    "confirmed, so no figure is reported."
+)
+UNIT_UNVERIFIED_ANSWER_KO = (
+    "인용 근거에 해당 항목은 있지만 수치의 단위를 확인할 수 없어 수치를 보고하지 않습니다."
 )
 
 
@@ -421,9 +429,11 @@ def check_node(
     contain it, and no check available here can tell whether it still does.
 
     A supported decision then has every figure of its answer checked against its cited
-    evidence. A figure the evidence cannot confirm for the requested period downgrades
-    it to absence; figures that all come from other periods record a period mismatch,
-    which the report states instead of the answer.
+    evidence. Any figure whose cited item unit, or own unit, cannot be established
+    withholds the whole answer, which the report states as ``UNVERIFIED`` with the
+    citations kept, even beside other failing figures. Otherwise a figure the evidence
+    contradicts or cannot hold downgrades it to absence, and figures that all come from
+    other periods record a period mismatch, which the report states instead of the answer.
     """
     if result.status != "ok":
         return _refused(state, "check", result)
@@ -459,6 +469,7 @@ def check_node(
         guarded = decision
 
     mismatch: PeriodMismatch | None = None
+    held: FiguresUnitUnverified | None = None
     if guarded.label == "SUPPORTED":
         evidence_by_id = {hit.chunk_id: hit for hit in state.evidence}
         fragments = table_fragments or {}
@@ -487,6 +498,11 @@ def check_node(
                     "답변의 수치를 인용 근거에서 요청한 기간의 값으로 확인하지 못했습니다.",
                 ),
             )
+        elif figures.verdict == "unit_unverified":
+            held = FiguresUnitUnverified(
+                figures=tuple(c.figure for c in figures.checks if c.verdict == "unit_unverified")
+            )
+            reasons.append(held)
         elif figures.verdict == "period_mismatch":
             mismatched = [c for c in figures.checks if c.verdict == "period_mismatch"]
             mismatch = PeriodMismatch(
@@ -501,6 +517,7 @@ def check_node(
         update={
             "decision": guarded,
             "period_mismatch": mismatch,
+            "unit_unverified": held,
             "reasons": tuple(reasons),
             "node_path": (*state.node_path, "check"),
         }
@@ -594,19 +611,39 @@ def report_node(state: WorkflowState) -> WorkflowState:
             for hit in (evidence_by_id[chunk_id] for chunk_id in state.decision.citation_chunk_ids)
         )
         mismatch = state.period_mismatch
-        report = WorkflowReport(
-            label="SUPPORTED" if mismatch is None else "PERIOD_MISMATCH",
-            answer=state.decision.answer if mismatch is None else _mismatch_answer(state, mismatch),
-            citations=citations,
-            rationale=state.decision.reason
-            if mismatch is None
-            else _fixed_rationale(
-                state,
-                "The cited figures belong to a different period than the question asks about.",
-                "인용한 수치가 질문한 기간이 아닌 다른 기간의 값입니다.",
-            ),
-            reasons=state.reasons,
-        )
+        if state.unit_unverified is not None:
+            # Withhold the figures: the answer text would assert numbers the evidence
+            # unit cannot confirm, so the report states only that they are withheld.
+            report = WorkflowReport(
+                label="UNVERIFIED",
+                answer=_fixed_rationale(state, UNIT_UNVERIFIED_ANSWER, UNIT_UNVERIFIED_ANSWER_KO),
+                citations=citations,
+                rationale=_fixed_rationale(
+                    state,
+                    "The cited table states no readable unit or explicit currency, or "
+                    "contradictory ones, in its own notes, cells or a caption linked to it, or "
+                    "the answer states none.",
+                    "인용한 표 자체나 셀, 표에 연결된 단위 주석에서 단위나 명시적 통화를 확인할 수 "
+                    "없거나 서로 다르며, 또는 답변에 단위나 통화가 없습니다.",
+                ),
+                reasons=state.reasons,
+            )
+        else:
+            report = WorkflowReport(
+                label="SUPPORTED" if mismatch is None else "PERIOD_MISMATCH",
+                answer=state.decision.answer
+                if mismatch is None
+                else _mismatch_answer(state, mismatch),
+                citations=citations,
+                rationale=state.decision.reason
+                if mismatch is None
+                else _fixed_rationale(
+                    state,
+                    "The cited figures belong to a different period than the question asks about.",
+                    "인용한 수치가 질문한 기간이 아닌 다른 기간의 값입니다.",
+                ),
+                reasons=state.reasons,
+            )
     else:
         rationale = (
             state.decision.reason if state.decision is not None else _absence_rationale(state)

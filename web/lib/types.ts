@@ -91,7 +91,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   evidence?: EvidenceHit[];
-  evidenceLabel?: "Cited evidence" | "Cited evidence — different period" | "Related evidence — not direct support" | "Retrieved candidates — answer not generated";
+  evidenceLabel?: "Cited evidence" | "Cited evidence — different period" | "Cited evidence — unit not confirmed" | "Related evidence — not direct support" | "Retrieved candidates — answer not generated";
   /** Citations the report actually made; the evidence list above is the wider candidate pool. */
   citations?: number;
   trace?: string;

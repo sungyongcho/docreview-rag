@@ -33,6 +33,12 @@ class AgentPeriodMismatch(StrictSchema):
     figures: tuple[NonBlank, ...]
 
 
+class AgentUnitUnverified(StrictSchema):
+    """Figures of a supported answer withheld because their evidence unit is uncertain."""
+
+    figures: tuple[NonBlank, ...]
+
+
 class AgentBudget(StrictSchema):
     """Hard limits one agent run may never exceed.
 
@@ -139,7 +145,11 @@ class AgentAnswer(StrictSchema):
 
 
 class AgentReportAnswer(AgentAnswer):
-    """The answer a run reports. Only the loop, never the model, reports a period mismatch."""
+    """The answer a run reports.
+
+    Only the loop, never the model, reports a period mismatch or withholds figures
+    whose evidence unit it cannot confirm (``UNVERIFIED``).
+    """
 
     label: ReportLabel
 
@@ -151,6 +161,7 @@ class AgentResult(StrictSchema):
     answer: AgentReportAnswer | None
     failure: NonBlank | None
     period_mismatch: AgentPeriodMismatch | None = None
+    unit_unverified: AgentUnitUnverified | None = None
     iterations: NonNegativeInt
     total_input_tokens: NonNegativeInt
     total_output_tokens: NonNegativeInt

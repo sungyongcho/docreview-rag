@@ -5,6 +5,7 @@ import pytest
 
 from app.ingestion.parsing.tables import (
     MAX_SPAN,
+    is_english_unit_caption,
     is_unit_caption,
     merge_unit_columns,
     place_cells,
@@ -298,6 +299,56 @@ def test_is_unit_caption_accepts_only_a_whole_annotation() -> None:
     assert not is_unit_caption("당기 매출은 (단위 : 백만원) 기준으로 작성되었다")
     assert not is_unit_caption("매출액")
     assert not is_unit_caption("")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "(In millions)",
+        "  (in thousands)  ",
+        "(In millions, except per share data)",
+        "(Dollars in millions)",
+        "($ in thousands)",
+        "(In thousands of U.S. dollars)",
+        "(Shares in millions)",
+        "(in widgets)",
+        "(Units: widgets)",
+        "(In millions) (in widgets)",
+        "(Currency: USD)",
+        "(currency: Korean won)",
+        "(USD)",
+        "(KRW)",
+        "(In millions) (USD)",
+    ],
+)
+def test_is_english_unit_caption_accepts_a_whole_monetary_note(text) -> None:
+    """Recognize standalone English unit declarations, known or not, but not as DART ones.
+
+    Unknown declarations are captions too, so the figure check can withhold on them.
+    """
+    assert is_english_unit_caption(text)
+    assert is_english_unit_caption(text.replace(" ", "\xa0"))
+    assert not is_unit_caption(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Amounts are presented in millions.",
+        "In millions",
+        "(In millions) Revenue grew",
+        "Revenue was $25 million (in millions of units sold).",
+        "(Note 3)",
+        "(loss)",
+        "(EPS)",
+        "(GAAP)",
+        "(Currency: 2024)",
+        "(as restated in 2024 for the change in accounting policy)",
+    ],
+)
+def test_is_english_unit_caption_rejects_prose_mentions_of_a_scale(text) -> None:
+    """Leave prose and non-monetary scale mentions out of unit captions."""
+    assert not is_english_unit_caption(text)
 
 
 def test_won_sign_column_merges_onto_its_value() -> None:

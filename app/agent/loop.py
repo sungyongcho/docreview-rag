@@ -25,6 +25,7 @@ from app.agent.types import (
     AgentResult,
     AgentStatus,
     AgentStep,
+    AgentUnitUnverified,
     Observation,
     StepUsage,
     ToolCall,
@@ -239,9 +240,10 @@ def _figures_problem(figures: FiguresResult, requested: Sequence[int]) -> str:
         f"final_answer states figures its cited evidence does not confirm for {period}: "
         f"{unverified}. Name each figure's financial item in its own clause (for example "
         "revenue or net income) and state the value of that item's row in a cited table "
-        "cell of the requested period. A unit may be converted (25,785 million as 25.8 "
-        "billion) and rounded to its last digit when at least three significant digits "
-        "remain; computed values are not confirmed. Otherwise answer NOT_IN_DOCS."
+        "cell of the requested period, with its unit and the currency the evidence states. "
+        "A scale may be converted (25,785 million as 25.8 billion) and rounded to its last "
+        "digit when at least three significant digits remain; a currency is never "
+        "converted, and computed values are not confirmed. Otherwise answer NOT_IN_DOCS."
     )
 
 
@@ -269,6 +271,35 @@ def _mismatch_answer(
         rationale="The cited figures belong to a different period than the question asks about.",
     )
     return report, mismatch
+
+
+UNIT_UNVERIFIED_ANSWER = (
+    "The cited evidence names this item, but the unit of its figures could not be "
+    "confirmed, so no figure is reported."
+)
+
+
+def _unit_unverified_answer(
+    answer: AgentAnswer, figures: FiguresResult
+) -> tuple[AgentReportAnswer, AgentUnitUnverified]:
+    """Withhold figures whose evidence unit is uncertain, keeping the answer's citations.
+
+    The report states no number: the withheld figures travel only in the typed
+    ``AgentUnitUnverified`` record, so nothing unconfirmed is presented as fact.
+    """
+    held = AgentUnitUnverified(
+        figures=tuple(c.figure for c in figures.checks if c.verdict == "unit_unverified")
+    )
+    report = AgentReportAnswer(
+        label="UNVERIFIED",
+        answer=UNIT_UNVERIFIED_ANSWER,
+        citations=answer.citations,
+        rationale=(
+            "The cited table states no readable unit or explicit currency, or contradictory "
+            "ones, in its own notes, cells or a caption linked to it, or the answer states none."
+        ),
+    )
+    return report, held
 
 
 def _compact_exchanges(
@@ -385,6 +416,7 @@ async def run_agent(
         answer: AgentAnswer | None = None,
         failure: str | None = None,
         period_mismatch: AgentPeriodMismatch | None = None,
+        unit_unverified: AgentUnitUnverified | None = None,
     ) -> AgentResult:
         """Build the terminal result, letting the model reject impossible success states."""
         report = (
@@ -398,6 +430,7 @@ async def run_agent(
                 "answer": report,
                 "failure": failure,
                 "period_mismatch": period_mismatch,
+                "unit_unverified": unit_unverified,
                 "iterations": len(steps),
                 "total_input_tokens": total_input,
                 "total_output_tokens": total_output,
@@ -560,6 +593,10 @@ async def run_agent(
                 )
                 if figures.verdict == "unverified":
                     answer, problem = None, _figures_problem(figures, requested_fiscal_years)
+                elif figures.verdict == "unit_unverified":
+                    record_step(turn, (), usage)
+                    report, held = _unit_unverified_answer(answer, figures)
+                    return finish("ok", answer=report, unit_unverified=held)
                 elif figures.verdict == "period_mismatch":
                     record_step(turn, (), usage)
                     report, mismatch = _mismatch_answer(answer, figures, requested_fiscal_years)

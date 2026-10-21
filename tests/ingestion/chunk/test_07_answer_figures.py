@@ -6,10 +6,16 @@ from app.contracts.figures import EvidenceText, check_figures
 from app.ingestion.parsing.html import line_offsets, normalize, source_pos
 
 
-def test_amd_2024_income_statement_separates_reported_and_comparative_revenue(
+def test_amd_2024_income_statement_withholds_figures_it_gives_no_currency_for(
     corpus, chunks_by_doc
 ):
-    """Accept FY2024 revenue and flag the FY2023 comparative value stated as 2024."""
+    """Withhold AMD's FY2024 revenue claims: the filed table names no currency.
+
+    Its only unit note is "(In millions, except per share amounts)", it has no linked
+    caption, and its "$" signs sit in their own source cells apart from the amounts.
+    Without an explicit currency neither the reported nor the comparative figure can be
+    certified, so both are withheld rather than confirmed or called another period.
+    """
     doc_id = "sec-0000002488-25-000012"
     _filing, raw = corpus[doc_id]
     start = source_pos(normalize(raw).find_all("table")[12], line_offsets(raw))
@@ -19,11 +25,20 @@ def test_amd_2024_income_statement_separates_reported_and_comparative_revenue(
         if c.start_char == start and "25,785" in c.body and "22,680" in c.body
     )
     assert chunk.table_fragment is not None
-    evidence = [EvidenceText(1, chunk.body, chunk.context_header, asdict(chunk.table_fragment))]
+    fragment = asdict(chunk.table_fragment)
+    evidence = [EvidenceText(1, chunk.body, chunk.context_header, fragment)]
 
-    reported = check_figures("AMD's 2024 net revenue was $25,785 million.", evidence, [2024])
-    comparative = check_figures("AMD's 2024 net revenue was $22,680 million.", evidence, [2024])
+    assert "(In millions, except per share amounts)" in [
+        cell["text"] for cell in fragment["header_cells"]
+    ]
+    assert not fragment["caption_sources"]
+    sources = [source["text"] for member in fragment["cells"] for source in member["sources"]]
+    assert sources[:5] == ["Net revenue", "$", "25,785", "$", "22,680"]
 
-    assert reported.verdict == "verified"
-    assert comparative.verdict == "period_mismatch"
-    assert comparative.checks[0].evidenced_years == (2023,)
+    for answer in (
+        "AMD's 2024 net revenue was $25,785 million.",
+        "AMD's 2024 net revenue was US$25,785 million.",
+        "AMD's 2024 net revenue was $22,680 million.",
+    ):
+        result = check_figures(answer, evidence, [2024])
+        assert result.verdict == "unit_unverified", answer

@@ -60,6 +60,21 @@ DASH_VALUE_RE = re.compile(r"^[\s$€¥£₩%]*[-–—][\s$€¥£₩%]*$")
 # "(단위 : 백만원)". Left in place it reads as a labelled first row, which corrupts
 # header inference; dropped it would silently strip the scale off every number.
 UNIT_CAPTION_RE = re.compile(r"^\(\s*단위\s*[:：]?\s*[^)]*\)$")
+# A standalone English unit declaration paragraph: one or more parentheticals that each
+# open with up to three words and "in" ("(In millions)", "(Dollars in thousands)",
+# "(in widgets)") or with "Units:". Unknown units are captions too, so the figure check
+# sees them and withholds rather than trusting a recognized note beside them. Only
+# paragraph captions use it; in-table rows keep their header role, so existing table
+# structure is unchanged.
+# A currency-only declaration ("(Currency: USD)", "(USD)") is a caption of the same kind:
+# it gives the next table its currency, while the scale must come from another note.
+ENGLISH_UNIT_CAPTION_RE = re.compile(
+    r"^(?:\(\s*(?:(?:[A-Za-z$.]+\s+){0,3}in\s+[A-Za-z$][A-Za-z$.,'\s-]*"
+    r"|units?\s*[:：][^()\d]*"
+    r"|(?:currency|denomination)\s*[:：]\s*[A-Za-z$][A-Za-z$.\s]*"
+    r"|USD|KRW|EUR|JPY|CNY|GBP|CAD|AUD|HKD|TWD|SGD|CHF)\s*\)\s*)+$",
+    re.IGNORECASE,
+)
 DATE_CAPTION_RE = re.compile(r"^\(\s*기준일\s*[:：]\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*\)$")
 
 
@@ -454,6 +469,15 @@ def _table_node(table: str | Tag | None) -> Tag | None:
 def is_unit_caption(text: str) -> bool:
     """Whether the stripped text is exactly one DART unit annotation."""
     return bool(UNIT_CAPTION_RE.match(text.strip()))
+
+
+def is_english_unit_caption(text: str) -> bool:
+    """Whether the stripped text is nothing but English unit declarations.
+
+    Unlike a DART annotation, such a paragraph stays narrative text; the chunker only
+    links it as a unit source of a table that immediately follows its caption run.
+    """
+    return bool(ENGLISH_UNIT_CAPTION_RE.match(" ".join(text.split())))
 
 
 @dataclass(frozen=True, slots=True)

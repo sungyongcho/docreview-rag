@@ -9,9 +9,10 @@ from app.contracts.validation import NonBlank, NonNegativeInt, PositiveInt, Stri
 
 SourceSha256 = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
 # What a model may answer. Only the server reports a period mismatch, after checking
-# the answer's figures against the periods of the cells it cites.
+# the answer's figures against the periods of the cells it cites, or UNVERIFIED, when
+# the unit of the figures' cited evidence, or of the answer, cannot be established.
 AnswerLabel = Literal["SUPPORTED", "NOT_IN_DOCS"]
-ReportLabel = Literal["SUPPORTED", "NOT_IN_DOCS", "PERIOD_MISMATCH"]
+ReportLabel = Literal["SUPPORTED", "NOT_IN_DOCS", "PERIOD_MISMATCH", "UNVERIFIED"]
 
 
 class EvidenceCitation(StrictSchema):

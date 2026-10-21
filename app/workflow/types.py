@@ -137,14 +137,29 @@ class SupportDowngraded(StrictSchema):
 
 
 class FiguresUnverified(StrictSchema):
-    """A supported answer stated figures its cited evidence could not confirm.
+    """A supported answer stated figures its cited evidence contradicts or cannot hold.
 
-    A figure is confirmed by a cited table cell from a requested period, or, when the
-    question names no period, by appearing in the cited evidence at all. Running text
-    cannot show which period a figure belongs to, so it never confirms a requested one.
+    A figure is confirmed only by a cited table cell whose row is the item the answer
+    names, whose column is the requested (or stated) period, and whose value matches in
+    units both sides state. Running text cannot show which period a figure belongs to,
+    so it confirms a figure only when no period is asked or stated.
     """
 
     code: Literal["figures_unverified"] = "figures_unverified"
+    figures: tuple[NonBlank, ...]
+
+
+class FiguresUnitUnverified(StrictSchema):
+    """A supported answer's figures name cited items whose unit cannot be established.
+
+    The cited table states no fully readable unit, or contradictory units, in its own
+    header cells or the caption run linked to it, or the answer states none. No unit is
+    guessed, so the figures can be neither confirmed nor refuted, and one of them
+    withholds the whole answer instead of calling it absent from the documents or from
+    another period.
+    """
+
+    code: Literal["figures_unit_unverified"] = "figures_unit_unverified"
     figures: tuple[NonBlank, ...]
 
 
@@ -203,6 +218,7 @@ type WorkflowReason = Annotated[
     | CitationsFiltered
     | SupportDowngraded
     | FiguresUnverified
+    | FiguresUnitUnverified
     | PeriodMismatch
     | ProviderFailure
     | NodeError,
@@ -275,6 +291,8 @@ class WorkflowState(StrictSchema):
     decision: AnswerDecision | None = None
     # Set by check when a supported answer's figures all came from other periods.
     period_mismatch: PeriodMismatch | None = None
+    # Set by check when a supported answer's figures are withheld for an uncertain unit.
+    unit_unverified: FiguresUnitUnverified | None = None
     reasons: tuple[WorkflowReason, ...] = ()
     failure: ProviderFailure | NodeError | None = None
     node_path: tuple[WorkflowNode, ...] = ()

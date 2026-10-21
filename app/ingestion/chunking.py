@@ -14,6 +14,7 @@ from app.ingestion.parsing.tables import (
     StructuredTable,
     TableCell,
     TableRow,
+    is_english_unit_caption,
     is_unit_caption,
     structured_table,
 )
@@ -160,7 +161,10 @@ def section_units(
 
     Paragraphs join up to the complete-input target. Oversized structural units are
     split by the filing builder. Blank paragraphs are ignored, and a paragraph
-    that is nothing but a unit caption becomes the next table's context.
+    that is nothing but a unit caption becomes the next table's context. A paragraph
+    that is nothing but English unit declarations stays narrative text and joins the
+    caption run, which is recorded with its source spans as the caption sources of the
+    table that ends it.
     """
     units: list[Unit] = []
     pending: list[Block] = []
@@ -171,6 +175,11 @@ def section_units(
     # later table under the same heading.
     pending_captions: list[str] = []
     pending_caption_sources: list[CaptionSource] = []
+    # English unit declarations ("(In millions)") stay narrative text, so they keep their
+    # place in the text chunks. A connected run of them, together with any DART captions
+    # in the same run, is also linked with its spans to the table that ends the run, so
+    # a conflicting or unknown neighbour reaches the figure check instead of being lost.
+    english_captions: list[CaptionSource] = []
     narrative_headings: list[str] = []
     heading_run = False
     active_group: int | None = None
@@ -199,6 +208,7 @@ def section_units(
 
     for block in section.blocks:
         if active_group != block.source_group:
+            english_captions = []
             flush_pending()
             active_group = block.source_group
             narrative_headings = [block.source_heading] if block.source_heading else []
@@ -214,6 +224,7 @@ def section_units(
             heading_run = True
             pending_captions = []
             pending_caption_sources = []
+            english_captions = []
             continue
 
         if block.kind == table_kind:
@@ -223,7 +234,12 @@ def section_units(
             captions = table.captions if not markdown else ()
             if markdown:
                 heading = " · ".join([*narrative_headings, *pending_captions]) or None
-                caption_sources = tuple(pending_caption_sources)
+                caption_sources = tuple(
+                    sorted(
+                        [*pending_caption_sources, *english_captions],
+                        key=lambda source: source.start_char,
+                    )
+                )
                 if table.captions:
                     start, end = _source_span([block])
                     caption_sources += (
@@ -233,6 +249,7 @@ def section_units(
                 heading_run = False
                 pending_captions = []
                 pending_caption_sources = []
+                english_captions = []
                 continue
             # A caption-only table annotates the one table that follows it, so its
             # unit travels as context instead of being dropped with the empty markdown.
@@ -264,8 +281,12 @@ def section_units(
                 pending_captions.append(caption)
             continue
         heading_run = False
-        pending_captions = []
-        pending_caption_sources = []
+        english = is_english_unit_caption(text)
+        if not english:
+            # Unrelated prose ends the caption run; an English declaration continues it.
+            pending_captions = []
+            pending_caption_sources = []
+            english_captions = []
 
         if pending and not budget.accepts(
             compose_index_text(
@@ -277,6 +298,9 @@ def section_units(
             flush_pending()
 
         pending.append(block)
+        if english:
+            start, end = _source_span([block])
+            english_captions.append(CaptionSource(start, end, strip(text)))
 
     flush_pending()
     return units

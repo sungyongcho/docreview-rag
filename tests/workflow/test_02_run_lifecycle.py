@@ -14,6 +14,7 @@ from app.workflow.runner import BilledRunAllowanceError, Retriever, run_workflow
 from app.workflow.types import ProviderFailure, WorkflowRequest
 from tests.llm.support import DeterministicLLMProvider, TickClock, raw as _raw
 from tests.workflow.support import (
+    USD_INCOME_TABLE,
     hit as _hit,
     income_table_hit,
     pricing as _pricing,
@@ -107,7 +108,7 @@ def test_successful_runner_preserves_raw_traces_when_the_token_budget_is_exactly
 
 def test_runner_reads_table_fragments_to_report_a_period_mismatch():
     """Load the relevant table's fragment before check and report a comparative-column figure."""
-    table, fragment = income_table_hit()
+    table, fragment = income_table_hit(html=USD_INCOME_TABLE)
     grade = '{"grades":[{"chunk_id":7,"relevant":true,"reason":"Income statement."}]}'
     check = (
         '{"label":"SUPPORTED","answer":"2024 net revenue was $22,680 million.",'

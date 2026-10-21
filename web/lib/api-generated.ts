@@ -2437,12 +2437,32 @@ export interface components {
             rejected_chunk_ids?: number[] | null;
         };
         /**
-         * FiguresUnverified
-         * @description A supported answer stated figures its cited evidence could not confirm.
+         * FiguresUnitUnverified
+         * @description A supported answer's figures name cited items whose unit cannot be established.
          *
-         *     A figure is confirmed by a cited table cell from a requested period, or, when the
-         *     question names no period, by appearing in the cited evidence at all. Running text
-         *     cannot show which period a figure belongs to, so it never confirms a requested one.
+         *     The cited table states no fully readable unit, or contradictory units, in its own
+         *     header cells or the caption run linked to it, or the answer states none. No unit is
+         *     guessed, so the figures can be neither confirmed nor refuted, and one of them
+         *     withholds the whole answer instead of calling it absent from the documents or from
+         *     another period.
+         */
+        FiguresUnitUnverified: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            code: "figures_unit_unverified";
+            /** Figures */
+            figures: string[];
+        };
+        /**
+         * FiguresUnverified
+         * @description A supported answer stated figures its cited evidence contradicts or cannot hold.
+         *
+         *     A figure is confirmed only by a cited table cell whose row is the item the answer
+         *     names, whose column is the requested (or stated) period, and whose value matches in
+         *     units both sides state. Running text cannot show which period a figure belongs to,
+         *     so it confirms a figure only when no period is asked or stated.
          */
         FiguresUnverified: {
             /**
@@ -4325,7 +4345,7 @@ export interface components {
             /** Message */
             message: string;
         };
-        WorkflowReason: components["schemas"]["RetrievalEmpty"] | components["schemas"]["DuplicateRetrievedChunks"] | components["schemas"]["DuplicateEvidenceText"] | components["schemas"]["DocumentQuotaApplied"] | components["schemas"]["ContextTruncated"] | components["schemas"]["GradeReferencesFiltered"] | components["schemas"]["GradeCoverageIncomplete"] | components["schemas"]["RelevanceBelowThreshold"] | components["schemas"]["CitationsFiltered"] | components["schemas"]["SupportDowngraded"] | components["schemas"]["FiguresUnverified"] | components["schemas"]["PeriodMismatch"] | components["schemas"]["ProviderFailure"] | components["schemas"]["NodeError"];
+        WorkflowReason: components["schemas"]["RetrievalEmpty"] | components["schemas"]["DuplicateRetrievedChunks"] | components["schemas"]["DuplicateEvidenceText"] | components["schemas"]["DocumentQuotaApplied"] | components["schemas"]["ContextTruncated"] | components["schemas"]["GradeReferencesFiltered"] | components["schemas"]["GradeCoverageIncomplete"] | components["schemas"]["RelevanceBelowThreshold"] | components["schemas"]["CitationsFiltered"] | components["schemas"]["SupportDowngraded"] | components["schemas"]["FiguresUnverified"] | components["schemas"]["FiguresUnitUnverified"] | components["schemas"]["PeriodMismatch"] | components["schemas"]["ProviderFailure"] | components["schemas"]["NodeError"];
         /**
          * WorkflowReport
          * @description The guarded answer and its complete degradation provenance.
@@ -4339,7 +4359,7 @@ export interface components {
              * Label
              * @enum {string}
              */
-            label: "SUPPORTED" | "NOT_IN_DOCS" | "PERIOD_MISMATCH";
+            label: "SUPPORTED" | "NOT_IN_DOCS" | "PERIOD_MISMATCH" | "UNVERIFIED";
             /** Rationale */
             rationale: string;
             /** Reasons */
