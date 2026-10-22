@@ -1,7 +1,18 @@
 """Builders shared by the agent tests."""
 
-from typing import cast
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import Any, cast, override
 
+from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatResult
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
+from langchain_core.utils.function_calling import convert_to_openai_tool
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.provider import DeterministicToolProvider, ProviderTurn
@@ -86,3 +97,57 @@ class RecordingToolProvider(DeterministicToolProvider):
         return await super().turn(
             instructions, input_items, tools, max_output_tokens=max_output_tokens
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ModelRequest:
+    """One request a scripted chat model received: its messages and bound options."""
+
+    messages: list[BaseMessage]
+    kwargs: dict[str, Any]
+
+
+class ScriptedChatModel(GenericFakeChatModel):
+    """Network-free LangChain chat model that replays scripted replies.
+
+    Every request is recorded before it is answered, so ``requests`` counts what
+    was actually sent. ``failures`` maps a 1-based request number to an exception
+    raised instead of a reply, standing in for a request whose outcome is unknown.
+    """
+
+    requests: list[ModelRequest] = Field(default_factory=list)
+    failures: dict[int, Exception] = Field(default_factory=dict)
+
+    @classmethod
+    def from_replies(
+        cls, *replies: AIMessage, failures: dict[int, Exception] | None = None
+    ) -> ScriptedChatModel:
+        """Build a model that answers with ``replies`` in order."""
+        return cls(messages=iter(replies), failures=failures or {})
+
+    @override
+    def bind_tools(
+        self,
+        tools: Sequence[dict[str, Any] | type | Callable[..., Any] | BaseTool],
+        *,
+        tool_choice: str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        """Send tool schemas with each request like a real model; replies stay scripted."""
+        del tool_choice
+        return self.bind(tools=[convert_to_openai_tool(tool) for tool in tools], **kwargs)
+
+    @override
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Record the request, then raise its scripted failure or return the next reply."""
+        self.requests.append(ModelRequest(list(messages), dict(kwargs)))
+        failure = self.failures.get(len(self.requests))
+        if failure is not None:
+            raise failure
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
