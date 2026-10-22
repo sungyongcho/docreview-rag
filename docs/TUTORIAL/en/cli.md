@@ -375,12 +375,15 @@ Use its returned selection ID for ingestion. SEC and DART share `manifest.json`.
 
 ### MCP servers {#mcp-servers}
 
-Two stdio MCP servers expose existing functions to an MCP client. An MCP client starts them as subprocesses from the repository root; they do not open a port.
+Two MCP servers expose existing functions to an MCP client. By default both use stdio: an MCP client starts them as subprocesses from the repository root, and they do not open a port. `filings_server` can also run on its own over Streamable HTTP.
 
 ```bash
 uv run python -m app.mcp.catalog_server   # list_corpus: registered filings from manifest.json
 uv run python -m app.mcp.filings_server   # search_filings, compare_years, fetch_chunk
+uv run python -m app.mcp.filings_server --http 8765   # same tools at http://127.0.0.1:8765/mcp
 ```
+
+With `--http PORT` the server listens only on `127.0.0.1`, without authentication or HTTPS, and requests whose `Host` header is not a loopback address are refused with HTTP 421. Clients connect to `http://127.0.0.1:PORT/mcp`; closing a client does not stop the server, so stop it with Ctrl-C or SIGTERM. The tools and their results are the same as over stdio: a tool that fails while running returns its result in an HTTP 200 response with `isError`, while a malformed request, such as one missing a required MCP header, is refused with an HTTP 4xx status. When a client cancels a call, the SDK cancels the running tool's async task.
 
 `catalog_server` reads only `manifest.json`. `filings_server` uses the configured database and, for search, the configured embedding provider, so searches can incur provider usage. It is a development tool that runs only with the development key (`OPENAI_API_KEY_LOCAL`); under `MODE=prod` it refuses to start and exits with code 2. A failed call returns `isError`; a database or other system failure also carries `_meta["docreview/system_error"]`, so a client can stop instead of treating it as "no evidence". `final_answer` is not a server tool; the agent loop owns it.
 

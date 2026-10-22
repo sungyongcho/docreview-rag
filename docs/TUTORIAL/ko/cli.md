@@ -395,12 +395,15 @@ rag-dev corpus status
 
 ### MCP 서버 {#mcp-servers}
 
-두 stdio MCP 서버가 기존 기능을 MCP 클라이언트에 공개합니다. MCP 클라이언트가 저장소 루트에서 하위 프로세스로 실행하며, 포트를 열지 않습니다.
+두 MCP 서버가 기존 기능을 MCP 클라이언트에 공개합니다. 기본값은 둘 다 stdio로, MCP 클라이언트가 저장소 루트에서 하위 프로세스로 실행하며 포트를 열지 않습니다. `filings_server`는 Streamable HTTP로 따로 띄울 수도 있습니다.
 
 ```bash
 uv run python -m app.mcp.catalog_server   # list_corpus: manifest.json의 등록 공시 목록
 uv run python -m app.mcp.filings_server   # search_filings, compare_years, fetch_chunk
+uv run python -m app.mcp.filings_server --http 8765   # 같은 도구를 http://127.0.0.1:8765/mcp 에서 제공
 ```
+
+`--http PORT`를 주면 서버는 인증과 HTTPS 없이 `127.0.0.1`에서만 연결을 받으며, `Host` 헤더가 loopback 주소가 아닌 요청은 HTTP 421로 거부합니다. 클라이언트는 `http://127.0.0.1:PORT/mcp`로 연결합니다. 클라이언트를 닫아도 서버는 멈추지 않으므로 Ctrl-C나 SIGTERM으로 종료합니다. 도구와 결과는 stdio와 같습니다. 도구 실행 중 실패하면 그 결과가 HTTP 200 응답 안의 `isError`로 돌아오고, 필수 MCP 헤더가 빠진 요청처럼 형식이 잘못된 요청은 HTTP 4xx 상태로 거부됩니다. 클라이언트가 호출을 취소하면 SDK가 실행 중인 도구의 비동기 작업을 취소합니다.
 
 `catalog_server`는 `manifest.json`만 읽습니다. `filings_server`는 설정된 DB를 쓰고, 검색에는 설정된 embedding 제공자를 사용하므로 검색에 사용량이 발생할 수 있습니다. 개발용 도구라서 개발 키(`OPENAI_API_KEY_LOCAL`)로만 실행하며, `MODE=prod`이면 시작하지 않고 종료 코드 2로 끝납니다. 실패한 호출은 `isError`로 돌아오며, DB 등 시스템 실패에는 `_meta["docreview/system_error"]`가 함께 붙어 클라이언트가 "근거 없음"으로 오인하지 않고 멈출 수 있습니다. `final_answer`는 서버 도구가 아니며 agent loop가 담당합니다.
 

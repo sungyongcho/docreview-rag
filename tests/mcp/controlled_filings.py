@@ -1,10 +1,11 @@
 """Serve the real filings MCP server with controlled retrieval and chunk reads.
 
-Run as ``python -m tests.mcp.controlled_filings <log path>``. Only the retrieval
-boundary and the database session are replaced; the registry, validation, error
-taxonomy, serialization and stdio transport are the production code. Every
-retrieval and body read is appended to the log so a test can tell which requests
-reached the data layer.
+Run as ``python -m tests.mcp.controlled_filings <log path> [--http PORT]``. Only the
+retrieval boundary and the database session are replaced; the registry, validation,
+error taxonomy, serialization, argument parsing and the stdio or HTTP transport are
+the production code. Every retrieval and body read is appended to the log so a test
+can tell which requests reached the data layer; the query ``slow`` blocks until
+cancelled and logs how it ended, and ``server_stopped`` marks the transport's exit.
 """
 
 import asyncio
@@ -19,13 +20,14 @@ from unittest.mock import patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.tools.filings import build_default_registry
-from app.mcp.filings_server import serve
+from app.mcp.filings_server import parse_http_port, serve, serve_http
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
 SEARCH_CHUNK_ID = 7
 FAILING_CHUNK_ID = 13
 PRIVATE_DETAIL = "TEST_PRIVATE_DATABASE_DETAIL"
+SLOW_SECONDS = 30
 
 
 def fixture_hit(chunk_id: int) -> ChunkHit:
@@ -104,6 +106,16 @@ def controlled_retrieve(log_path: Path):
                 "filters": filters.model_dump(mode="json"),
             },
         )
+        if query == "slow":
+            record(log_path, {"event": "slow_started"})
+            try:
+                await asyncio.sleep(SLOW_SECONDS)
+                record(log_path, {"event": "slow_completed"})
+            except asyncio.CancelledError:
+                record(log_path, {"event": "slow_cancelled"})
+                raise
+            finally:
+                record(log_path, {"event": "slow_finally"})
         if query == "fail" or (query == "fail-2024" and years == (2024,)):
             raise RuntimeError(PRIVATE_DETAIL)
         if query == "both-empty" or query == "no-match":
@@ -116,15 +128,25 @@ def controlled_retrieve(log_path: Path):
     return retrieve
 
 
-async def main(log_path: Path) -> None:
-    """Serve the production registry over stdio with only the data layer replaced."""
+async def main(log_path: Path, http_port: int | None = None) -> None:
+    """Serve the production registry with only the data layer replaced.
+
+    ``http_port`` selects Streamable HTTP as in the product entry point; the
+    ``finally`` block stands in for its database cleanup.
+    """
     registry = build_default_registry(
         lambda: cast(AsyncSession, ControlledSession(log_path)),
         embedding_provider=DeterministicEmbeddingProvider(),
     )
-    with patch("app.agent.tools.filings.retrieve", controlled_retrieve(log_path)):
-        await serve(registry)
+    try:
+        with patch("app.agent.tools.filings.retrieve", controlled_retrieve(log_path)):
+            if http_port is None:
+                await serve(registry)
+            else:
+                await serve_http(registry, port=http_port)
+    finally:
+        record(log_path, {"event": "server_stopped"})
 
 
 if __name__ == "__main__":
-    asyncio.run(main(Path(sys.argv[1])))
+    asyncio.run(main(Path(sys.argv[1]), parse_http_port(sys.argv[2:])))
