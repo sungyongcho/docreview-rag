@@ -10,7 +10,9 @@ from types import FrameType
 from mcp.server import Server
 from mcp.server.context import ServerRequestContext
 from mcp.server.stdio import stdio_server
+from mcp.shared.exceptions import MCPError
 from mcp.types import (
+    INTERNAL_ERROR,
     CallToolRequestParams,
     CallToolResult,
     ListToolsResult,
@@ -32,24 +34,15 @@ EXPOSED_TOOLS = ("search_filings", "compare_years", "fetch_chunk")
 # accepts loopback Host and Origin headers alone. There is no authentication yet.
 HTTP_HOST = "127.0.0.1"
 
-# Marks a failed result as a system failure (database, serialization) rather than
-# one the caller can correct, so an MCP client can end the run instead of
-# letting the model treat the failure as "nothing found".
-SYSTEM_ERROR_META = "docreview/system_error"
-
 COMPARE_NOTE = (
     " Returns evidence candidates only; does not extract revenue values "
     "or calculate differences or growth rates."
 )
 
 
-def error_result(message: str, *, system: bool) -> CallToolResult:
-    """Report a failed call in the tool result, marking system failures."""
-    return CallToolResult(
-        is_error=True,
-        content=[TextContent(type="text", text=message)],
-        _meta={SYSTEM_ERROR_META: True} if system else None,
-    )
+def error_result(message: str) -> CallToolResult:
+    """Report a failure the caller can correct, such as invalid arguments, in the result."""
+    return CallToolResult(is_error=True, content=[TextContent(type="text", text=message)])
 
 
 def build_server(registry: ToolRegistry) -> Server:
@@ -86,12 +79,21 @@ def build_server(registry: ToolRegistry) -> Server:
         )
 
     async def call_tool(ctx: ServerRequestContext, params: CallToolRequestParams) -> CallToolResult:
-        """Map existing domain results and safe errors onto MCP result fields."""
+        """Map existing domain results and safe errors onto MCP results or JSON-RPC errors.
+
+        A failure the model can correct is an ``isError`` result it can read. A system
+        failure, such as a database error, is raised as a JSON-RPC ``INTERNAL_ERROR``
+        instead: clients raise that rather than hand it to the model, which would
+        otherwise read a failed search as "nothing found". ``outcome.error`` is
+        already redacted by :func:`execute_tool`.
+        """
         if params.name not in exposed:
-            return error_result(f"unknown tool: {params.name}", system=False)
+            return error_result(f"unknown tool: {params.name}")
         outcome = await execute_tool(registry, params.name, params.arguments or {})
         if outcome.error is not None:
-            return error_result(outcome.error, system=outcome.system_error)
+            if outcome.system_error:
+                raise MCPError(code=INTERNAL_ERROR, message=outcome.error)
+            return error_result(outcome.error)
         assert outcome.output_json is not None
         return CallToolResult(
             content=[TextContent(type="text", text=outcome.output_json)],

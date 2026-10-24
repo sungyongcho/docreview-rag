@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 
 from mcp import StdioServerParameters
+from mcp.shared.exceptions import MCPError
+from mcp.types import INTERNAL_ERROR
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROTOCOL_MODE = "2026-07-28"
@@ -47,6 +49,21 @@ def logged_events(log_path: Path, start: int = 0) -> list[dict]:
     return [json.loads(line) for line in lines[start:]]
 
 
-def is_system_error(result) -> bool:
-    """Report whether a failed result carries the system-failure marker."""
-    return bool((result.meta or {}).get("docreview/system_error"))
+async def call_or_error(client, name: str, arguments: dict):
+    """Call one tool; return ``(result, None)``, or ``(None, error)`` for a JSON-RPC error.
+
+    A system failure arrives as a JSON-RPC error that the client raises as
+    :class:`~mcp.shared.exceptions.MCPError`; every other outcome is a tool result.
+    """
+    try:
+        return await client.call_tool(name, arguments), None
+    except MCPError as error:
+        return None, error
+
+
+def assert_internal_error(error, tool: str) -> None:
+    """Require the redacted INTERNAL_ERROR a system failure of ``tool`` reports."""
+    assert isinstance(error, MCPError)
+    assert error.code == INTERNAL_ERROR
+    assert error.message == f"RuntimeError: tool {tool} failed"
+    assert error.data is None

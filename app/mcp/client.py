@@ -12,15 +12,15 @@ from mcp import Client
 from pydantic import BaseModel
 
 from app.agent.tools.registry import ToolError, ToolRegistry
-from app.mcp.filings_server import SYSTEM_ERROR_META
 
 
 class MCPSystemError(RuntimeError):
-    """A tool failed for a system reason the model cannot correct.
+    """A successful-looking tool result the bridge cannot use, such as one without data.
 
     It is deliberately not a :class:`ToolError`, so the registry treats it as an
     unexpected failure and the agent run ends as ``tool_error`` instead of letting
-    the model answer as though nothing were found.
+    the model answer as though nothing were found. A server-reported system failure
+    needs no such mapping: it arrives as a JSON-RPC error the client already raises.
     """
 
 
@@ -28,13 +28,14 @@ def mcp_runner(client: Client, name: str) -> Callable[[BaseModel], Awaitable[dic
     """Bind one discovered tool name to a call over the shared MCP client."""
 
     async def run(params: BaseModel) -> dict[str, Any]:
-        """Send the validated arguments over MCP and map the result back."""
+        """Send the validated arguments over MCP and map the result back.
+
+        A JSON-RPC error the client raises, such as a system failure, propagates
+        unchanged; only an ``isError`` result becomes a correctable :class:`ToolError`.
+        """
         result = await client.call_tool(name, params.model_dump(mode="json"))
         if result.is_error:
-            text = "; ".join(item.text for item in result.content if item.type == "text")
-            if (result.meta or {}).get(SYSTEM_ERROR_META):
-                raise MCPSystemError(text)
-            raise ToolError(text)
+            raise ToolError("; ".join(item.text for item in result.content if item.type == "text"))
         if not isinstance(result.structured_content, dict):
             raise MCPSystemError(f"tool {name} returned no structured content")
         return result.structured_content

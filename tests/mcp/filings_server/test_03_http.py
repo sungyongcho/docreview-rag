@@ -15,6 +15,7 @@ from typing import Any, cast
 
 import httpx
 from mcp import Client
+from mcp.types import INTERNAL_ERROR
 import pytest
 
 from app.agent.loop import run_agent
@@ -28,7 +29,8 @@ from tests.mcp.controlled_filings import PRIVATE_DETAIL
 from tests.mcp.support import (
     PROTOCOL_MODE,
     REPO_ROOT,
-    is_system_error,
+    assert_internal_error,
+    call_or_error,
     logged_events,
     text_of,
 )
@@ -114,6 +116,7 @@ SEARCHES = [
     ("blank", {"query": "   "}, True, False, 0),
     ("boolean-k", {"query": "revenue", "k": True}, True, False, 0),
     ("runtime-error", {"query": "fail"}, True, True, 1),
+    ("after-error", {"query": "revenue"}, False, False, 1),
 ]
 
 # (case, (tool, arguments) the model calls before final_answer, status, body reads,
@@ -163,8 +166,8 @@ async def exercise(url: str, log_path: Path, process: subprocess.Popen[bytes]) -
         searches = {}
         for case, arguments, *_ in SEARCHES:
             start = len(logged_events(log_path))
-            result = await client.call_tool("search_filings", arguments)
-            searches[case] = (result, logged_events(log_path, start))
+            outcome = await call_or_error(client, "search_filings", arguments)
+            searches[case] = (*outcome, logged_events(log_path, start))
         unknown = await client.call_tool("final_answer", {"answer": "x"})
     alive_after_close = process.poll() is None
 
@@ -260,20 +263,24 @@ def test_http_search_outcomes_match_the_stdio_contract(
     observed, case, arguments, failed, system, retrievals
 ):
     """Validation, empty results and failures keep their meaning over HTTP."""
-    result, events = observed.searches[case]
-    assert result.is_error == failed
-    assert is_system_error(result) == system
+    result, error, events = observed.searches[case]
     assert len(events) == retrievals
+    if system:
+        assert result is None
+        assert_internal_error(error, "search_filings")
+        assert PRIVATE_DETAIL not in str(error)
+        return
+    assert error is None
+    assert result.is_error == failed
     assert PRIVATE_DETAIL not in text_of(result)
     if not failed:
         assert json.loads(text_of(result)) == result.structured_content
 
 
 def test_http_rejects_the_loop_owned_final_answer(observed):
-    """final_answer is still not a server tool, and refusing it is not a system failure."""
+    """final_answer is still not a server tool; refusing it is a result, not a JSON-RPC error."""
     assert observed.unknown.is_error
     assert "unknown tool" in text_of(observed.unknown).lower()
-    assert not is_system_error(observed.unknown)
 
 
 # Client lifecycle and per-question evidence
@@ -295,7 +302,7 @@ def test_question_scope_holds_over_http(observed, case, actions, status, reads, 
     assert errors == rejected
     assert [event["chunk_id"] for event in events if event["event"] == "body_load"] == reads
     if status == "tool_error":
-        assert result.failure == "MCPSystemError: tool compare_years failed"
+        assert result.failure == "MCPError: tool compare_years failed"
 
 
 def test_client_cancellation_cancels_the_running_tool(observed):
@@ -304,14 +311,18 @@ def test_client_cancellation_cancels_the_running_tool(observed):
 
 
 # Raw requests: which layer reports each outcome
-def test_a_tool_failure_is_http_200_with_a_system_marker(observed):
-    """Tool failures live inside a successful HTTP response, with no session ID."""
+def test_a_system_failure_is_a_json_rpc_error_envelope(observed):
+    """The failure is the JSON-RPC error for request 1, redacted, with no tool result."""
     response = observed.raw["tool failure"]
     assert response.status_code == 200
     assert "mcp-session-id" not in response.headers
-    result = rpc_message(response)["result"]
-    assert result["isError"] is True
-    assert result["_meta"][filings_server.SYSTEM_ERROR_META] is True
+    message = rpc_message(response)
+    assert "result" not in message
+    assert message["id"] == 1
+    assert message["error"] == {
+        "code": INTERNAL_ERROR,
+        "message": "RuntimeError: tool search_filings failed",
+    }
     assert PRIVATE_DETAIL not in response.text
 
 

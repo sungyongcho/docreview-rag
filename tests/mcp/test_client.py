@@ -5,14 +5,17 @@ import json
 from typing import cast
 
 from mcp import Client
+from mcp.shared.exceptions import MCPError
+from mcp.types import INTERNAL_ERROR, CallToolResult, TextContent
 import pytest
 
 from app.agent.loop import run_agent
 from app.agent.provider import DeterministicToolProvider, ProviderTurn
-from app.agent.tools.filings import build_default_registry
+from app.agent.tools.filings import FetchChunkParams, build_default_registry
+from app.agent.tools.registry import ToolError
 from app.agent.types import ToolCall
 from app.db.session_factory import SessionFactory
-from app.mcp.client import mcp_tool_registry
+from app.mcp.client import MCPSystemError, mcp_runner, mcp_tool_registry
 from tests.mcp.support import PROTOCOL_MODE, controlled_filings, logged_events
 
 SEARCH_2023 = {"query": "revenue", "issuers": ["TEST"], "fiscal_years": [2023]}
@@ -135,4 +138,51 @@ def test_question_scope_over_mcp(runs, case, steps, status, reads, rejected):
     assert [event["chunk_id"] for event in events if event["event"] == "body_load"] == reads
     if status == "tool_error":
         assert len(result.steps) == 1
-        assert result.failure == "MCPSystemError: tool compare_years failed"
+        # The client raises the server's JSON-RPC error; the registry redacts it as a
+        # system failure, so the run ends instead of the model reading "nothing found".
+        assert result.failure == "MCPError: tool compare_years failed"
+
+
+class StubClient:
+    """Answer every call with one fixed result, or raise one fixed error."""
+
+    def __init__(self, result=None, error=None):
+        """Keep the result to return, or the error to raise, for every later call."""
+        self.result, self.error = result, error
+
+    async def call_tool(self, name, arguments):
+        """Return the fixed result or raise the fixed error, ignoring the request."""
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+def run_fetch(client):
+    """Call fetch_chunk through the bridge's runner with a valid argument."""
+    runner = mcp_runner(cast(Client, client), "fetch_chunk")
+    return asyncio.run(runner(FetchChunkParams(chunk_id=2024)))
+
+
+def test_a_json_rpc_error_passes_through_the_bridge_unchanged():
+    """The bridge neither wraps nor downgrades a JSON-RPC error into a tool error."""
+    error = MCPError(code=INTERNAL_ERROR, message="RuntimeError: tool fetch_chunk failed")
+    with pytest.raises(MCPError) as raised:
+        run_fetch(StubClient(error=error))
+    assert raised.value is error
+    assert not isinstance(raised.value, ToolError)
+
+
+def test_a_success_without_structured_content_is_a_system_error():
+    """A malformed success cannot be read as evidence, so the bridge refuses it."""
+    malformed = CallToolResult(content=[TextContent(type="text", text="{}")])
+    with pytest.raises(MCPSystemError, match="tool fetch_chunk returned no structured content"):
+        run_fetch(StubClient(result=malformed))
+
+
+def test_a_correctable_error_result_stays_a_tool_error():
+    """An isError result is a ToolError carrying the server's own text."""
+    refused = CallToolResult(
+        is_error=True, content=[TextContent(type="text", text="chunk 2024 does not exist")]
+    )
+    with pytest.raises(ToolError, match="chunk 2024 does not exist"):
+        run_fetch(StubClient(result=refused))

@@ -10,13 +10,15 @@ from app.agent.tools.filings import SearchFilingsParams
 from tests.mcp.controlled_filings import PRIVATE_DETAIL, SEARCH_CHUNK_ID
 from tests.mcp.support import (
     PROTOCOL_MODE,
+    assert_internal_error,
+    call_or_error,
     controlled_filings,
-    is_system_error,
     logged_events,
     text_of,
 )
 
-# (case, arguments, failed, system failure, retrievals reached)
+# (case, arguments, failed, system failure, retrievals reached); a correctable failure
+# is an isError result, a system failure a JSON-RPC error, and the connection serves on.
 CASES = [
     ("hits", {"query": "revenue"}, False, False, 1),
     ("empty", {"query": "no-match"}, False, False, 1),
@@ -49,8 +51,8 @@ def observed(tmp_path_factory):
             results = {}
             for case, arguments, *_ in CASES:
                 start = len(logged_events(log_path))
-                result = await client.call_tool("search_filings", arguments)
-                results[case] = (result, logged_events(log_path, start))
+                outcome = await call_or_error(client, "search_filings", arguments)
+                results[case] = (*outcome, logged_events(log_path, start))
             unknown = await client.call_tool("final_answer", {"answer": "x"})
         return listing, results, unknown
 
@@ -72,12 +74,17 @@ def test_server_publishes_the_existing_tools_and_schema(observed):
 def test_search_outcome_matches_the_existing_contract(
     observed, case, arguments, failed, system, retrievals
 ):
-    """Invalid input never reaches retrieval; failures are marked by kind."""
+    """Invalid input never reaches retrieval; each failure kind has its own channel."""
     _, results, _ = observed
-    result, events = results[case]
-    assert result.is_error == failed
-    assert is_system_error(result) == system
+    result, error, events = results[case]
     assert len(events) == retrievals
+    if system:
+        assert result is None
+        assert_internal_error(error, "search_filings")
+        assert PRIVATE_DETAIL not in str(error)
+        return
+    assert error is None
+    assert result.is_error == failed
     text = text_of(result)
     assert PRIVATE_DETAIL not in text
     if not failed:
@@ -90,8 +97,8 @@ def test_hits_defaults_and_filters_reach_retrieval(observed):
     (hit,) = results["hits"][0].structured_content["hits"]
     assert hit["chunk_id"] == SEARCH_CHUNK_ID
     assert results["empty"][0].structured_content == {"hits": []}
-    assert results["hits"][1][0]["k"] == 5
-    (filtered,) = results["filters"][1]
+    assert results["hits"][2][0]["k"] == 5
+    (filtered,) = results["filters"][2]
     assert filtered["k"] == 2
     assert filtered["filters"]["issuers"] == ["TEST"]
     assert filtered["filters"]["fiscal_years"] == [2024]
@@ -102,4 +109,3 @@ def test_the_loop_owned_final_answer_is_not_a_server_tool(observed):
     _, _, unknown = observed
     assert unknown.is_error
     assert "unknown tool" in text_of(unknown).lower()
-    assert not is_system_error(unknown)

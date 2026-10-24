@@ -10,8 +10,9 @@ from app.agent.tools.filings import CompareYearsParams
 from tests.mcp.controlled_filings import FAILING_CHUNK_ID, PRIVATE_DETAIL, fixture_hit
 from tests.mcp.support import (
     PROTOCOL_MODE,
+    assert_internal_error,
+    call_or_error,
     controlled_filings,
-    is_system_error,
     logged_events,
     text_of,
 )
@@ -42,6 +43,7 @@ FETCH_CASES = [
     ("unknown", 99, True, False),
     ("database-failure", FAILING_CHUNK_ID, True, True),
     ("not-an-id", 0, True, False),
+    ("after-failure", 2023, False, False),
 ]
 
 
@@ -51,11 +53,12 @@ def observed(tmp_path_factory):
     log_path = tmp_path_factory.mktemp("compare") / "events.jsonl"
 
     async def call_all(client, name, cases, arguments_of):
+        """Call ``name`` once per case, keeping its result or JSON-RPC error and its events."""
         results = {}
         for case in cases:
             start = len(logged_events(log_path))
-            result = await client.call_tool(name, arguments_of(case))
-            results[case[0]] = (result, logged_events(log_path, start))
+            outcome = await call_or_error(client, name, arguments_of(case))
+            results[case[0]] = (*outcome, logged_events(log_path, start))
         return results
 
     async def exercise():
@@ -80,11 +83,18 @@ def test_compare_schema_is_the_existing_model(observed):
 def test_compare_groups_years_or_fails_whole(observed, case, arguments, failed, system, years):
     """Years are retrieved in order; any failure returns no partial years."""
     _, results, _ = observed
-    result, events = results[case]
-    assert result.is_error == failed
-    assert is_system_error(result) == system
+    result, error, events = results[case]
     assert [event["filters"]["fiscal_years"][0] for event in events] == years
     assert all(event["k"] == arguments.get("k", 3) for event in events)
+    if system:
+        # A JSON-RPC error carries no result, so 2023's retrieved hits cannot leak out.
+        assert result is None
+        assert_internal_error(error, "compare_years")
+        assert PRIVATE_DETAIL not in str(error)
+        assert "TEST-2023" not in str(error)
+        return
+    assert error is None
+    assert result.is_error == failed
     text = text_of(result)
     if failed:
         assert result.structured_content is None
@@ -103,10 +113,15 @@ def test_compare_groups_years_or_fails_whole(observed, case, arguments, failed, 
 def test_fetch_returns_full_identity_or_a_typed_failure(observed, case, chunk_id, failed, system):
     """A stored chunk returns its hash and span; failures say whether to retry."""
     _, _, results = observed
-    result, events = results[case]
-    assert result.is_error == failed
-    assert is_system_error(result) == system
+    result, error, events = results[case]
     assert len(events) == (0 if case == "not-an-id" else 1)
+    if system:
+        assert result is None
+        assert_internal_error(error, "fetch_chunk")
+        assert PRIVATE_DETAIL not in str(error)
+        return
+    assert error is None
+    assert result.is_error == failed
     if failed:
         assert PRIVATE_DETAIL not in text_of(result)
         return

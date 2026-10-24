@@ -403,9 +403,9 @@ uv run python -m app.mcp.filings_server   # search_filings, compare_years, fetch
 uv run python -m app.mcp.filings_server --http 8765   # 같은 도구를 http://127.0.0.1:8765/mcp 에서 제공
 ```
 
-`--http PORT`를 주면 서버는 인증과 HTTPS 없이 `127.0.0.1`에서만 연결을 받으며, `Host` 헤더가 loopback 주소가 아닌 요청은 HTTP 421로 거부합니다. 클라이언트는 `http://127.0.0.1:PORT/mcp`로 연결합니다. 클라이언트를 닫아도 서버는 멈추지 않으므로 Ctrl-C나 SIGTERM으로 종료합니다. 도구와 결과는 stdio와 같습니다. 도구 실행 중 실패하면 그 결과가 HTTP 200 응답 안의 `isError`로 돌아오고, 필수 MCP 헤더가 빠진 요청처럼 형식이 잘못된 요청은 HTTP 4xx 상태로 거부됩니다. 클라이언트가 호출을 취소하면 SDK가 실행 중인 도구의 비동기 작업을 취소합니다.
+`--http PORT`를 주면 서버는 인증과 HTTPS 없이 `127.0.0.1`에서만 연결을 받으며, `Host` 헤더가 loopback 주소가 아닌 요청은 HTTP 421로 거부합니다. 클라이언트는 `http://127.0.0.1:PORT/mcp`로 연결합니다. 클라이언트를 닫아도 서버는 멈추지 않으므로 Ctrl-C나 SIGTERM으로 종료합니다. 도구와 결과는 stdio와 같습니다. 고칠 수 있는 도구 실패는 `isError` 결과로, 시스템 실패는 JSON-RPC 오류로 돌아오며 둘 다 HTTP 200 응답에 담깁니다. 필수 MCP 헤더가 빠진 요청처럼 형식이 잘못된 요청은 HTTP 4xx 상태로 거부됩니다. 클라이언트가 호출을 취소하면 SDK가 실행 중인 도구의 비동기 작업을 취소합니다.
 
-`catalog_server`는 `manifest.json`만 읽습니다. `filings_server`는 설정된 DB를 쓰고, 검색에는 설정된 embedding 제공자를 사용하므로 검색에 사용량이 발생할 수 있습니다. 개발용 도구라서 개발 키(`OPENAI_API_KEY_LOCAL`)로만 실행하며, `MODE=prod`이면 시작하지 않고 종료 코드 2로 끝납니다. 실패한 호출은 `isError`로 돌아오며, DB 등 시스템 실패에는 `_meta["docreview/system_error"]`가 함께 붙어 클라이언트가 "근거 없음"으로 오인하지 않고 멈출 수 있습니다. `final_answer`는 서버 도구가 아니며 agent loop가 담당합니다.
+`catalog_server`는 `manifest.json`만 읽습니다. `filings_server`는 설정된 DB를 쓰고, 검색에는 설정된 embedding 제공자를 사용하므로 검색에 사용량이 발생할 수 있습니다. 개발용 도구라서 개발 키(`OPENAI_API_KEY_LOCAL`)로만 실행하며, `MODE=prod`이면 시작하지 않고 종료 코드 2로 끝납니다. 잘못된 인자나 없는 청크처럼 호출자가 고칠 수 있는 실패는 모델이 읽을 수 있는 `isError` 결과로 돌아오고, 아무것도 찾지 못한 검색은 성공한 빈 결과입니다. DB 등 시스템 실패는 대신 비밀 정보를 가린 메시지의 JSON-RPC `INTERNAL_ERROR`(-32603)로 돌아옵니다. MCP 클라이언트는 이를 모델에게 넘기는 결과가 아니라 오류로 올리므로 애플리케이션이 "근거 없음"과 구별할 수 있으며, DocReview agent loop는 실행을 `tool_error`로 끝냅니다. 연결은 이후 호출에 계속 쓸 수 있습니다. `final_answer`는 서버 도구가 아니며 agent loop가 담당합니다.
 
 <!-- heading-alias: 옵션-도움말 -->
 ### 옵션 도움말 {#option-help}
