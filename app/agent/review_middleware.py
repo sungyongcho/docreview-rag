@@ -1,38 +1,110 @@
-"""Keep the agent loop's question-scoped tool rules around ``create_agent`` tool calls.
+"""Keep the agent loop's question-scoped rules around ``create_agent`` tool and model calls.
 
 ``run_agent`` validates every tool call strictly, reads only chunks the current
 question retrieved and records the complete source identity of each result. Under
 ``create_agent`` the tools node runs the tools, so :class:`ReviewGate` applies the
 same rules as tool-call middleware while execution itself stays with the bound tool,
-such as an MCP adapter tool. :class:`StopOnSystemFailure` keeps the loop's other
-rule: a system failure the model cannot correct ends the run instead of reaching the
-model as though nothing were found.
+such as an MCP adapter tool. Its model-call hook applies the loop's final-answer
+policy to the structured ``final_answer`` the model proposes: the answer stands alone,
+its citations match the ledger, and its figures pass the same figure check, so it is
+accepted, reported as a period mismatch or withheld as ``UNVERIFIED``, or returned to
+the model for revision. :class:`StopOnSystemFailure` keeps the loop's other rule: a
+system failure the model cannot correct ends the run instead of reaching the model as
+though nothing were found.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 import json
 from typing import Annotated, Any, NotRequired
 
 from langchain.agents.middleware import (
     AgentMiddleware,
     AgentState,
+    ExtendedModelResponse,
+    ModelRequest,
+    ModelResponse,
     ToolCallRequest,
     hook_config,
 )
-from langchain_core.messages import ToolMessage
+from langchain.agents.structured_output import ToolStrategy
+from langchain_core.messages import AIMessage, ToolCall as MessageToolCall, ToolMessage
+from langgraph.errors import GraphBubbleUp
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 from mcp.shared.exceptions import MCPError
 from mcp.types import INTERNAL_ERROR
 from pydantic import BaseModel, ValidationError
 
+from app.agent.loop import (
+    EvidenceReader,
+    _figures_problem,
+    _final_answer,
+    _mismatch_answer,
+    _unit_unverified_answer,
+    final_answer_spec,
+)
 from app.agent.tools.filings import FetchChunkParams
-from app.agent.tools.registry import Tool, ToolRegistry
+from app.agent.tools.registry import FINAL_ANSWER_NAME, Tool, ToolRegistry, safe_runtime_error
+from app.agent.types import AgentAnswer, AgentReportAnswer, ToolCall
 from app.contracts.evidence import EvidenceCitation
+from app.contracts.figures import check_figures
 from app.llm.decoding import validation_errors
 
 type EvidenceLedger = dict[int, dict[str, Any]]
 type ToolHandler = Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]]
+type ModelHandler = Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]]
+type ModelResult = ModelResponse[Any] | AIMessage | ExtendedModelResponse[Any]
+
+# The rejection run_agent sends for a turn that pairs final_answer with other calls.
+FINAL_NOT_ALONE = "final_answer must be the only tool call in its provider turn"
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewContext:
+    """Per-question settings the final-answer review reads; the model never chooses them.
+
+    Attributes
+    ----------
+    requested_fiscal_years : tuple[int, ...]
+        Fiscal years the question asks about, as ``run_agent`` receives them.
+    evidence_reader : EvidenceReader | None
+        App-internal reader of the cited chunks' text and table fragments for the
+        figure check; not a tool. ``None`` leaves figures without readable evidence.
+    """
+
+    requested_fiscal_years: tuple[int, ...] = ()
+    evidence_reader: EvidenceReader | None = None
+
+
+class CitedEvidenceReadError(RuntimeError):
+    """The cited evidence of a final answer could not be read for the figure check.
+
+    :class:`ReviewGate` raises it instead of judging the answer without its evidence;
+    :class:`StopOnSystemFailure` turns it into the run's failure. ``failure`` is
+    already redacted, and ``message``/``call`` are the model reply and the final call
+    the failure must answer.
+    """
+
+    def __init__(self, message: AIMessage, call: MessageToolCall, failure: str) -> None:
+        """Keep the reply and call to answer, and the redacted failure."""
+        super().__init__(failure)
+        self.message = message
+        self.call = call
+        self.failure = failure
+
+
+def final_answer_format() -> ToolStrategy[dict[str, Any]]:
+    """Offer ``run_agent``'s strict ``final_answer`` schema as the agent's structured output.
+
+    The schema is a plain JSON schema, so LangChain only parses the call's JSON and
+    never validates it; :meth:`ReviewGate.awrap_model_call` owns validation and every
+    accept, report or reject decision.
+    """
+    spec = final_answer_spec()
+    return ToolStrategy(
+        {**spec["parameters"], "title": spec["name"], "description": spec["description"]}
+    )
 
 
 def merge_evidence(left: EvidenceLedger | None, right: EvidenceLedger | None) -> EvidenceLedger:
@@ -79,9 +151,17 @@ def keep_first_failure(left: str | None, right: str | None) -> str | None:
 
 
 class ReviewState(AgentState[Any]):
-    """Agent state with the identities this question's tools returned, by chunk id."""
+    """Agent state with this question's evidence identities and report records.
+
+    ``period_mismatch`` and ``unit_unverified`` hold the JSON form of the loop's
+    :class:`~app.agent.types.AgentPeriodMismatch` and
+    :class:`~app.agent.types.AgentUnitUnverified` when the accepted report is a period
+    mismatch or withholds its figures; otherwise they are ``None``.
+    """
 
     evidence: Annotated[NotRequired[EvidenceLedger], merge_evidence]
+    period_mismatch: NotRequired[dict[str, Any] | None]
+    unit_unverified: NotRequired[dict[str, Any] | None]
 
 
 class StopState(ReviewState):
@@ -90,12 +170,46 @@ class StopState(ReviewState):
     failure: Annotated[NotRequired[str | None], keep_first_failure]
 
 
-def _error(request: ToolCallRequest, text: str) -> ToolMessage:
-    """Answer one tool call with a correctable error the model reads as its result."""
-    call = request.tool_call
+def _error(call: MessageToolCall, text: str) -> ToolMessage:
+    """Answer one call with a correctable error the model reads as its result."""
     return ToolMessage(
         content=f"ERROR: {text}", tool_call_id=call["id"], name=call["name"], status="error"
     )
+
+
+def _rejected(message: AIMessage, calls: Sequence[MessageToolCall], text: str) -> ModelResponse:
+    """Keep the model reply, answer each call with ``text`` and accept nothing."""
+    return ModelResponse(
+        result=[message, *(_error(call, text) for call in calls)], structured_response=None
+    )
+
+
+def _report(answer: AgentAnswer) -> AgentReportAnswer:
+    """Widen an accepted model answer to the report type, as ``run_agent`` does."""
+    return AgentReportAnswer.model_validate(answer.model_dump())
+
+
+def _accepted(
+    message: AIMessage,
+    call: MessageToolCall,
+    report: AgentReportAnswer,
+    **records: dict[str, Any],
+) -> ModelResponse | ExtendedModelResponse:
+    """Acknowledge the final call under its id and end on ``report`` with its records.
+
+    ``records`` are the ``period_mismatch``/``unit_unverified`` state updates of a
+    report the loop qualifies; a plain answer needs none, because each question
+    starts with both cleared.
+    """
+    acknowledgement = ToolMessage(
+        content=f"final_answer accepted as {report.label}",
+        tool_call_id=call["id"],
+        name=call["name"],
+    )
+    response = ModelResponse(result=[message, acknowledgement], structured_response=report)
+    if not records:
+        return response
+    return ExtendedModelResponse(model_response=response, command=Command(update=records))
 
 
 def _validate(tool: Tool[Any], arguments: dict[str, Any]) -> BaseModel | str:
@@ -132,8 +246,13 @@ def _returned_identities(tool: Tool[Any], message: ToolMessage) -> tuple[Evidenc
     return found
 
 
-class ReviewGate(AgentMiddleware[ReviewState]):
-    """Strict arguments, a question-scoped fetch guard and an evidence ledger for tool calls.
+class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
+    """Question-scoped tool rules and the final-answer gate of ``run_agent``.
+
+    Tool calls get strict arguments, a question-scoped fetch guard and an evidence
+    ledger. A model reply that proposes ``final_answer`` is reviewed before the run
+    may end on it; give the agent :func:`final_answer_format` as its response format
+    and a :class:`ReviewContext` as its context.
 
     Parameters
     ----------
@@ -144,13 +263,15 @@ class ReviewGate(AgentMiddleware[ReviewState]):
 
     Notes
     -----
-    The ledger lives in graph state (``ReviewState.evidence``), never on the
-    middleware, so one gate can serve concurrent runs and a checkpointed thread
-    keeps its ledger with the rest of its state. Each invocation is one question:
-    ``before_agent`` clears the ledger, so identities retrieved for an earlier
-    question on the same thread cannot authorize a fetch. Rejections are error tool
-    results the model can correct. Failures the model cannot correct, such as a
-    successful result without structured content, raise instead.
+    The ledger and report records live in graph state (:class:`ReviewState`), never
+    on the middleware, so one gate can serve concurrent runs and a checkpointed
+    thread keeps them with the rest of its state. Each invocation is one question:
+    ``before_agent`` clears the ledger, the report records and the structured
+    response, so nothing retrieved, accepted or withheld for an earlier question on
+    the same thread carries over. Rejections are error tool results the model can
+    correct. Failures the model cannot correct raise instead: a successful tool
+    result without structured content, or :class:`CitedEvidenceReadError`, which
+    needs :class:`StopOnSystemFailure` in the stack to end the run as a failure.
     """
 
     state_schema = ReviewState
@@ -160,10 +281,17 @@ class ReviewGate(AgentMiddleware[ReviewState]):
         super().__init__()
         self.contracts = contracts
 
-    def before_agent(self, state: ReviewState, runtime: Runtime[None]) -> dict[str, Any] | None:
-        """Start each invocation, one question, with an empty evidence ledger."""
+    def before_agent(
+        self, state: ReviewState, runtime: Runtime[ReviewContext]
+    ) -> dict[str, Any] | None:
+        """Start each invocation, one question, with no evidence, report or answer."""
         del state, runtime
-        return {"evidence": None}
+        return {
+            "evidence": None,
+            "period_mismatch": None,
+            "unit_unverified": None,
+            "structured_response": None,
+        }
 
     async def awrap_tool_call(
         self, request: ToolCallRequest, handler: ToolHandler
@@ -200,11 +328,11 @@ class ReviewGate(AgentMiddleware[ReviewState]):
         tool = self.contracts.get(name)
         parameters = _validate(tool, request.tool_call["args"])
         if isinstance(parameters, str):
-            return _error(request, parameters)
+            return _error(request.tool_call, parameters)
         evidence: EvidenceLedger = request.state.get("evidence") or {}
         if isinstance(parameters, FetchChunkParams) and parameters.chunk_id not in evidence:
             return _error(
-                request,
+                request.tool_call,
                 f"chunk {parameters.chunk_id} was not retrieved in this question; search first",
             )
 
@@ -215,11 +343,112 @@ class ReviewGate(AgentMiddleware[ReviewState]):
         conflict = next((k for k, v in found.items() if k in evidence and evidence[k] != v), None)
         if conflict is not None:
             return _error(
-                request, f"tool returned conflicting immutable identity for chunk {conflict}"
+                request.tool_call,
+                f"tool returned conflicting immutable identity for chunk {conflict}",
             )
         if not found:
             return result
         return Command(update={"messages": [result], "evidence": found})
+
+    async def awrap_model_call(
+        self, request: ModelRequest[Any], handler: ModelHandler
+    ) -> ModelResult:
+        """Accept, report or return the model's ``final_answer`` under the loop's policy.
+
+        Parameters
+        ----------
+        request : ModelRequest[Any]
+            The model call with the current graph state and the question's
+            :class:`ReviewContext`, if one was given.
+        handler : ModelHandler
+            Calls the model through the inner middleware.
+
+        Returns
+        -------
+        ModelResult
+            The model's response unchanged when it proposes no final answer. Otherwise
+            the reply with one tool result per call: an error for each call and no
+            structured response when the answer must be revised, or an acknowledgement
+            with the accepted report as the structured response, plus its period
+            mismatch or withheld-figure record.
+
+        Raises
+        ------
+        CitedEvidenceReadError
+            If the evidence reader fails, so the answer is never judged without its
+            evidence; :class:`StopOnSystemFailure` records it as the run's failure.
+        """
+        response = await handler(request)
+        message = next((m for m in response.result if isinstance(m, AIMessage)), None)
+        if message is None:
+            return response
+        finals = [call for call in message.tool_calls if call["name"] == FINAL_ANSWER_NAME]
+        if not finals:
+            return response
+        if len(message.tool_calls) != 1:
+            return _rejected(message, message.tool_calls, FINAL_NOT_ALONE)
+        (call,) = finals
+        context = request.runtime.context
+        return await self._review_final(
+            message,
+            call,
+            request.state.get("evidence") or {},
+            context if isinstance(context, ReviewContext) else ReviewContext(),
+        )
+
+    async def _review_final(
+        self,
+        message: AIMessage,
+        call: MessageToolCall,
+        ledger: EvidenceLedger,
+        context: ReviewContext,
+    ) -> ModelResult:
+        """Apply ``run_agent``'s final-answer steps to one lone ``final_answer`` call.
+
+        Identity comes first, against this question's ledger; only a ``SUPPORTED``
+        answer with matching citations has its cited evidence read and its figures
+        checked, in the loop's order and with its report helpers.
+        """
+        evidence = {
+            chunk_id: EvidenceCitation.model_validate(identity)
+            for chunk_id, identity in ledger.items()
+        }
+        proposed = ToolCall(
+            call_id=call["id"] or FINAL_ANSWER_NAME,
+            name=FINAL_ANSWER_NAME,
+            arguments_json=json.dumps(call["args"]),
+        )
+        answer, problem = _final_answer(proposed, evidence)
+        if answer is not None and answer.label == "SUPPORTED":
+            cited = tuple(citation.chunk_id for citation in answer.citations)
+            reader = context.evidence_reader
+            try:
+                texts = await reader(cited) if reader is not None else {}
+            except GraphBubbleUp:
+                raise
+            except Exception as error:
+                failure = safe_runtime_error(error, "cited evidence read")
+                raise CitedEvidenceReadError(message, call, failure) from error
+            figures = check_figures(
+                answer.answer,
+                [texts[chunk_id] for chunk_id in cited if chunk_id in texts],
+                context.requested_fiscal_years,
+            )
+            if figures.verdict == "unverified":
+                answer, problem = None, _figures_problem(figures, context.requested_fiscal_years)
+            elif figures.verdict == "unit_unverified":
+                report, held = _unit_unverified_answer(answer, figures)
+                return _accepted(
+                    message, call, report, unit_unverified=held.model_dump(mode="json")
+                )
+            elif figures.verdict == "period_mismatch":
+                report, mismatch = _mismatch_answer(answer, figures, context.requested_fiscal_years)
+                return _accepted(
+                    message, call, report, period_mismatch=mismatch.model_dump(mode="json")
+                )
+        if answer is None:
+            return _rejected(message, [call], problem)
+        return _accepted(message, call, _report(answer))
 
 
 class StopOnSystemFailure(AgentMiddleware[StopState]):
@@ -233,6 +462,10 @@ class StopOnSystemFailure(AgentMiddleware[StopState]):
     an empty search. Every other exception, including ``MCPError`` with another code,
     propagates unchanged.
 
+    The gate's other system failure, a :class:`CitedEvidenceReadError` from reading a
+    final answer's cited evidence, ends the run the same way: the final call is
+    answered with the redacted error, nothing is accepted and the failure is recorded.
+
     Notes
     -----
     List it before :class:`ReviewGate` so it wraps the gate and the tool; an error raised
@@ -241,6 +474,33 @@ class StopOnSystemFailure(AgentMiddleware[StopState]):
     """
 
     state_schema = StopState
+
+    async def awrap_model_call(
+        self, request: ModelRequest[Any], handler: ModelHandler
+    ) -> ModelResult:
+        """Return the inner response, or record a cited-evidence read failure instead.
+
+        Parameters
+        ----------
+        request : ModelRequest[Any]
+            The model call and the current graph state.
+        handler : ModelHandler
+            Calls the model through the inner middleware, including the gate.
+
+        Returns
+        -------
+        ModelResult
+            The inner response unchanged, or, when the gate could not read the cited
+            evidence, the reply with an error result for the final call, no structured
+            response and the failure's already-redacted message.
+        """
+        try:
+            return await handler(request)
+        except CitedEvidenceReadError as error:
+            return ExtendedModelResponse(
+                model_response=_rejected(error.message, [error.call], error.failure),
+                command=Command(update={"failure": error.failure}),
+            )
 
     def before_agent(self, state: StopState, runtime: Runtime[None]) -> dict[str, Any] | None:
         """Start each invocation, one question, without a recorded failure."""
