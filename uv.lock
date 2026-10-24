@@ -535,7 +535,7 @@ name = "cuda-bindings"
 version = "13.4.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder", marker = "extra == 'extra-13-docreview-rag-cu130' or (extra == 'extra-13-docreview-rag-cpu' and extra == 'extra-13-docreview-rag-rocm')" },
+    { name = "cuda-pathfinder", marker = "(python_full_version < '3.15' and extra == 'extra-13-docreview-rag-cu130') or (extra == 'extra-13-docreview-rag-cpu' and extra == 'extra-13-docreview-rag-cu130') or (extra == 'extra-13-docreview-rag-cpu' and extra == 'extra-13-docreview-rag-rocm') or (extra == 'extra-13-docreview-rag-cu130' and extra == 'extra-13-docreview-rag-rocm')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e6/f0/d71d1dd45caa358a39c6898dcc9f1bd22a9f22b92376b967835c047b50bc/cuda_bindings-13.4.4-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:4a429132f06d0c3a853aa419aabe4c0a7bfc3f3886fb4c336d81729f63754d31", size = 6407946, upload-time = "2026-10-14T12:35:39.826Z" },
@@ -656,6 +656,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "langchain", extra = ["mcp"] },
+    { name = "langchain-openai" },
     { name = "lxml" },
     { name = "mcp" },
     { name = "openai" },
@@ -701,6 +702,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain", extras = ["mcp"], specifier = ">=1.4.6,<1.5" },
+    { name = "langchain-openai", specifier = ">=1.7.2,<2" },
     { name = "lxml", specifier = ">=6.1.1" },
     { name = "mcp", specifier = ">=2.3.0,<3" },
     { name = "openai", specifier = ">=2.53.0" },
@@ -1378,6 +1380,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/12/c2/9779d64322d4e270f6d5392bc86b30f735581a87b5eefd6ad15a0828a169/langchain_core-1.6.12.tar.gz", hash = "sha256:dc6b2a965c351b4cc94df1c80220bcf3c5472e14437d2186c8290ea22f4d0219", size = 1015639, upload-time = "2026-10-16T19:28:31.055Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c6/7b/49de1d4d6b9ff62e7c40a6fceb6aeecd8c190ac5f49dd7a99948c6650c16/langchain_core-1.6.12-py3-none-any.whl", hash = "sha256:39b07aed976baac14c47b7a21e3c7d4073362bccf06cf8799c585dcc9548547d", size = 573838, upload-time = "2026-10-16T19:28:29.466Z" },
+]
+
+[[package]]
+name = "langchain-openai"
+version = "1.7.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "langchain-core" },
+    { name = "openai" },
+    { name = "tiktoken" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/ca/b64799a9f2ee688aa6c238f5230b20d150b19cc5892bdcb6faf2b59866f1/langchain_openai-1.7.2.tar.gz", hash = "sha256:e1fcbc7a96f7c8c94679d61639a979bba88f27889c0a68dfa225b8057345328d", size = 3405949, upload-time = "2026-10-14T13:50:59.956Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/5d/8c4888a21087e4cd1c32965613a1a17cfc8e90e41ba5205c3dad302f3410/langchain_openai-1.7.2-py3-none-any.whl", hash = "sha256:9be7980edf355ca2dd595b795a5125836ccf04515ef9377228913246156e59f5", size = 146367, upload-time = "2026-10-14T13:50:58.697Z" },
 ]
 
 [[package]]
