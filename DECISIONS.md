@@ -74,3 +74,10 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-10-25
 - source: mcp-and-langgraph Day 5A 6.5 A (learning branch session decision)
 - decision: Ingestion stores each table, its source cells, its normalized cells with their interpretation, and chunk-to-cell memberships as relational records built once at chunking, and the table_fragment JSONB of chunks and snapshot_chunks is removed after a verified backfill; this is an exception to D-3's schema-freeze clause for this change only, and chunk stable_key, chunk ids, embeddings and the corpus identity digest keep their current inputs.
+
+### D-8 — Cell facts come from the filing's own fact tags
+- status: active
+- category: interface
+- date: 2026-10-26
+- source: mcp-and-langgraph Day 5A follow-up (learning branch session decision, design 2026-10-26-cell-fact-tags)
+- decision: Parsing keeps SEC inline XBRL facts and DART ACODE/ACONTEXT tags, and the period terms a DART filing declares, as relational records; a tagged cell's currency, scale, fiscal year and dimensional scope come from its tag and override the text reading with the override recorded, dimensional values are not selectable, items still come only from row labels, untagged cells keep the text rules with no general currency or period assumption, and published evaluation snapshots keep their stored readings; this is an exception to D-3's schema-freeze clause for this change only, and chunk stable_key, chunk ids and embeddings keep their current inputs.
