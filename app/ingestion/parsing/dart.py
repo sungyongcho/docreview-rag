@@ -18,6 +18,7 @@ import unicodedata
 
 from bs4 import Tag
 
+from app.ingestion.parsing.facts import dart_facts
 from app.ingestion.parsing.html import (
     HEADING_TAGS,
     REPORTED_TITLE_MAX,
@@ -255,6 +256,7 @@ def parse_dart_filing(source: FilingSource) -> tuple[ParsedFiling, dict[str, Any
         warnings=warnings,
         profile_used="static",
         segment_type="dart_part",
+        facts=dart_facts(raw, metadata),
     )
     return filing, {"segmentation": {"kind": "dart_section_1", "parts": list(DART_PARTS)}}
 

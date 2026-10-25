@@ -186,7 +186,13 @@ def embedding_chunk_config(
 def _parser_identity(registry: str) -> str:
     """Fingerprint the source parser and its structural processing dependencies."""
     parsing = Path(__file__).with_name("parsing")
-    names = ["models.py", "html.py", "tables.py", "sec.py" if registry == "sec" else "dart.py"]
+    names = [
+        "models.py",
+        "html.py",
+        "tables.py",
+        "facts.py",
+        "sec.py" if registry == "sec" else "dart.py",
+    ]
     if registry == "sec":
         names.append("sec_xref.py")
     return hashlib.sha256(b"".join((parsing / name).read_bytes() for name in names)).hexdigest()
@@ -228,6 +234,8 @@ def structure_values(filing: ParsedFiling) -> dict[str, Any]:
             source.artifact.sha256,
             filing.source_sha256,
             identity,
+            # Tagged facts are part of what this parse found in the source.
+            filing.facts.fingerprint(),
             filing.parse_status,
             item_index,
             payload,

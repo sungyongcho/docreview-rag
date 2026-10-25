@@ -17,6 +17,7 @@ import re
 from bs4 import BeautifulSoup, Tag
 from bs4.element import NavigableString
 
+from app.ingestion.parsing.facts import sec_facts
 from app.ingestion.parsing.html import (
     HEADING_TAGS,
     REPORTED_TITLE_MAX,
@@ -873,6 +874,7 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
         source=source,
         source_length=len(raw),
         source_sha256=source_digest(raw),
+        facts=sec_facts(raw, metadata),
     )
 
     profile_path = source.corpus_root / "sec" / issuer / "profile.json"

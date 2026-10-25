@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
+from app.ingestion.parsing.facts import FilingFacts
 from app.ingestion.sources.models import FilingSource
 
 ItemStatus = Literal["parsed", "empty_disclosure", "incorporated_by_reference"]
@@ -59,3 +60,5 @@ class ParsedFiling:
     warnings: list[str] = field(default_factory=list)
     profile_used: str = "saved"  # bootstrap | saved | relearned
     segment_type: str = ""
+    # Tagged facts the filing declares for its figures, located by source span.
+    facts: FilingFacts = field(default_factory=FilingFacts)
