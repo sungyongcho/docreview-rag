@@ -497,6 +497,30 @@ _KOREAN_PHRASES = {phrase: item for phrase, item in _PHRASE_ITEMS.items() if not
 _ITEM_WORDS = frozenset(word for words, _ in _ENGLISH_PHRASES for word in words)
 
 
+def items_named(text: str) -> frozenset[str]:
+    """Return the financial items a question names, read with the answers' vocabulary.
+
+    English phrases match whole words, longest first; Korean phrases match as stems,
+    longest first, so "매출원가" is not also read as "매출". A question naming no listed
+    phrase names no item: nothing is inferred from other words.
+    """
+    found: set[str] = set()
+    words = [word.casefold() for word in _TOKEN.findall(text)]
+    used = [False] * len(words)
+    for phrase, item in _ENGLISH_PHRASES:
+        size = len(phrase)
+        for start in range(len(words) - size + 1):
+            if not any(used[start : start + size]) and tuple(words[start : start + size]) == phrase:
+                found.add(item)
+                used[start : start + size] = [True] * size
+    remaining = "".join(text.split())
+    for phrase in sorted(_KOREAN_PHRASES, key=len, reverse=True):
+        if phrase in remaining:
+            found.add(_KOREAN_PHRASES[phrase])
+            remaining = remaining.replace(phrase, " ")
+    return frozenset(found)
+
+
 @dataclass(frozen=True, slots=True)
 class EvidenceText:
     """One cited chunk as the checker reads it.

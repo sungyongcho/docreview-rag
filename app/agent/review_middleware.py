@@ -13,11 +13,11 @@ system failure the model cannot correct ends the run instead of reaching the mod
 though nothing were found.
 """
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import json
-from typing import Annotated, Any, NotRequired
+from typing import Annotated, Any, Literal, NotRequired
 
 from langchain.agents.middleware import (
     AgentMiddleware,
@@ -37,6 +37,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import INTERNAL_ERROR
 from pydantic import BaseModel, ValidationError
 
+from app.agent.cell_answers import StoredCell, review_cell_selection
 from app.agent.loop import (
     EvidenceReader,
     _figures_problem,
@@ -47,7 +48,7 @@ from app.agent.loop import (
 )
 from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import FINAL_ANSWER_NAME, Tool, ToolRegistry, safe_runtime_error
-from app.agent.types import AgentAnswer, AgentReportAnswer, ToolCall
+from app.agent.types import AgentAnswer, AgentReportAnswer, CellSelectionAnswer, ToolCall
 from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.figures import check_figures
@@ -63,6 +64,9 @@ type ModelResult = ModelResponse[Any] | AIMessage | ExtendedModelResponse[Any]
 FINAL_NOT_ALONE = "final_answer must be the only tool call in its provider turn"
 
 
+type CellReader = Callable[[tuple[str, ...]], Awaitable[Mapping[str, StoredCell]]]
+
+
 @dataclass(frozen=True, slots=True)
 class ReviewContext:
     """Per-question settings the final-answer review reads; the model never chooses them.
@@ -72,12 +76,25 @@ class ReviewContext:
     requested_fiscal_years : tuple[int, ...]
         Fiscal years the question asks about, as ``run_agent`` receives them.
     evidence_reader : EvidenceReader | None
-        App-internal reader of the cited chunks' text and table fragments for the
+        App-internal reader of the cited chunks' text and table readings for the
         figure check; not a tool. ``None`` leaves figures without readable evidence.
+    cell_answers : bool
+        Whether ``final_answer`` selects table cells (:class:`CellSelectionAnswer`,
+        offered by ``final_answer_format(cells=True)``) instead of writing an answer.
+    requested_items : frozenset[str]
+        Financial items the question names, read by the application from its text.
+    locale : Literal["en", "ko"]
+        Language the application writes a cell-selected answer in.
+    cell_reader : CellReader | None
+        App-internal reader of the selected cells as stored now; required in cell mode.
     """
 
     requested_fiscal_years: tuple[int, ...] = ()
     evidence_reader: EvidenceReader | None = None
+    cell_answers: bool = False
+    requested_items: frozenset[str] = frozenset()
+    locale: Literal["en", "ko"] = "en"
+    cell_reader: CellReader | None = None
 
 
 class CitedEvidenceReadError(RuntimeError):
@@ -97,13 +114,30 @@ class CitedEvidenceReadError(RuntimeError):
         self.failure = failure
 
 
-def final_answer_format() -> ToolStrategy[dict[str, Any]]:
-    """Offer ``run_agent``'s strict ``final_answer`` schema as the agent's structured output.
+CELL_FINAL_DESCRIPTION = (
+    "Finish with the table cells that answer the question. Name cells only by the ref a "
+    "fetch_chunk result listed in this question, with the item and fiscal year you claim "
+    "for each; never write an amount, the application writes the answer. Use "
+    "cannot_resolve with the retrieved chunk ids when the evidence relates to the "
+    "question but no listed cell establishes the answer, and NOT_IN_DOCS with not_found "
+    "only when the searched evidence holds no answer."
+)
 
-    The schema is a plain JSON schema, so LangChain only parses the call's JSON and
-    never validates it; :meth:`ReviewGate.awrap_model_call` owns validation and every
-    accept, report or reject decision.
+
+def final_answer_format(*, cells: bool = False) -> ToolStrategy[dict[str, Any]]:
+    """Offer the strict ``final_answer`` schema as the agent's structured output.
+
+    By default it is ``run_agent``'s written-answer schema; with ``cells`` it is the
+    :class:`CellSelectionAnswer` schema that names table cells and no amount. The schema
+    is plain JSON, so LangChain only parses the call's JSON and never validates it;
+    :meth:`ReviewGate.awrap_model_call` owns validation and every accept, report or
+    reject decision.
     """
+    if cells:
+        schema = CellSelectionAnswer.model_json_schema()
+        return ToolStrategy(
+            {**schema, "title": FINAL_ANSWER_NAME, "description": CELL_FINAL_DESCRIPTION}
+        )
     spec = final_answer_spec()
     return ToolStrategy(
         {**spec["parameters"], "title": spec["name"], "description": spec["description"]}
@@ -211,6 +245,7 @@ class ReviewState(AgentState[Any]):
 
     evidence: Annotated[NotRequired[EvidenceLedger], merge_evidence]
     cells: Annotated[NotRequired[CellLedger], merge_cells]
+    cell_checks: NotRequired[list[dict[str, Any]] | None]
     period_mismatch: NotRequired[dict[str, Any] | None]
     unit_unverified: NotRequired[dict[str, Any] | None]
 
@@ -244,7 +279,7 @@ def _accepted(
     message: AIMessage,
     call: MessageToolCall,
     report: AgentReportAnswer,
-    **records: dict[str, Any],
+    **records: dict[str, Any] | list[dict[str, Any]],
 ) -> ModelResponse | ExtendedModelResponse:
     """Acknowledge the final call under its id and end on ``report`` with its records.
 
@@ -340,6 +375,7 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         return {
             "evidence": None,
             "cells": None,
+            "cell_checks": None,
             "period_mismatch": None,
             "unit_unverified": None,
             "structured_response": None,
@@ -453,12 +489,12 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
             return _rejected(message, message.tool_calls, FINAL_NOT_ALONE)
         (call,) = finals
         context = request.runtime.context
-        return await self._review_final(
-            message,
-            call,
-            request.state.get("evidence") or {},
-            context if isinstance(context, ReviewContext) else ReviewContext(),
-        )
+        context = context if isinstance(context, ReviewContext) else ReviewContext()
+        evidence = request.state.get("evidence") or {}
+        if context.cell_answers:
+            cells = request.state.get("cells") or {}
+            return await self._review_cells(message, call, evidence, cells, context)
+        return await self._review_final(message, call, evidence, context)
 
     async def _review_final(
         self,
@@ -513,6 +549,59 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         if answer is None:
             return _rejected(message, [call], problem)
         return _accepted(message, call, _report(answer))
+
+    async def _review_cells(
+        self,
+        message: AIMessage,
+        call: MessageToolCall,
+        evidence: EvidenceLedger,
+        cells: CellLedger,
+        context: ReviewContext,
+    ) -> ModelResult:
+        """Check one cell-selecting ``final_answer`` and report the answer it assembles.
+
+        The proposal names cells only; the stored cells are read again so a changed
+        source ends the run instead of being reported, and the answer is written by the
+        application from the stored values.
+        """
+        try:
+            proposal = CellSelectionAnswer.model_validate_json(
+                json.dumps(call["args"]), strict=True
+            )
+        except ValidationError as error:
+            problem = f"invalid final_answer: {'; '.join(validation_errors(error))}"
+            return _rejected(message, [call], problem)
+        reader = context.cell_reader
+        refs = tuple(selection.cell_id for selection in proposal.selections)
+        try:
+            if reader is None:
+                raise RuntimeError("no stored cell reader is configured")
+            stored = await reader(refs) if refs else {}
+            verdict = review_cell_selection(
+                proposal,
+                ledger=cells,
+                evidence=evidence,
+                stored=stored,
+                requested_items=context.requested_items,
+                requested_years=context.requested_fiscal_years,
+                locale=context.locale,
+            )
+        except GraphBubbleUp:
+            raise
+        except Exception as error:
+            failure = safe_runtime_error(error, "stored cell read")
+            raise CitedEvidenceReadError(message, call, failure) from error
+        if verdict.report is None:
+            assert verdict.problem is not None
+            return _rejected(message, [call], verdict.problem)
+        records: dict[str, dict[str, Any] | list[dict[str, Any]]] = {
+            "cell_checks": list(verdict.checks)
+        }
+        if verdict.period_mismatch is not None:
+            records["period_mismatch"] = verdict.period_mismatch.model_dump(mode="json")
+        if verdict.unit_unverified is not None:
+            records["unit_unverified"] = verdict.unit_unverified.model_dump(mode="json")
+        return _accepted(message, call, verdict.report, **records)
 
 
 class StopOnSystemFailure(AgentMiddleware[StopState]):

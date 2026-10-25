@@ -19,8 +19,11 @@ paid outcome is uncertain is never repeated under the same ID. Requests are neve
 every paid request reserves its estimated cost against a cap first.
 
 ``agent`` runs ``run_agent`` by default. ``--via create-agent`` instead runs
-``create_agent`` with ``MCPAdapter``, the section 6.3 ``ReviewGate`` and
-``StopOnSystemFailure``, and a Responses-API ``ChatOpenAI``. Before every model
+``create_agent`` with ``MCPAdapter``, ``ReviewGate`` and ``StopOnSystemFailure``,
+and a Responses-API ``ChatOpenAI``. On that path the server returns each fetched
+chunk's stored table cells and the model's ``final_answer`` selects cells (section
+6.6); the application checks the selection and writes the answer, in English or,
+with ``--locale ko``, Korean. Before every model
 turn the complete request input is counted by OpenAI's input-token count endpoint
 (``POST /v1/responses/input_tokens``), and the counted input plus the turn's maximum
 output is reserved at the model's rates; a count that fails or a reservation that
@@ -308,6 +311,8 @@ def agent_model_settings(args: argparse.Namespace) -> ModelSettings | None:
     given = {name: getattr(args, name) for name in CREATE_AGENT_OPTIONS}
     if args.via != "create-agent":
         unused = [f"--{name.replace('_', '-')}" for name, value in given.items() if value]
+        if args.locale:
+            unused.append("--locale")
         if unused:
             raise SystemExit(f"{', '.join(unused)} apply only with --via create-agent")
         return None
@@ -716,8 +721,14 @@ def review_agent(
     tools: Sequence[BaseTool],
     contracts: ToolRegistry,
     gate: ModelGate,
+    *,
+    cells: bool = False,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
-    """Compose the counted model with the section 6.3 review and system-failure stop."""
+    """Compose the counted model with the review gate and system-failure stop.
+
+    ``cells`` offers the cell-selecting final answer (section 6.6) instead of the
+    written one (section 6.3).
+    """
     middleware: list[AgentMiddleware[Any, Any]] = [
         ReserveBeforeSend(gate),
         StopOnSystemFailure(),
@@ -736,7 +747,7 @@ def review_agent(
         list(tools),
         system_prompt=build_instructions(contracts) + SYSTEM_SUFFIX,
         middleware=middleware,
-        response_format=final_answer_format(),
+        response_format=final_answer_format(cells=cells),
         context_schema=ReviewContext,
     )
 
@@ -786,8 +797,11 @@ def read_only_engine() -> AsyncEngine:
     )
 
 
-async def serve(run_dir: Path, embedding: Reservation) -> None:
-    """Serve the filings MCP server over the read-only DB with a capped embedder."""
+async def serve(run_dir: Path, embedding: Reservation, *, include_cells: bool = False) -> None:
+    """Serve the filings MCP server over the read-only DB with a capped embedder.
+
+    ``include_cells`` makes ``fetch_chunk`` return each chunk's stored table cells.
+    """
     from openai import AsyncOpenAI
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -818,7 +832,7 @@ async def serve(run_dir: Path, embedding: Reservation) -> None:
     try:
         if settings.embedding_provider != "openai" or settings.openai_api_key is None:
             # The configured local embedder is free, so no cap applies.
-            await serve_stdio(build_default_registry(sessions))
+            await serve_stdio(build_default_registry(sessions, include_cells=include_cells))
             return
         async with AsyncOpenAI(
             api_key=settings.openai_api_key.get_secret_value(), max_retries=0, timeout=20
@@ -829,7 +843,11 @@ async def serve(run_dir: Path, embedding: Reservation) -> None:
                 credential_slot=settings.openai_key_slot,
             )
             try:
-                await serve_stdio(build_default_registry(sessions, embedding_provider=provider))
+                await serve_stdio(
+                    build_default_registry(
+                        sessions, embedding_provider=provider, include_cells=include_cells
+                    )
+                )
             finally:
                 embedding.write(
                     "embedding",
@@ -971,9 +989,14 @@ async def run_review_agent_over_mcp(
     from langchain.mcp import MCPAdapter
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from app.agent.tools.filings import build_default_registry, read_cited_evidence
+    from app.agent.tools.filings import (
+        build_default_registry,
+        read_cited_evidence,
+        read_selected_cells,
+    )
     from app.agent.types import AgentBudget
     from app.config import get_settings
+    from app.contracts.figures import items_named
     from app.query.periods import question_fiscal_years, utc_today
 
     config = get_settings()
@@ -991,10 +1014,14 @@ async def run_review_agent_over_mcp(
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         async with MCPAdapter(transport) as adapter:
             tools = await adapter.list_tools()
-            agent = review_agent(model, tools, build_default_registry(sessions), gate)
+            agent = review_agent(model, tools, build_default_registry(sessions), gate, cells=True)
             context = ReviewContext(
                 question_fiscal_years(args.question, utc_today()),
                 partial(read_cited_evidence, sessions),
+                cell_answers=True,
+                requested_items=items_named(args.question),
+                locale=args.locale or "en",
+                cell_reader=partial(read_selected_cells, sessions),
             )
             return await ask_review_agent(agent, args.question, context, gate)
     finally:
@@ -1051,6 +1078,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             args.embedding_cap,
             "--embedding-attempts",
             str(args.embedding_attempts),
+            *(["--include-cells"] if settings is not None else []),
         ],
         env=dict(os.environ),
     )
@@ -1136,6 +1164,11 @@ def parser() -> argparse.ArgumentParser:
         ),
     )
     create_only.add_argument(
+        "--locale",
+        choices=("en", "ko"),
+        help="language the application writes the cell-selected answer in (default en)",
+    )
+    create_only.add_argument(
         "--reasoning-effort",
         choices=REASONING_EFFORTS,
         help="reasoning effort to send (default: the registry's, or none sent for other models)",
@@ -1143,6 +1176,7 @@ def parser() -> argparse.ArgumentParser:
     serve_command = commands.add_parser("serve", help=argparse.SUPPRESS)
     serve_command.add_argument("--embedding-cap", dest="serve_cap", required=True)
     serve_command.add_argument("--embedding-attempts", dest="serve_attempts", type=int)
+    serve_command.add_argument("--include-cells", dest="serve_cells", action="store_true")
     return root
 
 
@@ -1151,7 +1185,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser().parse_args(argv)
     if args.command == "serve":
         budget = Reservation(Decimal(args.serve_cap), args.serve_attempts)
-        asyncio.run(serve(args.out / args.run_id, budget))
+        asyncio.run(serve(args.out / args.run_id, budget, include_cells=args.serve_cells))
         return
     record = asyncio.run(run(args))
     print(json.dumps(record, ensure_ascii=False, indent=2, default=str))

@@ -7,11 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import field_validator
 from sqlalchemy import select
 
+from app.agent.cell_answers import StoredCell
 from app.agent.tools.registry import Tool, ToolError, ToolRegistry
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.figures import EvidenceText
 from app.contracts.validation import NonBlank, PositiveInt, StrictSchema
-from app.db.models import Chunk
+from app.db.models import Chunk, ChunkTableCell, TableCell
 from app.db.session_factory import SessionFactory
 from app.retrieval.embedding.provider import (
     EmbeddingIdentity,
@@ -384,3 +385,46 @@ async def read_cited_evidence(
         chunk_id: EvidenceText(chunk_id, body, context_header, readings.get(chunk_id))
         for chunk_id, body, context_header in rows
     }
+
+
+async def read_selected_cells(
+    session_factory: SessionFactory, refs: tuple[str, ...]
+) -> dict[str, StoredCell]:
+    """Read selected cells as stored now, with the signed value the answer is written from.
+
+    A ref whose chunk no longer stores that cell is left out, so the gate treats it as a
+    changed source instead of answering from it.
+    """
+    chunk_ids = sorted({int(ref.split(":", 1)[0]) for ref in refs})
+    result: dict[str, StoredCell] = {}
+    async with session_factory() as session:
+        for chunk_id in chunk_ids:
+            catalog = await load_cell_catalog(session, chunk_id)
+            if catalog["status"] != "available":
+                continue
+            values = {
+                f"{chunk_id}:r{row}c{column}": value
+                for row, column, value in await session.execute(
+                    select(ChunkTableCell.source_row, ChunkTableCell.column_index, TableCell.value)
+                    .join(
+                        TableCell,
+                        (TableCell.table_id == ChunkTableCell.table_id)
+                        & (TableCell.source_row == ChunkTableCell.source_row)
+                        & (TableCell.column_index == ChunkTableCell.column_index),
+                    )
+                    .where(ChunkTableCell.chunk_id == chunk_id)
+                )
+            }
+            cells = catalog["cells"]
+            assert isinstance(cells, list)
+            for cell in cells:
+                if cell["ref"] in refs:
+                    result[cell["ref"]] = StoredCell(
+                        cell["ref"],
+                        chunk_id,
+                        cell,
+                        str(catalog["stable_key"]),
+                        str(catalog["resolver_identity"]),
+                        values.get(cell["ref"]),
+                    )
+    return result

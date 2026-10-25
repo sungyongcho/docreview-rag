@@ -195,6 +195,7 @@ def test_invalid_model_options_are_refused_while_parsing(options):
     [
         (["--model", "gpt-5.6-terra"], "--model apply only with --via create-agent"),
         (["--max-output-tokens", "100"], "--max-output-tokens apply only"),
+        (["--locale", "ko"], "--locale apply only with --via create-agent"),
         (["--via", "create-agent", "--model", "acme-responses-1"], "no registry rates"),
         (
             ["--via", "create-agent", "--model", "x", "--input-usd-per-million", "1"],
@@ -737,3 +738,19 @@ def test_a_model_call_outside_the_middleware_sends_nothing(tmp_path):
     with pytest.raises(RuntimeError, match="outside a ReserveBeforeSend turn"):
         asyncio.run(model.ainvoke("hello"))
     assert fake.requests == []
+
+
+def test_the_create_agent_path_selects_cells_and_its_server_returns_them(monkeypatch):
+    """Offer the cell-selecting final answer and serve fetched chunks with their cells."""
+    formats = []
+    monkeypatch.setattr(
+        live, "create_agent", lambda *_, **kw: formats.append(kw["response_format"])
+    )
+    gate = ModelGate(Reservation(Decimal("1"), 2), LUNA, 1000)
+    model = counted_model(LUNA, gate, api_key=FAKE_KEY)
+    review_agent(model, [], contracts(), gate, cells=True)
+    review_agent(model, [], contracts(), gate)
+    titles = [schema.schema["properties"].get("contract_version") for schema in formats]
+    assert titles[0] is not None and titles[1] is None
+    serve = parser().parse_args(["r", "serve", "--embedding-cap", "0.001", "--include-cells"])
+    assert serve.serve_cells is True

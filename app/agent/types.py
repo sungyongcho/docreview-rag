@@ -144,6 +144,36 @@ class AgentAnswer(StrictSchema):
         return self
 
 
+CELL_CONTRACT_VERSION = "cell-v1"
+MAX_CELL_SELECTIONS = 20
+
+CellRef = Annotated[StrictStr, Field(pattern=r"^[1-9][0-9]*:r[0-9]+c[0-9]+$")]
+
+
+class CellSelection(StrictSchema):
+    """One table cell the model selects, with the item and fiscal year it claims for it."""
+
+    cell_id: CellRef
+    claimed_item: NonBlank
+    claimed_fiscal_year: Annotated[StrictInt, Field(ge=1900, le=2100)]
+
+
+class CellSelectionAnswer(StrictSchema):
+    """A final answer that names table cells instead of writing amounts.
+
+    ``reason`` says how the proposal answers: ``selected`` cells, ``cannot_resolve``
+    when the retrieved chunks relate to the question but no single cell can be
+    established, or ``not_found`` when the searched evidence holds no answer. The
+    application checks the selection and writes the reported answer itself.
+    """
+
+    contract_version: Literal["cell-v1"]
+    label: AnswerLabel
+    reason: Literal["selected", "cannot_resolve", "not_found"]
+    selections: Annotated[tuple[CellSelection, ...], Field(max_length=MAX_CELL_SELECTIONS)]
+    unresolved_chunk_ids: Annotated[tuple[PositiveInt, ...], Field(max_length=MAX_CELL_SELECTIONS)]
+
+
 class AgentReportAnswer(AgentAnswer):
     """The answer a run reports.
 
