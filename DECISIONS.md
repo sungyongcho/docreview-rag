@@ -67,3 +67,10 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-09-25
 - source: PR #220
 - decision: Tests that repeat another test's behaviour, pin wording or implementation details, or cover only deleted code are removed with per-test coverage evidence; app/ and scripts/ line and branch coverage stays at or above the pre-pruning measurement, and no assertion about live behaviour is loosened.
+
+### D-7 — Table structures are canonical relational records
+- status: active
+- category: interface
+- date: 2026-10-25
+- source: mcp-and-langgraph Day 5A 6.5 A (learning branch session decision)
+- decision: Ingestion stores each table, its source cells, its normalized cells with their interpretation, and chunk-to-cell memberships as relational records built once at chunking, and the table_fragment JSONB of chunks and snapshot_chunks is removed after a verified backfill; this is an exception to D-3's schema-freeze clause for this change only, and chunk stable_key, chunk ids, embeddings and the corpus identity digest keep their current inputs.
