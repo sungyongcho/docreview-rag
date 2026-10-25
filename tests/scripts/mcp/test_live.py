@@ -16,6 +16,8 @@ from typing import Any, cast
 from fastmcp.client.transports import StdioTransport
 import httpx2
 from langchain.mcp import MCPAdapter
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import tool
 import openai
 import pytest
 
@@ -464,6 +466,105 @@ def test_reservations_and_observed_usage_are_recorded_apart(asked):
     assert journal(asked.work / "budget.jsonl") == turn * 2
     text = (asked.work / "budget.jsonl").read_text()
     assert FAKE_KEY not in text and REVENUE not in text
+
+
+def trace_events(work: Path) -> list[dict[str, Any]]:
+    """Read the durable diagnostic events written by the experiment itself."""
+    return [json.loads(line) for line in (work / "trace.jsonl").read_text().splitlines()]
+
+
+def test_trace_distinguishes_mcp_dispatch_and_final_review(asked):
+    """Real stdio search dispatch and accepted final feedback retain their call IDs."""
+    events = trace_events(asked.work)
+    assert [e["sequence"] for e in events] == list(range(1, len(events) + 1))
+    dispatched = [e for e in events if (e["layer"], e["event"]) == ("execution", "tool_start")]
+    assert [e["call"]["id"] for e in dispatched] == ["call_search"]
+    final = [e for e in events if (e["layer"], e["event"]) == ("gate", "model_result")][-1]
+    assert final["turn"] == 2 and final["report_label"] == "SUPPORTED"
+    assert final["messages"][0]["tool_calls"][0]["args"] == FINAL
+    assert final["messages"][1]["call_id"] == "call_final"
+    assert final["messages"][1]["content"] == "final_answer accepted as SUPPORTED"
+    assert FAKE_KEY not in (asked.work / "trace.jsonl").read_text()
+
+
+def test_trace_keeps_gate_rejections_before_attempt_exhaustion(tmp_path):
+    """A failed run still explains each refused final and the unsent next turn."""
+    fake = FakeOpenAI(counts=[1000, 1000], replies=[uncited(1), uncited(2)])
+    outcome, _ = ask_offline(tmp_path, fake, attempts=2)
+    assert outcome["status"] == "budget_exceeded"
+    events = trace_events(tmp_path)
+    reviewed = [e for e in events if (e["layer"], e["event"]) == ("gate", "model_result")]
+    assert len(reviewed) == 2
+    for number, event in enumerate(reviewed, 1):
+        assert event["has_structured_response"] is False
+        feedback = event["messages"][1]
+        assert feedback["call_id"] == f"call_{number}"
+        assert feedback["status"] == "error" and "2024" in feedback["content"]
+    assert events[-1]["event"] == "model_error" and events[-1]["turn"] == 3
+    assert not any(e["layer"] == "execution" and e["turn"] == 3 for e in events)
+    assert len(fake.bodies(RESPONSES_PATH)) == 2
+
+
+def test_trace_does_not_call_a_gate_rejected_fetch_an_execution(tmp_path):
+    """The evidence guard's rejection is visible without a false MCP dispatch event."""
+    fake = FakeOpenAI(
+        counts=[1000],
+        replies=[response("fetch_unseen", "fetch_chunk", {"chunk_id": 2024}, (900, 30))],
+    )
+    outcome, _ = ask_offline(tmp_path, fake, attempts=1)
+    assert outcome["status"] == "budget_exceeded"
+    events = trace_events(tmp_path)
+    feedback = [e for e in events if e["event"] == "tool_result"]
+    assert len(feedback) == 1 and feedback[0]["layer"] == "gate"
+    assert "was not retrieved in this question" in feedback[0]["messages"][0]["content"]
+    assert not any(e["event"] == "tool_start" and e["layer"] == "execution" for e in events)
+
+
+def test_trace_retains_tool_exception_without_private_details(tmp_path):
+    """An unexpected tool exception propagates and leaves a redacted dispatch failure."""
+
+    @tool
+    async def search_filings(query: str, issuers: list[str], fiscal_years: list[int]) -> str:
+        """A test retrieval failure after actual tool dispatch."""
+        raise RuntimeError("private database password=do-not-log")
+
+    fake = FakeOpenAI(
+        counts=[1000], replies=[response("search_fail", "search_filings", SEARCH, (900, 30))]
+    )
+    gate = ModelGate(
+        Reservation(Decimal("0.09"), 2, journal=tmp_path / "budget.jsonl"), LUNA, 60_000
+    )
+    model = counted_model(LUNA, gate, api_key=FAKE_KEY, http_async_client=fake.client())
+    agent = review_agent(model, [search_filings], contracts(), gate)
+    with pytest.raises(RuntimeError, match="private database"):
+        asyncio.run(ask_review_agent(agent, QUESTION, ReviewContext((2024,)), gate))
+    events = trace_events(tmp_path)
+    failures = [e for e in events if e["event"] == "tool_error"]
+    assert [e["layer"] for e in failures] == ["execution", "gate"]
+    assert all(e["call_id"] == "search_fail" for e in failures)
+    assert "do-not-log" not in (tmp_path / "trace.jsonl").read_text()
+
+
+def test_trace_excludes_model_reasoning_and_redacts_credentials(tmp_path):
+    """Trace projections omit model content and sanitize calls and bounded feedback."""
+    trace = live.RunTrace(tmp_path / "trace.jsonl", ("configured-private-value",))
+    messages = [
+        AIMessage(
+            content=[{"type": "reasoning", "text": "private-model-reasoning"}],
+            tool_calls=[{"id": "a", "name": "search_filings", "args": {"query": FAKE_KEY}}],
+        ),
+        ToolMessage(
+            content="x" * 15_990 + "configured-private-value" + "y" * 100, tool_call_id="a"
+        ),
+    ]
+    trace.write("gate", "model_result", 1, messages=live.trace_messages(messages))
+    content = trace.path.read_text()
+    assert all(
+        value not in content
+        for value in [FAKE_KEY, "configured-private-value", "private-model-reasoning"]
+    )
+    assert trace_events(tmp_path)[0]["messages"][1]["content_truncated"] is True
+    assert "configured" not in content
 
 
 # Budget and count boundaries, without tools: an uncited final answer is refused

@@ -30,19 +30,24 @@ other Responses-compatible model needs both ``--input-usd-per-million`` and
 ``--output-usd-per-million``, given as the caller's applicable upper rates, and runs
 without a reasoning setting unless ``--reasoning-effort`` names one. The count
 endpoint's own price and access are not checked here.
+
+The create-agent run also appends ``trace.jsonl``: call IDs and arguments, bounded
+tool feedback, and the results before and after review. Events survive budget or
+provider failures; credentials and model reasoning content are excluded.
 """
 
 import argparse
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from functools import partial
 import json
 import os
 from pathlib import Path
 import sys
-from typing import TYPE_CHECKING, Any, override
+from typing import TYPE_CHECKING, Any, cast, override
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
@@ -50,13 +55,15 @@ from langchain.agents.middleware import (
     ExtendedModelResponse,
     ModelRequest,
     ModelResponse,
+    ToolCallRequest,
 )
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatResult
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
 import openai
 from pydantic import Field
 
@@ -70,6 +77,7 @@ from app.agent.review_middleware import (
 from app.agent.tools.registry import ToolRegistry, safe_runtime_error
 from app.agent.types import AgentBudget
 from app.llm.schemas import TokenPricing
+from app.observability.redaction import sanitize_json
 from app.openai_models import POLICY_REVISION, OpenAIModelPolicyError, resolve_openai_model
 
 if TYPE_CHECKING:
@@ -566,6 +574,143 @@ class ReserveBeforeSend(AgentMiddleware):
             self.gate.close_turn()
 
 
+@dataclass
+class RunTrace:
+    """Append diagnostic events immediately, retaining them if a later turn fails.
+
+    Only tool calls and tool feedback are projected; model content, reasoning,
+    request headers and configuration are never serialized. Known credentials and
+    credential-shaped values are redacted before writing the local JSONL file.
+    """
+
+    path: Path
+    secrets: tuple[str, ...] = field(default=(), repr=False)
+    sequence: int = 0
+
+    def write(self, layer: str, event: str, turn: int, **details: object) -> None:
+        """Write one complete, ordered JSON event without retaining an open file."""
+        self.sequence += 1
+        record = {
+            "sequence": self.sequence,
+            "at": datetime.now(UTC).isoformat(),
+            "layer": layer,
+            "event": event,
+            "turn": turn,
+            **details,
+        }
+        sanitized = cast(
+            dict[str, Any],
+            sanitize_json(json.loads(json.dumps(record)), secret_values=self.secrets),
+        )
+        # Redact before truncating, so a credential crossing the limit cannot leak a prefix.
+        for message in sanitized.get("messages", []):
+            if message.get("type") == "tool":
+                content = message["content"]
+                message["content"] = content[:16_000]
+                message["content_truncated"] = len(content) > 16_000
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(sanitized, ensure_ascii=False) + "\n")
+
+
+def trace_messages(messages: Sequence[BaseMessage]) -> list[dict[str, Any]]:
+    """Project calls and tool feedback, excluding every model content block."""
+    records = []
+    for message in messages:
+        if isinstance(message, AIMessage):
+            records.append({"type": "model", "tool_calls": message.tool_calls})
+        elif isinstance(message, ToolMessage):
+            content = message.content
+            rendered = content if isinstance(content, str) else json.dumps(content)
+            records.append(
+                {
+                    "type": "tool",
+                    "call_id": message.tool_call_id,
+                    "name": message.name,
+                    "status": message.status,
+                    "content": rendered,
+                }
+            )
+    return records
+
+
+class TraceCalls(AgentMiddleware):
+    """Observe either side of the review stack without changing calls or results.
+
+    The outer ``gate`` instance captures rejections and budget failures. The inner
+    ``execution`` instance proves which calls reached the model or bound MCP tool.
+    A final-answer schema call is reviewed at the model boundary, not dispatched
+    as an MCP tool. Both instances share the run's sequence and attempt counter.
+    """
+
+    def __init__(self, trace: RunTrace, gate: ModelGate, layer: str) -> None:
+        """Keep one run's writer, attempt counter and observed boundary."""
+        super().__init__()
+        self.trace, self.gate, self.layer = trace, gate, layer
+
+    @property
+    def name(self) -> str:
+        """Give the two boundary observers distinct LangChain middleware names."""
+        return f"TraceCalls_{self.layer}"
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest[Any],
+        handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
+    ) -> ModelResponse[Any] | AIMessage | ExtendedModelResponse[Any]:
+        """Record the proposed calls and reviewed feedback, or a redacted failure."""
+        turn = self.gate.budget.attempts + 1
+        self.trace.write(self.layer, "model_start", turn)
+        try:
+            result = await handler(request)
+        except Exception as error:
+            self.trace.write(
+                self.layer, "model_error", turn, error=safe_runtime_error(error, "model turn")
+            )
+            raise
+        response = result.model_response if isinstance(result, ExtendedModelResponse) else result
+        messages = [response] if isinstance(response, AIMessage) else response.result
+        accepted = None if isinstance(response, AIMessage) else response.structured_response
+        self.trace.write(
+            self.layer,
+            "model_result",
+            turn,
+            messages=trace_messages(messages),
+            has_structured_response=accepted is not None,
+            report_label=getattr(accepted, "label", None),
+        )
+        return result
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+    ) -> ToolMessage | Command[Any]:
+        """Distinguish gate attempts from actual dispatch and retain returned feedback."""
+        turn = self.gate.budget.attempts
+        call = request.tool_call
+        self.trace.write(self.layer, "tool_start", turn, call=call)
+        try:
+            result = await handler(request)
+        except Exception as error:
+            self.trace.write(
+                self.layer,
+                "tool_error",
+                turn,
+                call_id=call["id"],
+                error=safe_runtime_error(error, "tool call"),
+            )
+            raise
+        if isinstance(result, ToolMessage):
+            messages = [result]
+        else:
+            update = result.update if isinstance(result.update, dict) else {}
+            messages = update.get("messages", [])
+        self.trace.write(
+            self.layer, "tool_result", turn, call_id=call["id"], messages=trace_messages(messages)
+        )
+        return result
+
+
 def review_agent(
     model: CountedChatOpenAI,
     tools: Sequence[BaseTool],
@@ -578,6 +723,14 @@ def review_agent(
         StopOnSystemFailure(),
         ReviewGate(contracts),
     ]
+    if gate.budget.journal is not None:
+        key = model.openai_api_key
+        trace = RunTrace(
+            gate.budget.journal.with_name("trace.jsonl"),
+            (key.get_secret_value(),) if key is not None else (),
+        )
+        middleware.insert(0, TraceCalls(trace, gate, "gate"))
+        middleware.append(TraceCalls(trace, gate, "execution"))
     return create_agent(
         model,
         list(tools),

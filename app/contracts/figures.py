@@ -8,6 +8,10 @@ phrases, connectives, years, units, currency and a few verbs. Any other word lea
 the figure without an item, so wording the checker does not understand fails closed
 instead of borrowing an item named elsewhere.
 
+Paired Markdown bold delimiters are presentation, not financial words. A leading
+issuer subject may also be blanked when all cited chunk contexts name the same
+issuer. Financial qualifiers and unknown subjects still fail closed.
+
 A claim is verified only by one cited table cell whose whole row label is the same
 item, whose column period is the claim's year (or, undated, a requested one) and
 whose value equals the figure once both stated units are converted. It is a period
@@ -399,6 +403,9 @@ _ITEM_PHRASES: dict[str, tuple[str, ...]] = {
 # Words of an answer: English words (with "&", apostrophes and hyphens inside), Korean
 # words, digit runs, and single other characters.
 _TOKEN = re.compile(r"[A-Za-z]+(?:[&'’-][A-Za-z]+)*['’]?|[가-힣]+|\d+(?:[.,]\d+)*|\S")
+_STRONG = re.compile(r"(?<![\\*])\*\*(?!\s)([^*\n]+?)(?<![\s\\])\*\*(?!\*)")
+# The prefix is emitted by ingestion's context-header builder, not filing prose.
+_ISSUER_CONTEXT = re.compile(r"(?P<issuer>[^\n]+?) FY\d{4} · ")
 # The only parentheticals that keep a label or answer phrase the same item.
 _SAME_ITEM_QUALIFIER = re.compile(
     r"\s*[(（]\s*(?:loss|losses|손실|note\s*\d+[a-z]?|주석\s*\d+)\s*[)）]", re.IGNORECASE
@@ -967,9 +974,48 @@ def _sentence_claims(masked: str, text: str, start: int, end: int) -> list[_Clai
     return claims
 
 
-def _claims(text: str) -> list[_Claim]:
+def _issuer_subjects(text: str, issuer: str | None) -> str:
+    """Blank one grounded issuer only in subject position, preserving every offset.
+
+    The prefix of its sentence must contain only ordinary filler words or dates,
+    never another item, figure or qualifier. Matching the complete issuer before
+    sentence splitting also handles punctuation in names such as ``Acme, Inc.``.
+    """
+    if issuer is None:
+        return text
+    pattern = re.compile(rf"(?<!\w){re.escape(issuer)}(?![\w'’])")
+    masked = text
+    for match in pattern.finditer(text):
+        before = _blank(masked[: match.start()])
+        start = max((end.end() for end in _SENTENCE_BREAK.finditer(before)), default=0)
+        if all(
+            word.kind == "filler" and not _POSSESSIVE.fullmatch(word.text)
+            for word in _words(before, start, len(before))
+        ):
+            masked = masked[: match.start()] + " " * len(match.group()) + masked[match.end() :]
+    return masked
+
+
+def _cited_issuer(evidence: Sequence[EvidenceText]) -> str | None:
+    """Return one exact issuer shared by every structured context, else fail closed.
+
+    Mixed or absent issuer metadata cannot justify treating a company name as
+    harmless wording: a figure might otherwise borrow another company's cell.
+    """
+    issuers = set()
+    for item in evidence:
+        match = _ISSUER_CONTEXT.match(item.context_header)
+        if match is None:
+            return None
+        issuers.add(match["issuer"])
+    return next(iter(issuers)) if len(issuers) == 1 else None
+
+
+def _claims(text: str, *, issuer: str | None = None) -> list[_Claim]:
     """Read every figure of a text as a claim, sentence by sentence."""
-    masked = _blank(_SAME_ITEM_QUALIFIER.sub(lambda match: " " * len(match.group(0)), text))
+    formatted = _STRONG.sub(lambda match: "  " + match[1] + "  ", text)
+    subject = _issuer_subjects(formatted, issuer)
+    masked = _blank(_SAME_ITEM_QUALIFIER.sub(lambda match: " " * len(match.group(0)), subject))
     bounds = [0, *(match.start() for match in _SENTENCE_BREAK.finditer(masked)), len(masked)]
     return [
         claim
@@ -1395,7 +1441,10 @@ def check_figures(
             else _claims(item.body)
         )
     ]
-    judged = [_judge(claim, cells, facts, requested) for claim in _claims(answer)]
+    judged = [
+        _judge(claim, cells, facts, requested)
+        for claim in _claims(answer, issuer=_cited_issuer(evidence))
+    ]
     anchored = any(check.verdict == "verified" and not outside for check, outside in judged)
     return FiguresResult(
         tuple(

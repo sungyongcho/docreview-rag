@@ -1,6 +1,6 @@
 """Answer figures checked against the period of the cited evidence."""
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import pytest
 
@@ -34,6 +34,71 @@ def table_evidence(html: str = USD_INCOME_TABLE) -> EvidenceText:
 def prose_evidence(body: str) -> EvidenceText:
     """Read one narrative chunk as cited evidence."""
     return EvidenceText(2, body, "AMD FY2024 · Item 7")
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "AMD's FY2024 total net revenue was **$25.8 billion**.",
+        "AMD's FY2024 **total net revenue was $25,785 million** (approximately **$25.8 billion**).",
+        "For the year ended December 28, 2024, AMD reported "
+        "**Total net revenue of $25,785 million**.",
+        "**AMD** reported **total net revenue** of **$25,785 million** in 2024.",
+    ],
+)
+@pytest.mark.parametrize(
+    ("html", "verdict"), [(INCOME_TABLE, "unit_unverified"), (USD_INCOME_TABLE, "verified")]
+)
+def test_bold_and_cited_issuer_subjects_preserve_financial_checks(answer, html, verdict):
+    """Read the live-run wording while preserving the filed table's currency uncertainty."""
+    evidence = replace(table_evidence(html), context_header="AMD FY2024 · Item 7")
+    result = check_figures(answer, [evidence], [2024])
+    assert result.verdict == verdict
+    assert all(check.item == "revenue" for check in result.checks)
+
+
+@pytest.mark.parametrize("issuer", ["NVDA", "Acme Holdings, Inc."])
+def test_issuer_subject_is_taken_from_cited_context_not_a_company_allowlist(issuer):
+    """Accept a complete multiword issuer subject, including its internal punctuation."""
+    evidence = replace(table_evidence(), context_header=f"{issuer} FY2024 · Item 8")
+    answer = f"In 2024, {issuer} reported **net revenue of $25,785 million**."
+    assert check_figures(answer, [evidence], [2024]).verdict == "verified"
+
+
+@pytest.mark.parametrize(
+    ("answer", "verdict"),
+    [
+        ("AMD reported **net revenue of $99,999 million** in 2024.", "unverified"),
+        ("AMD reported **net income of $25,785 million** in 2024.", "unverified"),
+        ("AMD reported **adjusted net revenue of $25,785 million** in 2024.", "unverified"),
+        ("AMD reported **segment revenue of $25,785 million** in 2024.", "unverified"),
+        ("AMD reported **net revenue of 25,785 million EUR** in 2024.", "unverified"),
+        ("AMD reported **net revenue of $22,680 million** in 2024.", "period_mismatch"),
+        ("NVDA reported **net revenue of $25,785 million** in 2024.", "unverified"),
+        ("XAMD reported **net revenue of $25,785 million** in 2024.", "unverified"),
+        ("NVDA's AMD reported **net revenue of $25,785 million** in 2024.", "unverified"),
+        ("2024 adjusted AMD net revenue was $25,785 million.", "unverified"),
+        ("2024 net revenue attributable to AMD was $25,785 million.", "unverified"),
+        ("2024 net revenue was **$25,785 million.", "unverified"),
+        ("2024 net revenue was $25,785 million**.", "unverified"),
+    ],
+)
+def test_presentation_normalization_keeps_wrong_or_qualified_claims_closed(answer, verdict):
+    """Do not erase financial qualifiers, unknown subjects, bad values or unmatched markers."""
+    evidence = replace(table_evidence(), context_header="AMD FY2024 · Item 7")
+    assert check_figures(answer, [evidence], [2024]).verdict == verdict
+
+
+def test_a_company_subject_cannot_borrow_values_across_mixed_issuer_evidence():
+    """Mixed issuer contexts do not authorize stripping a company from a claim."""
+    amd = replace(table_evidence(), context_header="AMD FY2024 · Item 7")
+    nvda = replace(table_evidence(), chunk_id=2, context_header="NVDA FY2024 · Item 7")
+    answer = "AMD reported **net revenue of $25,785 million** in 2024."
+    assert check_figures(answer, [amd, nvda], [2024]).verdict == "unverified"
+    assert (
+        check_figures(answer, [replace(amd, context_header="unstructured")], [2024]).verdict
+        == "unverified"
+    )
 
 
 def test_a_figure_from_the_requested_period_column_is_verified():
