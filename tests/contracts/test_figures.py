@@ -7,8 +7,10 @@ import pytest
 
 from app.contracts.figures import (
     EvidenceText,
+    TableCellReading,
     check_figures,
     figures,
+    interpret_table_cell,
     read_table_cells,
     read_table_unit,
 )
@@ -1279,3 +1281,57 @@ def test_table_readings_keep_an_ambiguous_dollar_unresolved():
     assert fragment is not None
     currencies = {cell.currency for cell in read_table_cells(fragment) if cell.item == "revenue"}
     assert currencies == {"$"}
+
+
+def reading(**changes) -> TableCellReading:
+    """Build one USD million revenue reading for FY2024, changed where a test says."""
+    base = TableCellReading(
+        1,
+        1,
+        frozenset({Decimal(1234)}),
+        frozenset({2024}),
+        Decimal(1_000_000),
+        "revenue",
+        False,
+        "USD",
+        False,
+        "Net revenue",
+    )
+    return replace(base, **changes)
+
+
+@pytest.mark.parametrize(
+    ("text", "changes", "status", "value"),
+    [
+        ("1,234", {}, "known", Decimal(1234)),
+        ("(1,234)", {}, "known", Decimal(-1234)),
+        ("△1,234.50", {}, "known", Decimal("-1234.50")),
+        ("▲1,234", {}, "conflicting", None),
+        ("1,234", {"scale": None}, "scale_unknown", Decimal(1234)),
+        ("1,234", {"percent": None}, "scale_unknown", Decimal(1234)),
+        ("1,234", {"currency": "$"}, "currency_unconfirmed", Decimal(1234)),
+        ("1,234", {"currency": None}, "currency_unconfirmed", Decimal(1234)),
+        ("1,234", {"currency": "!"}, "conflicting", Decimal(1234)),
+        ("1,234", {"years": frozenset()}, "period_unknown", Decimal(1234)),
+        ("1,234", {"years": frozenset({2023, 2024})}, "period_unknown", Decimal(1234)),
+        ("1,234", {"item": None}, "item_unknown", Decimal(1234)),
+        ("12.5%", {"percent": True, "scale": None, "currency": None}, "known", Decimal("12.5")),
+    ],
+)
+def test_a_cell_is_known_only_when_every_fact_is_established(text, changes, status, value):
+    """Keep sign and decimals, and name the first missing fact instead of guessing."""
+    result = interpret_table_cell(text, [reading(**changes)])
+    assert (result.status, result.value) == (status, value)
+
+
+@pytest.mark.parametrize("text", ["", "  ", "—", "-", "– –"])
+def test_a_blank_or_dash_cell_is_blank_not_zero(text):
+    """Report an empty or dash-only cell as blank with no value."""
+    result = interpret_table_cell(text, [])
+    assert (result.status, result.value) == ("blank", None)
+
+
+def test_a_cell_without_one_figure_is_not_selectable():
+    """Keep labels unselectable and refuse a cell that states two figures."""
+    assert interpret_table_cell("Net revenue", []).status == "not_numeric"
+    assert interpret_table_cell("1,234 / 5,678", [reading()]).status == "conflicting"

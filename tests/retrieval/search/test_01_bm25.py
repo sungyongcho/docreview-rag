@@ -565,8 +565,10 @@ def test_live_chunk_writes_invalidate_statistics_and_search_fails(database_url):
                 original.end_char,
                 original.source_sha256,
             )
+            # The whole table is chunker output, not a chunk column.
+            columns = {name: value for name, value in asdict(unit).items() if name != "table"}
             return {
-                **asdict(unit),
+                **columns,
                 "stable_key": unit.stable_key,
                 "structure_id": original.structure_id,
                 "language": original.language,

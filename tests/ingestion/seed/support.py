@@ -4,8 +4,8 @@ from datetime import date
 from pathlib import Path
 
 from app.ingestion import pipeline as seed
-from app.ingestion.chunking import Chunk
-from app.ingestion.parsing.models import ParsedFiling, Section
+from app.ingestion.chunking import Chunk, chunk_filing
+from app.ingestion.parsing.models import Block, ParsedFiling, Section
 from app.ingestion.sources.models import (
     Acquisition,
     CorpusIdentity,
@@ -117,4 +117,30 @@ def sample_batch() -> seed.SeedBatch:
     """Build one deterministic seed batch."""
     filing = sample_filing()
     document, chunks = seed.filing_records(filing, sample_chunks())
+    return seed.SeedBatch((document,), chunks, (filing,))
+
+
+# A two-year income table whose note states the scale and an explicit currency.
+TABLE_HTML = (
+    "<table><tr><td>(In millions of U.S. dollars)</td><td>2024</td><td>2023</td></tr>"
+    "<tr><td>Net revenue</td><td>$ 25,785</td><td>$ 22,680</td></tr>"
+    "<tr><td>Net income (loss)</td><td>(1,641)</td><td>—</td></tr></table>"
+)
+
+
+def table_batch(html: str = TABLE_HTML) -> seed.SeedBatch:
+    """Build one seed batch whose filing is a single table chunked by the real chunker."""
+    filing = sample_filing()
+    filing.source_length = len(html)
+    filing.sections = [
+        Section(
+            "II",
+            "7",
+            "Management's Discussion",
+            "Item 7",
+            [Block("table", "", html=html, source_pos=0, end_pos=len(html))],
+        )
+    ]
+    filing.item_index = [{"item": "7", "reported_title": "Item 7", "pages": [], "status": "parsed"}]
+    document, chunks = seed.filing_records(filing, chunk_filing(filing))
     return seed.SeedBatch((document,), chunks, (filing,))

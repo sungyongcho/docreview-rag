@@ -632,6 +632,36 @@ class TableCellReading:
     percent: bool | None
     currency: str | None = None
     marked: bool = False
+    row_label: str | None = None
+
+
+CellStatus = Literal[
+    "known",
+    "blank",
+    "not_numeric",
+    "conflicting",
+    "scale_unknown",
+    "currency_unconfirmed",
+    "period_unknown",
+    "item_unknown",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class CellInterpretation:
+    """Whether one normalized table cell can stand as a single selectable amount.
+
+    ``value`` keeps the sign and every written decimal of the cell's one figure; it is
+    None unless that figure is readable. ``reading`` is the one figure-bearing source
+    cell the value comes from. ``status`` is ``known`` only when the value, its unit, its
+    currency (or percentage), one fiscal year and one item are all established; any
+    other status names the first missing fact and ``reason`` says why.
+    """
+
+    status: CellStatus
+    reason: str | None
+    value: Decimal | None
+    reading: TableCellReading | None
 
 
 def _value(text: str) -> Decimal | None:
@@ -1281,9 +1311,61 @@ def read_table_cells(fragment: Mapping[str, object]) -> list[TableCellReading]:
                         percent,
                         _resolve(unit.currency | own),
                         bool(own),
+                        label,
                     )
                 )
     return cells
+
+
+def _signed(figure: _Figure) -> Decimal | None:
+    """Return a figure's value with the sign its notation writes; None for ``▲``.
+
+    ``(1,234)``, ``△1,234`` and ``-1,234`` are losses. ``▲`` marks a loss in some
+    Korean filings and an increase in others, so its sign is not guessed.
+    """
+    if figure.value is None or figure.text.startswith("▲"):
+        return None
+    negative = figure.text.startswith(("(", "△", "-"))
+    return -figure.value if negative else figure.value
+
+
+def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> CellInterpretation:
+    """Decide whether one normalized cell is a single amount with established facts.
+
+    ``text`` is the normalized cell text and ``readings`` its figure-bearing source
+    cells. A blank or dash-only cell is ``blank``, never zero. Nothing is guessed: a
+    missing scale, an ambiguous or missing currency, an unknown period or item leaves
+    the cell unselectable with the first missing fact as its status.
+    """
+    stripped = text.strip()
+    if not stripped or not stripped.strip("-–—‐ "):
+        return CellInterpretation("blank", None, None, None)
+    spans = [figure for figure in _figure_spans(_blank(text)) if figure.value is not None]
+    distinct = set(readings)
+    if not spans or not distinct:
+        return CellInterpretation("not_numeric", None, None, None)
+    if len(spans) > 1 or len(distinct) > 1:
+        return CellInterpretation("conflicting", "more than one figure", None, None)
+    reading = next(iter(distinct))
+    value = _signed(spans[0])
+    if value is None:
+        return CellInterpretation("conflicting", "sign marker is ambiguous", None, reading)
+    if reading.percent is None:
+        return CellInterpretation("scale_unknown", "percentage unknown", value, reading)
+    if not reading.percent:
+        if reading.scale is None:
+            return CellInterpretation("scale_unknown", "no readable scale", value, reading)
+        if reading.currency == _CONFLICT:
+            return CellInterpretation("conflicting", "currencies disagree", value, reading)
+        if reading.currency is None or reading.currency in _FAMILIES:
+            return CellInterpretation(
+                "currency_unconfirmed", "no explicit currency", value, reading
+            )
+    if len(reading.years) != 1:
+        return CellInterpretation("period_unknown", "no single fiscal year", value, reading)
+    if reading.item is None:
+        return CellInterpretation("item_unknown", "row label names no item", value, reading)
+    return CellInterpretation("known", None, value, reading)
 
 
 def _within(figure: _Figure, amount: Decimal, target: Decimal, scale: Decimal) -> bool:

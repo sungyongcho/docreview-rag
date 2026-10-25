@@ -1,0 +1,131 @@
+"""Canonical table records built once from the chunker's table pieces."""
+
+from dataclasses import asdict, replace
+from decimal import Decimal
+
+import pytest
+
+from app.contracts.figures import read_table_cells
+from app.ingestion.chunking import CellFragment, TableFragment, chunk_filing
+from app.ingestion.parsing.models import Block
+from app.ingestion.table_records import table_records
+from app.ingestion.tokens import InputBudget
+from tests.ingestion.chunk.support import build_filing
+
+USD_TABLE = (
+    "<table><tr><td>(In millions of U.S. dollars)</td><td>December 28, 2024</td>"
+    "<td>December 30, 2023</td></tr>"
+    "<tr><td>Net revenue</td><td>$ 25,785</td><td>$ 22,680</td></tr>"
+    "<tr><td>Net income (loss)</td><td>(1,641)</td><td>—</td></tr></table>"
+)
+
+
+def table_chunks(html: str, budget: InputBudget | None = None):
+    """Chunk one table through the real chunker."""
+    block = Block("table", "", html=html, source_pos=0, end_pos=len(html))
+    filing = build_filing([block])
+    filing.source_length = len(html)
+    return chunk_filing(filing, budget)
+
+
+def only_record(chunks):
+    """Build the records of the single table the chunks come from."""
+    (record,) = table_records(chunks, {chunk.doc_id: "s" * 64 for chunk in chunks})
+    return record
+
+
+def test_a_table_is_stored_once_with_each_cell_interpreted():
+    """Store the USD table's cells with signed values and the facts that make them known."""
+    chunks = table_chunks(USD_TABLE)
+    record = only_record(chunks)
+    cells = {cell.text: cell.interpretation for cell in record.cells}
+    assert (cells["$ 25,785"].status, cells["$ 25,785"].value) == ("known", Decimal(25785))
+    assert (cells["(1,641)"].status, cells["(1,641)"].value) == ("known", Decimal(-1641))
+    assert cells["—"].status == "blank"
+    assert cells["Net revenue"].status == "not_numeric"
+    revenue = cells["$ 25,785"].reading
+    assert revenue is not None
+    assert (revenue.item, revenue.years, revenue.currency) == ("revenue", {2024}, "USD")
+    assert record.unit.status == "known"
+    by_coordinates = {(cell.row, cell.column): cell for cell in record.cells}
+    assert by_coordinates[(1, 1)].column_header == "December 28, 2024"
+
+
+def test_memberships_follow_each_chunk_fragment_in_order():
+    """Record every fragment cell of every piece, in fragment order, by stable key."""
+    chunks = table_chunks(USD_TABLE)
+    record = only_record(chunks)
+    expected = [
+        (chunk.stable_key, ordinal, member.row, member.column, member.text_start, member.text_end)
+        for chunk in chunks
+        if chunk.table_fragment is not None
+        for ordinal, member in enumerate(chunk.table_fragment.cells)
+    ]
+    assert [
+        (m.chunk_stable_key, m.ordinal, m.row, m.column, m.text_start, m.text_end)
+        for m in record.memberships
+    ] == expected
+
+
+def test_a_dollar_only_table_keeps_its_currency_unconfirmed():
+    """Store the "$" family unresolved instead of assuming U.S. dollars."""
+    record = only_record(table_chunks(USD_TABLE.replace(" of U.S. dollars", "")))
+    revenue = next(cell for cell in record.cells if cell.text == "$ 25,785")
+    assert revenue.interpretation.status == "currency_unconfirmed"
+
+
+def test_split_pieces_share_one_table_and_keep_partial_cells():
+    """Join the pieces of a wide row into one table and mark sentence intervals as partial."""
+    long = ". ".join(f"Sentence {index} describes the segment in detail" for index in range(40))
+    html = (
+        f"<table><tr><td>Item</td><td>Note</td></tr><tr><td>Risk</td><td>{long}.</td></tr></table>"
+    )
+    chunks = table_chunks(html, InputBudget(target_tokens=60, max_tokens=60))
+    pieces = [chunk for chunk in chunks if chunk.table_fragment is not None]
+    assert len(pieces) > 1
+    record = only_record(chunks)
+    note = next(cell for cell in record.cells if cell.text.startswith("Sentence 0"))
+    intervals = [
+        (m.text_start, m.text_end)
+        for m in record.memberships
+        if (m.row, m.column) == (note.row, note.column)
+    ]
+    assert len(intervals) > 1
+    assert all(end - start < len(note.text) for start, end in intervals)
+
+
+def test_stored_readings_match_what_each_fragment_reads():
+    """Give every chunk the same readings its own fragment gives, so checks do not change."""
+    chunks = table_chunks(USD_TABLE)
+    record = only_record(chunks)
+    stored = {(cell.cell.row, cell.cell.column): cell.reading for cell in record.source_cells}
+    for chunk in chunks:
+        assert chunk.table_fragment is not None
+        for reading in read_table_cells(asdict(chunk.table_fragment)):
+            assert stored[(reading.row, reading.column)] == reading
+
+
+def test_pieces_that_disagree_on_their_table_are_refused():
+    """Refuse to store two different tables under one source span."""
+    (chunk,) = [chunk for chunk in table_chunks(USD_TABLE) if chunk.table_fragment is not None]
+    assert chunk.table is not None and chunk.table_fragment is not None
+    other = replace(chunk, table=replace(chunk.table, captions=("other",)))
+    with pytest.raises(ValueError, match="disagree"):
+        table_records([chunk, other], {chunk.doc_id: "s" * 64})
+    stray = replace(
+        chunk,
+        table_fragment=TableFragment(
+            chunk.table_fragment.header_rows,
+            (CellFragment(99, 0, 0, 1, ()),),
+            chunk.table_fragment.header_cells,
+            chunk.table_fragment.caption_sources,
+        ),
+    )
+    with pytest.raises(ValueError, match="unknown"):
+        table_records([stray], {chunk.doc_id: "s" * 64})
+
+
+def test_the_table_stays_out_of_the_chunk_identity():
+    """Keep stable_key fixed by the fragment alone, so stored chunks keep their ids."""
+    (chunk,) = [chunk for chunk in table_chunks(USD_TABLE) if chunk.table_fragment is not None]
+    assert replace(chunk, table=None).stable_key == chunk.stable_key

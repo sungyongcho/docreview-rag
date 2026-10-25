@@ -3,15 +3,23 @@
 import asyncio
 from dataclasses import replace
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import insert, select, text
 
 from app.config import EMBEDDING_DIMENSIONS
-from app.db.models import Chunk, ChunkEmbedding, Document
+from app.db.models import (
+    Chunk,
+    ChunkEmbedding,
+    ChunkTableCell,
+    Document,
+    TableCell,
+    TableSourceCell,
+)
 from app.ingestion.persistence import persist_seed_batch
 from app.ingestion.pipeline import SeedBatch
-from tests.ingestion.seed.support import sample_batch
+from tests.ingestion.seed.support import sample_batch, table_batch
 from tests.live_postgres import isolated_session_factory
 
 
@@ -135,5 +143,63 @@ def test_postgresql_rerun_preserves_identity_and_replaces_changed_evidence():
                 await persist_seed_batch(session, replace(changed_batch, chunks=(changed_chunk,)))
                 assert await session.scalar(text("SELECT count(*) FROM chunks")) == 1
                 assert await session.scalar(select(Chunk.kind)) == "text"
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_postgresql_stores_each_table_once_and_links_its_chunks():
+    """Store a table's cells and interpretation, link its chunk, and replace it on rerun."""
+
+    async def exercise() -> None:
+        """Persist the table batch twice and read the stored table back."""
+        async with isolated_session_factory() as factory:
+            batch = table_batch()
+            async with factory() as session:
+                await persist_seed_batch(session, batch)
+                chunk_id = await session.scalar(select(Chunk.id).where(Chunk.kind == "table"))
+                assert await session.scalar(text("SELECT count(*) FROM parsed_tables")) == 1
+                known = await session.execute(
+                    select(TableCell.text, TableCell.value).where(TableCell.status == "known")
+                )
+                cells = {text_: value for text_, value in known}
+                assert cells == {
+                    "$ 25,785": Decimal(25785),
+                    "$ 22,680": Decimal(22680),
+                    "(1,641)": Decimal(-1641),
+                }
+                assert await session.scalar(
+                    select(TableCell.status).where(TableCell.text == "—")
+                ) == ("blank")
+                linked = (
+                    (await session.execute(select(ChunkTableCell.chunk_id).distinct()))
+                    .scalars()
+                    .all()
+                )
+                assert linked == [chunk_id]
+                currency = await session.scalar(
+                    select(TableSourceCell.reading_currency).where(
+                        TableSourceCell.reading_item == "revenue",
+                        TableSourceCell.reading_years == [2024],
+                    )
+                )
+                assert currency == "USD"
+
+            async with factory() as session:
+                await persist_seed_batch(session, batch)
+                assert await session.scalar(select(Chunk.id).where(Chunk.kind == "table")) == (
+                    chunk_id
+                )
+                assert await session.scalar(text("SELECT count(*) FROM parsed_tables")) == 1
+                fragment = batch.chunks[0].table_fragment
+                assert fragment is not None
+                assert await session.scalar(text("SELECT count(*) FROM chunk_table_cells")) == (
+                    len(fragment.cells)
+                )
+
+            async with factory() as session:
+                await persist_seed_batch(session, sample_batch())
+                assert await session.scalar(text("SELECT count(*) FROM parsed_tables")) == 0
+                assert await session.scalar(text("SELECT count(*) FROM table_cells")) == 0
 
     asyncio.run(exercise())

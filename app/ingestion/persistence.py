@@ -1,26 +1,38 @@
 """Persist one validated source/chunk batch in a single database transaction."""
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     Chunk as ChunkModel,
+    ChunkTableCell,
     Corpus,
     Document,
     DocumentParse,
     ParsedStructure,
+    ParsedTable,
     ProcessingSelection,
     SelectionArtifact,
     SourceArtifact as SourceArtifactModel,
+    TableCaption,
+    TableCell,
+    TableCellSource,
+    TableSourceCell,
 )
 from app.ingestion.pipeline import ChunkRecord, SeedBatch, structure_values
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
 from app.ingestion.sources.models import DocumentReference
+from app.ingestion.table_records import (
+    TableRecord,
+    builder_identity,
+    resolver_identity,
+    table_records,
+)
 
 DEFAULT_CHUNK_BATCH_SIZE = 500
 
@@ -154,6 +166,145 @@ async def _persist_sources(session: AsyncSession, batch: SeedBatch) -> None:
                 await session.execute(insert(SelectionArtifact).values(members))
 
 
+def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
+    """Project one table's records onto its rows, keyed by ORM model, in insert order.
+
+    Chunk memberships are left out: they need the chunk ids the upsert assigned.
+    """
+    unit = record.unit
+    source_cells = []
+    for cell in record.source_cells:
+        reading = cell.reading
+        source_cells.append(
+            {
+                "table_id": record.table_id,
+                "grid_row": cell.cell.row,
+                "grid_column": cell.cell.column,
+                "rowspan": cell.cell.rowspan,
+                "colspan": cell.cell.colspan,
+                "text": cell.cell.text,
+                "start_char": cell.cell.start_char,
+                "end_char": cell.cell.end_char,
+                "header_ordinal": cell.header_ordinal,
+                "reading_values": None if reading is None else sorted(reading.values),
+                "reading_years": None if reading is None else sorted(reading.years),
+                "reading_scale": None if reading is None else reading.scale,
+                "reading_item": None if reading is None else reading.item,
+                "reading_percent": None if reading is None else reading.percent,
+                "reading_currency": None if reading is None else reading.currency,
+                "reading_marked": None if reading is None else reading.marked,
+                "reading_row_label": None if reading is None else reading.row_label,
+            }
+        )
+    normalized = []
+    sources = []
+    for cell in record.cells:
+        interpretation = cell.interpretation
+        reading = interpretation.reading
+        normalized.append(
+            {
+                "table_id": record.table_id,
+                "source_row": cell.row,
+                "column_index": cell.column,
+                "text": cell.text,
+                "column_header": cell.column_header,
+                "status": interpretation.status,
+                "status_reason": interpretation.reason,
+                "value": interpretation.value,
+                "value_row": None if reading is None else reading.row,
+                "value_column": None if reading is None else reading.column,
+            }
+        )
+        sources.extend(
+            {
+                "table_id": record.table_id,
+                "source_row": cell.row,
+                "column_index": cell.column,
+                "ordinal": ordinal,
+                "grid_row": source.row,
+                "grid_column": source.column,
+            }
+            for ordinal, source in enumerate(cell.sources)
+        )
+    return {
+        ParsedTable: [
+            {
+                "table_id": record.table_id,
+                "doc_id": record.doc_id,
+                "structure_id": record.structure_id,
+                "start_char": record.start_char,
+                "end_char": record.end_char,
+                "header_rows": list(record.header_rows),
+                "builder_identity": builder_identity(),
+                "resolver_identity": resolver_identity(),
+                "unit_status": unit.status,
+                "unit_scale": unit.scale,
+                "unit_percent": unit.percent,
+                "unit_per_share_plain": unit.per_share_plain,
+                "unit_currency": sorted(unit.currency),
+            }
+        ],
+        TableCaption: [
+            {
+                "table_id": record.table_id,
+                "ordinal": ordinal,
+                "start_char": caption.start_char,
+                "end_char": caption.end_char,
+                "text": caption.text,
+                "cells": [asdict(cell) for cell in caption.cells],
+            }
+            for ordinal, caption in enumerate(record.captions)
+        ],
+        TableSourceCell: source_cells,
+        TableCell: normalized,
+        TableCellSource: sources,
+    }
+
+
+def _slices(rows: list[dict[str, Any]], size: int = 1000) -> Iterable[list[dict[str, Any]]]:
+    """Split insert rows so one statement stays under PostgreSQL's bind-parameter limit."""
+    for start in range(0, len(rows), size):
+        yield rows[start : start + size]
+
+
+async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
+    """Replace every stored table of the batch's documents and link it to its chunks."""
+    records = table_records(
+        batch.chunks, {record.doc_id: record.structure_id for record in batch.chunks}
+    )
+    doc_ids = [document.document_id for document in batch.documents]
+    await session.execute(delete(ParsedTable).where(ParsedTable.doc_id.in_(doc_ids)))
+    if not records:
+        return
+    rows: dict[type, list[dict[str, Any]]] = {}
+    for record in records:
+        for model, values in table_rows(record).items():
+            rows.setdefault(model, []).extend(values)
+    for model in (ParsedTable, TableCaption, TableSourceCell, TableCell, TableCellSource):
+        for values in _slices(rows.get(model, [])):
+            await session.execute(insert(model).values(values))
+    keys = {member.chunk_stable_key for record in records for member in record.memberships}
+    stored = await session.execute(
+        select(ChunkModel.stable_key, ChunkModel.id).where(ChunkModel.stable_key.in_(keys))
+    )
+    ids = {stable_key: chunk_id for stable_key, chunk_id in stored}
+    memberships = [
+        {
+            "chunk_id": ids[member.chunk_stable_key],
+            "ordinal": member.ordinal,
+            "table_id": record.table_id,
+            "source_row": member.row,
+            "column_index": member.column,
+            "text_start": member.text_start,
+            "text_end": member.text_end,
+        }
+        for record in records
+        for member in record.memberships
+    ]
+    for values in _slices(memberships):
+        await session.execute(insert(ChunkTableCell).values(values))
+
+
 async def persist_seed_batch(
     session: AsyncSession,
     batch: SeedBatch,
@@ -210,6 +361,8 @@ async def persist_seed_batch(
             )
             if on_progress is not None:
                 on_progress(OperationProgress("cleanup", position, len(chunk_keys), doc_id))
+        if batch.documents:
+            await _persist_tables(session, batch)
 
     return SeedResult(documents=len(batch.documents), chunks=len(batch.chunks))
 

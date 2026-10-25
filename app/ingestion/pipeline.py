@@ -296,6 +296,7 @@ def chunk_records(filing: ParsedFiling, chunks: Sequence[Chunk]) -> tuple[ChunkR
                 structure_id=structure_id,
                 table_fragment=chunk.table_fragment,
                 text_fragment=chunk.text_fragment,
+                table=chunk.table,
             )
         )
     return tuple(records)

@@ -81,6 +81,9 @@ class Chunk:
     table_fragment: TableFragment | None = None
     # Offsets within the normalized unit body, never within source HTML.
     text_fragment: tuple[int, int] | None = None
+    # The whole normalized table this piece comes from. It is stored as the table's
+    # canonical records and stays out of stable_key, which the fragment already fixes.
+    table: StructuredTable | None = None
 
     @property
     def stable_key(self) -> str:
@@ -559,6 +562,7 @@ def chunk_filing(filing: ParsedFiling, config: InputBudget | None = None) -> lis
         narrative_heading: str | None = None,
         table_fragment: TableFragment | None = None,
         text_fragment: tuple[int, int] | None = None,
+        table: StructuredTable | None = None,
     ) -> None:
         """Record one chunk with its section, kind, and source blocks."""
         start, end = _source_span(blocks, filing.source_length)
@@ -585,6 +589,7 @@ def chunk_filing(filing: ParsedFiling, config: InputBudget | None = None) -> lis
                 source_sha256=filing.source_sha256,
                 table_fragment=table_fragment,
                 text_fragment=text_fragment,
+                table=table,
             )
         )
 
@@ -602,7 +607,13 @@ def chunk_filing(filing: ParsedFiling, config: InputBudget | None = None) -> lis
                 pieces = _table_pieces(unit.table, context, cfg, unit.caption_sources)
                 for body, membership in pieces:
                     append(
-                        section, unit.kind, body, unit.blocks, unit.narrative_heading, membership
+                        section,
+                        unit.kind,
+                        body,
+                        unit.blocks,
+                        unit.narrative_heading,
+                        membership,
+                        table=unit.table,
                     )
             else:
                 offset = 0

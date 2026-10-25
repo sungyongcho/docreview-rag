@@ -16,13 +16,14 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from app.config import EMBEDDING_DIMENSIONS
@@ -279,6 +280,229 @@ class Chunk(Base):
             name="ck_chunks_source_sha256_format",
         ),
         Index("ix_chunks_tsv", "content_tsv", postgresql_using="gin"),
+    )
+
+
+TABLE_UNIT_STATUSES = ("known", "absent", "unknown", "conflicting")
+TABLE_CELL_STATUSES = (
+    "known",
+    "blank",
+    "not_numeric",
+    "conflicting",
+    "scale_unknown",
+    "currency_unconfirmed",
+    "period_unknown",
+    "item_unknown",
+)
+
+
+def _in(column: str, values: tuple[str, ...]) -> str:
+    """Render a CHECK that keeps one text column inside a closed vocabulary."""
+    return f"{column} IN ({', '.join(repr(value) for value in values)})"
+
+
+class ParsedTable(Base):
+    """One source table of one parse, stored once with the unit its own notes state."""
+
+    __tablename__ = "parsed_tables"
+
+    table_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.doc_id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    structure_id: Mapped[str] = mapped_column(
+        ForeignKey("parsed_structures.structure_id"), nullable=False
+    )
+    start_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    end_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    header_rows: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    builder_identity: Mapped[str] = mapped_column(String(64), nullable=False)
+    resolver_identity: Mapped[str] = mapped_column(String(64), nullable=False)
+    unit_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    unit_scale: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    unit_percent: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    unit_per_share_plain: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    unit_currency: Mapped[list[str]] = mapped_column(ARRAY(String(8)), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("table_id ~ '^[0-9a-f]{64}$'", name="ck_parsed_tables_id"),
+        CheckConstraint("start_char >= 0 AND end_char > start_char", name="ck_parsed_tables_span"),
+        CheckConstraint(_in("unit_status", TABLE_UNIT_STATUSES), name="ck_parsed_tables_unit"),
+        UniqueConstraint("structure_id", "start_char", "end_char", name="uq_parsed_tables_span"),
+    )
+
+
+class TableCaption(Base):
+    """One caption linked to a table, in link order, with the cells it was read from.
+
+    ``cells`` keeps the caption's original grid cells as JSON because a caption-only
+    table or caption row has its own grid, not the data table's.
+    """
+
+    __tablename__ = "table_captions"
+
+    table_id: Mapped[str] = mapped_column(
+        ForeignKey("parsed_tables.table_id", ondelete="CASCADE"), primary_key=True
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    start_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    end_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    cells: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("ordinal >= 0", name="ck_table_captions_ordinal"),
+        CheckConstraint("jsonb_typeof(cells) = 'array'", name="ck_table_captions_cells"),
+    )
+
+
+class TableSourceCell(Base):
+    """One original grid cell of a table and, when it holds figures, how it is read.
+
+    The reading columns are all present or all absent: ``reading_values`` are the
+    magnitudes the cell states, the rest the year, scale, item, percentage and currency
+    ``check_figures`` reads for them.
+    """
+
+    __tablename__ = "table_source_cells"
+
+    table_id: Mapped[str] = mapped_column(
+        ForeignKey("parsed_tables.table_id", ondelete="CASCADE"), primary_key=True
+    )
+    grid_row: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grid_column: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rowspan: Mapped[int] = mapped_column(Integer, nullable=False)
+    colspan: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    start_char: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    end_char: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    header_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reading_values: Mapped[list[Decimal] | None] = mapped_column(ARRAY(Numeric), nullable=True)
+    reading_years: Mapped[list[int] | None] = mapped_column(ARRAY(Integer), nullable=True)
+    reading_scale: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    reading_item: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reading_percent: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    reading_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    reading_marked: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    reading_row_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("grid_row >= 0 AND grid_column >= 0", name="ck_table_source_cells_grid"),
+        CheckConstraint("rowspan > 0 AND colspan > 0", name="ck_table_source_cells_span"),
+        CheckConstraint(
+            "(start_char IS NULL) = (end_char IS NULL)", name="ck_table_source_cells_source"
+        ),
+        CheckConstraint(
+            "(reading_values IS NULL) = (reading_years IS NULL) "
+            "AND (reading_values IS NULL) = (reading_marked IS NULL)",
+            name="ck_table_source_cells_reading",
+        ),
+        UniqueConstraint("table_id", "header_ordinal", name="uq_table_source_cells_header"),
+    )
+
+
+class TableCell(Base):
+    """One normalized body cell: what it shows and whether it is one selectable amount.
+
+    ``source_row`` and ``column_index`` are the coordinates a chunk's fragment names.
+    ``value`` keeps the sign and written decimals; ``value_row``/``value_column`` name
+    the one source cell whose reading gives its unit, currency, year and item.
+    """
+
+    __tablename__ = "table_cells"
+
+    table_id: Mapped[str] = mapped_column(
+        ForeignKey("parsed_tables.table_id", ondelete="CASCADE"), primary_key=True
+    )
+    source_row: Mapped[int] = mapped_column(Integer, primary_key=True)
+    column_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    column_header: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    value: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    value_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    value_column: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(_in("status", TABLE_CELL_STATUSES), name="ck_table_cells_status"),
+        CheckConstraint(
+            "(value_row IS NULL) = (value_column IS NULL)", name="ck_table_cells_value_source"
+        ),
+        CheckConstraint(
+            "status <> 'known' OR (value IS NOT NULL AND value_row IS NOT NULL)",
+            name="ck_table_cells_known_value",
+        ),
+        ForeignKeyConstraint(
+            ["table_id", "value_row", "value_column"],
+            [
+                "table_source_cells.table_id",
+                "table_source_cells.grid_row",
+                "table_source_cells.grid_column",
+            ],
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class TableCellSource(Base):
+    """One original grid cell that contributes to a normalized cell, in source order."""
+
+    __tablename__ = "table_cell_sources"
+
+    table_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_row: Mapped[int] = mapped_column(Integer, primary_key=True)
+    column_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grid_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    grid_column: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["table_id", "source_row", "column_index"],
+            ["table_cells.table_id", "table_cells.source_row", "table_cells.column_index"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["table_id", "grid_row", "grid_column"],
+            [
+                "table_source_cells.table_id",
+                "table_source_cells.grid_row",
+                "table_source_cells.grid_column",
+            ],
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class ChunkTableCell(Base):
+    """Which interval of one normalized cell a table chunk carries, in fragment order."""
+
+    __tablename__ = "chunk_table_cells"
+
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    source_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    column_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    text_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    text_end: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("ordinal >= 0", name="ck_chunk_table_cells_ordinal"),
+        CheckConstraint(
+            "text_start >= 0 AND text_end >= text_start", name="ck_chunk_table_cells_interval"
+        ),
+        ForeignKeyConstraint(
+            ["table_id", "source_row", "column_index"],
+            ["table_cells.table_id", "table_cells.source_row", "table_cells.column_index"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "chunk_id", "source_row", "column_index", name="uq_chunk_table_cells_cell"
+        ),
     )
 
 

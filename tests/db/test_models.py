@@ -14,14 +14,18 @@ from app.db.models import (
     BM25CorpusStat,
     Chunk,
     ChunkEmbedding,
+    ChunkTableCell,
     Document,
     EvalResult,
     LexemeStat,
     ParsedStructure,
+    ParsedTable,
+    TableCell,
+    TableSourceCell,
 )
 from app.ingestion.persistence import persist_seed_batch
 from app.retrieval.indexing.bm25 import backfill_term_stats
-from tests.ingestion.seed.support import sample_batch
+from tests.ingestion.seed.support import sample_batch, table_batch
 from tests.live_postgres import isolated_session
 
 
@@ -180,5 +184,34 @@ def test_evaluation_rows_preserve_provenance_and_reject_invalid_values():
                 with pytest.raises(IntegrityError):
                     async with session.begin_nested():
                         await session.execute(update(EvalResult).values(**values))
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_table_rows_reject_unknown_statuses_and_incomplete_readings():
+    """Keep stored table cells inside their vocabulary and their readings all-or-nothing."""
+
+    async def exercise():
+        """Seed one real table, then try each invalid change inside a savepoint."""
+        async with isolated_session() as session:
+            await persist_seed_batch(session, table_batch())
+            for model, values in (
+                (TableCell, {"status": "guessed"}),
+                (TableCell, {"status": "known", "value": None}),
+                (TableCell, {"value_row": None}),
+                (TableSourceCell, {"reading_years": None}),
+                (TableSourceCell, {"rowspan": 0}),
+                (ParsedTable, {"unit_status": "probable"}),
+                (ChunkTableCell, {"text_end": -1}),
+            ):
+                with pytest.raises(IntegrityError):
+                    async with session.begin_nested():
+                        statement = update(model).values(**values)
+                        if model is TableSourceCell:
+                            statement = statement.where(TableSourceCell.reading_values.is_not(None))
+                        if model is TableCell and "value_row" in values:
+                            statement = statement.where(TableCell.value_row.is_not(None))
+                        await session.execute(statement)
 
     asyncio.run(exercise())
