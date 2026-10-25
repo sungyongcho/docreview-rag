@@ -15,6 +15,7 @@ from app.db.models import Chunk, ChunkEmbedding, Document, ParsedStructure
 from app.db.queries import join_current_parse
 from app.retrieval.embedding.provider import EmbeddingIdentity
 from app.retrieval.indexing.embeddings import matching_embedding
+from app.retrieval.tables import load_table_fragments
 
 # Every evaluation command names its arms in lowercase kebab-case, orders them by the
 # same retrieval path and ranker precedence, and writes artifacts under the same
@@ -80,6 +81,7 @@ async def index_fingerprint(session: AsyncSession, identity: EmbeddingIdentity) 
     rows = (
         await session.execute(
             select(
+                Chunk.id,
                 Chunk.doc_id,
                 Chunk.stable_key,
                 Chunk.index_text_sha256,
@@ -87,7 +89,6 @@ async def index_fingerprint(session: AsyncSession, identity: EmbeddingIdentity) 
                 Chunk.language,
                 Chunk.kind,
                 Chunk.item,
-                Chunk.table_fragment,
                 Chunk.text_fragment,
                 ChunkEmbedding.embedding,
             )
@@ -95,7 +96,11 @@ async def index_fingerprint(session: AsyncSession, identity: EmbeddingIdentity) 
             .order_by(Chunk.doc_id, Chunk.stable_key)
         )
     ).all()
-    for row in rows:
-        vector = None if row[-1] is None else [float(value) for value in row[-1]]
-        digest.update(_encode((*row[:-1], vector)))
+    # The table fragment stays in the digest in its stored JSON form, rebuilt from the
+    # canonical table rows, so a corpus fingerprint survives the storage change.
+    table_ids = [row[0] for row in rows if row[6] == "table"]
+    fragments = await load_table_fragments(session, table_ids)
+    for chunk_id, *fields, text_fragment, embedding in rows:
+        vector = None if embedding is None else [float(value) for value in embedding]
+        digest.update(_encode((*fields, fragments.get(chunk_id), text_fragment, vector)))
     return digest.hexdigest()

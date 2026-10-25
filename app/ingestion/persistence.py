@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import (
     Chunk as ChunkModel,
     ChunkTableCell,
+    ChunkTableHeader,
     Corpus,
     Document,
     DocumentParse,
@@ -185,7 +186,6 @@ def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
                 "text": cell.cell.text,
                 "start_char": cell.cell.start_char,
                 "end_char": cell.cell.end_char,
-                "header_ordinal": cell.header_ordinal,
                 "reading_values": None if reading is None else sorted(reading.values),
                 "reading_years": None if reading is None else sorted(reading.years),
                 "reading_scale": None if reading is None else reading.scale,
@@ -284,6 +284,7 @@ async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
         for values in _slices(rows.get(model, [])):
             await session.execute(insert(model).values(values))
     keys = {member.chunk_stable_key for record in records for member in record.memberships}
+    keys |= {header.chunk_stable_key for record in records for header in record.headers}
     stored = await session.execute(
         select(ChunkModel.stable_key, ChunkModel.id).where(ChunkModel.stable_key.in_(keys))
     )
@@ -303,6 +304,19 @@ async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
     ]
     for values in _slices(memberships):
         await session.execute(insert(ChunkTableCell).values(values))
+    headers = [
+        {
+            "chunk_id": ids[header.chunk_stable_key],
+            "ordinal": header.ordinal,
+            "table_id": record.table_id,
+            "grid_row": header.row,
+            "grid_column": header.column,
+        }
+        for record in records
+        for header in record.headers
+    ]
+    for values in _slices(headers):
+        await session.execute(insert(ChunkTableHeader).values(values))
 
 
 async def persist_seed_batch(

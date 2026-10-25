@@ -13,17 +13,31 @@ from app.db.models import (
     Chunk,
     ChunkEmbedding,
     ChunkLength,
+    ChunkTableCell,
+    ChunkTableHeader,
     ChunkTerm,
     Document,
     EvalResult,
     EvaluationSnapshot,
     LexemeStat,
+    ParsedTable,
     SnapshotBM25CorpusStat,
     SnapshotChunk,
     SnapshotChunkLength,
+    SnapshotChunkTableCell,
+    SnapshotChunkTableHeader,
     SnapshotChunkTerm,
     SnapshotDocument,
     SnapshotLexemeStat,
+    SnapshotParsedTable,
+    SnapshotTableCaption,
+    SnapshotTableCell,
+    SnapshotTableCellSource,
+    SnapshotTableSourceCell,
+    TableCaption,
+    TableCell,
+    TableCellSource,
+    TableSourceCell,
 )
 from app.db.queries import join_current_parse
 from app.db.session_factory import SessionFactory, default_session_factory
@@ -44,6 +58,18 @@ from app.retrieval.indexing.embeddings import matching_embedding
 PUBLIC_COMPARE_MAX_ARTIFACT_BYTES = 16 * 1024 * 1024
 PUBLIC_COMPARE_MAX_CASES = 1000
 PUBLIC_COMPARE_MAX_RESPONSE_BYTES = 1024 * 1024
+
+
+# Live table records and their frozen copies, in an order their foreign keys accept.
+SNAPSHOT_TABLES = (
+    (ParsedTable, SnapshotParsedTable),
+    (TableCaption, SnapshotTableCaption),
+    (TableSourceCell, SnapshotTableSourceCell),
+    (TableCell, SnapshotTableCell),
+    (TableCellSource, SnapshotTableCellSource),
+    (ChunkTableCell, SnapshotChunkTableCell),
+    (ChunkTableHeader, SnapshotChunkTableHeader),
+)
 
 
 def _public_comparison_unavailable() -> SnapshotEvidenceError:
@@ -225,7 +251,6 @@ class SnapshotService:
                         "index_text",
                         "index_text_sha256",
                         "stable_key",
-                        "table_fragment",
                         "text_fragment",
                         "lexical_text",
                         "start_char",
@@ -255,7 +280,6 @@ class SnapshotService:
                         Chunk.index_text,
                         Chunk.index_text_sha256,
                         Chunk.stable_key,
-                        Chunk.table_fragment,
                         Chunk.text_fragment,
                         Chunk.lexical_text,
                         Chunk.start_char,
@@ -272,6 +296,14 @@ class SnapshotService:
                     .outerjoin(ChunkEmbedding, matching_embedding(embedding_identity)),
                 )
             )
+            for live, frozen in SNAPSHOT_TABLES:
+                columns = [column.name for column in live.__table__.columns]
+                await session.execute(
+                    insert(frozen).from_select(
+                        ["snapshot_id", *columns],
+                        select(literal(snapshot.id), *live.__table__.columns),
+                    )
+                )
             await session.execute(
                 insert(SnapshotChunkTerm).from_select(
                     ("snapshot_id", "chunk_id", "lexeme", "tf"),

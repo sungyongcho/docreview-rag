@@ -238,7 +238,6 @@ class Chunk(Base):
         ForeignKey("parsed_structures.structure_id"), nullable=False
     )
     index_text_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    table_fragment: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     text_fragment: Mapped[list[int] | None] = mapped_column(JSONB, nullable=True)
     doc_id: Mapped[str] = mapped_column(
         ForeignKey("documents.doc_id", ondelete="CASCADE"), index=True, nullable=False
@@ -376,7 +375,6 @@ class TableSourceCell(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     start_char: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     end_char: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    header_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reading_values: Mapped[list[Decimal] | None] = mapped_column(ARRAY(Numeric), nullable=True)
     reading_years: Mapped[list[int] | None] = mapped_column(ARRAY(Integer), nullable=True)
     reading_scale: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
@@ -397,7 +395,6 @@ class TableSourceCell(Base):
             "AND (reading_values IS NULL) = (reading_marked IS NULL)",
             name="ck_table_source_cells_reading",
         ),
-        UniqueConstraint("table_id", "header_ordinal", name="uq_table_source_cells_header"),
     )
 
 
@@ -502,6 +499,37 @@ class ChunkTableCell(Base):
         ),
         UniqueConstraint(
             "chunk_id", "source_row", "column_index", name="uq_chunk_table_cells_cell"
+        ),
+    )
+
+
+class ChunkTableHeader(Base):
+    """One header cell a table chunk renders, in its fragment's header order.
+
+    A wide table split by columns repeats only the headers of each piece's columns, so
+    the header cells belong to the chunk.
+    """
+
+    __tablename__ = "chunk_table_headers"
+
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    grid_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    grid_column: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("ordinal >= 0", name="ck_chunk_table_headers_ordinal"),
+        ForeignKeyConstraint(
+            ["table_id", "grid_row", "grid_column"],
+            [
+                "table_source_cells.table_id",
+                "table_source_cells.grid_row",
+                "table_source_cells.grid_column",
+            ],
+            ondelete="CASCADE",
         ),
     )
 
@@ -713,7 +741,6 @@ class SnapshotChunk(Base):
     chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     stable_key: Mapped[str] = mapped_column(String(64), nullable=False)
     index_text_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    table_fragment: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     text_fragment: Mapped[list[int] | None] = mapped_column(JSONB, nullable=True)
     doc_id: Mapped[str] = mapped_column(String(128), nullable=False)
     filing_registry: Mapped[str] = mapped_column("registry", String(16), nullable=False)
@@ -769,6 +796,217 @@ class SnapshotChunk(Base):
         ),
         Index("ix_snapshot_chunks_chunk_id", "chunk_id"),
         Index("ix_snapshot_chunks_tsv", "content_tsv", postgresql_using="gin"),
+    )
+
+
+class SnapshotParsedTable(Base):
+    """One table frozen by a snapshot, with the unit its notes stated then."""
+
+    __tablename__ = "snapshot_parsed_tables"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluation_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    table_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    structure_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    start_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    end_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    header_rows: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    builder_identity: Mapped[str] = mapped_column(String(64), nullable=False)
+    resolver_identity: Mapped[str] = mapped_column(String(64), nullable=False)
+    unit_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    unit_scale: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    unit_percent: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    unit_per_share_plain: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    unit_currency: Mapped[list[str]] = mapped_column(ARRAY(String(8)), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            _in("unit_status", TABLE_UNIT_STATUSES), name="ck_snapshot_parsed_tables_unit"
+        ),
+    )
+
+
+class SnapshotTableCaption(Base):
+    """One caption of a snapshot table, in link order."""
+
+    __tablename__ = "snapshot_table_captions"
+
+    snapshot_id: Mapped[int] = mapped_column(primary_key=True)
+    table_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    start_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    end_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    cells: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "table_id"],
+            ["snapshot_parsed_tables.snapshot_id", "snapshot_parsed_tables.table_id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class SnapshotTableSourceCell(Base):
+    """One original grid cell of a snapshot table and its reading then."""
+
+    __tablename__ = "snapshot_table_source_cells"
+
+    snapshot_id: Mapped[int] = mapped_column(primary_key=True)
+    table_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    grid_row: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grid_column: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rowspan: Mapped[int] = mapped_column(Integer, nullable=False)
+    colspan: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    start_char: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    end_char: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    reading_values: Mapped[list[Decimal] | None] = mapped_column(ARRAY(Numeric), nullable=True)
+    reading_years: Mapped[list[int] | None] = mapped_column(ARRAY(Integer), nullable=True)
+    reading_scale: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    reading_item: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reading_percent: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    reading_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    reading_marked: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    reading_row_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "table_id"],
+            ["snapshot_parsed_tables.snapshot_id", "snapshot_parsed_tables.table_id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class SnapshotTableCell(Base):
+    """One normalized body cell of a snapshot table and its interpretation then."""
+
+    __tablename__ = "snapshot_table_cells"
+
+    snapshot_id: Mapped[int] = mapped_column(primary_key=True)
+    table_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_row: Mapped[int] = mapped_column(Integer, primary_key=True)
+    column_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    column_header: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    value: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    value_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    value_column: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(_in("status", TABLE_CELL_STATUSES), name="ck_snapshot_table_cells_status"),
+        ForeignKeyConstraint(
+            ["snapshot_id", "table_id"],
+            ["snapshot_parsed_tables.snapshot_id", "snapshot_parsed_tables.table_id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class SnapshotTableCellSource(Base):
+    """One grid cell contributing to a snapshot table's normalized cell, in order."""
+
+    __tablename__ = "snapshot_table_cell_sources"
+
+    snapshot_id: Mapped[int] = mapped_column(primary_key=True)
+    table_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_row: Mapped[int] = mapped_column(Integer, primary_key=True)
+    column_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grid_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    grid_column: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "table_id", "source_row", "column_index"],
+            [
+                "snapshot_table_cells.snapshot_id",
+                "snapshot_table_cells.table_id",
+                "snapshot_table_cells.source_row",
+                "snapshot_table_cells.column_index",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_id", "table_id", "grid_row", "grid_column"],
+            [
+                "snapshot_table_source_cells.snapshot_id",
+                "snapshot_table_source_cells.table_id",
+                "snapshot_table_source_cells.grid_row",
+                "snapshot_table_source_cells.grid_column",
+            ],
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class SnapshotChunkTableCell(Base):
+    """Which interval of one normalized cell a snapshot table chunk carried."""
+
+    __tablename__ = "snapshot_chunk_table_cells"
+
+    snapshot_id: Mapped[int] = mapped_column(primary_key=True)
+    chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    column_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    text_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    text_end: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "chunk_id"],
+            ["snapshot_chunks.snapshot_id", "snapshot_chunks.chunk_id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_id", "table_id", "source_row", "column_index"],
+            [
+                "snapshot_table_cells.snapshot_id",
+                "snapshot_table_cells.table_id",
+                "snapshot_table_cells.source_row",
+                "snapshot_table_cells.column_index",
+            ],
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class SnapshotChunkTableHeader(Base):
+    """One header cell a snapshot table chunk rendered, in fragment order."""
+
+    __tablename__ = "snapshot_chunk_table_headers"
+
+    snapshot_id: Mapped[int] = mapped_column(primary_key=True)
+    chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    grid_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    grid_column: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "chunk_id"],
+            ["snapshot_chunks.snapshot_id", "snapshot_chunks.chunk_id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_id", "table_id", "grid_row", "grid_column"],
+            [
+                "snapshot_table_source_cells.snapshot_id",
+                "snapshot_table_source_cells.table_id",
+                "snapshot_table_source_cells.grid_row",
+                "snapshot_table_source_cells.grid_column",
+            ],
+            ondelete="CASCADE",
+        ),
     )
 
 

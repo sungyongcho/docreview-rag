@@ -565,8 +565,12 @@ def test_live_chunk_writes_invalidate_statistics_and_search_fails(database_url):
                 original.end_char,
                 original.source_sha256,
             )
-            # The whole table is chunker output, not a chunk column.
-            columns = {name: value for name, value in asdict(unit).items() if name != "table"}
+            # The table fragment and whole table are chunker output, not chunk columns.
+            columns = {
+                name: value
+                for name, value in asdict(unit).items()
+                if name not in {"table", "table_fragment"}
+            }
             return {
                 **columns,
                 "stable_key": unit.stable_key,

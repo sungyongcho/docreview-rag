@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 import time
 
 from pydantic import BaseModel, JsonValue
 
+from app.contracts.figures import TableCellReading
 from app.llm.completion import BilledAttemptAllowanceError, LLMProvider
 from app.llm.schemas import (
     AnswerDecision,
@@ -48,7 +49,7 @@ from app.workflow.types import (
 type Clock = Callable[[], float]
 type NodeObserver = Callable[[WorkflowNode, WorkflowState], Awaitable[None]]
 type Retriever = Callable[[str, int, RetrievalFilters], Awaitable[RetrievalResult]]
-type FragmentLoader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, Mapping[str, object]]]]
+type TableLoader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, Sequence[TableCellReading]]]]
 
 
 def _elapsed(clock: Clock, started: float) -> float:
@@ -272,7 +273,7 @@ async def run_workflow(
     provider: LLMProvider,
     clock: Clock = time.perf_counter,
     on_node: NodeObserver | None = None,
-    fragment_loader: FragmentLoader | None = None,
+    table_loader: TableLoader | None = None,
 ) -> RunReport:
     """Execute the guarded retrieve, grade, check, and report sequence.
 
@@ -289,9 +290,9 @@ async def run_workflow(
     on_node : NodeObserver | None
         Optional observer called after every committed node transition, including one
         that records a failure.
-    fragment_loader : FragmentLoader | None
-        Reads the stored fragments of the graded table evidence so ``check_node`` can
-        read each cited figure's column period. Without it, table evidence is read as
+    table_loader : TableLoader | None
+        Reads the stored figure readings of the graded table evidence so ``check_node``
+        can read each cited figure's column period. Without it, table evidence is read as
         running text and cannot confirm a requested period.
 
     Returns
@@ -444,8 +445,8 @@ async def run_workflow(
                     decided = await provider.complete(
                         build_check_prompt(current), AnswerDecision, allowance
                     )
-                    fragments = (
-                        await fragment_loader(
+                    readings = (
+                        await table_loader(
                             tuple(
                                 hit.chunk_id
                                 for hit in current.evidence
@@ -453,10 +454,10 @@ async def run_workflow(
                                 and hit.chunk_id in current.relevant_chunk_ids
                             )
                         )
-                        if fragment_loader is not None
+                        if table_loader is not None
                         else None
                     )
-                    current = check_node(_traced(current, decided, node), decided, fragments)
+                    current = check_node(_traced(current, decided, node), decided, readings)
             except BilledAttemptAllowanceError as error:
                 denied = error
                 failure = _allowance_failure(node, error, attempts=error.metadata.requests)

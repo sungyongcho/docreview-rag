@@ -129,3 +129,27 @@ def test_the_table_stays_out_of_the_chunk_identity():
     """Keep stable_key fixed by the fragment alone, so stored chunks keep their ids."""
     (chunk,) = [chunk for chunk in table_chunks(USD_TABLE) if chunk.table_fragment is not None]
     assert replace(chunk, table=None).stable_key == chunk.stable_key
+
+
+def test_column_split_pieces_keep_their_own_header_cells():
+    """Store one table whose column pieces each render only their own column headers."""
+    names = [f"Subsidiary {i} with a sufficiently descriptive company name" for i in range(12)]
+    html = (
+        '<table><tr><td colspan="13">(단위 : 백만원)</td></tr><tr><td>Metric</td>'
+        + "".join(f"<td>{name}</td>" for name in names)
+        + "</tr><tr><td>Revenue</td>"
+        + "".join(f"<td>{100 + i}</td>" for i in range(12))
+        + "</tr></table>"
+    )
+    chunks = table_chunks(html, InputBudget(target_tokens=200, max_tokens=500, max_chars=400))
+    pieces = [chunk for chunk in chunks if chunk.table_fragment is not None]
+    assert len({piece.table_fragment.header_cells for piece in pieces if piece.table_fragment}) > 1
+    record = only_record(chunks)
+    for piece in pieces:
+        assert piece.table_fragment is not None
+        stored = [
+            (header.row, header.column)
+            for header in record.headers
+            if header.chunk_stable_key == piece.stable_key
+        ]
+        assert stored == [(cell.row, cell.column) for cell in piece.table_fragment.header_cells]

@@ -6,6 +6,7 @@ from typing import cast
 from pydantic import ValidationError
 import pytest
 
+from app.contracts.figures import read_table_cells
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
 from app.retrieval.types import ChunkHit
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
@@ -328,7 +329,9 @@ def _table_state(requested_fiscal_years=(2024,), html=USD_INCOME_TABLE):
     judgment = RelevanceJudgment(
         grades=(ChunkRelevance(chunk_id=table.chunk_id, relevant=True, reason="Revenue."),)
     )
-    return grade_node(state, _ok_result(judgment)), {table.chunk_id: fragment}
+    return grade_node(state, _ok_result(judgment)), {
+        table.chunk_id: tuple(read_table_cells(fragment))
+    }
 
 
 def _revenue_answer(figure):
@@ -391,15 +394,19 @@ def test_a_known_different_currency_is_refused_not_converted():
 
 
 def _unitless_fragment():
-    """Store chunk 7 as a 2024 revenue table that states no unit anywhere."""
-    return {
-        "header_cells": [{"row": 0, "column": 1, "text": "December 28, 2024"}],
-        "caption_sources": [],
-        "cells": [
-            {"sources": [{"row": 1, "column": 0, "text": "Net revenue"}]},
-            {"sources": [{"row": 1, "column": 1, "text": "$ 25,785"}]},
-        ],
-    }
+    """Store chunk 7 as a 2024 revenue table that states no unit anywhere, as read."""
+    return tuple(
+        read_table_cells(
+            {
+                "header_cells": [{"row": 0, "column": 1, "text": "December 28, 2024"}],
+                "caption_sources": [],
+                "cells": [
+                    {"sources": [{"row": 1, "column": 0, "text": "Net revenue"}]},
+                    {"sources": [{"row": 1, "column": 1, "text": "$ 25,785"}]},
+                ],
+            }
+        )
+    )
 
 
 @pytest.mark.parametrize(

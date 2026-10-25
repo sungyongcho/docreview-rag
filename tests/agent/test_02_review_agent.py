@@ -43,7 +43,7 @@ from app.agent.tools.filings import build_default_registry
 from app.agent.tools.registry import ToolRegistry
 from app.agent.types import AgentReportAnswer, AgentResult, ToolCall
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.figures import EvidenceText
+from app.contracts.figures import EvidenceText, read_table_cells
 from app.db.session_factory import SessionFactory
 from app.mcp.client import mcp_tool_registry
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
@@ -110,7 +110,11 @@ class Reader:
             return {2024: EvidenceText(2024, hit.body, hit.context_header)}
         html = USD_INCOME_TABLE if self.kind == "usd" else INCOME_TABLE
         table, fragment = income_table_hit(2024, html=html)
-        return {2024: EvidenceText(2024, table.body, table.context_header, fragment)}
+        return {
+            2024: EvidenceText(
+                2024, table.body, table.context_header, tuple(read_table_cells(fragment))
+            )
+        }
 
 
 def one(call_id: str, name: str, args: dict[str, Any]) -> tuple[Call, ...]:

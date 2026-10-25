@@ -37,13 +37,13 @@ class _Session:
 
 @pytest.mark.parametrize(
     "field,value",
-    [(1, "new-key"), (2, "c" * 64), (9, [0.0, 1.0])],
+    [(2, "new-key"), (3, "c" * 64), (9, [0.0, 1.0])],
     ids=["rechunked_key", "changed_input_digest", "changed_vector"],
 )
 def test_index_fingerprint_rejects_changed_chunks_with_unchanged_document_sources(field, value):
     """Rechunking, changed input, and changed vectors each invalidate evaluation identity."""
     identity = EmbeddingIdentity("test", "model", 2, "cl100k_base")
-    chunk = ["document", "key", "b" * 64, 0, "en", "text", "1", None, None, [1.0, 0.0]]
+    chunk = [1, "document", "key", "b" * 64, 0, "en", "text", "1", None, [1.0, 0.0]]
     baseline = asyncio.run(index_fingerprint(cast(AsyncSession, _Session(chunk)), identity))
     changed = list(chunk)
     changed[field] = value

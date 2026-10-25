@@ -128,9 +128,9 @@ TABLE_HTML = (
 )
 
 
-def table_batch(html: str = TABLE_HTML) -> seed.SeedBatch:
+def table_batch(html: str = TABLE_HTML, doc_id: str = "NVDA-FY2024") -> seed.SeedBatch:
     """Build one seed batch whose filing is a single table chunked by the real chunker."""
-    filing = sample_filing()
+    filing = sample_filing(doc_id)
     filing.source_length = len(html)
     filing.sections = [
         Section(

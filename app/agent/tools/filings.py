@@ -19,6 +19,7 @@ from app.retrieval.embedding.provider import (
     get_embedding_provider,
 )
 from app.retrieval.search.service import retrieve
+from app.retrieval.tables import load_table_readings
 from app.retrieval.types import ChunkHit, Form, Issuer, RetrievalFilters
 
 DEFAULT_SEARCH_K = 5
@@ -295,18 +296,15 @@ def build_default_registry(
 async def read_cited_evidence(
     session_factory: SessionFactory, chunk_ids: tuple[int, ...]
 ) -> dict[int, EvidenceText]:
-    """Read cited chunks' text and stored table fragments for the answer figure check."""
+    """Read cited chunks' text and stored table readings for the answer figure check."""
     async with session_factory() as session:
         rows = (
             await session.execute(
-                select(Chunk.id, Chunk.body, Chunk.context_header, Chunk.table_fragment).where(
-                    Chunk.id.in_(chunk_ids)
-                )
+                select(Chunk.id, Chunk.body, Chunk.context_header).where(Chunk.id.in_(chunk_ids))
             )
         ).all()
+        readings = await load_table_readings(session, chunk_ids)
     return {
-        chunk_id: EvidenceText(
-            chunk_id, body, context_header, fragment if isinstance(fragment, dict) else None
-        )
-        for chunk_id, body, context_header, fragment in rows
+        chunk_id: EvidenceText(chunk_id, body, context_header, readings.get(chunk_id))
+        for chunk_id, body, context_header in rows
     }

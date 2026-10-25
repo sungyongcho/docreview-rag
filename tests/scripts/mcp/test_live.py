@@ -24,7 +24,7 @@ import pytest
 from app.agent.review_middleware import ReviewContext
 from app.agent.tools.filings import build_default_registry
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.figures import EvidenceText
+from app.contracts.figures import EvidenceText, read_table_cells
 from app.db.session_factory import SessionFactory
 from scripts.mcp import live
 from scripts.mcp.live import (
@@ -329,7 +329,11 @@ FINAL = {"label": "SUPPORTED", "answer": REVENUE, "citations": [CITED], "rationa
 async def usd_table(chunk_ids: tuple[int, ...]) -> dict[int, EvidenceText]:
     """Read chunk 2024 as the income table with an explicit, test-added USD note."""
     table, fragment = income_table_hit(2024, html=USD_INCOME_TABLE)
-    return {2024: EvidenceText(2024, table.body, table.context_header, fragment)}
+    return {
+        2024: EvidenceText(
+            2024, table.body, table.context_header, tuple(read_table_cells(fragment))
+        )
+    }
 
 
 def contracts():

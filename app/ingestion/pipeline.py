@@ -92,7 +92,6 @@ class ChunkRecord(Chunk):
             "stable_key": self.stable_key,
             "structure_id": self.structure_id,
             "index_text_sha256": hashlib.sha256(self.index_text.encode("utf-8")).hexdigest(),
-            "table_fragment": asdict(self.table_fragment) if self.table_fragment else None,
             "text_fragment": list(self.text_fragment) if self.text_fragment else None,
             "doc_id": self.doc_id,
             "language": self.language,

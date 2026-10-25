@@ -43,14 +43,9 @@ def resolver_identity() -> str:
 
 @dataclass(frozen=True, slots=True)
 class SourceCellRecord:
-    """One original grid cell, its header position and its reading when it holds figures.
-
-    ``header_ordinal`` is the cell's position among the table's header cells, None for a
-    body cell.
-    """
+    """One original grid cell and its reading when it holds figures."""
 
     cell: SourceCell
-    header_ordinal: int | None
     reading: TableCellReading | None
 
 
@@ -83,6 +78,20 @@ class MembershipRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class HeaderRecord:
+    """One header cell a chunk renders, in its fragment's header order.
+
+    A wide table split by columns repeats only the headers of each piece's columns, so
+    header cells belong to the chunk, not to the table.
+    """
+
+    chunk_stable_key: str
+    ordinal: int
+    row: int
+    column: int
+
+
+@dataclass(frozen=True, slots=True)
 class TableRecord:
     """Every stored fact of one table and the chunks that carry its cells."""
 
@@ -97,6 +106,7 @@ class TableRecord:
     source_cells: tuple[SourceCellRecord, ...]
     cells: tuple[NormalizedCellRecord, ...]
     memberships: tuple[MembershipRecord, ...]
+    headers: tuple[HeaderRecord, ...]
 
 
 def _table_id(structure_id: str, start_char: int, end_char: int) -> str:
@@ -111,6 +121,19 @@ def _column_header(table: StructuredTable, column: int) -> str:
         row.cells[column].text
         for row in table.headers
         if column < len(row.cells) and row.cells[column].text
+    )
+
+
+def _header_cells(table: StructuredTable) -> tuple[SourceCell, ...]:
+    """Return every named header cell of the whole table, as the chunker lists them."""
+    return tuple(
+        dict.fromkeys(
+            source
+            for row in table.headers
+            for cell in row.cells
+            for source in cell.sources
+            if source.text
+        )
     )
 
 
@@ -143,23 +166,20 @@ def _table_record(
         other = piece.table_fragment
         if piece.table != table or other is None:
             raise ValueError(f"{doc_id} table pieces at {start_char} disagree on their table")
-        if (other.header_rows, other.header_cells, other.caption_sources) != (
+        if (other.header_rows, other.caption_sources) != (
             fragment.header_rows,
-            fragment.header_cells,
             fragment.caption_sources,
         ):
             raise ValueError(f"{doc_id} table pieces at {start_char} disagree on headers")
-    whole = asdict(_whole_fragment(table, fragment.header_cells, fragment.caption_sources))
+    header_cells = _header_cells(table)
+    whole = asdict(_whole_fragment(table, header_cells, fragment.caption_sources))
     readings: dict[tuple[int, int], TableCellReading] = {}
     for reading in read_table_cells(whole):
         key = (reading.row, reading.column)
         if readings.setdefault(key, reading) != reading:
             raise ValueError(f"{doc_id} source cell {key} reads two ways")
-    header_positions = {
-        (cell.row, cell.column): ordinal for ordinal, cell in enumerate(fragment.header_cells)
-    }
     sources: dict[tuple[int, int], SourceCell] = {
-        (cell.row, cell.column): cell for cell in fragment.header_cells
+        (cell.row, cell.column): cell for cell in header_cells
     }
     cells: list[NormalizedCellRecord] = []
     for row in table.rows:
@@ -185,15 +205,22 @@ def _table_record(
             )
     known = {(cell.row, cell.column): cell for cell in cells}
     memberships: list[MembershipRecord] = []
+    headers: list[HeaderRecord] = []
     for piece in pieces:
         assert piece.table_fragment is not None
+        # stable_key hashes the whole fragment, so compute it once per piece.
+        key = piece.stable_key
+        for ordinal, header in enumerate(piece.table_fragment.header_cells):
+            if sources.get((header.row, header.column)) != header:
+                raise ValueError(f"{doc_id} chunk header {(header.row, header.column)} is unknown")
+            headers.append(HeaderRecord(key, ordinal, header.row, header.column))
         for ordinal, member in enumerate(piece.table_fragment.cells):
             normalized = known.get((member.row, member.column))
             if normalized is None or normalized.sources != member.sources:
                 raise ValueError(f"{doc_id} chunk cell {(member.row, member.column)} is unknown")
             memberships.append(
                 MembershipRecord(
-                    piece.stable_key,
+                    key,
                     ordinal,
                     member.row,
                     member.column,
@@ -210,12 +237,10 @@ def _table_record(
         fragment.header_rows,
         read_table_unit(whole),
         fragment.caption_sources,
-        tuple(
-            SourceCellRecord(cell, header_positions.get(key), readings.get(key))
-            for key, cell in sorted(sources.items())
-        ),
+        tuple(SourceCellRecord(cell, readings.get(key)) for key, cell in sorted(sources.items())),
         tuple(cells),
         tuple(memberships),
+        tuple(headers),
     )
 
 

@@ -501,14 +501,14 @@ _ITEM_WORDS = frozenset(word for words, _ in _ENGLISH_PHRASES for word in words)
 class EvidenceText:
     """One cited chunk as the checker reads it.
 
-    ``table_fragment`` is the stored fragment of a table chunk: its data cells,
-    header cells and captions with their source grid coordinates.
+    ``table_cells`` are the stored readings of a table chunk's figure-bearing cells,
+    in fragment order (see :func:`read_table_cells`); None for running text.
     """
 
     chunk_id: int
     body: str
     context_header: str
-    table_fragment: Mapping[str, object] | None = None
+    table_cells: Sequence[TableCellReading] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1514,12 +1514,7 @@ def check_figures(
     period mismatch.
     """
     requested = set(requested_years)
-    cells = [
-        cell
-        for item in evidence
-        if item.table_fragment is not None
-        for cell in read_table_cells(item.table_fragment)
-    ]
+    cells = [cell for item in evidence if item.table_cells is not None for cell in item.table_cells]
     data_values = {value for cell in cells for value in cell.values}
     facts = [
         claim
@@ -1527,7 +1522,7 @@ def check_figures(
         for claim in _claims(item.context_header)
         + (
             [fact for fact in _claims(item.body) if fact.figure.value not in data_values]
-            if item.table_fragment is not None
+            if item.table_cells is not None
             else _claims(item.body)
         )
     ]

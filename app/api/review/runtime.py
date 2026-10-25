@@ -62,7 +62,6 @@ from app.query.language import detect_query_language
 from app.query.resolution import ScopeResolver
 from app.query.translation import QueryTranslationError, route_query
 from app.retrieval.embedding.provider import EmbeddingProvider
-from app.retrieval.fragments import load_table_fragments
 from app.retrieval.ranking.reranker import RerankProvider, shared_cross_encoder
 from app.retrieval.search.plan import SearchPlan
 from app.retrieval.search.profiles import RetrievalProfile, ServerBM25
@@ -72,6 +71,7 @@ from app.retrieval.search.service import (
     SearchNotReadyError,
     consistent_retrieve,
 )
+from app.retrieval.tables import load_table_readings
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.settings_sources import DEFAULT_LOCAL_TIMEOUT_S
 from app.workflow.runner import BilledRunAllowanceError, NodeObserver, run_workflow
@@ -987,8 +987,8 @@ class RuntimeApiServices:
                         retriever=retrieve_for_workflow,
                         provider=llm_provider,
                         on_node=record_node,
-                        fragment_loader=partial(
-                            load_table_fragments,
+                        table_loader=partial(
+                            load_table_readings,
                             session,
                             snapshot_id=scope.filters.snapshot_id,
                         ),

@@ -26,8 +26,9 @@ from app.retrieval.indexing.bm25 import backfill_term_stats
 from app.retrieval.search.bm25 import bm25_search
 from app.retrieval.search.lexical import lexical_search
 from app.retrieval.search.vector import vector_search
+from app.retrieval.tables import load_chunk_tables
 from app.retrieval.types import RetrievalFilters
-from tests.ingestion.seed.support import sample_batch
+from tests.ingestion.seed.support import sample_batch, table_batch
 from tests.live_postgres import disposable_database_url, live_postgres_unavailable
 
 
@@ -99,6 +100,7 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
         factory = async_sessionmaker(bind=engine, expire_on_commit=False)
         async with factory() as session:
             await persist_seed_batch(session, sample_batch())
+            await persist_seed_batch(session, table_batch(doc_id="AMD-FY2024"))
             mutable_id = await session.scalar(select(Chunk.id).order_by(Chunk.id).limit(1))
             assert mutable_id is not None
             context_header = await session.scalar(
@@ -244,6 +246,16 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
             assert repeated.snapshot_id == baseline.snapshot_id
             assert repeated.label == "Baseline" and repeated.public is True
             async with factory() as session:
+                table_chunk = await session.scalar(
+                    select(Chunk.id).where(Chunk.doc_id == "AMD-FY2024", Chunk.kind == "table")
+                )
+                assert table_chunk is not None
+                live_table = await load_chunk_tables(session, [table_chunk])
+                assert live_table[table_chunk].readings
+                assert (
+                    await load_chunk_tables(session, [table_chunk], baseline.snapshot_id)
+                    == live_table
+                )
                 retained = (
                     await session.execute(
                         select(

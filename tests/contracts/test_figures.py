@@ -14,7 +14,7 @@ from app.contracts.figures import (
     read_table_cells,
     read_table_unit,
 )
-from app.ingestion.chunking import chunk_filing
+from app.ingestion.chunking import Chunk, chunk_filing
 from app.ingestion.parsing.models import Block
 from tests.ingestion.chunk.support import build_filing
 
@@ -30,14 +30,29 @@ INCOME_TABLE = (
 USD_INCOME_TABLE = INCOME_TABLE.replace("(In millions)", "(In millions of U.S. dollars)")
 
 
-def table_evidence(html: str = USD_INCOME_TABLE) -> EvidenceText:
-    """Chunk one table through the real chunker and read it as cited evidence."""
+def table_chunk(html: str = USD_INCOME_TABLE) -> Chunk:
+    """Chunk one table through the real chunker."""
     block = Block("table", "", html=html, source_pos=0, end_pos=len(html))
     filing = build_filing([block])
     filing.source_length = len(html)
     (chunk,) = chunk_filing(filing)
     assert chunk.table_fragment is not None
-    return EvidenceText(1, chunk.body, chunk.context_header, asdict(chunk.table_fragment))
+    return chunk
+
+
+def table_fragment(html: str = USD_INCOME_TABLE) -> dict:
+    """Return one chunked table's fragment as the JSON a stored table rebuilds."""
+    fragment = table_chunk(html).table_fragment
+    assert fragment is not None
+    return asdict(fragment)
+
+
+def table_evidence(html: str = USD_INCOME_TABLE) -> EvidenceText:
+    """Read one chunked table as cited evidence with its figure readings."""
+    chunk = table_chunk(html)
+    return EvidenceText(
+        1, chunk.body, chunk.context_header, tuple(read_table_cells(table_fragment(html)))
+    )
 
 
 def prose_evidence(body: str) -> EvidenceText:
@@ -192,7 +207,9 @@ def dart_evidence(caption: str = "(단위 : 백만원)") -> EvidenceText:
     """Read the DART-style revenue fragment under one caption linked by its source span."""
     linked = {"start_char": 0, "end_char": 20, "text": caption}
     fragment = {**DART_FRAGMENT, "caption_sources": [linked]}
-    return EvidenceText(9, "| 과목 | 2024 | 2023 |", "연결 손익계산서", fragment)
+    return EvidenceText(
+        9, "| 과목 | 2024 | 2023 |", "연결 손익계산서", tuple(read_table_cells(fragment))
+    )
 
 
 @pytest.mark.parametrize(
@@ -325,7 +342,7 @@ def unit_fragment(*captions: dict, label: str = "Net revenue", value: str = "25,
             {"sources": [{"row": 1, "column": 1, "text": value}]},
         ],
     }
-    return EvidenceText(7, "", "", fragment)
+    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
 
 
 def linked(text: str, start: int = 0) -> dict:
@@ -382,9 +399,7 @@ def test_a_scale_note_without_an_explicit_currency_is_withheld(captions):
 def test_a_context_header_unit_without_provenance_is_not_the_table_unit():
     """Ignore a unit written in the context header of a legacy fragment without captions."""
     legacy = unit_fragment()
-    header = EvidenceText(
-        7, "", "AMD FY2024 · (In millions of U.S. dollars)", legacy.table_fragment
-    )
+    header = EvidenceText(7, "", "AMD FY2024 · (In millions of U.S. dollars)", legacy.table_cells)
     answer = "2024 net revenue was $25,785 million."
     assert check_figures(answer, [header], [2024]).verdict == "unit_unverified"
 
@@ -399,7 +414,7 @@ def test_uncertain_units_never_become_a_period_mismatch_or_absence():
             {"sources": [{"row": 1, "column": 2, "text": "22,680"}]},
         ],
     }
-    evidence = [EvidenceText(7, "", "", fragment)]
+    evidence = [EvidenceText(7, "", "", tuple(read_table_cells(fragment)))]
     for answer in ("2024 net revenue was $22,680 million.", "2024 net revenue was $1 million."):
         result = check_figures(answer, evidence, [2024])
         assert (result.verdict, result.checks[0].evidenced_years) == ("unit_unverified", (2024,))
@@ -439,7 +454,7 @@ def noted(
             {"sources": [{"row": 1, "column": 1, "text": value}]},
         ],
     }
-    return EvidenceText(7, "", "", fragment)
+    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
 
 
 @pytest.mark.parametrize(
@@ -499,7 +514,7 @@ def test_declarations_in_separate_header_cells_are_all_read():
                 {"sources": [{"row": 1, "column": 1, "text": "25,785"}]},
             ],
         }
-        evidence = [EvidenceText(7, "", "", fragment)]
+        evidence = [EvidenceText(7, "", "", tuple(read_table_cells(fragment)))]
         answer = "2024 net revenue was $25,785 million."
         assert check_figures(answer, evidence, [2024]).verdict == verdict, extra
 
@@ -800,7 +815,7 @@ def fragment_evidence(label: str = "Net revenue", value: str = "25,785") -> Evid
             {"sources": [{"row": 1, "column": 1, "text": value}]},
         ],
     }
-    return EvidenceText(7, "", "", fragment)
+    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
 
 
 @pytest.mark.parametrize(
@@ -1100,7 +1115,7 @@ def note_cell(note: str, cell: str) -> EvidenceText:
             {"sources": [{"row": 1, "column": 1, "text": cell}]},
         ],
     }
-    return EvidenceText(7, "", "", fragment)
+    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
 
 
 @pytest.mark.parametrize(
@@ -1205,7 +1220,7 @@ def two_year_table(note: str = "(In millions)") -> EvidenceText:
             {"sources": [{"row": 1, "column": 2, "text": "22"}]},
         ],
     }
-    return EvidenceText(7, "", "", fragment)
+    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
 
 
 def test_a_marker_between_two_figures_certifies_neither():
@@ -1261,8 +1276,7 @@ def test_an_unsupported_cell_currency_is_never_replaced_by_the_table_currency(ce
 
 def test_table_readings_expose_each_figure_cell_with_its_resolved_unit():
     """Read the USD income table's figure cells with their coordinates, years and unit."""
-    fragment = table_evidence().table_fragment
-    assert fragment is not None
+    fragment = table_fragment()
     readings = {(cell.row, cell.column): cell for cell in read_table_cells(fragment)}
     revenue = next(
         cell for cell in readings.values() if cell.values == frozenset({Decimal("25785")})
@@ -1277,8 +1291,7 @@ def test_table_readings_expose_each_figure_cell_with_its_resolved_unit():
 
 def test_table_readings_keep_an_ambiguous_dollar_unresolved():
     """Leave the "$" family unresolved when the note states a scale but no currency."""
-    fragment = table_evidence(INCOME_TABLE).table_fragment
-    assert fragment is not None
+    fragment = table_fragment(INCOME_TABLE)
     currencies = {cell.currency for cell in read_table_cells(fragment) if cell.item == "revenue"}
     assert currencies == {"$"}
 

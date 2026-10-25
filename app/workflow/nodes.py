@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel
 
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.figures import EvidenceText, check_figures
+from app.contracts.figures import EvidenceText, TableCellReading, check_figures
 from app.llm.schemas import (
     AnswerDecision,
     BudgetExceeded,
@@ -397,7 +397,7 @@ def grade_node(
 def check_node(
     state: WorkflowState,
     result: ProviderResult[AnswerDecision],
-    table_fragments: Mapping[int, Mapping[str, object]] | None = None,
+    table_cells: Mapping[int, Sequence[TableCellReading]] | None = None,
 ) -> WorkflowState:
     """Guard a decision against the citations the grader accepted and their figures.
 
@@ -407,9 +407,10 @@ def check_node(
         Graded state whose relevant ids define allowed citations.
     result : ProviderResult[AnswerDecision]
         Typed answer decision or refusal.
-    table_fragments : Mapping[int, Mapping[str, object]] | None
-        Stored fragments of the cited table chunks, by chunk id. A table chunk without
-        one is read as running text, which can only make the figure check stricter.
+    table_cells : Mapping[int, Sequence[TableCellReading]] | None
+        Stored figure readings of the cited table chunks, by chunk id. A table chunk
+        without a stored table is read as running text, which can only make the figure
+        check stricter.
 
     Returns
     -------
@@ -472,11 +473,11 @@ def check_node(
     held: FiguresUnitUnverified | None = None
     if guarded.label == "SUPPORTED":
         evidence_by_id = {hit.chunk_id: hit for hit in state.evidence}
-        fragments = table_fragments or {}
+        readings = table_cells or {}
         figures = check_figures(
             guarded.answer,
             [
-                EvidenceText(hit.chunk_id, hit.body, hit.context_header, fragments.get(chunk_id))
+                EvidenceText(hit.chunk_id, hit.body, hit.context_header, readings.get(chunk_id))
                 for chunk_id in guarded.citation_chunk_ids
                 if (hit := evidence_by_id.get(chunk_id)) is not None
             ],

@@ -4,7 +4,7 @@ from dataclasses import asdict
 
 import pytest
 
-from app.contracts.figures import EvidenceText, check_figures
+from app.contracts.figures import EvidenceText, check_figures, read_table_cells
 from app.ingestion.chunking import Chunk, chunk_filing
 from app.ingestion.parsing.models import Block
 from tests.ingestion.chunk.support import build_filing
@@ -31,7 +31,9 @@ def table_chunks(*blocks: Block) -> list[Chunk]:
 def evidence(chunk: Chunk) -> EvidenceText:
     """Read one table chunk as cited evidence, exactly as it would be stored."""
     assert chunk.table_fragment is not None
-    return EvidenceText(1, chunk.body, chunk.context_header, asdict(chunk.table_fragment))
+    return EvidenceText(
+        1, chunk.body, chunk.context_header, tuple(read_table_cells(asdict(chunk.table_fragment)))
+    )
 
 
 def caption_then_table(caption: str, table: str = SEC_TABLE) -> list[Block]:

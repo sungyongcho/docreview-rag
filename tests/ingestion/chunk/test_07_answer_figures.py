@@ -2,7 +2,7 @@
 
 from dataclasses import asdict
 
-from app.contracts.figures import EvidenceText, check_figures
+from app.contracts.figures import EvidenceText, check_figures, read_table_cells
 from app.ingestion.parsing.html import line_offsets, normalize, source_pos
 
 
@@ -26,7 +26,9 @@ def test_amd_2024_income_statement_withholds_figures_it_gives_no_currency_for(
     )
     assert chunk.table_fragment is not None
     fragment = asdict(chunk.table_fragment)
-    evidence = [EvidenceText(1, chunk.body, chunk.context_header, fragment)]
+    evidence = [
+        EvidenceText(1, chunk.body, chunk.context_header, tuple(read_table_cells(fragment)))
+    ]
 
     assert "(In millions, except per share amounts)" in [
         cell["text"] for cell in fragment["header_cells"]

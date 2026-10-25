@@ -10,7 +10,7 @@ packages. Schema preparation lives in `app.db.startup`, the container gate; Quic
 
 | Package | Entry points and ownership |
 |---|---|
-| `schema` | `python -m scripts.schema check\|prepare\|recover\|recreate`; `status.py` owns inspection and reuses `app.db.startup` for preparation, `recovery.py` isolated recovery, `recreate.py` confirmed recreation, `sources.py` source journals |
+| `schema` | `python -m scripts.schema check\|prepare\|recover\|recreate\|tables [--drop-fragments]`; `status.py` owns inspection and reuses `app.db.startup` for preparation, `recovery.py` isolated recovery, `recreate.py` confirmed recreation, `sources.py` source journals, `tables.py` freezes snapshot tables and drops `table_fragment` only after every stored fragment is rebuilt exactly |
 | `stack` | `python -m scripts.stack dev\|prod [COMPOSE_ARGS...]`; `environment.py` validates bindings, `operator.py` manages host Operations, `commands.py` implements `corpus` and reset status |
 | `stack` setup | `bash scripts/stack/quickstart.sh` bootstraps the locked Python environment then runs `python -m scripts.stack.cli MODE start` |
 | `diagnostics` | `python -m scripts.diagnostics.ollama` checks model connectivity; `python -m scripts.diagnostics.readiness` measures health/readiness during ingestion; `python -m scripts.diagnostics.local_grade` runs the explicit local-model benchmark |

@@ -11,13 +11,13 @@ from app.config import BM25Idf, LexicalRanker
 from app.evals.execution.models import EvaluationRetrieval
 from app.query.language import lexical_corpus_language, lexical_plan
 from app.retrieval.embedding.provider import EmbeddingProvider
-from app.retrieval.fragments import load_table_fragments
 from app.retrieval.ranking.fusion import DEFAULT_RRF_K
 from app.retrieval.search.bm25 import bm25_search, validate_bm25_parameters
 from app.retrieval.search.lexical import lexical_search
 from app.retrieval.search.plan import RetrievalStrategy, SearchPlan
 from app.retrieval.search.service import normalize_query, retrieve
 from app.retrieval.search.vector import vector_search
+from app.retrieval.tables import load_table_fragments
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
 type Retriever = Callable[[str, int], Awaitable[EvaluationRetrieval]]

@@ -5,6 +5,7 @@ from typing import Any, cast
 
 import pytest
 
+from app.contracts.figures import read_table_cells
 from app.observability.persistence import report_to_records
 from app.observability.stages import record_stages, stage_metadata
 from app.observability.types import Budget, RunReport
@@ -106,8 +107,8 @@ def test_successful_runner_preserves_raw_traces_when_the_token_budget_is_exactly
     assert tuple(trace.llm_output for trace in traces) == (grade, check)
 
 
-def test_runner_reads_table_fragments_to_report_a_period_mismatch():
-    """Load the relevant table's fragment before check and report a comparative-column figure."""
+def test_runner_reads_table_readings_to_report_a_period_mismatch():
+    """Load the table's stored readings before check and report a comparative-column figure."""
     table, fragment = income_table_hit(html=USD_INCOME_TABLE)
     grade = '{"grades":[{"chunk_id":7,"relevant":true,"reason":"Income statement."}]}'
     check = (
@@ -117,9 +118,9 @@ def test_runner_reads_table_fragments_to_report_a_period_mismatch():
     requested = []
 
     async def load(chunk_ids):
-        """Return the stored fragment of each requested table chunk."""
+        """Return the stored readings of each requested table chunk."""
         requested.append(chunk_ids)
-        return {7: fragment}
+        return {7: tuple(read_table_cells(fragment))}
 
     request = _request().model_copy(update={"requested_fiscal_years": (2024,)})
     result = asyncio.run(
@@ -128,7 +129,7 @@ def test_runner_reads_table_fragments_to_report_a_period_mismatch():
             retriever=retriever_returning([table]),
             provider=_provider([_raw(grade), _raw(check)]),
             clock=SequenceClock(),
-            fragment_loader=load,
+            table_loader=load,
         )
     )
 
