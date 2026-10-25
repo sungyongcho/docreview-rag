@@ -15,6 +15,7 @@ though nothing were found.
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+import hashlib
 import json
 from typing import Annotated, Any, NotRequired
 
@@ -47,11 +48,13 @@ from app.agent.loop import (
 from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import FINAL_ANSWER_NAME, Tool, ToolRegistry, safe_runtime_error
 from app.agent.types import AgentAnswer, AgentReportAnswer, ToolCall
+from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.figures import check_figures
 from app.llm.decoding import validation_errors
 
 type EvidenceLedger = dict[int, dict[str, Any]]
+type CellLedger = dict[str, dict[str, Any]]
 type ToolHandler = Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]]
 type ModelHandler = Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]]
 type ModelResult = ModelResponse[Any] | AIMessage | ExtendedModelResponse[Any]
@@ -128,6 +131,53 @@ def merge_evidence(left: EvidenceLedger | None, right: EvidenceLedger | None) ->
     return {**(left or {}), **right}
 
 
+def merge_cells(left: CellLedger | None, right: CellLedger | None) -> CellLedger:
+    """Combine cell ledger updates; ``None`` clears it and a disagreement is marked.
+
+    Parameters
+    ----------
+    left : CellLedger | None
+        Cells fetched so far in this question, absent before the first update.
+    right : CellLedger | None
+        One update: the cells one fetch returned, or ``None`` to start a new question.
+
+    Returns
+    -------
+    CellLedger
+        The merged ledger. When two updates, possibly from parallel calls in one step,
+        record different contents under one ref, the ref keeps a ``conflict`` marker that
+        :class:`StopOnSystemFailure` turns into the run's failure before the next model
+        call.
+    """
+    if right is None:
+        return {}
+    merged = dict(left or {})
+    for ref, record in right.items():
+        known = merged.get(ref)
+        merged[ref] = record if known is None or known == record else {"conflict": True}
+    return merged
+
+
+def cell_record(cell: dict[str, Any], catalog: dict[str, Any], chunk_id: int) -> dict[str, Any]:
+    """Record one returned cell by the identity its content and source version fix."""
+    return {
+        "chunk_id": chunk_id,
+        "stable_key": catalog["stable_key"],
+        "resolver_identity": catalog["resolver_identity"],
+        "digest": hashlib.sha256(canonical_json(cell).encode()).hexdigest(),
+    }
+
+
+def _returned_cells(message: ToolMessage, chunk_id: int) -> CellLedger:
+    """Return the ledger records of the stored cells one fetch result carries."""
+    artifact = message.artifact if isinstance(message.artifact, dict) else {}
+    structured = artifact.get("structured_content")
+    catalog = structured.get("table") if isinstance(structured, dict) else None
+    if not isinstance(catalog, dict) or catalog.get("status") != "available":
+        return {}
+    return {cell["ref"]: cell_record(cell, catalog, chunk_id) for cell in catalog["cells"]}
+
+
 def keep_first_failure(left: str | None, right: str | None) -> str | None:
     """Combine failure updates; ``None`` clears the failure, otherwise the first one stays.
 
@@ -160,6 +210,7 @@ class ReviewState(AgentState[Any]):
     """
 
     evidence: Annotated[NotRequired[EvidenceLedger], merge_evidence]
+    cells: Annotated[NotRequired[CellLedger], merge_cells]
     period_mismatch: NotRequired[dict[str, Any] | None]
     unit_unverified: NotRequired[dict[str, Any] | None]
 
@@ -288,6 +339,7 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         del state, runtime
         return {
             "evidence": None,
+            "cells": None,
             "period_mismatch": None,
             "unit_unverified": None,
             "structured_response": None,
@@ -346,9 +398,21 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
                 request.tool_call,
                 f"tool returned conflicting immutable identity for chunk {conflict}",
             )
+        cells: CellLedger = {}
+        if isinstance(parameters, FetchChunkParams):
+            known: CellLedger = request.state.get("cells") or {}
+            cells = _returned_cells(result, parameters.chunk_id)
+            clash = next((r for r, v in cells.items() if r in known and known[r] != v), None)
+            if clash is not None:
+                return _error(
+                    request.tool_call, f"tool returned conflicting content for cell {clash}"
+                )
         if not found:
             return result
-        return Command(update={"messages": [result], "evidence": found})
+        update: dict[str, Any] = {"messages": [result], "evidence": found}
+        if cells:
+            update["cells"] = cells
+        return Command(update=update)
 
     async def awrap_model_call(
         self, request: ModelRequest[Any], handler: ModelHandler
@@ -548,4 +612,11 @@ class StopOnSystemFailure(AgentMiddleware[StopState]):
     def before_model(self, state: StopState, runtime: Runtime[None]) -> dict[str, Any] | None:
         """End the run before the next model call once a system failure was recorded."""
         del runtime
-        return {"jump_to": "end"} if state.get("failure") else None
+        if state.get("failure"):
+            return {"jump_to": "end"}
+        clash = next(
+            (ref for ref, v in (state.get("cells") or {}).items() if v.get("conflict")), None
+        )
+        if clash is None:
+            return None
+        return {"failure": f"conflicting stored content for cell {clash}", "jump_to": "end"}

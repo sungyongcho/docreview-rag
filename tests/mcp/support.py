@@ -37,10 +37,10 @@ def text_of(result) -> str:
     return "".join(item.text for item in result.content if item.type == "text")
 
 
-def controlled_filings(log_path: Path):
+def controlled_filings(log_path: Path, *args: str):
     """Launch the filings server with controlled retrieval logging to ``log_path``."""
     log_path.touch()
-    return module_server("tests.mcp.controlled_filings", str(log_path))
+    return module_server("tests.mcp.controlled_filings", str(log_path), *args)
 
 
 def logged_events(log_path: Path, start: int = 0) -> list[dict]:

@@ -73,6 +73,7 @@ def build_server(registry: ToolRegistry) -> Server:
                     description=tool.description
                     + (COMPARE_NOTE if tool.name == "compare_years" else ""),
                     input_schema=tool.parameters.model_json_schema(),
+                    output_schema=None if tool.output is None else tool.output.model_json_schema(),
                 )
                 for tool in exposed.values()
             ]
@@ -156,8 +157,8 @@ def _port(text: str) -> int:
     return port
 
 
-def parse_http_port(argv: Sequence[str]) -> int | None:
-    """Return the ``--http`` port, or None for the default stdio transport.
+def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
+    """Return the ``--http`` port (None for stdio) and whether to include stored cells.
 
     Invalid arguments exit with code 2 and a usage message on stderr.
     """
@@ -171,15 +172,26 @@ def parse_http_port(argv: Sequence[str]) -> int | None:
         metavar="PORT",
         help=f"serve Streamable HTTP at http://{HTTP_HOST}:PORT/mcp instead of stdio",
     )
-    return parser.parse_args(argv).http
+    parser.add_argument(
+        "--include-cells",
+        action="store_true",
+        help="return each fetched chunk's stored table cells for cell-selecting answers",
+    )
+    return parser.parse_args(argv)
 
 
-async def main(http_port: int | None = None) -> None:
+def parse_http_port(argv: Sequence[str]) -> int | None:
+    """Return the ``--http`` port, or None for the default stdio transport."""
+    return parse_arguments(argv).http
+
+
+async def main(http_port: int | None = None, *, include_cells: bool = False) -> None:
     """Use the product database configuration and release its pool on shutdown.
 
     The server is a development tool run with the developer's own key, so it
     refuses ``MODE=prod`` before touching the database or a provider credential.
     ``http_port`` selects Streamable HTTP on loopback; None keeps stdio.
+    ``include_cells`` adds each fetched chunk's stored cells and their output schema.
     """
     if get_settings().environment == "prod":
         # stdout carries the MCP protocol; the refusal goes to stderr only.
@@ -188,7 +200,7 @@ async def main(http_port: int | None = None) -> None:
     from app.db.session import engine
 
     try:
-        registry = build_default_registry(default_session_factory)
+        registry = build_default_registry(default_session_factory, include_cells=include_cells)
         if http_port is None:
             await serve(registry)
         else:
@@ -198,4 +210,5 @@ async def main(http_port: int | None = None) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main(parse_http_port(sys.argv[1:])))
+    arguments = parse_arguments(sys.argv[1:])
+    asyncio.run(main(arguments.http, include_cells=arguments.include_cells))

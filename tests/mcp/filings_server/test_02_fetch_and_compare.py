@@ -2,11 +2,12 @@
 
 import asyncio
 import hashlib
+import json
 
 from mcp import Client
 import pytest
 
-from app.agent.tools.filings import CompareYearsParams
+from app.agent.tools.filings import CompareYearsParams, FetchedChunk
 from tests.mcp.controlled_filings import FAILING_CHUNK_ID, PRIVATE_DETAIL, fixture_hit
 from tests.mcp.support import (
     PROTOCOL_MODE,
@@ -136,3 +137,37 @@ def test_fetch_returns_full_identity_or_a_typed_failure(observed, case, chunk_id
         "context_header": "",
         "body": hit.body,
     }
+
+
+def test_only_cell_mode_publishes_the_fetch_output_schema_and_its_catalog(tmp_path):
+    """Keep the default listing, and in cell mode publish FetchedChunk and a catalog."""
+    log_path = tmp_path / "events.jsonl"
+
+    async def exercise():
+        """List tools and fetch one running-text chunk in each mode."""
+        results = {}
+        for mode, args in (("legacy", ()), ("cells", ("--include-cells",))):
+            async with Client(controlled_filings(log_path, *args), mode=PROTOCOL_MODE) as client:
+                listing = await client.list_tools()
+                fetched = await client.call_tool("fetch_chunk", {"chunk_id": 2024})
+            results[mode] = ({tool.name: tool for tool in listing.tools}, fetched)
+        return results
+
+    results = asyncio.run(exercise())
+    legacy_tools, legacy_fetch = results["legacy"]
+    cell_tools, cell_fetch = results["cells"]
+    assert all(tool.output_schema is None for tool in legacy_tools.values())
+    assert cell_tools["fetch_chunk"].output_schema == FetchedChunk.model_json_schema()
+    assert cell_tools["search_filings"].output_schema is None
+    assert [tool.input_schema for tool in cell_tools.values()] == [
+        tool.input_schema for tool in legacy_tools.values()
+    ]
+    assert "table" not in legacy_fetch.structured_content
+    assert cell_fetch.structured_content["table"] == {
+        "status": "not_table",
+        "stable_key": None,
+        "resolver_identity": None,
+        "unit": None,
+        "cells": [],
+    }
+    assert json.loads(text_of(cell_fetch)) == cell_fetch.structured_content

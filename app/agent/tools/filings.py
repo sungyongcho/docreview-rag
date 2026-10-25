@@ -1,7 +1,7 @@
 """Filing search, chunk inspection, and fiscal-year comparison tools."""
 
 from collections.abc import Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import field_validator
@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.agent.tools.registry import Tool, ToolError, ToolRegistry
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.figures import EvidenceText
-from app.contracts.validation import NonBlank, PositiveInt
+from app.contracts.validation import NonBlank, PositiveInt, StrictSchema
 from app.db.models import Chunk
 from app.db.session_factory import SessionFactory
 from app.retrieval.embedding.provider import (
@@ -19,7 +19,7 @@ from app.retrieval.embedding.provider import (
     get_embedding_provider,
 )
 from app.retrieval.search.service import retrieve
-from app.retrieval.tables import load_table_readings
+from app.retrieval.tables import load_cell_catalog, load_table_readings
 from app.retrieval.types import ChunkHit, Form, Issuer, RetrievalFilters
 
 DEFAULT_SEARCH_K = 5
@@ -117,6 +117,70 @@ class CompareYearsParams(ToolParams):
         return years
 
 
+class CatalogCell(StrictSchema):
+    """One selectable table cell a fetched chunk carries, as stored at indexing.
+
+    ``ref`` names the cell inside this chunk (``<chunk_id>:r<row>c<column>``). Only a
+    cell whose ``status`` is ``known`` has an established unit, currency, year and item;
+    ``complete`` is False when the chunk carries only part of the cell's text.
+    """
+
+    ref: str
+    row_label: str | None
+    column_header: str
+    raw_text: str
+    item: str | None
+    fiscal_years: tuple[int, ...]
+    scale: str | None
+    currency: str | None
+    percent: bool | None
+    status: Literal[
+        "known",
+        "conflicting",
+        "scale_unknown",
+        "currency_unconfirmed",
+        "period_unknown",
+        "item_unknown",
+    ]
+    complete: bool
+
+
+class CatalogUnit(StrictSchema):
+    """The unit the table's own notes state, and how certain it is."""
+
+    status: Literal["known", "absent", "unknown", "conflicting"]
+    scale: str | None
+    currency: tuple[str, ...]
+
+
+class CellCatalog(StrictSchema):
+    """The stored cells of a fetched chunk, or why it has none.
+
+    ``not_table`` is running text and ``unavailable`` a table chunk stored without its
+    table; neither is a finding that the documents lack an answer.
+    """
+
+    status: Literal["available", "not_table", "unavailable"]
+    stable_key: str | None = None
+    resolver_identity: str | None = None
+    unit: CatalogUnit | None = None
+    cells: tuple[CatalogCell, ...] = ()
+
+
+class FetchedChunk(StrictSchema):
+    """One fetched chunk with its complete source identity and its stored cells."""
+
+    chunk_id: int
+    doc_id: str
+    citation: str
+    start_char: int
+    end_char: int
+    source_sha256: str
+    context_header: str
+    body: str
+    table: CellCatalog
+
+
 def _hit_payload(hit: ChunkHit) -> dict[str, Any]:
     """Materialize one hit as a JSON payload carrying its complete source identity."""
     return {
@@ -163,6 +227,7 @@ def build_default_registry(
     *,
     embedding_provider: EmbeddingProvider | None = None,
     search_k: int = DEFAULT_SEARCH_K,
+    include_cells: bool = False,
 ) -> ToolRegistry:
     """Register the built-in filing tools over a per-call session factory.
 
@@ -176,6 +241,10 @@ def build_default_registry(
         Optional explicit query embedding provider.
     search_k : int
         Hit count ``search_filings`` uses when the caller omits ``k``.
+    include_cells : bool
+        Whether ``fetch_chunk`` also returns the chunk's stored table cells
+        (:class:`FetchedChunk`) for a cell-selecting answer. Off by default, so the
+        existing result stays unchanged.
 
     Returns
     -------
@@ -218,7 +287,7 @@ def build_default_registry(
             chunk = await session.get(Chunk, params.chunk_id)
             if chunk is None:
                 raise ToolError(f"chunk {params.chunk_id} does not exist")
-            return {
+            payload = {
                 "chunk_id": chunk.id,
                 "doc_id": chunk.doc_id,
                 "citation": chunk.citation,
@@ -228,6 +297,12 @@ def build_default_registry(
                 "context_header": chunk.context_header,
                 "body": chunk.body,
             }
+            if not include_cells:
+                return payload
+            catalog = await load_cell_catalog(session, chunk.id)
+            return FetchedChunk.model_validate(
+                {**payload, "table": catalog}, strict=False
+            ).model_dump(mode="json")
 
     async def compare_years(params: CompareYearsParams) -> dict[str, Any]:
         """Retrieve the same question per sorted fiscal year over one short-lived session."""
@@ -276,6 +351,7 @@ def build_default_registry(
             parameters=FetchChunkParams,
             run=fetch_chunk,
             evidence_ids=_chunk_evidence,
+            output=FetchedChunk if include_cells else None,
         )
     )
     registry.register(

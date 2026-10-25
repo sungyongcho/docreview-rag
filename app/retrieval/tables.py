@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.contracts.figures import TableCellReading
 from app.db.models import (
     Base,
+    Chunk,
     ChunkTableCell,
     ChunkTableHeader,
     ParsedTable,
@@ -24,6 +25,7 @@ from app.db.models import (
     SnapshotTableCellSource,
     SnapshotTableSourceCell,
     TableCaption,
+    TableCell,
     TableCellSource,
     TableSourceCell,
 )
@@ -214,3 +216,73 @@ async def load_table_fragments(
     """Return each table chunk's ``TableFragment`` as JSON, rebuilt from its stored table."""
     stored = await load_chunk_tables(session, chunk_ids, snapshot_id)
     return {chunk_id: table.fragment for chunk_id, table in stored.items()}
+
+
+async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, object]:
+    """Return the selectable cells one stored chunk carries, with what makes them known.
+
+    ``status`` is ``not_table`` for running text and ``unavailable`` for a table chunk
+    stored without its table; neither means the documents lack an answer. Blank and
+    non-numeric cells are left out; every other cell is listed with its own status, so a
+    cell whose unit, currency, period or item is unknown is visible but not certified.
+    """
+    chunk = await session.get(Chunk, chunk_id)
+    if chunk is None or chunk.kind != "table":
+        return {"status": "not_table"}
+    members = (
+        await session.scalars(
+            select(ChunkTableCell)
+            .where(ChunkTableCell.chunk_id == chunk_id)
+            .order_by(ChunkTableCell.ordinal)
+        )
+    ).all()
+    if not members:
+        return {"status": "unavailable"}
+    table_id = members[0].table_id
+    table = await session.get(ParsedTable, table_id)
+    assert table is not None
+    normalized = {
+        (cell.source_row, cell.column_index): cell
+        for cell in await session.scalars(select(TableCell).where(TableCell.table_id == table_id))
+    }
+    grid = {
+        (cell.grid_row, cell.grid_column): cell
+        for cell in await session.scalars(
+            select(TableSourceCell).where(TableSourceCell.table_id == table_id)
+        )
+    }
+    cells: list[dict[str, object]] = []
+    for member in members:
+        cell = normalized[(member.source_row, member.column_index)]
+        if cell.status in ("blank", "not_numeric"):
+            continue
+        source = None
+        if cell.value_row is not None and cell.value_column is not None:
+            source = grid.get((cell.value_row, cell.value_column))
+        reading = None if source is None else _reading(source)
+        cells.append(
+            {
+                "ref": f"{chunk_id}:r{member.source_row}c{member.column_index}",
+                "row_label": None if reading is None else reading.row_label,
+                "column_header": cell.column_header,
+                "raw_text": cell.text,
+                "item": None if reading is None else reading.item,
+                "fiscal_years": [] if reading is None else sorted(reading.years),
+                "scale": None if reading is None or reading.scale is None else f"{reading.scale:f}",
+                "currency": None if reading is None else reading.currency,
+                "percent": None if reading is None else reading.percent,
+                "status": cell.status,
+                "complete": member.text_start == 0 and member.text_end == len(cell.text),
+            }
+        )
+    return {
+        "status": "available",
+        "stable_key": chunk.stable_key,
+        "resolver_identity": table.resolver_identity,
+        "unit": {
+            "status": table.unit_status,
+            "scale": None if table.unit_scale is None else f"{table.unit_scale:f}",
+            "currency": sorted(table.unit_currency),
+        },
+        "cells": cells,
+    }

@@ -20,7 +20,7 @@ from unittest.mock import patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.tools.filings import build_default_registry
-from app.mcp.filings_server import parse_http_port, serve, serve_http
+from app.mcp.filings_server import parse_arguments, serve, serve_http
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
@@ -80,6 +80,7 @@ class ControlledSession:
             source_sha256=hit.source_sha256,
             context_header=hit.context_header,
             body=hit.body,
+            kind=hit.kind,
         )
 
 
@@ -128,7 +129,9 @@ def controlled_retrieve(log_path: Path):
     return retrieve
 
 
-async def main(log_path: Path, http_port: int | None = None) -> None:
+async def main(
+    log_path: Path, http_port: int | None = None, *, include_cells: bool = False
+) -> None:
     """Serve the production registry with only the data layer replaced.
 
     ``http_port`` selects Streamable HTTP as in the product entry point; the
@@ -137,6 +140,7 @@ async def main(log_path: Path, http_port: int | None = None) -> None:
     registry = build_default_registry(
         lambda: cast(AsyncSession, ControlledSession(log_path)),
         embedding_provider=DeterministicEmbeddingProvider(),
+        include_cells=include_cells,
     )
     try:
         with patch("app.agent.tools.filings.retrieve", controlled_retrieve(log_path)):
@@ -149,4 +153,5 @@ async def main(log_path: Path, http_port: int | None = None) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main(Path(sys.argv[1]), parse_http_port(sys.argv[2:])))
+    arguments = parse_arguments(sys.argv[2:])
+    asyncio.run(main(Path(sys.argv[1]), arguments.http, include_cells=arguments.include_cells))

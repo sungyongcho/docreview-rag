@@ -27,7 +27,9 @@ import pytest
 from app.agent.review_middleware import (
     ReviewGate,
     StopOnSystemFailure,
+    cell_record,
     keep_first_failure,
+    merge_cells,
     merge_evidence,
 )
 from app.agent.tools.filings import build_default_registry
@@ -361,7 +363,13 @@ def test_none_clears_the_ledger_and_an_empty_update_keeps_it():
 
 
 def gate_call(
-    name: str, args: dict[str, Any], evidence: dict[int, Any], result: Any, *, bound: Any = None
+    name: str,
+    args: dict[str, Any],
+    evidence: dict[int, Any],
+    result: Any,
+    *,
+    bound: Any = None,
+    cells: dict[str, Any] | None = None,
 ):
     """Run the gate on one call against a stub handler; return its answer and handler calls."""
     seen: list[ToolCallRequest] = []
@@ -374,7 +382,7 @@ def gate_call(
     request = ToolCallRequest(
         tool_call={"name": name, "args": args, "id": "call_1", "type": "tool_call"},
         tool=bound,
-        state={"messages": [], "evidence": evidence},
+        state={"messages": [], "evidence": evidence, "cells": cells or {}},
         runtime=cast(ToolRuntime, None),
     )
     answer = asyncio.run(ReviewGate(contracts()).awrap_tool_call(request, handler))
@@ -503,3 +511,80 @@ def test_none_clears_the_failure_and_the_first_recorded_failure_stays():
     assert keep_first_failure("first", None) is None
     assert keep_first_failure(None, "first") == "first"
     assert keep_first_failure("first", "second") == "first"
+
+
+CATALOG = {
+    "status": "available",
+    "stable_key": "k" * 64,
+    "resolver_identity": "r" * 64,
+    "unit": {"status": "known", "scale": "1000000", "currency": ["USD"]},
+    "cells": [
+        {
+            "ref": "2024:r1c1",
+            "row_label": "Net revenue",
+            "column_header": "2024",
+            "raw_text": "$ 25,785",
+            "item": "revenue",
+            "fiscal_years": [2024],
+            "scale": "1000000",
+            "currency": "USD",
+            "percent": False,
+            "status": "known",
+            "complete": True,
+        }
+    ],
+}
+
+
+def test_a_fetched_table_records_its_cells_by_content_and_source_version():
+    """Record each returned cell under its ref with the chunk, source version and digest."""
+    result = fetched_result(table=CATALOG)
+    answer, _ = gate_call("fetch_chunk", {"chunk_id": 2024}, {2024: identity(2024)}, result)
+    assert isinstance(answer, Command)
+    assert answer.update["cells"] == {"2024:r1c1": cell_record(CATALOG["cells"][0], CATALOG, 2024)}
+    record = answer.update["cells"]["2024:r1c1"]
+    assert (record["stable_key"], record["resolver_identity"]) == ("k" * 64, "r" * 64)
+
+
+def test_a_fetch_whose_cell_content_changed_within_the_question_is_refused():
+    """Refuse a fetch that returns a known ref with different content instead of replacing it."""
+    known = {"2024:r1c1": cell_record(CATALOG["cells"][0], CATALOG, 2024)}
+    changed = {**CATALOG, "cells": [{**CATALOG["cells"][0], "raw_text": "$ 99,999"}]}
+    answer, _ = gate_call(
+        "fetch_chunk",
+        {"chunk_id": 2024},
+        {2024: identity(2024)},
+        fetched_result(table=changed),
+        cells=known,
+    )
+    assert isinstance(answer, ToolMessage)
+    assert answer.content == "ERROR: tool returned conflicting content for cell 2024:r1c1"
+
+
+def test_a_chunk_without_stored_cells_adds_no_cells():
+    """Leave the cell ledger alone for running text and for tables stored without cells."""
+    for table in ({"status": "not_table"}, {"status": "unavailable"}):
+        answer, _ = gate_call(
+            "fetch_chunk", {"chunk_id": 2024}, {2024: identity(2024)}, fetched_result(table=table)
+        )
+        assert isinstance(answer, Command)
+        assert "cells" not in answer.update
+
+
+def test_cell_updates_merge_and_a_disagreement_stops_before_the_next_model_call():
+    """Merge parallel cell updates, mark a disagreement, and end on it with a failure."""
+    first = {"2024:r1c1": {"digest": "a"}}
+    assert merge_cells(first, None) == {}
+    assert merge_cells(first, first) == first
+    assert merge_cells(None, first) == first
+    clashed = merge_cells(first, {"2024:r1c1": {"digest": "b"}})
+    assert clashed == {"2024:r1c1": {"conflict": True}}
+    stop = StopOnSystemFailure()
+    runtime = cast(Any, None)
+    assert stop.before_model(cast(Any, {"messages": [], "cells": clashed}), runtime) == {
+        "failure": "conflicting stored content for cell 2024:r1c1",
+        "jump_to": "end",
+    }
+    assert stop.before_model(cast(Any, {"messages": [], "cells": first}), runtime) is None
+    gate = ReviewGate(contracts())
+    assert gate.before_agent(cast(Any, {"messages": []}), runtime)["cells"] is None

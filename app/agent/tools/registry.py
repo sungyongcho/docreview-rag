@@ -70,6 +70,8 @@ class Tool[ParamsT: BaseModel]:
     parameters: type[ParamsT]
     run: Callable[[ParamsT], Awaitable[Any]]
     evidence_ids: EvidenceExtractor | None = None
+    # The model of the payload ``run`` returns, published as an output schema when set.
+    output: type[BaseModel] | None = None
 
     def __post_init__(self) -> None:
         """Reject tools whose identity or schema cannot be published."""
