@@ -613,15 +613,18 @@ class _Claim:
 
 
 @dataclass(frozen=True, slots=True)
-class _Cell:
-    """One table data cell: its figures, column years, table scale and row item.
+class TableCellReading:
+    """One original table cell holding figures: its values, years, unit and row item.
 
-    ``scale`` is None when the cell's unit is uncertain; ``percent`` is None when the
-    evidence cannot show whether the cell is a percentage. ``currency`` is resolved from
-    the table's notes and the markers bound to this cell's own numbers only, never from
+    ``row`` and ``column`` are the cell's zero-based source grid coordinates. ``scale``
+    is None when the cell's unit is uncertain; ``percent`` is None when the evidence
+    cannot show whether the cell is a percentage. ``currency`` is resolved from the
+    table's notes and the markers bound to this cell's own numbers only, never from
     other rows or tables; ``marked`` says the cell's numbers carry currency markers.
     """
 
+    row: int
+    column: int
     values: frozenset[Decimal]
     years: frozenset[int]
     scale: Decimal | None
@@ -1040,7 +1043,7 @@ def _int(value: object) -> int:
 
 
 @dataclass(frozen=True, slots=True)
-class _TableUnit:
+class TableUnit:
     """The unit a table's own notes state and how certain it is.
 
     ``status`` is ``known`` when every readable note agrees, ``absent`` when the table
@@ -1147,7 +1150,7 @@ def _notes(text: str) -> list[_Note]:
     return notes + [_english_note(" ".join(declaration.split())) for declaration in english]
 
 
-def _table_unit(fragment: Mapping[str, object]) -> _TableUnit:
+def read_table_unit(fragment: Mapping[str, object]) -> TableUnit:
     """Read the unit a table's own header cells and linked captions state.
 
     Only notes demonstrably tied to this table count: its header cells, and captions
@@ -1165,19 +1168,19 @@ def _table_unit(fragment: Mapping[str, object]) -> _TableUnit:
     ]
     notes = [note for text in texts for note in _notes(text)]
     if not notes:
-        return _TableUnit("absent")
+        return TableUnit("absent")
     percent = any(note.kind == "percent" for note in notes)
     if any(note.kind == "unknown" for note in notes):
-        return _TableUnit("unknown", percent=percent)
+        return TableUnit("unknown", percent=percent)
     scales = {note.scale for note in notes if note.kind == "scale" and note.scale is not None}
     if not scales and any(note.plain for note in notes):
         scales = {Decimal(1)}
     currency = frozenset(marker for note in notes for marker in note.currency)
     monetary = bool(scales or currency)
     if len(scales) > 1 or _resolve(currency) == _CONFLICT or (percent and monetary):
-        return _TableUnit("conflicting", percent=percent)
+        return TableUnit("conflicting", percent=percent)
     per_share_plain = any(note.per_share_plain for note in notes)
-    return _TableUnit("known", next(iter(scales), None), percent, per_share_plain, currency)
+    return TableUnit("known", next(iter(scales), None), percent, per_share_plain, currency)
 
 
 def _column_years(
@@ -1228,15 +1231,18 @@ def _label_item(label: str) -> str | None:
     return _PHRASE_ITEMS.get(key)
 
 
-def _table_cells(fragment: Mapping[str, object]) -> list[_Cell]:
-    """Return each data cell of one stored fragment with its years, scale and item."""
+def read_table_cells(fragment: Mapping[str, object]) -> list[TableCellReading]:
+    """Return each figure-bearing source cell of one table fragment as it is read.
+
+    A source cell appears once per normalized cell it belongs to, as stored.
+    """
     headers = _entries(fragment, "header_cells")
     caption_years = {
         int(year)
         for caption in _entries(fragment, "caption_sources")
         for year in _YEAR.findall(str(caption.get("text", "")))
     }
-    unit = _table_unit(fragment)
+    unit = read_table_unit(fragment)
     known = unit.status == "known"
     labels = _row_labels(fragment)
     cells = []
@@ -1265,7 +1271,9 @@ def _table_cells(fragment: Mapping[str, object]) -> list[_Cell]:
                     marker for figure in _figure_spans(_blank(text)) for marker in figure.currency
                 )
                 cells.append(
-                    _Cell(
+                    TableCellReading(
+                        _int(source["row"]),
+                        _int(source["column"]),
                         frozenset(values),
                         frozenset(_column_years(source, headers, caption_years)),
                         scale,
@@ -1340,7 +1348,7 @@ def _best(comparisons: set[_Comparison]) -> _Comparison:
 
 
 def _judge(
-    claim: _Claim, cells: Sequence[_Cell], facts: Sequence[_Claim], requested: set[int]
+    claim: _Claim, cells: Sequence[TableCellReading], facts: Sequence[_Claim], requested: set[int]
 ) -> tuple[FigureCheck, bool]:
     """Judge one claim; the flag marks a verified claim dated outside the requested years.
 
@@ -1428,7 +1436,7 @@ def check_figures(
         cell
         for item in evidence
         if item.table_fragment is not None
-        for cell in _table_cells(item.table_fragment)
+        for cell in read_table_cells(item.table_fragment)
     ]
     data_values = {value for cell in cells for value in cell.values}
     facts = [

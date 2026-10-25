@@ -1,10 +1,17 @@
 """Answer figures checked against the period of the cited evidence."""
 
 from dataclasses import asdict, replace
+from decimal import Decimal
 
 import pytest
 
-from app.contracts.figures import EvidenceText, check_figures, figures
+from app.contracts.figures import (
+    EvidenceText,
+    check_figures,
+    figures,
+    read_table_cells,
+    read_table_unit,
+)
 from app.ingestion.chunking import chunk_filing
 from app.ingestion.parsing.models import Block
 from tests.ingestion.chunk.support import build_filing
@@ -1248,3 +1255,27 @@ def test_an_unsupported_cell_currency_is_never_replaced_by_the_table_currency(ce
     answer = "2024 net revenue was USD 25 million."
     evidence = note_cell("(In millions of U.S. dollars)", cell)
     assert check_figures(answer, [evidence], [2024]).verdict == verdict
+
+
+def test_table_readings_expose_each_figure_cell_with_its_resolved_unit():
+    """Read the USD income table's figure cells with their coordinates, years and unit."""
+    fragment = table_evidence().table_fragment
+    assert fragment is not None
+    readings = {(cell.row, cell.column): cell for cell in read_table_cells(fragment)}
+    revenue = next(
+        cell for cell in readings.values() if cell.values == frozenset({Decimal("25785")})
+    )
+    assert revenue.years == frozenset({2024})
+    assert revenue.scale == Decimal(1_000_000)
+    assert revenue.item == "revenue"
+    assert revenue.currency == "USD"
+    assert revenue.percent is False
+    assert read_table_unit(fragment).status == "known"
+
+
+def test_table_readings_keep_an_ambiguous_dollar_unresolved():
+    """Leave the "$" family unresolved when the note states a scale but no currency."""
+    fragment = table_evidence(INCOME_TABLE).table_fragment
+    assert fragment is not None
+    currencies = {cell.currency for cell in read_table_cells(fragment) if cell.item == "revenue"}
+    assert currencies == {"$"}
