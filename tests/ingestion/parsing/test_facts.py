@@ -4,7 +4,13 @@ from datetime import date
 
 import pytest
 
-from app.ingestion.parsing.facts import FactUnit, FilingFacts, dart_facts, sec_facts
+from app.ingestion.parsing.facts import (
+    FactUnit,
+    FilingFacts,
+    dart_facts,
+    dart_period_terms,
+    sec_facts,
+)
 from tests.ingestion.support import filing_document
 
 # A 52/53-week issuer whose fiscal 2024 ends on 2024-12-28.
@@ -171,3 +177,60 @@ def test_dart_unreadable_contexts_keep_an_opaque_scope() -> None:
 
     assert context.fiscal_year is None
     assert context.dimensions == (("unparsed", "Q2024_x"),)
+
+
+# A DART report's cover and statement headings, split by markup as the reports are.
+DART_DECLARATIONS = (
+    "<TR><TD>사업연도</TD><TD>2024년 01월 01일</TD><TD>부터</TD></TR>"
+    "<TR><TD></TD><TD>2024년 12월 31일</TD><TD>까지</TD></TR>"
+    "<P>제 56 기 2024.01.01 부터 2024.12.31 까지</P>"
+    "<P>제 55 기 2023.01.01 부터 2023.12.31 까지</P>"
+)
+
+
+def test_dart_period_terms_rest_on_the_reports_own_declarations():
+    """당기 is the cover's year; 전기 and each 제N기 exist only when declared with dates."""
+    document = filing_document(registry="dart", fiscal_year=2024)
+
+    terms = {term.term: term for term in dart_period_terms(DART_DECLARATIONS, document)}
+
+    assert {name: term.fiscal_year for name, term in terms.items()} == {
+        "당기": 2024,
+        "제56기": 2024,
+        "제55기": 2023,
+        "전기": 2023,
+    }
+    cover = terms["당기"]
+    assert DART_DECLARATIONS[cover.start_char : cover.end_char].startswith("사업연도")
+    assert (cover.period_start, cover.period_end) == (date(2024, 1, 1), date(2024, 12, 31))
+    assert dart_facts(DART_DECLARATIONS, document).period_terms == tuple(
+        dart_period_terms(DART_DECLARATIONS, document)
+    )
+
+
+@pytest.mark.parametrize(
+    "declarations",
+    [
+        # No cover: nothing anchors 당기, so no term is defined.
+        "<P>제 56 기 2024.01.01 부터 2024.12.31 까지</P>",
+        # A cover year that does not end on the report period.
+        "<P>사업연도 2023년 01월 01일 부터 2023년 12월 31일 까지</P>",
+        # Two different covers.
+        "<P>사업연도 2024년 01월 01일 부터 2024년 12월 31일 까지</P>"
+        "<P>사업연도 2024년 04월 01일 부터 2025년 03월 31일 까지</P>",
+    ],
+)
+def test_dart_period_terms_need_one_cover_ending_on_the_report_period(declarations):
+    """Without one cover year ending on the document's report period no word is defined."""
+    document = filing_document(registry="dart", fiscal_year=2024)
+    assert dart_period_terms(declarations, document) == ()
+
+
+def test_an_ordinal_declared_with_two_periods_is_left_out():
+    """제55기 stated as two different years defines neither, nor the 전기 it would give."""
+    document = filing_document(registry="dart", fiscal_year=2024)
+    declarations = DART_DECLARATIONS + "<P>제 55 기 2022.01.01 부터 2022.12.31 까지</P>"
+
+    terms = {term.term for term in dart_period_terms(declarations, document)}
+
+    assert terms == {"당기", "제56기"}

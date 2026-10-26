@@ -18,6 +18,7 @@ from app.db.models import (
     DocumentParse,
     FilingFactContext,
     FilingFactUnit,
+    FilingPeriodTerm,
     ParsedStructure,
     ParsedTable,
     ProcessingSelection,
@@ -176,7 +177,7 @@ async def _persist_sources(session: AsyncSession, batch: SeedBatch) -> None:
 
 
 def fact_rows(structure_id: str, facts: FilingFacts) -> dict[type, list[dict[str, Any]]]:
-    """Project one parse's fact contexts and units onto their rows, keyed by ORM model."""
+    """Project one parse's fact contexts, units and period terms onto rows, by ORM model."""
     return {
         FilingFactContext: [
             {
@@ -198,6 +199,18 @@ def fact_rows(structure_id: str, facts: FilingFacts) -> dict[type, list[dict[str
                 "denominator": unit.denominator,
             }
             for unit in facts.units
+        ],
+        FilingPeriodTerm: [
+            {
+                "structure_id": structure_id,
+                "term": term.term,
+                "fiscal_year": term.fiscal_year,
+                "period_start": term.period_start,
+                "period_end": term.period_end,
+                "start_char": term.start_char,
+                "end_char": term.end_char,
+            }
+            for term in facts.period_terms
         ],
     }
 

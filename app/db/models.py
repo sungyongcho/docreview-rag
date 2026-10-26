@@ -193,6 +193,33 @@ class FilingFactUnit(Base):
     denominator: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class FilingPeriodTerm(Base):
+    """One period word a parse found its DART report defining, with its declaration.
+
+    ``term`` is ``당기``, ``전기``, ``전전기`` or ``제N기``; ``start_char``/``end_char``
+    locate the declaration it rests on.
+    """
+
+    __tablename__ = "filing_period_terms"
+
+    structure_id: Mapped[str] = mapped_column(
+        ForeignKey("parsed_structures.structure_id", ondelete="CASCADE"), primary_key=True
+    )
+    term: Mapped[str] = mapped_column(String(16), primary_key=True)
+    fiscal_year: Mapped[int] = mapped_column(nullable=False)
+    period_start: Mapped[date] = mapped_column(nullable=False)
+    period_end: Mapped[date] = mapped_column(nullable=False)
+    start_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    end_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("period_end > period_start", name="ck_filing_period_terms_period"),
+        CheckConstraint(
+            "start_char >= 0 AND end_char > start_char", name="ck_filing_period_terms_span"
+        ),
+    )
+
+
 class ChunkEmbedding(Base):
     """A reusable vector bound to exact indexed input and embedding configuration."""
 

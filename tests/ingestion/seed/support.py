@@ -6,7 +6,7 @@ import re
 
 from app.ingestion import pipeline as seed
 from app.ingestion.chunking import Chunk, chunk_filing
-from app.ingestion.parsing.facts import sec_facts
+from app.ingestion.parsing.facts import FilingFacts, sec_facts
 from app.ingestion.parsing.models import Block, ParsedFiling, Section
 from app.ingestion.sources.models import (
     Acquisition,
@@ -136,15 +136,17 @@ def table_batch(
     *,
     start: int = 0,
     cell_spans: tuple[tuple[int, int], ...] | None = None,
+    facts: FilingFacts | None = None,
 ) -> seed.SeedBatch:
     """Build one seed batch whose filing is a single table chunked by the real chunker.
 
     The table block covers ``html[start:]``; ``cell_spans`` are its cells' source
-    spans, and the filing's facts are read from ``html`` as the SEC parser reads them.
+    spans. The filing's facts are ``facts``, or else read from ``html`` as the SEC
+    parser reads them.
     """
     filing = sample_filing(doc_id)
     filing.source_length = len(html)
-    filing.facts = sec_facts(html, filing.source.document)
+    filing.facts = facts if facts is not None else sec_facts(html, filing.source.document)
     filing.sections = [
         Section(
             "II",

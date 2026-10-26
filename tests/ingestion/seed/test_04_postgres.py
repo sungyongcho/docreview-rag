@@ -15,10 +15,12 @@ from app.db.models import (
     ChunkTableCell,
     Document,
     FilingFactContext,
+    FilingPeriodTerm,
     TableCell,
     TableSourceCell,
     TableSourceFact,
 )
+from app.ingestion.parsing.facts import FilingFacts, PeriodTerm
 from app.ingestion.persistence import persist_seed_batch
 from app.ingestion.pipeline import SeedBatch
 from tests.ingestion.seed.support import sample_batch, table_batch, tagged_table_batch
@@ -256,5 +258,25 @@ def test_postgresql_stores_fact_contexts_units_and_each_cells_facts():
                 await persist_seed_batch(session, batch)
                 assert await session.scalar(text("SELECT count(*) FROM table_source_facts")) == 5
                 assert await session.scalar(text("SELECT count(*) FROM filing_fact_contexts")) == 3
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_postgresql_stores_the_period_words_a_report_defines():
+    """Store each defined period word with its year, dates and declaration span."""
+
+    async def exercise() -> None:
+        """Persist a table batch whose filing defines 당기 and read the term back."""
+        term = PeriodTerm("당기", 2024, date(2024, 1, 1), date(2024, 12, 31), 3, 40)
+        async with isolated_session_factory() as factory, factory() as session:
+            await persist_seed_batch(
+                session, table_batch(facts=FilingFacts("dart", period_terms=(term,)))
+            )
+            stored = (await session.execute(select(FilingPeriodTerm))).scalars().all()
+            assert [
+                (row.term, row.fiscal_year, row.period_start, row.period_end, row.start_char)
+                for row in stored
+            ] == [("당기", 2024, date(2024, 1, 1), date(2024, 12, 31), 3)]
 
     asyncio.run(exercise())

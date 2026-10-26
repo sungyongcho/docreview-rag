@@ -57,6 +57,17 @@ _DART_CONTEXT = re.compile(
     r"(?P<relative>C|P|BP|BBP)FY(?P<year>\d{4})(?P<kind>[de])FY(?:_(?P<dims>.+))?"
 )
 _DART_OFFSETS = {"C": 0, "P": 1, "BP": 2, "BBP": 3}
+# A declared period: tags may sit between its words ("사업연도</TD><TD>2024년 ...").
+_GAP = r"(?:\s|<[^>]*>)*"
+_YMD = rf"(\d{{4}}){_GAP}[.년]{_GAP}(\d{{1,2}}){_GAP}[.월]{_GAP}(\d{{1,2}}){_GAP}일?"
+# The cover's "사업연도 2024년 01월 01일 부터 2024년 12월 31일 까지".
+_COVER = re.compile(rf"사업연도{_GAP}{_YMD}{_GAP}부터{_GAP}{_YMD}{_GAP}까지")
+# A statement heading's "제 56 기 2024.01.01 부터 2024.12.31 까지" (or "(... ~ ...)").
+_ORDINAL = re.compile(
+    rf"제{_GAP}(\d+){_GAP}기{_GAP}\(?{_GAP}{_YMD}{_GAP}\.?{_GAP}(?:부터|~){_GAP}{_YMD}"
+)
+# Prior-period words and how many fiscal years before the reporting year they name.
+_PRIOR_TERMS = (("전기", 1), ("전전기", 2))
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,13 +117,33 @@ class SourceFact:
 
 
 @dataclass(frozen=True, slots=True)
+class PeriodTerm:
+    """A period word a DART report defines by declaring its dates.
+
+    ``term`` is ``당기``, ``전기``, ``전전기`` or ``제N기``; the declaration it rests
+    on is at ``start_char``/``end_char`` in the source.
+    """
+
+    term: str
+    fiscal_year: int
+    period_start: date
+    period_end: date
+    start_char: int
+    end_char: int
+
+
+@dataclass(frozen=True, slots=True)
 class FilingFacts:
-    """Every context, unit and tagged number of one filing, facts in source order."""
+    """Every context, unit, tagged number and declared period term of one filing.
+
+    Facts are in source order.
+    """
 
     source: FactSource | None = None
     contexts: tuple[FactContext, ...] = ()
     units: tuple[FactUnit, ...] = ()
     facts: tuple[SourceFact, ...] = ()
+    period_terms: tuple[PeriodTerm, ...] = ()
 
     def fingerprint(self) -> str:
         """Return a digest of every context, unit and fact, for parse identity."""
@@ -257,8 +288,70 @@ def _dart_context(context_id: str, document: DocumentReference) -> FactContext:
     )
 
 
+def _declared(match: re.Match[str], first: int) -> tuple[date, date] | None:
+    """Return the annual period a declaration states from group ``first`` on, if any."""
+    try:
+        start = date(*(int(match.group(first + i)) for i in range(3)))
+        end = date(*(int(match.group(first + 3 + i)) for i in range(3)))
+    except ValueError:
+        return None
+    return (start, end) if (end - start).days in _ANNUAL_DAYS else None
+
+
+def dart_period_terms(raw: str, document: DocumentReference) -> tuple[PeriodTerm, ...]:
+    """Read the period words one DART report defines by its own declarations.
+
+    ``당기`` is the cover's business year, when the cover declares exactly one that
+    ends on the document's report period. ``제N기`` is the one annual period the report
+    declares for that ordinal, named counting back from the document's fiscal year;
+    an ordinal declared with two periods is left out. ``전기`` and ``전전기`` are one
+    and two fiscal years before ``당기``, defined only when the report declares a
+    period for that year. Nothing is defined without the cover.
+    """
+    covers: dict[tuple[date, date], re.Match[str]] = {}
+    for match in _COVER.finditer(raw):
+        if (period := _declared(match, 1)) is not None:
+            covers.setdefault(period, match)
+    if len(covers) != 1:
+        return ()
+    ((start, end), cover), *_ = covers.items()
+    if end != document.report_period:
+        return ()
+    declared: dict[int, dict[tuple[date, date], re.Match[str]]] = {}
+    for match in _ORDINAL.finditer(raw):
+        if (period := _declared(match, 2)) is not None:
+            declared.setdefault(int(match.group(1)), {}).setdefault(period, match)
+    terms = [PeriodTerm("당기", document.fiscal_year, start, end, cover.start(), cover.end())]
+    by_year: dict[int, PeriodTerm] = {document.fiscal_year: terms[0]}
+    for number, periods in sorted(declared.items()):
+        if len(periods) != 1:
+            continue
+        ((period_start, period_end), match), *_ = periods.items()
+        fiscal_year = _fiscal_year(period_end, document)
+        if fiscal_year is None:
+            continue
+        term = PeriodTerm(
+            f"제{number}기", fiscal_year, period_start, period_end, match.start(), match.end()
+        )
+        terms.append(term)
+        by_year.setdefault(fiscal_year, term)
+    for word, back in _PRIOR_TERMS:
+        if (found := by_year.get(document.fiscal_year - back)) is not None:
+            terms.append(
+                PeriodTerm(
+                    word,
+                    found.fiscal_year,
+                    found.period_start,
+                    found.period_end,
+                    found.start_char,
+                    found.end_char,
+                )
+            )
+    return tuple(terms)
+
+
 def dart_facts(raw: str, document: DocumentReference) -> FilingFacts:
-    """Read the tagged cells of one DART report and the contexts they name."""
+    """Read the tagged cells of one DART report, the contexts they name and its terms."""
     facts: list[SourceFact] = []
     context_ids: dict[str, None] = {}
     for match in _DART_CELL.finditer(raw):
@@ -280,7 +373,8 @@ def dart_facts(raw: str, document: DocumentReference) -> FilingFacts:
                 _text(match.group(3)),
             )
         )
-    if not facts:
+    terms = dart_period_terms(raw, document)
+    if not facts and not terms:
         return FilingFacts()
     contexts = tuple(_dart_context(context_id, document) for context_id in sorted(context_ids))
-    return FilingFacts("dart", contexts, (), tuple(facts))
+    return FilingFacts("dart", contexts, (), tuple(facts), terms)

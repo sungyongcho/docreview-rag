@@ -1474,3 +1474,42 @@ def test_a_dimensioned_cell_never_confirms_the_entity_item():
     answer = "AMD's FY2024 net revenue was $25,785 million."
     assert check_figures(answer, [evidence], [2024]).verdict != "verified"
     assert check_figures(answer, [table_evidence(html)], [2024]).verdict == "verified"
+
+
+def term_years(header: str, terms: dict[str, int] | None = None) -> frozenset[int]:
+    """Read the DART revenue cell's years under one header and the defined terms."""
+    fragment = {
+        **DART_FRAGMENT,
+        "header_cells": [
+            {"row": 0, "column": 0, "text": "과목"},
+            {"row": 0, "column": 1, "text": header},
+            {"row": 0, "column": 2, "text": "전기"},
+        ],
+    }
+    terms = {"당기": 2024, "전기": 2023, "제56기": 2024} if terms is None else terms
+    cell = next(c for c in read_table_cells(fragment, None, terms) if c.column == 1)
+    return cell.years
+
+
+@pytest.mark.parametrize(
+    ("header", "years"),
+    [
+        ("당기", {2024}),
+        ("당 기", {2024}),
+        ("당기말", {2024}),
+        ("제 56 기", {2024}),
+        ("제56기말", {2024}),
+        ("전기", {2023}),
+        ("당기 금액", set()),
+        ("제57기", set()),
+        ("제56기(2024년)", {2024}),
+    ],
+)
+def test_a_header_that_is_a_defined_period_word_dates_its_column(header, years):
+    """Only a header that is the word alone names its year; a written year still wins."""
+    assert term_years(header) == years
+
+
+def test_period_words_mean_nothing_without_the_reports_definitions():
+    """Without the document's declarations 당기 and 전기 date nothing."""
+    assert term_years("당기", {}) == frozenset()

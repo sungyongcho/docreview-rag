@@ -215,7 +215,8 @@ def _table_record(
         if (found := _cell_facts(source, facts))
     }
     readings: dict[tuple[int, int], TableCellReading] = {}
-    for reading in read_table_cells(whole, tagged):
+    terms = {term.term: term.fiscal_year for term in facts.period_terms}
+    for reading in read_table_cells(whole, tagged, terms):
         key = (reading.row, reading.column)
         if readings.setdefault(key, reading) != reading:
             raise ValueError(f"{doc_id} source cell {key} reads two ways")

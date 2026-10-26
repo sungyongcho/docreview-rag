@@ -1,17 +1,19 @@
 """Canonical table records built once from the chunker's table pieces."""
 
 from dataclasses import asdict, replace
+from datetime import date
 from decimal import Decimal
 
 import pytest
 
 from app.contracts.figures import read_table_cells
 from app.ingestion.chunking import CellFragment, TableFragment, chunk_filing
+from app.ingestion.parsing.facts import FilingFacts, PeriodTerm
 from app.ingestion.parsing.models import Block
 from app.ingestion.table_records import table_records
 from app.ingestion.tokens import InputBudget
 from tests.ingestion.chunk.support import build_filing
-from tests.ingestion.seed.support import tagged_table_batch
+from tests.ingestion.seed.support import table_batch, tagged_table_batch
 
 USD_TABLE = (
     "<table><tr><td>(In millions of U.S. dollars)</td><td>December 28, 2024</td>"
@@ -202,3 +204,38 @@ def test_tagged_cells_are_read_from_their_facts():
     assert (diluted.measure, diluted.scale, diluted.overrides) == ("per_share", 1, ("scale",))
     assert cells[(2, 1)].status == "item_unknown"
     assert cells[(3, 1)].status == "scope_qualified"
+
+
+# A DART-style note table whose columns are named only by period words.
+TERM_TABLE = (
+    "<table><tr><td>(단위 : 백만원)</td><td>당기</td><td>전기말</td></tr>"
+    "<tr><td>매출액</td><td>300,870,903</td><td>258,935,494</td></tr></table>"
+)
+TERMS = FilingFacts(
+    "dart",
+    period_terms=(
+        PeriodTerm("당기", 2024, date(2024, 1, 1), date(2024, 12, 31), 0, 10),
+        PeriodTerm("전기", 2023, date(2023, 1, 1), date(2023, 12, 31), 0, 10),
+    ),
+)
+
+
+def test_period_words_the_document_defines_date_its_columns():
+    """당기 and 전기말 columns take the years the report's declarations give them."""
+    batch = table_batch(TERM_TABLE, facts=TERMS)
+    (filing,) = batch.filings
+    (record,) = table_records(
+        batch.chunks,
+        {chunk.doc_id: chunk.structure_id for chunk in batch.chunks},
+        {filing.source.document.document_id: filing.facts},
+    )
+    years = {
+        cell.text: cell.interpretation.reading.years
+        for cell in record.cells
+        if cell.interpretation.reading is not None
+    }
+    assert years == {"300,870,903": {2024}, "258,935,494": {2023}}
+    (untagged,) = table_records(batch.chunks, {chunk.doc_id: "s" * 64 for chunk in batch.chunks})
+    assert {cell.interpretation.status for cell in untagged.cells if cell.column} == {
+        "period_unknown"
+    }

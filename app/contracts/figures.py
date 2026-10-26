@@ -40,7 +40,8 @@ takes its fiscal year and scope from the tag, and an inline XBRL fact also its
 currency and scale; each fact that contradicts the text reading is recorded as an
 override. A fact scoped to a dimension (a segment, a DART separate statement) is
 not the item of the whole entity, so it never confirms a claim. Untagged cells keep
-the text rules above.
+the text rules above, with one addition: a header that is a period word its DART
+report defines by its own declarations ("당기", "제56기") names that fiscal year.
 """
 
 from collections.abc import Mapping, Sequence
@@ -1268,19 +1269,38 @@ def read_table_unit(fragment: Mapping[str, object]) -> TableUnit:
     return TableUnit("known", next(iter(scales), None), percent, per_share_plain, currency)
 
 
+def _term_year(text: str, terms: Mapping[str, int]) -> int | None:
+    """Return the fiscal year a whole header names by a defined period word.
+
+    The header must be the word alone, spaces aside, optionally with ``말`` for its
+    end ("전기말", "제56기말"); a header with any other word names no term.
+    """
+    word = re.sub(r"\s+", "", text)
+    return terms.get(word.removesuffix("말")) if word else None
+
+
 def _column_years(
     source: Mapping[str, object],
     headers: Sequence[Mapping[str, object]],
     caption_years: set[int],
+    terms: Mapping[str, int],
 ) -> set[int]:
-    """Return the years the headers above one data cell's columns name."""
+    """Return the years the headers above one data cell's columns name.
+
+    A header names years by writing them or, when it writes none, by being one period
+    word its document defines (see :func:`_term_year`).
+    """
     start = _int(source["column"])
     end = start + _int(source.get("colspan", 1))
     years: set[int] = set()
     for header in headers:
         first = _int(header["column"])
         if first < end and start < first + _int(header.get("colspan", 1)):
-            years.update(int(year) for year in _YEAR.findall(str(header.get("text", ""))))
+            text = str(header.get("text", ""))
+            written = {int(year) for year in _YEAR.findall(text)}
+            if not written and (term := _term_year(text, terms)) is not None:
+                written = {term}
+            years.update(written)
     if not years and len(caption_years) == 1:
         return set(caption_years)
     return years
@@ -1375,15 +1395,19 @@ def _with_fact(
 def read_table_cells(
     fragment: Mapping[str, object],
     facts: Mapping[tuple[int, int], Sequence[CellFact]] | None = None,
+    terms: Mapping[str, int] | None = None,
 ) -> list[TableCellReading]:
     """Return each figure-bearing source cell of one table fragment as it is read.
 
     A source cell appears once per normalized cell it belongs to, as stored. ``facts``
     are the tagged facts of each source cell by grid coordinates; a cell read from
     exactly one fact showing the same number takes the fact's facts (see
-    :func:`_with_fact`), any other cell keeps its text reading.
+    :func:`_with_fact`), any other cell keeps its text reading. ``terms`` are the
+    period words the table's document defines ("당기", "제56기") and their fiscal
+    years; a header that is one of them dates its columns.
     """
     facts = facts or {}
+    terms = terms or {}
     headers = _entries(fragment, "header_cells")
     caption_years = {
         int(year)
@@ -1423,7 +1447,7 @@ def read_table_cells(
                     row,
                     column,
                     frozenset(values),
-                    frozenset(_column_years(source, headers, caption_years)),
+                    frozenset(_column_years(source, headers, caption_years, terms)),
                     scale,
                     _label_item(label) if label is not None else None,
                     percent,
