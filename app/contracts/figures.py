@@ -43,6 +43,12 @@ not the item of the whole entity, so it never confirms a claim. Untagged cells k
 the text rules above, with one addition: a header that is a period word its DART
 report defines by its own declarations ("당기", "제56기") names that fiscal year.
 Note references ("Note 5", "(주29)") are identifiers, not figures.
+
+A DART report presents consolidated and separate statements, so its untagged cells
+are the entity's figures only in a table it declares to be a consolidated balance
+sheet, income, comprehensive income or cash flow statement or its consolidated
+summary; a separate statement is a scope of its own and any other table's scope is
+unknown.
 """
 
 from collections.abc import Mapping, Sequence
@@ -705,6 +711,7 @@ CellStatus = Literal[
     "currency_unconfirmed",
     "period_unknown",
     "scope_qualified",
+    "scope_unknown",
     "item_unknown",
 ]
 
@@ -1350,6 +1357,45 @@ _ENTITY_SCOPE = (
     ),
 )
 _ISO_CURRENCY = re.compile(r"iso4217:([A-Z]{3})")
+# The scope a separate statement reads as, the same words its DART tags state.
+_SEPARATE_SCOPE = (
+    "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis=ifrs-full:SeparateMember"
+)
+# Consolidated statements whose cells are the entity's own figures; an equity
+# statement's columns are components and notes describe parts and other entities.
+_ENTITY_STATEMENTS = frozenset(
+    {"balance_sheet", "income", "comprehensive_income", "cash_flow", "summary"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class TableStatement:
+    """What a filing declares about the statement one table belongs to.
+
+    ``kind`` is the statement (``income``, ``notes``, ``summary``...) and ``scope``
+    ``consolidated``, ``separate`` or ``conflicting``; either is None when nothing
+    declares it.
+    """
+
+    kind: str | None
+    scope: str | None
+
+
+def _statement_scope(statement: TableStatement | None) -> str | None:
+    """Return the scope an untagged cell of a table reads as under its declaration.
+
+    Without a statement (a filing whose form presents one scope) a cell is the
+    entity's. Under one, only a consolidated entity statement is; a separate one is
+    that statement's scope and anything else (notes, equity, conflicting or no
+    declaration) is unknown.
+    """
+    if statement is None:
+        return None
+    if statement.scope == "separate":
+        return _SEPARATE_SCOPE
+    if statement.scope == "consolidated" and statement.kind in _ENTITY_STATEMENTS:
+        return None
+    return _UNKNOWN
 
 
 def _scope(dimensions: tuple[tuple[str, str], ...]) -> str | None:
@@ -1364,15 +1410,21 @@ def _with_fact(
 ) -> TableCellReading:
     """Read one cell from the fact its filing tags, recording what overrides the text.
 
-    The fact's fiscal year and scope always apply. An inline XBRL amount or per-share
-    unit also fixes the currency (with the table's notes and the cell's own markers
-    still able to contradict it) and the scale. Other units (shares, ratios) are not
-    amounts, and DART facts state no unit, so the text keeps their unit.
+    The fact's fiscal year and scope always apply; a declared statement scope that
+    the tag contradicts (a consolidated tag in a separate statement) is overridden.
+    An inline XBRL amount or per-share unit also fixes the currency (with the table's
+    notes and the cell's own markers still able to contradict it) and the scale.
+    Other units (shares, ratios) are not amounts, and DART facts state no unit, so
+    the text keeps their unit.
     """
     overrides: list[str] = []
     years = frozenset() if fact.fiscal_year is None else frozenset({fact.fiscal_year})
     if reading.years and reading.years != years:
         overrides.append("year")
+    scope = _scope(fact.dimensions)
+    tagged_separate = _SEPARATE_SCOPE in (scope or "")
+    if reading.scope != _UNKNOWN and (reading.scope == _SEPARATE_SCOPE) != tagged_separate:
+        overrides.append("scope")
     scale, percent, resolved = reading.scale, reading.percent, reading.currency
     measure = None
     currency = _ISO_CURRENCY.fullmatch(fact.numerator or "")
@@ -1393,7 +1445,7 @@ def _with_fact(
         currency=resolved,
         basis="fact",
         overrides=tuple(overrides),
-        scope=_scope(fact.dimensions),
+        scope=scope,
         measure=measure,
     )
 
@@ -1402,6 +1454,7 @@ def read_table_cells(
     fragment: Mapping[str, object],
     facts: Mapping[tuple[int, int], Sequence[CellFact]] | None = None,
     terms: Mapping[str, int] | None = None,
+    statement: TableStatement | None = None,
 ) -> list[TableCellReading]:
     """Return each figure-bearing source cell of one table fragment as it is read.
 
@@ -1410,7 +1463,9 @@ def read_table_cells(
     exactly one fact showing the same number takes the fact's facts (see
     :func:`_with_fact`), any other cell keeps its text reading. ``terms`` are the
     period words the table's document defines ("당기", "제56기") and their fiscal
-    years; a header that is one of them dates its columns.
+    years; a header that is one of them dates its columns. ``statement`` is what the
+    table's filing declares about its statement, when its form presents several
+    entity scopes; it sets the scope of untagged cells (see :func:`_statement_scope`).
     """
     facts = facts or {}
     terms = terms or {}
@@ -1460,6 +1515,7 @@ def read_table_cells(
                     _resolve(unit.currency | own),
                     bool(own),
                     label,
+                    scope=_statement_scope(statement),
                 )
                 tagged = facts.get((row, column), ())
                 if len(tagged) == 1 and _values(tagged[0].text) == values:
@@ -1518,6 +1574,10 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
             )
     if len(reading.years) != 1:
         return CellInterpretation("period_unknown", "no single fiscal year", value, reading)
+    if reading.scope == _UNKNOWN:
+        return CellInterpretation(
+            "scope_unknown", "the filing declares no entity scope for it", value, reading
+        )
     if reading.scope is not None:
         return CellInterpretation("scope_qualified", reading.scope, value, reading)
     if reading.item is None:

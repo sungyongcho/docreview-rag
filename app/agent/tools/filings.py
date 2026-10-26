@@ -143,6 +143,7 @@ class CatalogCell(StrictSchema):
         "currency_unconfirmed",
         "period_unknown",
         "scope_qualified",
+        "scope_unknown",
         "item_unknown",
     ]
     complete: bool

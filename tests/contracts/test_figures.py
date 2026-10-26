@@ -9,6 +9,7 @@ from app.contracts.figures import (
     CellFact,
     EvidenceText,
     TableCellReading,
+    TableStatement,
     check_figures,
     figures,
     interpret_table_cell,
@@ -1513,6 +1514,55 @@ def test_a_header_that_is_a_defined_period_word_dates_its_column(header, years):
 def test_period_words_mean_nothing_without_the_reports_definitions():
     """Without the document's declarations 당기 and 전기 date nothing."""
     assert term_years("당기", {}) == frozenset()
+
+
+SEPARATE = "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis=ifrs-full:SeparateMember"
+
+
+def stated_revenue(statement: TableStatement | None, *facts: CellFact) -> TableCellReading:
+    """Read the DART revenue cell of a table its report declares as ``statement``."""
+    readings = read_table_cells(DART_FRAGMENT, {(1, 1): facts} if facts else None, None, statement)
+    return next(cell for cell in readings if cell.column == 1)
+
+
+@pytest.mark.parametrize(
+    ("statement", "status"),
+    [
+        (None, "known"),
+        (TableStatement("income", "consolidated"), "known"),
+        (TableStatement("summary", "consolidated"), "known"),
+        (TableStatement("income", "separate"), "scope_qualified"),
+        (TableStatement("notes", "consolidated"), "scope_unknown"),
+        (TableStatement("equity", "consolidated"), "scope_unknown"),
+        (TableStatement(None, "consolidated"), "scope_unknown"),
+        (TableStatement("income", "conflicting"), "scope_unknown"),
+        (TableStatement(None, None), "scope_unknown"),
+    ],
+)
+def test_only_a_declared_consolidated_entity_statement_is_the_entity(statement, status):
+    """Separate statements are a scope of their own; notes, equity and silence are unknown."""
+    cell = stated_revenue(statement)
+    assert interpret_table_cell("300,870,903", [cell]).status == status
+
+
+def test_a_consolidated_tag_in_a_separate_statement_overrides_its_declaration():
+    """The tag decides the scope and the contradicted declaration is recorded."""
+    dart_fact = fact(numerator=None, scale=None, text="300,870,903")
+    cell = stated_revenue(TableStatement("income", "separate"), dart_fact)
+    assert (cell.scope, cell.overrides) == (None, ("scope",))
+    agreeing = stated_revenue(
+        TableStatement("income", "separate"),
+        replace(
+            dart_fact,
+            dimensions=(
+                (
+                    "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis",
+                    "ifrs-full:SeparateMember",
+                ),
+            ),
+        ),
+    )
+    assert (agreeing.scope, agreeing.overrides) == (SEPARATE, ())
 
 
 @pytest.mark.parametrize(

@@ -8,7 +8,7 @@ import pytest
 
 from app.contracts.figures import read_table_cells
 from app.ingestion.chunking import CellFragment, TableFragment, chunk_filing
-from app.ingestion.parsing.facts import FilingFacts, PeriodTerm
+from app.ingestion.parsing.facts import FilingFacts, PeriodTerm, StatementDeclaration
 from app.ingestion.parsing.models import Block
 from app.ingestion.table_records import table_records
 from app.ingestion.tokens import InputBudget
@@ -239,3 +239,31 @@ def test_period_words_the_document_defines_date_its_columns():
     assert {cell.interpretation.status for cell in untagged.cells if cell.column} == {
         "period_unknown"
     }
+
+
+def test_a_tables_statement_combines_every_declaration_around_it():
+    """The most specific kind wins; scopes that disagree make the table's scope conflicting."""
+    span = len(TERM_TABLE)
+    section = StatementDeclaration(0, span, "statement", "consolidated", "section D-0-3-2-0")
+    group = StatementDeclaration(0, span, "income", None, "class {XBRL}IS2")
+    facts = replace(TERMS, statements=(section, group), scope_declared=True)
+    batch = table_batch(TERM_TABLE, facts=facts)
+    (filing,) = batch.filings
+    structure = {chunk.doc_id: chunk.structure_id for chunk in batch.chunks}
+    (record,) = table_records(batch.chunks, structure, {filing.source.document.document_id: facts})
+    assert record.statement is not None
+    assert (record.statement.kind, record.statement.scope) == ("income", "consolidated")
+    assert record.statement_basis == "section D-0-3-2-0; class {XBRL}IS2"
+    assert {cell.interpretation.status for cell in record.cells if cell.column} == {"known"}
+
+    separate = StatementDeclaration(0, span, "income", "separate", "class {XBRL}IS_S2")
+    clash = replace(facts, statements=(section, separate))
+    (record,) = table_records(batch.chunks, structure, {filing.source.document.document_id: clash})
+    assert record.statement is not None and record.statement.scope == "conflicting"
+    assert {cell.interpretation.status for cell in record.cells if cell.column} == {"scope_unknown"}
+
+
+def test_a_filing_of_one_scope_declares_no_statement():
+    """SEC tables carry no statement, so their cells keep the entity scope."""
+    record = only_record(table_chunks(USD_TABLE))
+    assert record.statement is None and record.statement_basis is None

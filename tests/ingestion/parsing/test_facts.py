@@ -9,6 +9,7 @@ from app.ingestion.parsing.facts import (
     FilingFacts,
     dart_facts,
     dart_period_terms,
+    dart_statements,
     sec_facts,
 )
 from tests.ingestion.support import filing_document
@@ -124,10 +125,12 @@ def test_sec_facts_skip_nil_and_enclosing_tags_and_default_the_scale() -> None:
 
 
 def test_filings_without_tags_have_no_facts() -> None:
-    """A plain HTML filing or an untagged DART report yields empty facts."""
+    """A plain HTML filing yields empty facts; an untagged DART report only its form."""
     assert sec_facts("<table><tr><td>1,234</td></tr></table>", AMD) == FilingFacts()
     dart = filing_document(registry="dart")
-    assert dart_facts("<TABLE><TR><TE>1,234</TE></TR></TABLE>", dart) == FilingFacts()
+    assert dart_facts("<TABLE><TR><TE>1,234</TE></TR></TABLE>", dart) == FilingFacts(
+        "dart", scope_declared=True
+    )
 
 
 def test_dart_facts_read_tagged_cells_and_their_contexts() -> None:
@@ -234,3 +237,46 @@ def test_an_ordinal_declared_with_two_periods_is_left_out():
     terms = {term.term for term in dart_period_terms(declarations, document)}
 
     assert terms == {"당기", "제56기"}
+
+
+# A DART report's financial sections, as the report form codes and classes them.
+DART_STATEMENTS = (
+    '<SECTION-2><TITLE AASSOCNOTE="D-0-3-1-0">1. 요약재무정보</TITLE>'
+    "<P>가. 요약연결재무정보</P><TABLE><TR><TD>1</TD></TR></TABLE>"
+    "<P>나. 요약별도재무정보</P><TABLE><TR><TD>2</TD></TR></TABLE></SECTION-2>"
+    '<SECTION-2><TITLE AASSOCNOTE="D-0-3-2-0">2. 연결재무제표</TITLE>'
+    '<TABLE-GROUP ACLASS="{XBRL}IS2"><TABLE><TR><TD>3</TD></TR></TABLE></TABLE-GROUP>'
+    "</SECTION-2>"
+    '<SECTION-2><TITLE AASSOCNOTE="D-0-3-4-0">4. 재무제표</TITLE>'
+    '<TABLE-GROUP ACLASS="{XBRL}BS_S"><TABLE><TR><TD>4</TD></TR></TABLE></TABLE-GROUP>'
+    "</SECTION-2>"
+    '<SECTION-2><TITLE AASSOCNOTE="D-0-3-5-0">5. 재무제표 주석</TITLE>'
+    '<TABLE-GROUP ACLASS="{XBRL}NT_S_D851105"><TABLE><TR><TD>5</TD></TR></TABLE>'
+    "</TABLE-GROUP></SECTION-2>"
+)
+
+
+def test_dart_statements_follow_section_codes_classes_and_summary_headings():
+    """Each table position gets the sections, groups and summary headings around it."""
+    facts = dart_facts(DART_STATEMENTS, filing_document(registry="dart"))
+
+    def declared(text: str) -> list[tuple[object, object, str]]:
+        position = DART_STATEMENTS.index(f"<TD>{text}</TD>")
+        return [(d.kind, d.scope, d.basis) for d in facts.declarations_at(position)]
+
+    assert facts.scope_declared
+    assert facts.statements == dart_statements(DART_STATEMENTS)
+    assert declared("1") == [
+        ("summary", None, "section D-0-3-1-0"),
+        ("summary", "consolidated", "heading 요약연결재무정보"),
+    ]
+    assert declared("2")[1] == ("summary", "separate", "heading 요약별도재무정보")
+    assert declared("3") == [
+        ("statement", "consolidated", "section D-0-3-2-0"),
+        ("income", None, "class {XBRL}IS2"),
+    ]
+    assert declared("4")[1] == ("balance_sheet", "separate", "class {XBRL}BS_S")
+    assert declared("5") == [
+        ("notes", "separate", "section D-0-3-5-0"),
+        ("notes", "separate", "class {XBRL}NT_S_D851105"),
+    ]

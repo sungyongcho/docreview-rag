@@ -1,8 +1,9 @@
 """Give stored table records the columns and statuses of fact-based cell readings.
 
 Every stored reading so far was read from text, so the new columns are added and
-each existing reading is marked ``text`` with no overrides; live tables get their
-fact readings by being ingested again. The cell status and reading constraints are
+each existing reading is marked ``text`` with no overrides; tables get the statement
+columns, null for tables stored before statements were read. Live tables get their
+fact readings and statements by being ingested again. The cell status and reading constraints are
 replaced by the ones the models now declare, and the fact tables are created.
 """
 
@@ -10,7 +11,7 @@ from sqlalchemy import CheckConstraint, text
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.db.bootstrap import bootstrap_schema
-from app.db.models import SnapshotTableCell, TableCell, TableSourceCell
+from app.db.models import ParsedTable, SnapshotTableCell, TableCell, TableSourceCell
 
 READING_COLUMNS = (
     ("reading_basis", "varchar(8)"),
@@ -19,6 +20,12 @@ READING_COLUMNS = (
     ("reading_measure", "varchar(16)"),
 )
 SOURCE_CELL_TABLES = ("table_source_cells", "snapshot_table_source_cells")
+STATEMENT_COLUMNS = (
+    ("statement_kind", "varchar(24)"),
+    ("statement_scope", "varchar(16)"),
+    ("statement_basis", "text"),
+)
+TABLE_TABLES = ("parsed_tables", "snapshot_parsed_tables")
 
 
 def _constraints(model: type, names: tuple[str, ...]) -> list[tuple[str, str]]:
@@ -46,7 +53,19 @@ async def migrate_facts(connection: AsyncConnection) -> dict[str, object]:
             )
         )
         marked[table] = result.rowcount
+    for table in TABLE_TABLES:
+        for column, kind in STATEMENT_COLUMNS:
+            await connection.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {kind}")
+            )
     replaced = [
+        ("parsed_tables", name, sql)
+        for name, sql in _constraints(
+            ParsedTable,
+            ("ck_parsed_tables_statement_kind", "ck_parsed_tables_statement_scope"),
+        )
+    ]
+    replaced += [
         ("table_source_cells", name, sql)
         for name, sql in _constraints(
             TableSourceCell,

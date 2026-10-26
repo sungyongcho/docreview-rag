@@ -26,6 +26,17 @@ from app.ingestion.sources.models import DocumentReference
 
 type FactSource = Literal["ixbrl", "dart"]
 type Dimension = tuple[str, str]
+type StatementKind = Literal[
+    "balance_sheet",
+    "income",
+    "comprehensive_income",
+    "cash_flow",
+    "equity",
+    "notes",
+    "summary",
+    "statement",
+]
+type StatementScope = Literal["consolidated", "separate"]
 
 # A fiscal year of 52 or 53 weeks, or a calendar year, measured in days.
 _ANNUAL_DAYS = range(350, 381)
@@ -66,6 +77,34 @@ _COVER = re.compile(rf"사업연도{_GAP}{_YMD}{_GAP}부터{_GAP}{_YMD}{_GAP}까
 _ORDINAL = re.compile(
     rf"제{_GAP}(\d+){_GAP}기{_GAP}\(?{_GAP}{_YMD}{_GAP}\.?{_GAP}(?:부터|~){_GAP}{_YMD}"
 )
+# A DART report's standard section codes for its financial statements, by the
+# statement kind and entity scope each declares; "1. 요약재무정보" holds both scopes.
+_SECTION_STATEMENTS: dict[str, tuple[StatementKind, StatementScope | None]] = {
+    "D-0-3-1-0": ("summary", None),
+    "D-0-3-2-0": ("statement", "consolidated"),
+    "D-0-3-3-0": ("notes", "consolidated"),
+    "D-0-3-4-0": ("statement", "separate"),
+    "D-0-3-5-0": ("notes", "separate"),
+}
+# A table group's statement class: "{XBRL}BS_C", "{XBRL}IS2", "{XBRL}NT_S_D851105".
+_GROUP_CLASS = re.compile(r"\{XBRL\}(?P<kind>BS|IS|CF|EF|NT)(?:_(?P<scope>[CS]))?(?P<variant>\d)?")
+_GROUP_KINDS: dict[str, StatementKind] = {
+    "BS": "balance_sheet",
+    "CF": "cash_flow",
+    "EF": "equity",
+    "NT": "notes",
+}
+# The income statement classes: IS1 is a single statement of comprehensive income.
+_INCOME_KINDS: dict[str | None, StatementKind] = {
+    "1": "comprehensive_income",
+    "2": "income",
+    "3": "comprehensive_income",
+}
+_SECTION = re.compile(r"<SECTION-2\b[^>]*>(.*?)</SECTION-2>", re.S)
+_SECTION_CODE = re.compile(r'<TITLE\b[^>]*\bAASSOCNOTE="(D-0-3-\d-0)"')
+_GROUP = re.compile(r"<TABLE-GROUP\b([^>]*)>.*?</TABLE-GROUP>", re.S)
+# The headings the report form prescribes inside "1. 요약재무정보".
+_SUMMARY_HEADING = re.compile(rf"요약{_GAP}(연결|별도){_GAP}재무{_GAP}정보")
 # Prior-period words and how many fiscal years before the reporting year they name.
 _PRIOR_TERMS = (("전기", 1), ("전전기", 2))
 
@@ -133,6 +172,21 @@ class PeriodTerm:
 
 
 @dataclass(frozen=True, slots=True)
+class StatementDeclaration:
+    """What a DART report declares about the tables inside one span of its source.
+
+    ``kind`` and ``scope`` are None where the declaration states neither; ``basis``
+    quotes the declaration (a section code, a table group class or a heading).
+    """
+
+    start_char: int
+    end_char: int
+    kind: StatementKind | None
+    scope: StatementScope | None
+    basis: str
+
+
+@dataclass(frozen=True, slots=True)
 class FilingFacts:
     """Every context, unit, tagged number and declared period term of one filing.
 
@@ -144,6 +198,10 @@ class FilingFacts:
     units: tuple[FactUnit, ...] = ()
     facts: tuple[SourceFact, ...] = ()
     period_terms: tuple[PeriodTerm, ...] = ()
+    statements: tuple[StatementDeclaration, ...] = ()
+    # Whether the filing's form presents several entity scopes (a DART report has
+    # consolidated and separate statements), so a table's scope must be declared.
+    scope_declared: bool = False
 
     def fingerprint(self) -> str:
         """Return a digest of every context, unit and fact, for parse identity."""
@@ -155,6 +213,14 @@ class FilingFacts:
         first = bisect_left(self.facts, start, key=lambda fact: fact.start_char)
         last = bisect_left(self.facts, end, key=lambda fact: fact.start_char)
         return self.facts[first:last]
+
+    def declarations_at(self, position: int) -> tuple[StatementDeclaration, ...]:
+        """Return the statement declarations whose span holds one source position."""
+        return tuple(
+            declaration
+            for declaration in self.statements
+            if declaration.start_char <= position < declaration.end_char
+        )
 
 
 def _text(markup: str) -> str:
@@ -350,8 +416,63 @@ def dart_period_terms(raw: str, document: DocumentReference) -> tuple[PeriodTerm
     return tuple(terms)
 
 
+def dart_statements(raw: str) -> tuple[StatementDeclaration, ...]:
+    """Read where a DART report declares its statements, in source order.
+
+    Each financial section with a standard code declares its span; each table group
+    with a statement class declares its kind and, with a ``_C``/``_S`` suffix, its
+    scope; inside "1. 요약재무정보" each prescribed heading ("요약연결재무정보",
+    "요약별도재무정보") declares the scope from itself to the next heading.
+    """
+    declarations: list[StatementDeclaration] = []
+    for section in _SECTION.finditer(raw):
+        code = _SECTION_CODE.search(section.group(1))
+        if code is None or code.group(1) not in _SECTION_STATEMENTS:
+            continue
+        kind, scope = _SECTION_STATEMENTS[code.group(1)]
+        start, end = section.start(), section.end()
+        declarations.append(
+            StatementDeclaration(start, end, kind, scope, f"section {code.group(1)}")
+        )
+        if kind != "summary":
+            continue
+        headings = list(_SUMMARY_HEADING.finditer(raw, start, end))
+        for heading, following in zip(headings, [*headings[1:], None], strict=True):
+            declarations.append(
+                StatementDeclaration(
+                    heading.start(),
+                    end if following is None else following.start(),
+                    "summary",
+                    "consolidated" if heading.group(1) == "연결" else "separate",
+                    f"heading {_text(heading.group(0))}",
+                )
+            )
+    for group in _GROUP.finditer(raw):
+        label = dict(_ATTRIBUTE.findall(group.group(1))).get("ACLASS", "")
+        match = _GROUP_CLASS.match(label)
+        if match is None:
+            continue
+        name = match.group("kind")
+        kind = _INCOME_KINDS.get(match.group("variant")) if name == "IS" else _GROUP_KINDS[name]
+        suffix = match.group("scope")
+        declarations.append(
+            StatementDeclaration(
+                group.start(),
+                group.end(),
+                kind,
+                None if suffix is None else "consolidated" if suffix == "C" else "separate",
+                f"class {label}",
+            )
+        )
+    return tuple(sorted(declarations, key=lambda declaration: declaration.start_char))
+
+
 def dart_facts(raw: str, document: DocumentReference) -> FilingFacts:
-    """Read the tagged cells of one DART report, the contexts they name and its terms."""
+    """Read one DART report's tagged cells, their contexts, its terms and statements.
+
+    A DART report presents consolidated and separate statements, so its facts always
+    say a table's scope must be declared, even when the report tags nothing.
+    """
     facts: list[SourceFact] = []
     context_ids: dict[str, None] = {}
     for match in _DART_CELL.finditer(raw):
@@ -373,8 +494,13 @@ def dart_facts(raw: str, document: DocumentReference) -> FilingFacts:
                 _text(match.group(3)),
             )
         )
-    terms = dart_period_terms(raw, document)
-    if not facts and not terms:
-        return FilingFacts()
     contexts = tuple(_dart_context(context_id, document) for context_id in sorted(context_ids))
-    return FilingFacts("dart", contexts, (), tuple(facts), terms)
+    return FilingFacts(
+        "dart",
+        contexts,
+        (),
+        tuple(facts),
+        dart_period_terms(raw, document),
+        dart_statements(raw),
+        scope_declared=True,
+    )

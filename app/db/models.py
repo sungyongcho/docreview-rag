@@ -360,8 +360,19 @@ TABLE_CELL_STATUSES = (
     "currency_unconfirmed",
     "period_unknown",
     "scope_qualified",
+    "scope_unknown",
     "item_unknown",
 )
+STATEMENT_KINDS = (
+    "balance_sheet",
+    "income",
+    "comprehensive_income",
+    "cash_flow",
+    "equity",
+    "notes",
+    "summary",
+)
+STATEMENT_SCOPES = ("consolidated", "separate", "conflicting")
 READING_BASES = ("text", "fact")
 READING_MEASURES = ("amount", "per_share", "other")
 
@@ -393,11 +404,20 @@ class ParsedTable(Base):
     unit_percent: Mapped[bool] = mapped_column(Boolean, nullable=False)
     unit_per_share_plain: Mapped[bool] = mapped_column(Boolean, nullable=False)
     unit_currency: Mapped[list[str]] = mapped_column(ARRAY(String(8)), nullable=False)
+    statement_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    statement_scope: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    statement_basis: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         CheckConstraint("table_id ~ '^[0-9a-f]{64}$'", name="ck_parsed_tables_id"),
         CheckConstraint("start_char >= 0 AND end_char > start_char", name="ck_parsed_tables_span"),
         CheckConstraint(_in("unit_status", TABLE_UNIT_STATUSES), name="ck_parsed_tables_unit"),
+        CheckConstraint(
+            _in("statement_kind", STATEMENT_KINDS), name="ck_parsed_tables_statement_kind"
+        ),
+        CheckConstraint(
+            _in("statement_scope", STATEMENT_SCOPES), name="ck_parsed_tables_statement_scope"
+        ),
         UniqueConstraint("structure_id", "start_char", "end_char", name="uq_parsed_tables_span"),
     )
 
@@ -952,6 +972,9 @@ class SnapshotParsedTable(Base):
     unit_percent: Mapped[bool] = mapped_column(Boolean, nullable=False)
     unit_per_share_plain: Mapped[bool] = mapped_column(Boolean, nullable=False)
     unit_currency: Mapped[list[str]] = mapped_column(ARRAY(String(8)), nullable=False)
+    statement_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    statement_scope: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    statement_basis: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         CheckConstraint(

@@ -20,7 +20,7 @@ from app.db.models import (
     TableSourceCell,
     TableSourceFact,
 )
-from app.ingestion.parsing.facts import FilingFacts, PeriodTerm
+from app.ingestion.parsing.facts import FilingFacts, PeriodTerm, StatementDeclaration
 from app.ingestion.persistence import persist_seed_batch
 from app.ingestion.pipeline import SeedBatch
 from tests.ingestion.seed.support import sample_batch, table_batch, tagged_table_batch
@@ -278,5 +278,41 @@ def test_postgresql_stores_the_period_words_a_report_defines():
                 (row.term, row.fiscal_year, row.period_start, row.period_end, row.start_char)
                 for row in stored
             ] == [("당기", 2024, date(2024, 1, 1), date(2024, 12, 31), 3)]
+            assert (
+                await session.execute(
+                    text(
+                        "SELECT statement_kind, statement_scope, statement_basis FROM parsed_tables"
+                    )
+                )
+            ).one() == (None, None, None)
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_postgresql_stores_each_tables_declared_statement():
+    """Store the statement a DART table belongs to with the declarations it rests on."""
+
+    async def exercise() -> None:
+        """Persist a table declared as a consolidated income statement."""
+        declarations = (
+            StatementDeclaration(0, 10_000, "statement", "consolidated", "section D-0-3-2-0"),
+            StatementDeclaration(0, 10_000, "income", None, "class {XBRL}IS2"),
+        )
+        facts = FilingFacts("dart", statements=declarations, scope_declared=True)
+        async with isolated_session_factory() as factory, factory() as session:
+            await persist_seed_batch(session, table_batch(facts=facts))
+            stored = (
+                await session.execute(
+                    text(
+                        "SELECT statement_kind, statement_scope, statement_basis FROM parsed_tables"
+                    )
+                )
+            ).one()
+            assert tuple(stored) == (
+                "income",
+                "consolidated",
+                "section D-0-3-2-0; class {XBRL}IS2",
+            )
 
     asyncio.run(exercise())

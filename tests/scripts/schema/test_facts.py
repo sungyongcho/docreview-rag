@@ -8,7 +8,13 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.models import TableCell, TableSourceCell
 from app.ingestion.persistence import persist_seed_batch
-from scripts.schema.facts import READING_COLUMNS, SOURCE_CELL_TABLES, migrate_facts
+from scripts.schema.facts import (
+    READING_COLUMNS,
+    SOURCE_CELL_TABLES,
+    STATEMENT_COLUMNS,
+    TABLE_TABLES,
+    migrate_facts,
+)
 from tests.ingestion.seed.support import table_batch
 from tests.live_postgres import isolated_session
 
@@ -29,6 +35,9 @@ def test_stored_readings_gain_the_fact_columns_marked_as_text_readings():
             await persist_seed_batch(session, table_batch())
             for table in SOURCE_CELL_TABLES:
                 for column, _ in READING_COLUMNS:
+                    await session.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
+            for table in TABLE_TABLES:
+                for column, _ in STATEMENT_COLUMNS:
                     await session.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
             await session.execute(
                 text("ALTER TABLE table_cells DROP CONSTRAINT ck_table_cells_status")
@@ -55,6 +64,12 @@ def test_stored_readings_gain_the_fact_columns_marked_as_text_readings():
                 .distinct()
             )
             assert [tuple(row) for row in stored] == [("text", [])]
+            assert await session.scalar(
+                text("SELECT count(*) FROM parsed_tables WHERE statement_kind IS NULL")
+            ) == await session.scalar(text("SELECT count(*) FROM parsed_tables"))
+            with pytest.raises(IntegrityError):
+                async with session.begin_nested():
+                    await session.execute(text("UPDATE parsed_tables SET statement_scope = 'both'"))
             async with session.begin_nested():
                 await session.execute(
                     update(TableCell)

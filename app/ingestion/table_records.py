@@ -18,6 +18,7 @@ from app.contracts.figures import (
     CellFact,
     CellInterpretation,
     TableCellReading,
+    TableStatement,
     TableUnit,
     interpret_table_cell,
     read_table_cells,
@@ -105,6 +106,8 @@ class TableRecord:
     end_char: int
     header_rows: tuple[int, ...]
     unit: TableUnit
+    statement: TableStatement | None
+    statement_basis: str | None
     captions: tuple[CaptionSource, ...]
     source_cells: tuple[SourceCellRecord, ...]
     cells: tuple[NormalizedCellRecord, ...]
@@ -184,6 +187,25 @@ def _joined(fact: SourceFact, facts: FilingFacts) -> CellFact:
     )
 
 
+def _statement(start: int, facts: FilingFacts) -> tuple[TableStatement | None, str | None]:
+    """Resolve what a filing declares about the statement of the table starting here.
+
+    Only a filing whose form presents several entity scopes declares statements. The
+    kind is the most specific one declared (a table group's class over its section);
+    scopes that disagree are ``conflicting``. The basis quotes every declaration.
+    """
+    if not facts.scope_declared:
+        return None, None
+    found = sorted(
+        facts.declarations_at(start),
+        key=lambda declaration: declaration.end_char - declaration.start_char,
+    )
+    kind = next((d.kind for d in found if d.kind is not None and d.kind != "statement"), None)
+    scopes = {d.scope for d in found if d.scope is not None}
+    scope = next(iter(scopes)) if len(scopes) == 1 else "conflicting" if scopes else None
+    return TableStatement(kind, scope), "; ".join(d.basis for d in found) or None
+
+
 def _table_record(
     doc_id: str,
     structure_id: str,
@@ -216,7 +238,8 @@ def _table_record(
     }
     readings: dict[tuple[int, int], TableCellReading] = {}
     terms = {term.term: term.fiscal_year for term in facts.period_terms}
-    for reading in read_table_cells(whole, tagged, terms):
+    statement, basis = _statement(start_char, facts)
+    for reading in read_table_cells(whole, tagged, terms, statement):
         key = (reading.row, reading.column)
         if readings.setdefault(key, reading) != reading:
             raise ValueError(f"{doc_id} source cell {key} reads two ways")
@@ -278,6 +301,8 @@ def _table_record(
         end_char,
         fragment.header_rows,
         read_table_unit(whole),
+        statement,
+        basis,
         fragment.caption_sources,
         tuple(
             SourceCellRecord(cell, readings.get(key), _cell_facts(cell, facts))

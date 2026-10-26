@@ -339,6 +339,9 @@ def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
                 "unit_percent": unit.percent,
                 "unit_per_share_plain": unit.per_share_plain,
                 "unit_currency": sorted(unit.currency),
+                "statement_kind": None if record.statement is None else record.statement.kind,
+                "statement_scope": None if record.statement is None else record.statement.scope,
+                "statement_basis": record.statement_basis,
             }
         ],
         TableCaption: [
