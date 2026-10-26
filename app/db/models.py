@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pgvector.sqlalchemy import Vector
@@ -151,6 +151,46 @@ class ParsedStructure(Base):
         CheckConstraint("source_sha256 ~ '^[0-9a-f]{64}$'", name="ck_parsed_structures_digest"),
         CheckConstraint("jsonb_typeof(structure) = 'object'", name="ck_parsed_structures_object"),
     )
+
+
+class FilingFactContext(Base):
+    """One context a parse found in its filing: a period, its fiscal year and scope.
+
+    ``dimensions`` are ``axis=member`` pairs; an undimensioned context has none. A
+    DART context states only its fiscal year, so its dates are null.
+    """
+
+    __tablename__ = "filing_fact_contexts"
+
+    structure_id: Mapped[str] = mapped_column(
+        ForeignKey("parsed_structures.structure_id", ondelete="CASCADE"), primary_key=True
+    )
+    context_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    period_start: Mapped[date | None] = mapped_column(nullable=True)
+    period_end: Mapped[date | None] = mapped_column(nullable=True)
+    instant: Mapped[date | None] = mapped_column(nullable=True)
+    fiscal_year: Mapped[int | None] = mapped_column(nullable=True)
+    dimensions: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "instant IS NULL OR (period_start IS NULL AND period_end IS NULL)",
+            name="ck_filing_fact_contexts_period",
+        ),
+    )
+
+
+class FilingFactUnit(Base):
+    """One inline XBRL unit a parse found: its measures and a ratio's denominator."""
+
+    __tablename__ = "filing_fact_units"
+
+    structure_id: Mapped[str] = mapped_column(
+        ForeignKey("parsed_structures.structure_id", ondelete="CASCADE"), primary_key=True
+    )
+    unit_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    numerator: Mapped[str] = mapped_column(Text, nullable=False)
+    denominator: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ChunkEmbedding(Base):
@@ -394,6 +434,57 @@ class TableSourceCell(Base):
             "(reading_values IS NULL) = (reading_years IS NULL) "
             "AND (reading_values IS NULL) = (reading_marked IS NULL)",
             name="ck_table_source_cells_reading",
+        ),
+    )
+
+
+class TableSourceFact(Base):
+    """One tagged number inside an original grid cell, as the filing declares it.
+
+    ``scale`` is the inline XBRL power of ten of the displayed number (null for DART);
+    ``decimals`` is the stated precision. ``ordinal`` orders the facts of one cell.
+    """
+
+    __tablename__ = "table_source_facts"
+
+    table_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    grid_row: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grid_column: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    structure_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    start_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    end_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    concept: Mapped[str] = mapped_column(Text, nullable=False)
+    context_id: Mapped[str] = mapped_column(Text, nullable=False)
+    unit_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scale: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sign: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    decimals: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("ordinal >= 0", name="ck_table_source_facts_ordinal"),
+        CheckConstraint(
+            "start_char >= 0 AND end_char > start_char", name="ck_table_source_facts_span"
+        ),
+        ForeignKeyConstraint(
+            ["table_id", "grid_row", "grid_column"],
+            [
+                "table_source_cells.table_id",
+                "table_source_cells.grid_row",
+                "table_source_cells.grid_column",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["structure_id", "context_id"],
+            ["filing_fact_contexts.structure_id", "filing_fact_contexts.context_id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["structure_id", "unit_id"],
+            ["filing_fact_units.structure_id", "filing_fact_units.unit_id"],
+            ondelete="CASCADE",
         ),
     )
 

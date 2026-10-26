@@ -14,12 +14,14 @@ from app.db.models import (
     ChunkEmbedding,
     ChunkTableCell,
     Document,
+    FilingFactContext,
     TableCell,
     TableSourceCell,
+    TableSourceFact,
 )
 from app.ingestion.persistence import persist_seed_batch
 from app.ingestion.pipeline import SeedBatch
-from tests.ingestion.seed.support import sample_batch, table_batch
+from tests.ingestion.seed.support import sample_batch, table_batch, tagged_table_batch
 from tests.live_postgres import isolated_session_factory
 
 
@@ -201,5 +203,58 @@ def test_postgresql_stores_each_table_once_and_links_its_chunks():
                 await persist_seed_batch(session, sample_batch())
                 assert await session.scalar(text("SELECT count(*) FROM parsed_tables")) == 0
                 assert await session.scalar(text("SELECT count(*) FROM table_cells")) == 0
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_postgresql_stores_fact_contexts_units_and_each_cells_facts():
+    """Store the parse's contexts and units and tie each tagged number to its source cell."""
+
+    async def exercise() -> None:
+        """Persist the tagged table batch and read its facts back."""
+        async with isolated_session_factory() as factory:
+            batch = tagged_table_batch()
+            async with factory() as session:
+                await persist_seed_batch(session, batch)
+                contexts = {
+                    context_id: (fiscal_year, dimensions)
+                    for context_id, fiscal_year, dimensions in await session.execute(
+                        select(
+                            FilingFactContext.context_id,
+                            FilingFactContext.fiscal_year,
+                            FilingFactContext.dimensions,
+                        )
+                    )
+                }
+                assert contexts == {
+                    "fy24": (2024, []),
+                    "fy23": (2023, []),
+                    "dc24": (2024, ["us-gaap:StatementBusinessSegmentsAxis=nvda:DataCenterMember"]),
+                }
+                assert await session.scalar(text("SELECT count(*) FROM filing_fact_units")) == 2
+                facts = (
+                    await session.execute(
+                        select(
+                            TableSourceFact.grid_row,
+                            TableSourceFact.grid_column,
+                            TableSourceFact.context_id,
+                            TableSourceFact.unit_id,
+                            TableSourceFact.scale,
+                        ).order_by(TableSourceFact.grid_row, TableSourceFact.grid_column)
+                    )
+                ).all()
+                assert [tuple(row) for row in facts] == [
+                    (1, 1, "fy24", "usd", 6),
+                    (1, 2, "fy23", "usd", 6),
+                    (2, 1, "fy24", "usdPerShare", 0),
+                    (2, 2, "fy23", "usdPerShare", 0),
+                    (3, 1, "dc24", "usd", 6),
+                ]
+
+            async with factory() as session:
+                await persist_seed_batch(session, batch)
+                assert await session.scalar(text("SELECT count(*) FROM table_source_facts")) == 5
+                assert await session.scalar(text("SELECT count(*) FROM filing_fact_contexts")) == 3
 
     asyncio.run(exercise())

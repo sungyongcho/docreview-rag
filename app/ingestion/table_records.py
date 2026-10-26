@@ -7,7 +7,7 @@ and the interpretation is the one ``check_figures`` reads, computed here instead
 at every check.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 import hashlib
@@ -23,6 +23,7 @@ from app.contracts.figures import (
     read_table_unit,
 )
 from app.ingestion.chunking import CaptionSource, CellFragment, Chunk, TableFragment
+from app.ingestion.parsing.facts import FilingFacts, SourceFact
 from app.ingestion.parsing.tables import SourceCell, StructuredTable
 
 _APP = Path(__file__).resolve().parents[1]
@@ -43,10 +44,11 @@ def resolver_identity() -> str:
 
 @dataclass(frozen=True, slots=True)
 class SourceCellRecord:
-    """One original grid cell and its reading when it holds figures."""
+    """One original grid cell, its reading when it holds figures, and its tagged facts."""
 
     cell: SourceCell
     reading: TableCellReading | None
+    facts: tuple[SourceFact, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,8 +157,20 @@ def _whole_fragment(
     )
 
 
+def _cell_facts(cell: SourceCell, facts: FilingFacts) -> tuple[SourceFact, ...]:
+    """Return the tagged facts inside one source cell's span; none without a span."""
+    if cell.start_char is None or cell.end_char is None:
+        return ()
+    return facts.within(cell.start_char, cell.end_char)
+
+
 def _table_record(
-    doc_id: str, structure_id: str, start_char: int, end_char: int, pieces: Sequence[Chunk]
+    doc_id: str,
+    structure_id: str,
+    start_char: int,
+    end_char: int,
+    pieces: Sequence[Chunk],
+    facts: FilingFacts,
 ) -> TableRecord:
     """Build one table's records from its chunk pieces, which must agree on the table."""
     first = pieces[0]
@@ -237,7 +251,10 @@ def _table_record(
         fragment.header_rows,
         read_table_unit(whole),
         fragment.caption_sources,
-        tuple(SourceCellRecord(cell, readings.get(key)) for key, cell in sorted(sources.items())),
+        tuple(
+            SourceCellRecord(cell, readings.get(key), _cell_facts(cell, facts))
+            for key, cell in sorted(sources.items())
+        ),
         tuple(cells),
         tuple(memberships),
         tuple(headers),
@@ -245,14 +262,18 @@ def _table_record(
 
 
 def table_records(
-    chunks: Sequence[Chunk], structure_ids: dict[str, str]
+    chunks: Sequence[Chunk],
+    structure_ids: dict[str, str],
+    facts: Mapping[str, FilingFacts] | None = None,
 ) -> tuple[TableRecord, ...]:
     """Group table chunks by document and source table and build each table's records.
 
-    ``structure_ids`` maps each document to the parse its chunks come from. Table
-    chunks without their whole table (chunked before tables were kept) are rejected,
-    since their cells could not be stored.
+    ``structure_ids`` maps each document to the parse its chunks come from and
+    ``facts`` to the tagged facts that parse found; a document without facts has
+    none. Table chunks without their whole table (chunked before tables were kept)
+    are rejected, since their cells could not be stored.
     """
+    facts = facts or {}
     groups: dict[tuple[str, int, int], list[Chunk]] = {}
     for chunk in chunks:
         if chunk.table_fragment is None:
@@ -261,6 +282,8 @@ def table_records(
             raise ValueError(f"{chunk.doc_id} chunk {chunk.ordinal} has no table to store")
         groups.setdefault((chunk.doc_id, chunk.start_char, chunk.end_char), []).append(chunk)
     return tuple(
-        _table_record(doc_id, structure_ids[doc_id], start, end, pieces)
+        _table_record(
+            doc_id, structure_ids[doc_id], start, end, pieces, facts.get(doc_id, FilingFacts())
+        )
         for (doc_id, start, end), pieces in sorted(groups.items())
     )

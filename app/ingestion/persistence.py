@@ -15,6 +15,8 @@ from app.db.models import (
     Corpus,
     Document,
     DocumentParse,
+    FilingFactContext,
+    FilingFactUnit,
     ParsedStructure,
     ParsedTable,
     ProcessingSelection,
@@ -24,7 +26,9 @@ from app.db.models import (
     TableCell,
     TableCellSource,
     TableSourceCell,
+    TableSourceFact,
 )
+from app.ingestion.parsing.facts import FilingFacts
 from app.ingestion.pipeline import ChunkRecord, SeedBatch, structure_values
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
 from app.ingestion.sources.models import DocumentReference
@@ -132,6 +136,9 @@ async def _persist_sources(session: AsyncSession, batch: SeedBatch) -> None:
         )
         structure = structure_values(filing)
         await session.execute(insert(ParsedStructure).values(**structure).on_conflict_do_nothing())
+        for model, values in fact_rows(structure["structure_id"], filing.facts).items():
+            for chunk in _slices(values):
+                await session.execute(insert(model).values(chunk).on_conflict_do_nothing())
         pointer = insert(DocumentParse).values(
             doc_id=source.document.document_id, structure_id=structure["structure_id"]
         )
@@ -167,6 +174,33 @@ async def _persist_sources(session: AsyncSession, batch: SeedBatch) -> None:
                 await session.execute(insert(SelectionArtifact).values(members))
 
 
+def fact_rows(structure_id: str, facts: FilingFacts) -> dict[type, list[dict[str, Any]]]:
+    """Project one parse's fact contexts and units onto their rows, keyed by ORM model."""
+    return {
+        FilingFactContext: [
+            {
+                "structure_id": structure_id,
+                "context_id": context.context_id,
+                "period_start": context.period_start,
+                "period_end": context.period_end,
+                "instant": context.instant,
+                "fiscal_year": context.fiscal_year,
+                "dimensions": [f"{axis}={member}" for axis, member in context.dimensions],
+            }
+            for context in facts.contexts
+        ],
+        FilingFactUnit: [
+            {
+                "structure_id": structure_id,
+                "unit_id": unit.unit_id,
+                "numerator": unit.numerator,
+                "denominator": unit.denominator,
+            }
+            for unit in facts.units
+        ],
+    }
+
+
 def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
     """Project one table's records onto its rows, keyed by ORM model, in insert order.
 
@@ -196,6 +230,26 @@ def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
                 "reading_row_label": None if reading is None else reading.row_label,
             }
         )
+    source_facts = [
+        {
+            "table_id": record.table_id,
+            "grid_row": cell.cell.row,
+            "grid_column": cell.cell.column,
+            "ordinal": ordinal,
+            "structure_id": record.structure_id,
+            "start_char": fact.start_char,
+            "end_char": fact.end_char,
+            "concept": fact.concept,
+            "context_id": fact.context_id,
+            "unit_id": fact.unit_id,
+            "scale": fact.scale,
+            "sign": fact.sign,
+            "decimals": fact.decimals,
+            "text": fact.text,
+        }
+        for cell in record.source_cells
+        for ordinal, fact in enumerate(cell.facts)
+    ]
     normalized = []
     sources = []
     for cell in record.cells:
@@ -256,6 +310,7 @@ def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
             for ordinal, caption in enumerate(record.captions)
         ],
         TableSourceCell: source_cells,
+        TableSourceFact: source_facts,
         TableCell: normalized,
         TableCellSource: sources,
     }
@@ -270,7 +325,9 @@ def _slices(rows: list[dict[str, Any]], size: int = 1000) -> Iterable[list[dict[
 async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
     """Replace every stored table of the batch's documents and link it to its chunks."""
     records = table_records(
-        batch.chunks, {record.doc_id: record.structure_id for record in batch.chunks}
+        batch.chunks,
+        {record.doc_id: record.structure_id for record in batch.chunks},
+        {filing.source.document.document_id: filing.facts for filing in batch.filings},
     )
     doc_ids = [document.document_id for document in batch.documents]
     await session.execute(delete(ParsedTable).where(ParsedTable.doc_id.in_(doc_ids)))
@@ -280,7 +337,14 @@ async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
     for record in records:
         for model, values in table_rows(record).items():
             rows.setdefault(model, []).extend(values)
-    for model in (ParsedTable, TableCaption, TableSourceCell, TableCell, TableCellSource):
+    for model in (
+        ParsedTable,
+        TableCaption,
+        TableSourceCell,
+        TableSourceFact,
+        TableCell,
+        TableCellSource,
+    ):
         for values in _slices(rows.get(model, [])):
             await session.execute(insert(model).values(values))
     keys = {member.chunk_stable_key for record in records for member in record.memberships}

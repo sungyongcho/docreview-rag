@@ -22,10 +22,11 @@ from app.db.models import (
     ParsedTable,
     TableCell,
     TableSourceCell,
+    TableSourceFact,
 )
 from app.ingestion.persistence import persist_seed_batch
 from app.retrieval.indexing.bm25 import backfill_term_stats
-from tests.ingestion.seed.support import sample_batch, table_batch
+from tests.ingestion.seed.support import sample_batch, table_batch, tagged_table_batch
 from tests.live_postgres import isolated_session
 
 
@@ -213,5 +214,26 @@ def test_table_rows_reject_unknown_statuses_and_incomplete_readings():
                         if model is TableCell and "value_row" in values:
                             statement = statement.where(TableCell.value_row.is_not(None))
                         await session.execute(statement)
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_source_facts_reject_bad_spans_and_unknown_contexts():
+    """Keep each stored fact inside a real span and tied to a context of its own parse."""
+
+    async def exercise():
+        """Seed the tagged table, then try each invalid change inside a savepoint."""
+        async with isolated_session() as session:
+            await persist_seed_batch(session, tagged_table_batch())
+            for values in (
+                {"end_char": TableSourceFact.start_char},
+                {"ordinal": -1},
+                {"context_id": "missing"},
+                {"unit_id": "missing"},
+            ):
+                with pytest.raises(IntegrityError):
+                    async with session.begin_nested():
+                        await session.execute(update(TableSourceFact).values(**values))
 
     asyncio.run(exercise())

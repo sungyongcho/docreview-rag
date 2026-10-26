@@ -11,6 +11,7 @@ from app.ingestion.parsing.models import Block
 from app.ingestion.table_records import table_records
 from app.ingestion.tokens import InputBudget
 from tests.ingestion.chunk.support import build_filing
+from tests.ingestion.seed.support import tagged_table_batch
 
 USD_TABLE = (
     "<table><tr><td>(In millions of U.S. dollars)</td><td>December 28, 2024</td>"
@@ -153,3 +154,29 @@ def test_column_split_pieces_keep_their_own_header_cells():
             if header.chunk_stable_key == piece.stable_key
         ]
         assert stored == [(cell.row, cell.column) for cell in piece.table_fragment.header_cells]
+
+
+def test_source_cells_carry_the_tagged_facts_inside_their_spans():
+    """Each figure cell keeps the one tag inside its source span; label cells keep none."""
+    batch = tagged_table_batch()
+    (filing,) = batch.filings
+    (record,) = table_records(
+        batch.chunks,
+        {chunk.doc_id: chunk.structure_id for chunk in batch.chunks},
+        {filing.source.document.document_id: filing.facts},
+    )
+    tagged = {
+        (cell.cell.row, cell.cell.column): [(fact.concept, fact.context_id) for fact in cell.facts]
+        for cell in record.source_cells
+        if cell.facts
+    }
+    assert tagged == {
+        (1, 1): [("us-gaap:Revenues", "fy24")],
+        (1, 2): [("us-gaap:Revenues", "fy23")],
+        (2, 1): [("us-gaap:EarningsPerShareDiluted", "fy24")],
+        (2, 2): [("us-gaap:EarningsPerShareDiluted", "fy23")],
+        (3, 1): [("us-gaap:Revenues", "dc24")],
+    }
+    assert table_records(batch.chunks, {chunk.doc_id: "s" * 64 for chunk in batch.chunks})[
+        0
+    ].source_cells == tuple(replace(cell, facts=()) for cell in record.source_cells)
