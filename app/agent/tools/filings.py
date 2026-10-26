@@ -122,7 +122,8 @@ class CatalogCell(StrictSchema):
     """One selectable table cell a fetched chunk carries, as stored at indexing.
 
     ``ref`` names the cell inside this chunk (``<chunk_id>:r<row>c<column>``). Only a
-    cell whose ``status`` is ``known`` has an established unit, currency, year and item;
+    cell whose ``status`` is ``known`` has an established unit, currency, year, item and
+    entity scope;
     ``complete`` is False when the chunk carries only part of the cell's text.
     """
 
