@@ -138,9 +138,11 @@ class CatalogCell(StrictSchema):
     status: Literal[
         "known",
         "conflicting",
+        "not_monetary",
         "scale_unknown",
         "currency_unconfirmed",
         "period_unknown",
+        "scope_qualified",
         "item_unknown",
     ]
     complete: bool

@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 
 from app.contracts.figures import (
+    CellFact,
     EvidenceText,
     TableCellReading,
     check_figures,
@@ -1328,6 +1329,9 @@ def reading(**changes) -> TableCellReading:
         ("1,234", {"years": frozenset()}, "period_unknown", Decimal(1234)),
         ("1,234", {"years": frozenset({2023, 2024})}, "period_unknown", Decimal(1234)),
         ("1,234", {"item": None}, "item_unknown", Decimal(1234)),
+        ("1,234", {"measure": "other"}, "not_monetary", Decimal(1234)),
+        ("1,234", {"scope": "axis=member"}, "scope_qualified", Decimal(1234)),
+        ("1,234", {"scope": "axis=member", "years": frozenset()}, "period_unknown", Decimal(1234)),
         ("12.5%", {"percent": True, "scale": None, "currency": None}, "known", Decimal("12.5")),
     ],
 )
@@ -1348,3 +1352,125 @@ def test_a_cell_without_one_figure_is_not_selectable():
     """Keep labels unselectable and refuse a cell that states two figures."""
     assert interpret_table_cell("Net revenue", []).status == "not_numeric"
     assert interpret_table_cell("1,234 / 5,678", [reading()]).status == "conflicting"
+
+
+def fact(**changes) -> CellFact:
+    """Build one inline XBRL USD million revenue fact for FY2024, changed where asked."""
+    base = CellFact("us-gaap:Revenues", 2024, (), "iso4217:USD", None, 6, "25,785")
+    return replace(base, **changes)
+
+
+def tagged_revenue(*facts: CellFact, html: str = INCOME_TABLE) -> TableCellReading:
+    """Read the FY2024 revenue cell of a table with the given facts tagged on it."""
+    readings = read_table_cells(table_fragment(html), {(1, 1): facts})
+    return next(cell for cell in readings if (cell.row, cell.column) == (1, 1))
+
+
+def test_an_inline_xbrl_amount_fixes_currency_scale_and_year():
+    """The tag resolves the "$" the text leaves ambiguous, and the cell becomes known."""
+    cell = tagged_revenue(fact())
+    assert (cell.currency, cell.scale, cell.years, cell.percent) == (
+        "USD",
+        Decimal(1_000_000),
+        frozenset({2024}),
+        False,
+    )
+    assert (cell.basis, cell.measure, cell.scope, cell.overrides) == ("fact", "amount", None, ())
+    assert interpret_table_cell("$ 25,785", [cell]).status == "known"
+
+
+def test_a_tag_that_contradicts_the_text_overrides_it_and_says_so():
+    """A tagged year or scale wins over the header and note, and the override is kept."""
+    cell = tagged_revenue(fact(fiscal_year=2023, scale=3))
+    assert (cell.years, cell.scale, cell.overrides) == (
+        frozenset({2023}),
+        Decimal(1000),
+        ("year", "scale"),
+    )
+
+
+def test_a_per_share_tag_states_plain_currency_units():
+    """USD per share at scale 0 is plain dollars even under an "(In millions)" note."""
+    cell = tagged_revenue(fact(denominator="xbrli:shares", scale=0))
+    assert (cell.measure, cell.scale, cell.currency, cell.overrides) == (
+        "per_share",
+        Decimal(1),
+        "USD",
+        ("scale",),
+    )
+
+
+def test_tagged_values_that_are_not_amounts_keep_the_text_unit():
+    """Shares and ratios are not amounts; their text unit stays and they are not selectable."""
+    text_cell = tagged_revenue()
+    cell = tagged_revenue(fact(numerator="xbrli:shares"))
+    assert (cell.measure, cell.scale, cell.currency) == ("other", text_cell.scale, "$")
+    assert interpret_table_cell("$ 25,785", [cell]).status == "not_monetary"
+
+
+def test_a_tagged_currency_still_conflicts_with_a_different_written_one():
+    """A euro tag on a cell the note declares in U.S. dollars is a conflict, not a choice."""
+    cell = tagged_revenue(fact(numerator="iso4217:EUR"), html=USD_INCOME_TABLE)
+    assert interpret_table_cell("$ 25,785", [cell]).status == "conflicting"
+
+
+@pytest.mark.parametrize(
+    ("dimensions", "scope"),
+    [
+        ((), None),
+        (
+            (
+                (
+                    "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis",
+                    "ifrs-full:ConsolidatedMember",
+                ),
+            ),
+            None,
+        ),
+        (
+            (
+                (
+                    "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis",
+                    "ifrs-full:SeparateMember",
+                ),
+            ),
+            "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis=ifrs-full:SeparateMember",
+        ),
+        (
+            (("us-gaap:StatementBusinessSegmentsAxis", "amd:DataCenterMember"),),
+            "us-gaap:StatementBusinessSegmentsAxis=amd:DataCenterMember",
+        ),
+    ],
+)
+def test_only_the_whole_entity_is_unscoped(dimensions, scope):
+    """No dimension, or DART's consolidated statement, is the entity; anything else is a part."""
+    assert tagged_revenue(fact(dimensions=dimensions)).scope == scope
+
+
+def test_a_dart_tag_fixes_the_year_and_keeps_the_text_unit():
+    """DART tags state no unit, so the note's currency and scale stay as read."""
+    text_cell = tagged_revenue(html=USD_INCOME_TABLE)
+    cell = tagged_revenue(fact(numerator=None, scale=None, fiscal_year=2024), html=USD_INCOME_TABLE)
+    assert (cell.basis, cell.measure, cell.years) == ("fact", None, frozenset({2024}))
+    assert (cell.scale, cell.currency) == (text_cell.scale, text_cell.currency)
+
+
+def test_a_fact_applies_only_alone_and_on_the_same_number():
+    """Two tags, or a tag showing another number, leave the cell to its text reading."""
+    text_cell = tagged_revenue()
+    assert tagged_revenue(fact(), fact()) == text_cell
+    assert tagged_revenue(fact(text="22,680")) == text_cell
+
+
+def test_a_dimensioned_cell_never_confirms_the_entity_item():
+    """A segment's revenue under a "Net revenue" label is not the company's revenue."""
+    html = USD_INCOME_TABLE
+    chunk = table_chunk(html)
+    readings = read_table_cells(
+        table_fragment(html),
+        {(1, 1): (fact(dimensions=(("us-gaap:StatementBusinessSegmentsAxis", "x:Member"),)),)},
+    )
+    evidence = EvidenceText(1, chunk.body, chunk.context_header, tuple(readings))
+    answer = "AMD's FY2024 net revenue was $25,785 million."
+    assert check_figures(answer, [evidence], [2024]).verdict != "verified"
+    assert check_figures(answer, [table_evidence(html)], [2024]).verdict == "verified"

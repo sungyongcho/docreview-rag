@@ -27,6 +27,7 @@ from app.db.models import (
     SnapshotTableCellSource,
     SnapshotTableSourceCell,
 )
+from app.ingestion.persistence import reading_columns
 from app.ingestion.table_records import resolver_identity
 from app.retrieval.tables import load_table_fragments
 
@@ -75,14 +76,7 @@ def snapshot_rows(
                 "text": cell["text"],
                 "start_char": cell["start_char"],
                 "end_char": cell["end_char"],
-                "reading_values": None if reading is None else sorted(reading.values),
-                "reading_years": None if reading is None else sorted(reading.years),
-                "reading_scale": None if reading is None else reading.scale,
-                "reading_item": None if reading is None else reading.item,
-                "reading_percent": None if reading is None else reading.percent,
-                "reading_currency": None if reading is None else reading.currency,
-                "reading_marked": None if reading is None else reading.marked,
-                "reading_row_label": None if reading is None else reading.row_label,
+                **reading_columns(reading),
             }
         )
     cell_rows, link_rows, member_rows = [], [], []

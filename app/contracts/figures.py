@@ -34,6 +34,13 @@ that fix a country ("U.S. dollars", "원") are explicit; "$", "dollars"/"달러"
 name only a family and are resolved solely by an explicit currency of the same cell or
 table. Known different currencies never match and are never converted; a missing,
 still-ambiguous or conflicting currency withholds the figure.
+
+A cell whose figure the filing tags as a fact (inline XBRL, or a DART ``ACONTEXT``)
+takes its fiscal year and scope from the tag, and an inline XBRL fact also its
+currency and scale; each fact that contradicts the text reading is recorded as an
+override. A fact scoped to a dimension (a segment, a DART separate statement) is
+not the item of the whole entity, so it never confirms a claim. Untagged cells keep
+the text rules above.
 """
 
 from collections.abc import Mapping, Sequence
@@ -657,6 +664,28 @@ class TableCellReading:
     currency: str | None = None
     marked: bool = False
     row_label: str | None = None
+    basis: Literal["text", "fact"] = "text"
+    overrides: tuple[str, ...] = ()
+    scope: str | None = None
+    measure: Literal["amount", "per_share", "other"] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CellFact:
+    """One fact a filing tags inside a source cell, with its context and unit joined.
+
+    ``fiscal_year`` is None when the context is not one fiscal year. ``numerator`` and
+    ``denominator`` are the inline XBRL unit's measures (``iso4217:USD``,
+    ``xbrli:shares``); DART facts state no unit, so both are None, as is ``scale``.
+    """
+
+    concept: str
+    fiscal_year: int | None
+    dimensions: tuple[tuple[str, str], ...]
+    numerator: str | None
+    denominator: str | None
+    scale: int | None
+    text: str
 
 
 CellStatus = Literal[
@@ -664,9 +693,11 @@ CellStatus = Literal[
     "blank",
     "not_numeric",
     "conflicting",
+    "not_monetary",
     "scale_unknown",
     "currency_unconfirmed",
     "period_unknown",
+    "scope_qualified",
     "item_unknown",
 ]
 
@@ -1285,11 +1316,74 @@ def _label_item(label: str) -> str | None:
     return _PHRASE_ITEMS.get(key)
 
 
-def read_table_cells(fragment: Mapping[str, object]) -> list[TableCellReading]:
+# The DART statement axis whose consolidated member is the entity as a whole.
+_ENTITY_SCOPE = (
+    (
+        "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis",
+        "ifrs-full:ConsolidatedMember",
+    ),
+)
+_ISO_CURRENCY = re.compile(r"iso4217:([A-Z]{3})")
+
+
+def _scope(dimensions: tuple[tuple[str, str], ...]) -> str | None:
+    """Name the dimensional scope of a fact, or None for the entity as a whole."""
+    if not dimensions or dimensions == _ENTITY_SCOPE:
+        return None
+    return "; ".join(f"{axis}={member}" for axis, member in dimensions)
+
+
+def _with_fact(
+    reading: TableCellReading, fact: CellFact, notes: frozenset[str]
+) -> TableCellReading:
+    """Read one cell from the fact its filing tags, recording what overrides the text.
+
+    The fact's fiscal year and scope always apply. An inline XBRL amount or per-share
+    unit also fixes the currency (with the table's notes and the cell's own markers
+    still able to contradict it) and the scale. Other units (shares, ratios) are not
+    amounts, and DART facts state no unit, so the text keeps their unit.
+    """
+    overrides: list[str] = []
+    years = frozenset() if fact.fiscal_year is None else frozenset({fact.fiscal_year})
+    if reading.years and reading.years != years:
+        overrides.append("year")
+    scale, percent, resolved = reading.scale, reading.percent, reading.currency
+    measure = None
+    currency = _ISO_CURRENCY.fullmatch(fact.numerator or "")
+    if currency is not None and fact.denominator in (None, "xbrli:shares"):
+        measure = "amount" if fact.denominator is None else "per_share"
+        code = currency.group(1) if currency.group(1) in _CODES else _UNKNOWN
+        scale = Decimal(10) ** (fact.scale or 0)
+        if reading.scale is not None and reading.scale != scale:
+            overrides.append("scale")
+        percent, resolved = False, _resolve(frozenset({code}) | notes)
+    elif fact.numerator is not None:
+        measure = "other"
+    return replace(
+        reading,
+        years=years,
+        scale=scale,
+        percent=percent,
+        currency=resolved,
+        basis="fact",
+        overrides=tuple(overrides),
+        scope=_scope(fact.dimensions),
+        measure=measure,
+    )
+
+
+def read_table_cells(
+    fragment: Mapping[str, object],
+    facts: Mapping[tuple[int, int], Sequence[CellFact]] | None = None,
+) -> list[TableCellReading]:
     """Return each figure-bearing source cell of one table fragment as it is read.
 
-    A source cell appears once per normalized cell it belongs to, as stored.
+    A source cell appears once per normalized cell it belongs to, as stored. ``facts``
+    are the tagged facts of each source cell by grid coordinates; a cell read from
+    exactly one fact showing the same number takes the fact's facts (see
+    :func:`_with_fact`), any other cell keeps its text reading.
     """
+    facts = facts or {}
     headers = _entries(fragment, "header_cells")
     caption_years = {
         int(year)
@@ -1324,20 +1418,23 @@ def read_table_cells(fragment: Mapping[str, object]) -> list[TableCellReading]:
                 own = frozenset(
                     marker for figure in _figure_spans(_blank(text)) for marker in figure.currency
                 )
-                cells.append(
-                    TableCellReading(
-                        _int(source["row"]),
-                        _int(source["column"]),
-                        frozenset(values),
-                        frozenset(_column_years(source, headers, caption_years)),
-                        scale,
-                        _label_item(label) if label is not None else None,
-                        percent,
-                        _resolve(unit.currency | own),
-                        bool(own),
-                        label,
-                    )
+                row, column = _int(source["row"]), _int(source["column"])
+                reading = TableCellReading(
+                    row,
+                    column,
+                    frozenset(values),
+                    frozenset(_column_years(source, headers, caption_years)),
+                    scale,
+                    _label_item(label) if label is not None else None,
+                    percent,
+                    _resolve(unit.currency | own),
+                    bool(own),
+                    label,
                 )
+                tagged = facts.get((row, column), ())
+                if len(tagged) == 1 and _values(tagged[0].text) == values:
+                    reading = _with_fact(reading, tagged[0], unit.currency | own)
+                cells.append(reading)
     return cells
 
 
@@ -1359,7 +1456,9 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     ``text`` is the normalized cell text and ``readings`` its figure-bearing source
     cells. A blank or dash-only cell is ``blank``, never zero. Nothing is guessed: a
     missing scale, an ambiguous or missing currency, an unknown period or item leaves
-    the cell unselectable with the first missing fact as its status.
+    the cell unselectable with the first missing fact as its status. A tagged unit
+    that is no amount (``not_monetary``) or a dimensional scope (``scope_qualified``)
+    does too.
     """
     stripped = text.strip()
     if not stripped or not stripped.strip("-–—‐ "):
@@ -1374,6 +1473,8 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     value = _signed(spans[0])
     if value is None:
         return CellInterpretation("conflicting", "sign marker is ambiguous", None, reading)
+    if reading.measure == "other":
+        return CellInterpretation("not_monetary", "tagged unit is not an amount", value, reading)
     if reading.percent is None:
         return CellInterpretation("scale_unknown", "percentage unknown", value, reading)
     if not reading.percent:
@@ -1387,6 +1488,8 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
             )
     if len(reading.years) != 1:
         return CellInterpretation("period_unknown", "no single fiscal year", value, reading)
+    if reading.scope is not None:
+        return CellInterpretation("scope_qualified", reading.scope, value, reading)
     if reading.item is None:
         return CellInterpretation("item_unknown", "row label names no item", value, reading)
     return CellInterpretation("known", None, value, reading)
@@ -1459,7 +1562,8 @@ def _judge(
     """Judge one claim; the flag marks a verified claim dated outside the requested years.
 
     Only a table cell holding the claim's item, value and period, in units both sides
-    state, confirms a level. A cell of the item whose unit, or the claim's own unit, is
+    state, confirms a level; a cell scoped to a dimension holds a part of the entity,
+    not its item, so it is not compared. A cell of the item whose unit, or the claim's own unit, is
     uncertain withholds the claim (``unit_unverified``) whatever its digits, instead of
     confirming, refuting or calling it another period. A change claim, or any claim
     when a period is asked or stated, gets no help from labels or running text, which
@@ -1487,7 +1591,7 @@ def _judge(
             ),
         )
         for cell in cells
-        if not claim.change and cell.item == item
+        if not claim.change and cell.item == item and cell.scope is None
     ]
     certain = [years for years, outcome in compared if outcome == "match"]
     unsure = [years for years, outcome in compared if outcome == "uncertain"]

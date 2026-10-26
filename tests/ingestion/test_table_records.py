@@ -177,6 +177,28 @@ def test_source_cells_carry_the_tagged_facts_inside_their_spans():
         (2, 2): [("us-gaap:EarningsPerShareDiluted", "fy23")],
         (3, 1): [("us-gaap:Revenues", "dc24")],
     }
-    assert table_records(batch.chunks, {chunk.doc_id: "s" * 64 for chunk in batch.chunks})[
-        0
-    ].source_cells == tuple(replace(cell, facts=()) for cell in record.source_cells)
+    (untagged,) = table_records(batch.chunks, {chunk.doc_id: "s" * 64 for chunk in batch.chunks})
+    assert [cell.facts for cell in untagged.source_cells] == [()] * len(untagged.source_cells)
+    assert [cell.cell for cell in untagged.source_cells] == [
+        cell.cell for cell in record.source_cells
+    ]
+
+
+def test_tagged_cells_are_read_from_their_facts():
+    """Tags make the revenue known, a per-share cell plain dollars and a segment a part."""
+    batch = tagged_table_batch()
+    (filing,) = batch.filings
+    (record,) = table_records(
+        batch.chunks,
+        {chunk.doc_id: chunk.structure_id for chunk in batch.chunks},
+        {filing.source.document.document_id: filing.facts},
+    )
+    cells = {(cell.row, cell.column): cell.interpretation for cell in record.cells}
+    revenue = cells[(1, 1)]
+    assert revenue.status == "known" and revenue.reading is not None
+    assert (revenue.reading.currency, revenue.reading.years) == ("USD", {2024})
+    diluted = cells[(2, 1)].reading
+    assert diluted is not None
+    assert (diluted.measure, diluted.scale, diluted.overrides) == ("per_share", 1, ("scale",))
+    assert cells[(2, 1)].status == "item_unknown"
+    assert cells[(3, 1)].status == "scope_qualified"

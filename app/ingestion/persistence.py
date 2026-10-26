@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.contracts.figures import TableCellReading
 from app.db.models import (
     Chunk as ChunkModel,
     ChunkTableCell,
@@ -201,6 +202,42 @@ def fact_rows(structure_id: str, facts: FilingFacts) -> dict[type, list[dict[str
     }
 
 
+def reading_columns(reading: TableCellReading | None) -> dict[str, Any]:
+    """Project one source cell's reading onto its ``reading_*`` columns, all null without one."""
+    if reading is None:
+        return {
+            f"reading_{name}": None
+            for name in (
+                "values",
+                "years",
+                "scale",
+                "item",
+                "percent",
+                "currency",
+                "marked",
+                "row_label",
+                "basis",
+                "overrides",
+                "scope",
+                "measure",
+            )
+        }
+    return {
+        "reading_values": sorted(reading.values),
+        "reading_years": sorted(reading.years),
+        "reading_scale": reading.scale,
+        "reading_item": reading.item,
+        "reading_percent": reading.percent,
+        "reading_currency": reading.currency,
+        "reading_marked": reading.marked,
+        "reading_row_label": reading.row_label,
+        "reading_basis": reading.basis,
+        "reading_overrides": list(reading.overrides),
+        "reading_scope": reading.scope,
+        "reading_measure": reading.measure,
+    }
+
+
 def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
     """Project one table's records onto its rows, keyed by ORM model, in insert order.
 
@@ -220,14 +257,7 @@ def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
                 "text": cell.cell.text,
                 "start_char": cell.cell.start_char,
                 "end_char": cell.cell.end_char,
-                "reading_values": None if reading is None else sorted(reading.values),
-                "reading_years": None if reading is None else sorted(reading.years),
-                "reading_scale": None if reading is None else reading.scale,
-                "reading_item": None if reading is None else reading.item,
-                "reading_percent": None if reading is None else reading.percent,
-                "reading_currency": None if reading is None else reading.currency,
-                "reading_marked": None if reading is None else reading.marked,
-                "reading_row_label": None if reading is None else reading.row_label,
+                **reading_columns(reading),
             }
         )
     source_facts = [

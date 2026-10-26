@@ -62,6 +62,7 @@ def _reading(cell: _GridCell) -> TableCellReading | None:
     """Rebuild the stored reading of one grid cell, or None when it holds no figures."""
     if cell.reading_values is None or cell.reading_years is None:
         return None
+    measure = cell.reading_measure
     return TableCellReading(
         cell.grid_row,
         cell.grid_column,
@@ -73,6 +74,10 @@ def _reading(cell: _GridCell) -> TableCellReading | None:
         cell.reading_currency,
         bool(cell.reading_marked),
         cell.reading_row_label,
+        "fact" if cell.reading_basis == "fact" else "text",
+        tuple(cell.reading_overrides or ()),
+        cell.reading_scope,
+        measure if measure in ("amount", "per_share", "other") else None,
     )
 
 

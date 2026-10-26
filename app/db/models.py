@@ -328,11 +328,15 @@ TABLE_CELL_STATUSES = (
     "blank",
     "not_numeric",
     "conflicting",
+    "not_monetary",
     "scale_unknown",
     "currency_unconfirmed",
     "period_unknown",
+    "scope_qualified",
     "item_unknown",
 )
+READING_BASES = ("text", "fact")
+READING_MEASURES = ("amount", "per_share", "other")
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -423,6 +427,10 @@ class TableSourceCell(Base):
     reading_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
     reading_marked: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     reading_row_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reading_basis: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    reading_overrides: Mapped[list[str] | None] = mapped_column(ARRAY(String(16)), nullable=True)
+    reading_scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reading_measure: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     __table_args__ = (
         CheckConstraint("grid_row >= 0 AND grid_column >= 0", name="ck_table_source_cells_grid"),
@@ -432,8 +440,14 @@ class TableSourceCell(Base):
         ),
         CheckConstraint(
             "(reading_values IS NULL) = (reading_years IS NULL) "
-            "AND (reading_values IS NULL) = (reading_marked IS NULL)",
+            "AND (reading_values IS NULL) = (reading_marked IS NULL) "
+            "AND (reading_values IS NULL) = (reading_basis IS NULL) "
+            "AND (reading_values IS NULL) = (reading_overrides IS NULL)",
             name="ck_table_source_cells_reading",
+        ),
+        CheckConstraint(_in("reading_basis", READING_BASES), name="ck_table_source_cells_basis"),
+        CheckConstraint(
+            _in("reading_measure", READING_MEASURES), name="ck_table_source_cells_measure"
         ),
     )
 
@@ -963,6 +977,10 @@ class SnapshotTableSourceCell(Base):
     reading_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
     reading_marked: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     reading_row_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reading_basis: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    reading_overrides: Mapped[list[str] | None] = mapped_column(ARRAY(String(16)), nullable=True)
+    reading_scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reading_measure: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     __table_args__ = (
         ForeignKeyConstraint(

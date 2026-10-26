@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 from app.contracts.figures import (
+    CellFact,
     CellInterpretation,
     TableCellReading,
     TableUnit,
@@ -164,6 +165,25 @@ def _cell_facts(cell: SourceCell, facts: FilingFacts) -> tuple[SourceFact, ...]:
     return facts.within(cell.start_char, cell.end_char)
 
 
+def _joined(fact: SourceFact, facts: FilingFacts) -> CellFact:
+    """Join one tagged fact with the context and unit its filing declares for it.
+
+    A fact naming a context the filing does not declare keeps no fiscal year and an
+    opaque scope, so it can neither date nor stand for the whole entity.
+    """
+    context = next((c for c in facts.contexts if c.context_id == fact.context_id), None)
+    unit = next((u for u in facts.units if u.unit_id == fact.unit_id), None)
+    return CellFact(
+        fact.concept,
+        None if context is None else context.fiscal_year,
+        (("undeclared", fact.context_id),) if context is None else context.dimensions,
+        None if unit is None else unit.numerator,
+        None if unit is None else unit.denominator,
+        fact.scale,
+        fact.text,
+    )
+
+
 def _table_record(
     doc_id: str,
     structure_id: str,
@@ -187,8 +207,15 @@ def _table_record(
             raise ValueError(f"{doc_id} table pieces at {start_char} disagree on headers")
     header_cells = _header_cells(table)
     whole = asdict(_whole_fragment(table, header_cells, fragment.caption_sources))
+    tagged = {
+        (source.row, source.column): tuple(_joined(fact, facts) for fact in found)
+        for row in table.rows
+        for cell in row.cells
+        for source in cell.sources
+        if (found := _cell_facts(source, facts))
+    }
     readings: dict[tuple[int, int], TableCellReading] = {}
-    for reading in read_table_cells(whole):
+    for reading in read_table_cells(whole, tagged):
         key = (reading.row, reading.column)
         if readings.setdefault(key, reading) != reading:
             raise ValueError(f"{doc_id} source cell {key} reads two ways")
