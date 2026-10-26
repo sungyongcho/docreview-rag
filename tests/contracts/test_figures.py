@@ -1513,3 +1513,20 @@ def test_a_header_that_is_a_defined_period_word_dates_its_column(header, years):
 def test_period_words_mean_nothing_without_the_reports_definitions():
     """Without the document's declarations 당기 and 전기 date nothing."""
     assert term_years("당기", {}) == frozenset()
+
+
+@pytest.mark.parametrize(
+    "label", ["매출액 (주29)", "매출액(주 5, 30)", "매출액 (주석 12)", "Revenue (Notes 2 and 3)"]
+)
+def test_a_note_reference_is_part_of_the_row_label_not_a_figure(label):
+    """A label citing its notes still names its item, and its note numbers read as nothing."""
+    fragment = {
+        **DART_FRAGMENT,
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": label}]},
+            *DART_FRAGMENT["cells"][1:],
+        ],
+    }
+    readings = read_table_cells(fragment)
+    assert {(cell.column, cell.item) for cell in readings} == {(1, "revenue"), (2, "revenue")}
+    assert figures(label) == ()

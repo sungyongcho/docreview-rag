@@ -42,6 +42,7 @@ override. A fact scoped to a dimension (a segment, a DART separate statement) is
 not the item of the whole entity, so it never confirms a claim. Untagged cells keep
 the text rules above, with one addition: a header that is a period word its DART
 report defines by its own declarations ("당기", "제56기") names that fiscal year.
+Note references ("Note 5", "(주29)") are identifiers, not figures.
 """
 
 from collections.abc import Mapping, Sequence
@@ -57,7 +58,10 @@ _NUMBER = re.compile(r"[(△▲-]?\d(?:[\d,]*\d)?(?:\.\d+)?\)?")
 # Identifiers and calendar dates carry digits but state no figure.
 _NOT_FIGURES = re.compile(
     r"\b(?:FY|Q|H)\s?\d+|\b\d+[QH]\b|\d+-[A-Z]\b|"
-    r"\b(?:Item|Note|Part|Exhibit|Section)s?\s+\d+[A-Z]?(?:\.\d+)*|"
+    r"\b(?:Item|Note|Part|Exhibit|Section)s?\s+\d+[A-Z]?(?:\.\d+)*"
+    r"(?:\s*(?:,|and|&)\s*\d+[A-Z]?(?:\.\d+)*)*|"
+    # A Korean note reference: "(주29)", "(주 5, 30)", "(주석 12)".
+    r"[(（]\s*주석?\s*\d+[A-Za-z]?(?:\s*[,，、~-]\s*\d+[A-Za-z]?)*\s*[)）]|"
     r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}|"
     r"\d{4}\s?[./-]\s?\d{1,2}\s?[./-]\s?\d{1,2}|\d{1,2}/\d{1,2}/\d{4}|"
     r"\d{4}\s?년(?:\s?\d{1,2}\s?월)?(?:\s?\d{1,2}\s?일)?|\d{1,2}\s?월\s?\d{1,2}\s?일|"
@@ -416,7 +420,9 @@ _STRONG = re.compile(r"(?<![\\*])\*\*(?!\s)([^*\n]+?)(?<![\s\\])\*\*(?!\*)")
 _ISSUER_CONTEXT = re.compile(r"(?P<issuer>[^\n]+?) FY\d{4} · ")
 # The only parentheticals that keep a label or answer phrase the same item.
 _SAME_ITEM_QUALIFIER = re.compile(
-    r"\s*[(（]\s*(?:loss|losses|손실|note\s*\d+[a-z]?|주석\s*\d+)\s*[)）]", re.IGNORECASE
+    r"\s*[(（]\s*(?:loss|losses|손실|"
+    r"(?:notes?|주석?)\s*\d+[a-z]?(?:\s*(?:[,，、~-]|and|&)\s*\d+[a-z]?)*)\s*[)）]",
+    re.IGNORECASE,
 )
 _ENUMERATOR = re.compile(r"^\s*(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|\d+|[ivx]+|[가-하])[.)]\s*", re.IGNORECASE)
 # A sentence ends at terminal punctuation followed by space, or at ";" or a line break.
