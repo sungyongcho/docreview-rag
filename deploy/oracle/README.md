@@ -1,7 +1,7 @@
 # Oracle Cloud origin (Always Free A1)
 
 Runs the production stack (`pgvector` Postgres, FastAPI app, Caddy) on the Oracle
-Cloud Always Free instance shared with the gomoku minimax engine. The GCP path in
+Cloud Always Free instance. The GCP path in
 `deploy/gcp` is unchanged; this directory reuses its compose file, Caddyfile and
 artifact verifiers so the runtime layout on the instance is identical:
 
@@ -10,16 +10,15 @@ artifact verifiers so the runtime layout on the instance is identical:
 | Machine | e2-medium, 4 GB, x86_64 | A1.Flex 2 OCPU, 12 GB, aarch64 |
 | Image | built locally, pushed to Artifact Registry | built **on the instance** (`docker build`), no registry |
 | Transport | `gcloud compute ssh` via IAP | plain `ssh`/`rsync`/`scp` |
-| Caddy port | 8000 or 8080 | **8880** (8080 belongs to minimax) |
+| Caddy port | 8000 or 8080 | **8880** (8080 is used by another service on the instance) |
 | Runtime layout | `/opt/docreview`, `/var/lib/docreview` | same |
 | Installer | `apply_backend.sh` | app/Caddy update and rollback; app image verified with `docker image inspect` |
 
 ## Prerequisites
 
-1. The shared instance is prepared by `gomoku/deploy/oracle/01_host_setup.sh`
-   (Docker, swap, host firewall for 8080/8880, `/opt/docreview`, `~/build`). Host
-   provisioning and the game remain in gomoku; do not copy or rerun those
-   provisioners for a DocReview application update.
+1. Prepare the instance once with `bash deploy/oracle/prepare_host.sh` (Docker, swap,
+   host firewall for `8880`, `/opt/docreview`, `~/build`). It is idempotent, and an
+   application update does not need it.
 2. Inspect the security lists actually attached to the instance's subnet, all
    attached network security groups, and the host firewall. Their effective rules
    must restrict `tcp/8880` to the intended Cloudflare IPv4 ranges. A correctly

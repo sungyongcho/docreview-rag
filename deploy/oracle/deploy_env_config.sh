@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Shared configuration for the deploy/oracle scripts. Source it; do not execute it.
 #
-# Single Oracle Cloud Always Free A1 instance (2 OCPU / 12 GB, aarch64) shared with
-# the gomoku minimax engine. The application image is built on the instance itself,
+# Single Oracle Cloud Always Free A1 instance (2 OCPU / 12 GB, aarch64). The application image is built on the instance itself,
 # so there is no registry and no cross-compilation. Values come from the repo .env
 # (or DOTENV_PATH); see .env.example.
 set -euo pipefail
@@ -62,7 +61,7 @@ oracle_rsync() {
   rsync -az -e "${remote_shell}" "$@"
 }
 
-# ===== Origin: Caddy publishes this host port; minimax already uses 8080 =====
+# ===== Origin: Caddy publishes this host port; 8080 is taken on this instance =====
 # Must be a port Cloudflare Workers may fetch (80, 443, 2052, 2053, 2082, 2083,
 # 2086, 2087, 2095, 2096, 8080, 8443, 8880).
 export ORIGIN_PORT="${DEPLOY_ORACLE_ORIGIN_PORT:-8880}"

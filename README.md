@@ -73,12 +73,11 @@ DocReview Cloudflare Worker (TLS ends here)
                               Oracle A1: Caddy → FastAPI → PostgreSQL
 ```
 
-The Oracle A1 instance has 2 OCPU and 12 GB RAM and is shared with gomoku's minimax
-service on port `8080`; DocReview's Caddy uses `8880`. The dedicated
+The Oracle A1 instance has 2 OCPU and 12 GB RAM; DocReview's Caddy uses `8880`. The dedicated
 `deploy/cloudflare` Worker owns only `/docreview-rag` and `/docreview-rag/*` routes.
 It strips `/docreview-rag/api` before forwarding API traffic and preserves the
-static prefix for Firebase. Shared host provisioning remains in gomoku; DocReview
-owns its application, Caddy, static site, and Worker deployment.
+static prefix for Firebase. DocReview owns its host preparation, application, Caddy,
+static site, and Worker deployment.
 
 Before publishing changes, verify the effective attached Oracle security lists,
 network security groups, and host firewall against Cloudflare's address ranges,
