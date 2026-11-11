@@ -112,11 +112,12 @@ def ask(
     locale: Literal["en", "ko"] = "en",
     reads: list[tuple[str, ...]] | None = None,
     replies: list[AIMessage] | None = None,
+    reader_configured: bool = True,
 ):
     """Search, fetch, then answer with each final in turn; return the state and model.
 
     ``reads`` collects the refs of every stored-cell read; ``replies`` replaces the
-    whole scripted conversation.
+    whole scripted conversation; ``reader_configured`` False leaves out the reader.
     """
     model = ScriptedChatModel.from_replies(
         *(
@@ -156,7 +157,7 @@ def ask(
         cell_answers=True,
         requested_items=frozenset({"revenue"}),
         locale=locale,
-        cell_reader=reader,
+        cell_reader=reader if reader_configured else None,
     )
     state = asyncio.run(
         agent.ainvoke({"messages": [HumanMessage("TestCo FY2024 revenue?")]}, context=context)
@@ -220,7 +221,31 @@ def test_a_cell_changed_after_its_fetch_ends_the_run_without_another_request():
     state, model = ask([selection(), selection()], stored=changed)
     assert len(model.requests) == 3
     assert state.get("structured_response") is None
-    assert state["failure"]
+    assert state["failure"] == "StaleCellError: stored cell read failed"
+
+
+def test_a_missing_stored_cell_reader_ends_the_run_as_a_failure():
+    """Stop instead of answering when no stored cell reader is configured."""
+    state, model = ask([selection(), selection()], reader_configured=False)
+    assert len(model.requests) == 3
+    assert state.get("structured_response") is None
+    assert state["failure"] == "RuntimeError: stored cell read failed"
+
+
+def test_a_selected_cell_of_another_year_is_reported_as_a_period_mismatch():
+    """Report the selected cell's own year through the gate, without its amount."""
+    older = {**REVENUE, "fiscal_years": [2023], "column_header": "2023"}
+    state, model = ask([selection(year=2023)], cell=older)
+    report = state["structured_response"]
+    assert len(model.requests) == 3
+    assert report.label == "PERIOD_MISMATCH"
+    assert report.answer == "The selected table cells are for fiscal 2023, not fiscal 2024."
+    assert state["period_mismatch"] == {
+        "requested_fiscal_years": [2024],
+        "evidenced_fiscal_years": [2023],
+        "figures": ["$ 25,785"],
+    }
+    assert state["cell_checks"][0]["decision"] == "other period"
 
 
 def test_a_cell_that_was_not_fetched_is_returned_without_reading_it():

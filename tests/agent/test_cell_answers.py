@@ -1,5 +1,6 @@
 """Cell selections checked against the question and assembled from stored values."""
 
+from dataclasses import replace
 from decimal import Decimal
 import json
 from typing import Any
@@ -368,6 +369,43 @@ def test_a_cell_whose_stored_content_changed_is_a_system_failure():
             stored(value="99999"),
             fetched=(stored(),),
         )
+
+
+def test_a_changed_source_version_alone_is_a_system_failure():
+    """Stop when only the stored resolver identity or stable key changed after the fetch."""
+    for change in ({"resolver_identity": "s" * 64}, {"stable_key": "j" * 64}):
+        fetched = stored()
+        now = replace(fetched, **change)
+        with pytest.raises(StaleCellError, match="2024:r1c1"):
+            review(proposal(("2024:r1c1", "revenue", 2024)), now, fetched=(fetched,))
+
+
+def test_a_cell_selected_twice_is_returned_for_correction():
+    """Refuse the same ref listed twice before reading anything about it."""
+    result = review(
+        proposal(("2024:r1c1", "revenue", 2024), ("2024:r1c1", "revenue", 2024)), stored()
+    )
+    assert result.report is None and result.problem == "each cell may be selected once"
+
+
+def test_an_unresolved_chunk_not_retrieved_in_this_question_is_refused():
+    """Cite only chunks this question retrieved when reporting cannot_resolve."""
+    result = review(proposal(reason="cannot_resolve", selections=[], unresolved_chunk_ids=[999]))
+    assert result.report is None
+    assert result.problem == "chunk 999 was not retrieved in this question"
+
+
+def test_an_undated_question_needs_a_cell_for_each_item():
+    """Without a requested year, require some selected cell for every requested item."""
+    result = review(
+        proposal(("2024:r1c1", "revenue", 2024)),
+        stored(),
+        items=frozenset({"revenue", "net income"}),
+        years=(),
+    )
+    answered = review(proposal(("2024:r1c1", "revenue", 2024)), stored(), years=())
+    assert result.problem == "no selected cell answers net income"
+    assert answered.report is not None and answered.report.label == "SUPPORTED"
 
 
 def test_a_missing_requested_combination_is_returned_for_correction():
