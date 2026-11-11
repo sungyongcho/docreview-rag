@@ -631,13 +631,37 @@ def _worded(text: str) -> bool:
     )
 
 
-def _row_structure(fragment: Mapping[str, object]) -> tuple[set[int], dict[int, list[int]]]:
-    """Return the rows under a part of the entity, and each row's worded columns.
+# Complete parent labels observed in statement layouts; names and arbitrary words
+# are never inferred to mean an entity-wide section.
+_STATEMENT_SECTIONS = frozenset(
+    {
+        "current assets",
+        "current liabilities",
+        "non-current assets",
+        "non-current liabilities",
+        "operating expenses",
+        "costs and expenses",
+        "assets",
+        "liabilities",
+        "equity",
+        "자산",
+        "부채",
+        "자본",
+        "영업비용",
+        "후속적으로당기손익으로재분류되지않는포괄손익",
+        "후속적으로당기손익으로재분류되는포괄손익",
+    }
+)
 
-    A label-only row holds one worded cell and no figure. From one naming a part of
-    the entity ("Data Center segment:"), every following row of the table is read as
-    possibly that part's. The worded columns of a row are where its labels stand; the
-    leftmost is its row label.
+
+def _row_structure(
+    fragment: Mapping[str, object],
+) -> tuple[dict[int, ScopeCause], dict[int, list[int]]]:
+    """Keep every unresolved structural parent heading above each numeric row.
+
+    A label-only parent is understood only as a complete item phrase or a closed
+    statement-section name. Without nesting/end markers an unknown ancestor remains
+    unresolved through later sections; an entity-wide fact can establish its child.
     """
     worded: dict[int, set[int]] = {}
     texts: dict[int, str] = {}
@@ -651,13 +675,17 @@ def _row_structure(fragment: Mapping[str, object]) -> tuple[set[int], dict[int, 
             elif text and _worded(text):
                 worded.setdefault(row, set()).add(_int(source["column"]))
                 texts[row] = text
-    under: set[int] = set()
-    part = False
+    under: dict[int, ScopeCause] = {}
+    unresolved: ScopeCause | None = None
     for row in sorted(set(worded) | figured):
         if row not in figured and len(worded.get(row, ())) == 1:
-            part = part or _PART.search(texts[row]) is not None
-        elif part:
-            under.add(row)
+            key = _label_key(texts[row])
+            if key is None or (key not in PHRASE_ITEMS and key not in _STATEMENT_SECTIONS):
+                unresolved = unresolved or (
+                    "part_row" if _PART.search(texts[row]) else "parent_unread"
+                )
+        elif unresolved is not None:
+            under[row] = unresolved
     return under, {row: sorted(columns) for row, columns in worded.items()}
 
 
@@ -975,7 +1003,7 @@ def read_table_cells(
                     # entity's reported amount.
                     scope = UNKNOWN
                     cause = (
-                        "part_row"
+                        under_part[row]
                         if row in under_part
                         else "second_label"
                         if second_label

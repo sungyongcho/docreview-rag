@@ -750,13 +750,10 @@ def test_a_rollforward_column_undates_its_untagged_closing_balance():
     assert readings[(3, 1)].years == frozenset()
 
 
-def test_a_part_named_without_a_part_word_is_still_read_as_the_entity():
-    """Known limit (CL-6): a label-only row naming a segment by its name alone.
-
-    "Data Center:" carries no part word, so the rows after it stay the entity's.
-    """
+def test_a_parent_heading_must_be_understood_even_without_a_part_word():
+    """A label-only name establishes no whole-entity scope for its children."""
     html = one_column("2024", ("Data Center:", ""), ("Revenue", "47,525"))
-    assert statuses(html) == {(2, 1): "known"}
+    assert statuses(html) == {(2, 1): "scope_unknown"}
 
 
 @pytest.mark.parametrize(
@@ -788,3 +785,29 @@ def test_scope_unknown_explains_only_the_established_cause(header, rows, stateme
     assert cell.scope_cause == cause
     assert reason in interpretation.reason
     assert "filing declares no" not in interpretation.reason
+
+
+@pytest.mark.parametrize(
+    "heading", ["Data Center:", "Europe:", "Gaming products:", "Unfamiliar heading:"]
+)
+def test_unknown_structural_parents_hold_children_without_a_name_deny_list(heading):
+    """Every unresolved parent persists even through later recognized sections."""
+    html = one_column("2024", (heading, ""), ("Operating expenses:", ""), ("Revenue", "1,234"))
+    cells = read_table_cells(table_fragment(html))
+    (cell,) = [c for c in cells if c.item == "revenue"]
+    assert cell.scope_cause == "parent_unread"
+    assert interpret_table_cell("1,234", [cell]).status == "scope_unknown"
+    tagged = read_table_cells(table_fragment(html), {(3, 1): (fact(text="1,234", sign="+"),)})
+    (cell,) = [c for c in tagged if c.item == "revenue"]
+    assert cell.scope is None and cell.scope_cause is None
+    assert interpret_table_cell("1,234", [cell]).status == "known"
+
+
+@pytest.mark.parametrize(
+    "heading",
+    ["Operating expenses:", "Costs and expenses:", "Revenue:", "자산", "부채", "영업비용"],
+)
+def test_understood_statement_sections_keep_ordinary_amounts(heading):
+    """Whole item phrases and recognized statement sections do not qualify the rows."""
+    html = one_column("2024", (heading, ""), ("Revenue", "1,234"))
+    assert statuses(html) == {(2, 1): "known"}
