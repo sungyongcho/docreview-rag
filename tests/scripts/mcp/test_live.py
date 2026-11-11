@@ -8,6 +8,7 @@ replaced. No request leaves the process and no database is used.
 
 import asyncio
 from decimal import Decimal
+from functools import partial
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,9 +25,11 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
+from app.agent import stored_evidence
+from app.agent.cell_answers import StoredCell
 from app.agent.review_middleware import ReviewContext
 from app.agent.tools import filings
-from app.agent.tools.filings import build_default_registry
+from app.agent.tools.filings import FetchedChunk, build_default_registry
 from app.agent.tools.registry import ToolError, execute_tool
 from app.contracts.evidence import EvidenceCitation
 from app.db.session_factory import SessionFactory
@@ -51,7 +54,12 @@ from scripts.mcp.live import (
     tool_request,
 )
 from tests.mcp.controlled_filings import ControlledSession, fixture_hit
-from tests.mcp.support import logged_events, module_server
+from tests.mcp.support import REPO_ROOT, logged_events, module_server
+from tests.scripts.mcp.cell_filings import (
+    RESOLVER_IDENTITY,
+    REVENUE_CELL,
+    STABLE_KEY,
+)
 from tests.workflow.support import USD_INCOME_TABLE, income_table_hit
 
 AGENT_ARGV = ["r", "agent", "--issuer", "AMD", "--years", "2023", "2024", "--question", "Q?"]
@@ -225,7 +233,10 @@ def test_a_search_over_the_embedding_cap_is_a_system_failure(
 
 
 def test_the_openai_embedding_path_serves_a_capped_embedder(tmp_path, monkeypatch):
-    """With OpenAI embeddings the server's registry embeds through the run's capped budget."""
+    """With OpenAI embeddings the server's registry embeds through the run's capped budget.
+
+    The cell switch reaches this registry too.
+    """
     settings = SimpleNamespace(
         environment="dev",
         embedding_provider="openai",
@@ -238,7 +249,7 @@ def test_the_openai_embedding_path_serves_a_capped_embedder(tmp_path, monkeypatc
 
     def registry(sessions: object, **kwargs: Any) -> object:
         """Capture the embedding provider the server hands the registry."""
-        providers.append(kwargs["embedding_provider"])
+        providers.append((kwargs["embedding_provider"], kwargs["include_cells"]))
         return object()
 
     async def serve_stdio(registry: object) -> None:
@@ -248,9 +259,10 @@ def test_the_openai_embedding_path_serves_a_capped_embedder(tmp_path, monkeypatc
     monkeypatch.setattr(filings_server, "serve", serve_stdio)
     monkeypatch.setattr(live, "read_only_engine", FakeEngine)
     budget = Reservation(Decimal("0.01"), 8)
-    asyncio.run(live.serve(tmp_path, budget))
-    assert len(providers) == 1 and isinstance(providers[0], CappedEmbedding)
-    assert providers[0].budget is budget
+    asyncio.run(live.serve(tmp_path, budget, include_cells=True))
+    [(provider, include_cells)] = providers
+    assert isinstance(provider, CappedEmbedding) and provider.budget is budget
+    assert include_cells is True
     assert journal(tmp_path / "budget.jsonl") == [("embedding", "reported")]
 
 
@@ -1061,17 +1073,132 @@ def test_a_model_call_outside_the_middleware_sends_nothing(tmp_path):
     assert fake.requests == []
 
 
-def test_the_create_agent_path_selects_cells_and_its_server_returns_them(monkeypatch):
-    """Offer the cell-selecting final answer and serve fetched chunks with their cells."""
-    formats = []
+# The create-agent run as the script assembles it: cell format, cell gate, cell server
+CELL_QUESTION = "What was TestCo's FY2024 revenue?"
+SELECTION = {
+    "contract_version": "cell-v1",
+    "label": "SUPPORTED",
+    "reason": "selected",
+    "selections": [
+        {"cell_id": "2024:r1c1", "claimed_item": "revenue", "claimed_fiscal_year": 2024}
+    ],
+    "unresolved_chunk_ids": [],
+}
+
+
+def run_cell_question(
+    tmp_path: Path, monkeypatch, replies: list[dict[str, Any]]
+) -> SimpleNamespace:
+    """Run ``run_review_agent_over_mcp`` over the cell server and the offline endpoint.
+
+    Only the database is replaced: the engine is never queried and the stored-cell
+    re-read returns the cell the server served.
+    """
+    fake = FakeOpenAI(counts=[1000, 1200, 1400][: len(replies)], replies=replies)
     monkeypatch.setattr(
-        live, "create_agent", lambda *_, **kw: formats.append(kw["response_format"])
+        config,
+        "get_settings",
+        lambda: SimpleNamespace(environment="dev", openai_api_key=SecretStr(FAKE_KEY)),
     )
-    gate = ModelGate(Reservation(Decimal("1"), 2), LUNA, 1000)
-    model = counted_model(LUNA, gate, api_key=FAKE_KEY)
-    review_agent(model, [], contracts(), gate, cells=True)
-    review_agent(model, [], contracts(), gate)
-    titles = [schema.schema["properties"].get("contract_version") for schema in formats]
-    assert titles[0] is not None and titles[1] is None
-    serve = parser().parse_args(["r", "serve", "--embedding-cap", "0.001", "--include-cells"])
-    assert serve.serve_cells is True
+    monkeypatch.setattr(live, "read_only_engine", FakeEngine)
+    monkeypatch.setattr(
+        live, "counted_model", partial(counted_model, http_async_client=fake.client())
+    )
+    reads: list[tuple[str, ...]] = []
+
+    async def read_selected_cells(sessions: object, refs: tuple[str, ...]) -> dict[str, Any]:
+        """Return each selected cell as the server stored it."""
+        reads.append(refs)
+        return {
+            ref: StoredCell(ref, 2024, REVENUE_CELL, STABLE_KEY, RESOLVER_IDENTITY, Decimal(25785))
+            for ref in refs
+        }
+
+    monkeypatch.setattr(stored_evidence, "read_selected_cells", read_selected_cells)
+    log = tmp_path / "events.jsonl"
+    log.touch()
+    server = module_server(
+        "tests.scripts.mcp.cell_filings", str(log), env={"PYTHONPATH": str(REPO_ROOT)}
+    )
+    argv = ["r", "agent", "--issuer", "TEST", "--years", "2024", "--question", CELL_QUESTION]
+    args = parser().parse_args([*argv, "--via", "create-agent", "--model-attempts", "3"])
+    settings = live.agent_model_settings(args)
+    assert settings is not None
+    outcome = asyncio.run(live.run_review_agent_over_mcp(server, tmp_path, args, settings))
+    return SimpleNamespace(outcome=outcome, fake=fake, reads=reads, log=log)
+
+
+def test_the_script_answers_a_cell_question_end_to_end(tmp_path, monkeypatch):
+    """Search, fetch with cells, select a cell: three counted turns end on the written answer.
+
+    Dropping the cell format, the cell-mode review context or the cell server breaks it.
+    """
+    asked = run_cell_question(
+        tmp_path,
+        monkeypatch,
+        [
+            response("call_search", "search_filings", SEARCH, (990, 40)),
+            response("call_fetch", "fetch_chunk", {"chunk_id": 2024}, (1190, 40)),
+            response("call_final", "final_answer", SELECTION, (1390, 60)),
+        ],
+    )
+    outcome = asked.outcome
+    assert (outcome["status"], outcome["failure"]) == ("ok", None)
+    assert outcome["answer"]["label"] == "SUPPORTED"
+    assert "25,785" in outcome["answer"]["answer"]
+    assert [c["chunk_id"] for c in outcome["answer"]["citations"]] == [2024]
+    assert asked.reads == [("2024:r1c1",)]
+    assert outcome["budget"]["attempts"] == 3
+    final = next(
+        t for t in asked.fake.bodies(COUNT_PATH)[0]["tools"] if t["name"] == "final_answer"
+    )
+    assert "contract_version" in final["parameters"]["properties"]
+    assert "2024:r1c1" in json.dumps(asked.fake.bodies(COUNT_PATH)[2]["input"])
+    events = [e["event"] for e in logged_events(asked.log)]
+    assert events[:2] == ["retrieval", "body_load"]
+
+
+def test_a_written_final_answer_is_refused_on_the_cell_path(tmp_path, monkeypatch):
+    """The script offers only the cell-selecting answer; a written one is returned unaccepted."""
+    asked = run_cell_question(
+        tmp_path,
+        monkeypatch,
+        [
+            response("call_search", "search_filings", SEARCH, (990, 40)),
+            response("call_fetch", "fetch_chunk", {"chunk_id": 2024}, (1190, 40)),
+            response("call_final", "final_answer", FINAL, (1390, 60)),
+        ],
+    )
+    assert (asked.outcome["status"], asked.outcome["answer"]) == ("budget_exceeded", None)
+    assert asked.reads == []
+
+
+def test_the_agent_run_starts_its_server_with_cells(tmp_path, monkeypatch):
+    """run() passes --include-cells to the serve subprocess, which serves fetched cells."""
+    servers: list[Any] = []
+
+    async def run_review_agent_over_mcp(server, run_dir, args, settings) -> dict[str, Any]:
+        """Capture the server the agent would start."""
+        servers.append(server)
+        return {"status": "ok"}
+
+    async def require_indexed(issuer, years) -> None:
+        """Stand in for the database index check."""
+
+    monkeypatch.setattr(live, "require_indexed", require_indexed)
+    monkeypatch.setattr(live, "run_review_agent_over_mcp", run_review_agent_over_mcp)
+    argv = ["r", "--out", str(tmp_path), *AGENT_ARGV[1:], "--via", "create-agent"]
+    asyncio.run(live.run(parser().parse_args(argv)))
+    assert json.loads((tmp_path / "r" / "result.json").read_text()) == {"agent": {"status": "ok"}}
+    registries, _ = serve_offline(monkeypatch, include_cells=True)
+    assert registries[0].get("fetch_chunk").output is FetchedChunk
+    started: list[bool] = []
+
+    async def serve(run_dir, budget, *, include_cells=False) -> None:
+        """Capture what the subprocess's command line asks serve for."""
+        started.append(include_cells)
+
+    monkeypatch.setattr(live, "serve", serve)
+    assert servers[0].args[:2] == ["-m", "scripts.mcp.live"]
+    live.main(servers[0].args[2:])
+    assert started == [True]
