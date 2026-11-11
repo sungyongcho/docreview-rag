@@ -250,6 +250,11 @@ def review_cell_selection(
     if problem is not None:
         return CellVerdict(problem=problem)
     if proposal.reason == "not_found":
+        if not evidence:
+            return CellVerdict(
+                problem="nothing was retrieved in this question; search the filings before "
+                "reporting not_found"
+            )
         return CellVerdict(
             AgentReportAnswer(
                 label="NOT_IN_DOCS",

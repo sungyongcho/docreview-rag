@@ -91,7 +91,7 @@ def review(answer: CellSelectionAnswer, *cells: StoredCell, fetched=None, **cont
     return review_cell_selection(
         answer,
         ledger=ledger_of(*(fetched if fetched is not None else cells)),
-        evidence={2024: identity(2024)},
+        evidence=context.get("evidence", {2024: identity(2024)}),
         stored={cell.ref: cell for cell in cells},
         requested_items=context.get("items", frozenset({"revenue"})),
         requested_years=context.get("years", (2024,)),
@@ -168,6 +168,17 @@ def test_a_period_mismatch_states_only_what_the_selection_shows_in_each_language
         "The selected cells belong to a different period than the question asks about."
     )
     assert korean.report.rationale == "선택된 칸은 질문이 묻는 기간과 다른 기간의 값입니다."
+
+
+def test_not_found_before_any_retrieval_is_returned_for_a_search():
+    """Never report that evidence was searched when nothing was retrieved in this question."""
+    absent = proposal(label="NOT_IN_DOCS", reason="not_found", selections=[])
+    unsearched = review(absent, evidence={})
+    searched = review(absent)
+    assert unsearched.report is None and unsearched.problem == (
+        "nothing was retrieved in this question; search the filings before reporting not_found"
+    )
+    assert searched.report is not None and searched.report.label == "NOT_IN_DOCS"
 
 
 def test_every_korean_report_has_a_korean_rationale():

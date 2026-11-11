@@ -111,15 +111,26 @@ def ask(
     stored: dict[str, Any] | None = None,
     locale: Literal["en", "ko"] = "en",
     reads: list[tuple[str, ...]] | None = None,
+    replies: list[AIMessage] | None = None,
 ):
     """Search, fetch, then answer with each final in turn; return the state and model.
 
-    ``reads`` collects the refs of every stored-cell read.
+    ``reads`` collects the refs of every stored-cell read; ``replies`` replaces the
+    whole scripted conversation.
     """
     model = ScriptedChatModel.from_replies(
-        reply("call_search", "search_filings", SEARCH),
-        reply("call_fetch", "fetch_chunk", {"chunk_id": 2024}),
-        *(reply(f"call_final_{n}", "final_answer", final) for n, final in enumerate(finals)),
+        *(
+            replies
+            if replies is not None
+            else (
+                reply("call_search", "search_filings", SEARCH),
+                reply("call_fetch", "fetch_chunk", {"chunk_id": 2024}),
+                *(
+                    reply(f"call_final_{n}", "final_answer", final)
+                    for n, final in enumerate(finals)
+                ),
+            )
+        )
     )
     current = stored if stored is not None else cell
 
@@ -215,3 +226,25 @@ def test_a_cell_that_was_not_fetched_is_returned_without_reading_it():
     assert reads == [("2024:r1c1",)]
     assert len(model.requests) == 4
     assert state["structured_response"].label == "SUPPORTED"
+
+
+def test_not_found_before_any_search_is_returned_and_accepted_after_one():
+    """Refuse a first-turn not_found with nothing retrieved, then accept it after a search."""
+    absent = {**selection(), "label": "NOT_IN_DOCS", "reason": "not_found", "selections": []}
+    state, model = ask(
+        [],
+        replies=[
+            reply("call_final_0", "final_answer", absent),
+            reply("call_search", "search_filings", SEARCH),
+            reply("call_final_1", "final_answer", absent),
+        ],
+    )
+    errors = [
+        m.content for m in state["messages"] if isinstance(m, ToolMessage) and m.status == "error"
+    ]
+    assert errors == [
+        "ERROR: nothing was retrieved in this question; search the filings before reporting "
+        "not_found"
+    ]
+    assert len(model.requests) == 3
+    assert state["structured_response"].label == "NOT_IN_DOCS"
