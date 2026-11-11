@@ -18,6 +18,8 @@ packages. Schema preparation lives in `app.db.startup`, the container gate; Quic
 | `deploy` | `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh` builds, stages and publishes Firebase Hosting in one command |
 | `mcp` | `python -m scripts.mcp.scope_check` checks question-scoped fetches over real MCP and the read-only DB without a model; `python -m scripts.mcp.live RUN_ID search\|compare\|fetch\|agent` runs one capped, never-retried live experiment and writes outside the repository; `agent --via create-agent` answers by selecting stored table cells, which the application checks and writes up (`--locale ko` for Korean) |
 
+The live experiment refuses `MODE=prod`. Before claiming an agent attempt it checks the key and, for `create-agent`, issuer names from `app.query.scope.issuer_names`. A refusal before sending for budget ends as `budget_exceeded`, not `provider_error`. Its budget journal uses `accounted_usd`: each request counts the larger of its reserved estimate and observed cost, and an unknown response keeps the reservation. `admitted_input_tokens` and `next_admitted_input_tokens` describe input admission; embedding usage reports `responses_with_usage`, `observed_input_tokens`, and `estimated_cost_usd`.
+
 Shell remains only for dependency bootstrap, the SSH web environment, release orchestration and
 Firebase deployment. The shell helper invokes Python modules directly. Tests follow these groups
 under `tests/scripts/`; helper registration tests remain in `tests/scripts/test_rag_alias.py`.
