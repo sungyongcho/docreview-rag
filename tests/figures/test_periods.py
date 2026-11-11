@@ -184,11 +184,42 @@ def test_fiscal_identifier_normalization_is_explicit_and_fixed(form, normalized,
     assert fiscal_year_spans(text) == [(3, 3 + len(form), year)]
 
 
-@pytest.mark.parametrize("text", ["24", "2024", "FY500", "fiscal 99999", "FY24,123"])
+@pytest.mark.parametrize(
+    "text",
+    ["24", "2024", "FY500", "fiscal 99999", "FY24,123", "fiscal year 10-K", "fiscal 20-F"],
+)
 def test_ordinary_or_malformed_numbers_are_not_fiscal_identifiers(text):
-    """The fiscal normalizer never guesses a century for a bare amount."""
+    """The fiscal normalizer never guesses a century for an amount or a filing form number."""
     assert normalize_fiscal_years(text) == text
     assert not fiscal_year_spans(text)
+
+
+@pytest.mark.parametrize("header", ["FY24-FY25", "FY2024-FY2025", "FY24/FY25"])
+def test_a_range_of_fiscal_identifiers_names_both_years_and_dates_no_column(header):
+    """A joined pair is two years on every reader, so its column confirms no single year."""
+    assert [year for _, _, year in fiscal_year_spans(header)] == [2024, 2025]
+    fragment = {
+        "header_cells": [{"column": 1, "text": header}],
+        "caption_sources": [linked("(In millions of U.S. dollars)")],
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": "Revenue"}]},
+            {"sources": [{"row": 1, "column": 1, "text": "1,234"}]},
+        ],
+    }
+    (cell,) = read_table_cells(fragment)
+    assert cell.years == {2024, 2025}
+    for answer in (
+        "FY24 revenue was USD 1,234 million.",
+        f"{header} revenue was USD 1,234 million.",
+    ):
+        assert check_figures(answer, [EvidenceText(1, "", "", [cell])], [2024]).verdict == (
+            "unverified"
+        )
+
+
+def test_a_hyphenated_prefix_is_not_a_fiscal_identifier():
+    """Only a hyphen that follows a digit joins a second identifier."""
+    assert not fiscal_year_spans("non-FY24 revenue")
 
 
 @pytest.mark.parametrize(

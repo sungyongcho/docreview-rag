@@ -54,9 +54,11 @@ _DURATION = (
 )
 _ANNUAL_NOUN = r"(?:fiscal[\s-]+years?|annual[\s-]+periods?|years?)"
 _FULL_DURATION = rf"{_DURATION}(?:\s+(?:fiscal[\s-]+years?|years?|periods?))?"
+# A hyphen straight after a digit joins a range ("FY24-FY25"), so its second
+# identifier is read too; any other hyphenated prefix ("non-FY24") is not one.
 _FISCAL_YEAR = re.compile(
-    r"(?<![\w-])(?:fy\s*['’]?\s*|fiscal\s+(?:year\s+)?)"
-    r"(?P<year>(?:19|20)\d{2}|\d{2})(?!\w|[,.]\d)",
+    r"(?:(?<![\w-])|(?<=\d-))(?:fy\s*['’]?\s*|fiscal\s+(?:year\s+)?)"
+    r"(?P<year>(?:19|20)\d{2}|\d{2})(?!\w|[,.]\d|-[a-z]\b)",
     re.I,
 )
 # One ending grammar: an annual noun, full duration or explicit FY identifier,
