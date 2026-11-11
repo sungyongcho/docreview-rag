@@ -162,6 +162,26 @@ class Reservation:
             stream.write(json.dumps(event, default=str) + "\n")
 
 
+def refuse_production() -> None:
+    """Stop before any database, server or paid work when ``MODE=prod``.
+
+    The experiment spends the developer's own key, so it applies the filings server's
+    rule (``environment == "prod"`` refuses) at its own entry points, which reach the
+    server's transport directly and would otherwise bypass that guard.
+
+    Raises
+    ------
+    SystemExit
+        With code 2, after a refusal on stderr, under ``MODE=prod``.
+    """
+    from app.config import get_settings
+
+    if get_settings().environment == "prod":
+        # In serve mode stdout carries the MCP protocol; the refusal goes to stderr only.
+        print("The live MCP experiment is a development tool; refusing MODE=prod.", file=sys.stderr)
+        raise SystemExit(2)
+
+
 def claim_attempt(run_dir: Path, request: dict[str, Any]) -> Path:
     """Create the run's attempt marker exclusively, refusing a repeated run ID."""
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -801,7 +821,9 @@ async def serve(run_dir: Path, embedding: Reservation, *, include_cells: bool = 
     """Serve the filings MCP server over the read-only DB with a capped embedder.
 
     ``include_cells`` makes ``fetch_chunk`` return each chunk's stored table cells.
+    ``MODE=prod`` is refused before the database or a credential is touched.
     """
+    refuse_production()
     from openai import AsyncOpenAI
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -1045,9 +1067,13 @@ def tool_request(args: argparse.Namespace) -> tuple[str, dict[str, Any]] | None:
 
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
-    """Claim the run, start the capped server, and record one experiment result."""
+    """Claim the run, start the capped server, and record one experiment result.
+
+    ``MODE=prod`` is refused before any option, database or paid work.
+    """
     from mcp import Client, StdioServerParameters
 
+    refuse_production()
     settings = agent_model_settings(args)
     run_dir = args.out / args.run_id
     if args.command == "search":

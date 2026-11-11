@@ -21,12 +21,14 @@ from langchain_core.tools import tool
 import openai
 import pytest
 
+from app import config
 from app.agent.review_middleware import ReviewContext
 from app.agent.tools.filings import build_default_registry
 from app.contracts.evidence import EvidenceCitation
 from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
+from app.mcp import filings_server
 from scripts.mcp import live
 from scripts.mcp.live import (
     COUNTED_FIELDS,
@@ -56,6 +58,88 @@ SEARCH = {"query": "revenue", "issuers": ["TEST"], "fiscal_years": [2024]}
 REVENUE = "2024 net revenue was $25,785 million."
 LUNA = resolve_model_settings(None, None, None, None, None)
 OTHER = resolve_model_settings("acme-responses-1", Decimal("1.5"), Decimal("6"), 1000, None)
+
+
+def offline_settings(environment: str = "dev") -> SimpleNamespace:
+    """Settings for an offline run: the named MODE, the free local embedder, no key."""
+    return SimpleNamespace(
+        environment=environment, embedding_provider="deterministic", openai_api_key=None
+    )
+
+
+@pytest.fixture(autouse=True)
+def development_mode(monkeypatch):
+    """Run every test in development mode without reading any environment file."""
+    monkeypatch.setattr(config, "get_settings", offline_settings)
+
+
+class FakeEngine:
+    """Stands in for the read-only engine of a test that never queries the database."""
+
+    disposed = False
+
+    async def dispose(self) -> None:
+        """Record that the pool was released."""
+        self.disposed = True
+
+
+def serve_offline(monkeypatch, *, include_cells: bool) -> tuple[list[Any], FakeEngine]:
+    """Run ``serve`` with the stdio transport replaced; return its registries and engine."""
+    registries: list[Any] = []
+    engine = FakeEngine()
+
+    async def serve_stdio(registry) -> None:
+        """Capture the registry the server would expose."""
+        registries.append(registry)
+
+    monkeypatch.setattr(filings_server, "serve", serve_stdio)
+    monkeypatch.setattr(live, "read_only_engine", lambda: engine)
+    asyncio.run(
+        live.serve(Path("unused"), Reservation(Decimal("0.01"), 8), include_cells=include_cells)
+    )
+    return registries, engine
+
+
+def test_production_mode_refuses_the_experiment_before_any_work(tmp_path, monkeypatch, capsys):
+    """MODE=prod exits with code 2 before options, the index check or the run marker."""
+    monkeypatch.setattr(config, "get_settings", lambda: offline_settings("prod"))
+
+    async def require_indexed(issuer, years):
+        raise AssertionError("production mode must stop before the database")
+
+    monkeypatch.setattr(live, "require_indexed", require_indexed)
+    args = parser().parse_args(
+        ["r", "--out", str(tmp_path), *AGENT_ARGV[1:], "--via", "create-agent"]
+    )
+    with pytest.raises(SystemExit) as stopped:
+        asyncio.run(live.run(args))
+    assert stopped.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == "" and "refusing MODE=prod" in captured.err
+    assert not (tmp_path / "r").exists()
+
+
+def test_production_mode_refuses_the_server_before_the_database(monkeypatch, capsys):
+    """The server subprocess applies the same refusal before its engine or transport."""
+    monkeypatch.setattr(config, "get_settings", lambda: offline_settings("prod"))
+
+    def never(*_: object) -> Any:
+        raise AssertionError("production mode must stop before the engine or transport")
+
+    monkeypatch.setattr(live, "read_only_engine", never)
+    monkeypatch.setattr(filings_server, "serve", never)
+    with pytest.raises(SystemExit) as stopped:
+        asyncio.run(live.serve(Path("unused"), Reservation(Decimal("0.01"), 8)))
+    assert stopped.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == "" and "refusing MODE=prod" in captured.err
+
+
+def test_development_mode_serves_the_registry_and_releases_the_pool(monkeypatch):
+    """Under MODE=dev the server starts on the local embedder and disposes its engine."""
+    registries, engine = serve_offline(monkeypatch, include_cells=False)
+    assert len(registries) == 1 and engine.disposed
+    assert registries[0].get("fetch_chunk").output is None
 
 
 def test_reservation_keeps_failed_estimates_and_blocks_over_the_cap(tmp_path):
