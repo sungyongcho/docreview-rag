@@ -31,18 +31,18 @@ from decimal import Decimal
 import re
 from typing import Literal
 
-from app.figures.currency import _same_currency
+from app.figures.currency import same_currency
 from app.figures.tables import TableCellReading
-from app.figures.text import _BARE_YEAR, _YEAR, _blank, _Figure, _figure_spans
+from app.figures.text import BARE_YEAR, YEAR, Figure, blank, figure_spans
 from app.figures.vocabulary import (
-    _CHANGES,
-    _CONNECTIVES,
-    _ENGLISH_PHRASES,
-    _FILLERS,
-    _KOREAN_PHRASES,
-    _SAME_ITEM_QUALIFIER,
-    _TOKEN,
-    _phrase_key,
+    CHANGES,
+    CONNECTIVES,
+    ENGLISH_PHRASES,
+    FILLERS,
+    KOREAN_PHRASES,
+    SAME_ITEM_QUALIFIER,
+    TOKEN,
+    phrase_key,
 )
 
 # Rounding is accepted only for figures stated with at least this many significant digits.
@@ -158,7 +158,7 @@ class _Claim:
     name more than one year. ``change`` marks a change claim ("grew 14%").
     """
 
-    figure: _Figure
+    figure: Figure
     item: str | None
     year: int | None
     dated_ambiguously: bool
@@ -178,10 +178,10 @@ def _korean_word(start: int, text: str) -> _Word:
             continue
         stem = text[: len(text) - len(ending)]
         joins = ending in _KOREAN_JOINS
-        if stem in _KOREAN_PHRASES:
+        if stem in KOREAN_PHRASES:
             if ending == "의":
                 return _Word(start, text, "unknown")
-            return _Word(start, text, "item", _KOREAN_PHRASES[stem], joins)
+            return _Word(start, text, "item", KOREAN_PHRASES[stem], joins)
         if stem in _KOREAN_FILLERS or _KOREAN_UNIT.fullmatch(stem):
             return _Word(start, text, "filler", joins=joins)
     return _Word(start, text, "unknown")
@@ -190,11 +190,11 @@ def _korean_word(start: int, text: str) -> _Word:
 def _english_word(start: int, text: str) -> _Word:
     """Classify one English word, digit run or symbol outside any item phrase."""
     key = text.casefold().replace("’", "'")
-    if key in _CHANGES:
+    if key in CHANGES:
         return _Word(start, text, "change", joins=key in {"up", "down"})
-    if key in _CONNECTIVES:
+    if key in CONNECTIVES:
         return _Word(start, text, "filler", joins=True)
-    if key in _FILLERS or _POSSESSIVE.fullmatch(text) or _BARE_YEAR.fullmatch(text):
+    if key in FILLERS or _POSSESSIVE.fullmatch(text) or BARE_YEAR.fullmatch(text):
         return _Word(start, text, "filler")
     return _Word(start, text, "unknown")
 
@@ -202,17 +202,17 @@ def _english_word(start: int, text: str) -> _Word:
 def _words(masked: str, start: int, end: int) -> list[_Word]:
     """Classify the words of ``masked[start:end]``, joining item phrases into one word."""
     tokens = [
-        (start + match.start(), match.group(0)) for match in _TOKEN.finditer(masked[start:end])
+        (start + match.start(), match.group(0)) for match in TOKEN.finditer(masked[start:end])
     ]
     words: list[_Word] = []
     index = 0
     while index < len(tokens):
         at, text = tokens[index]
-        keys = tuple(_phrase_key(token) for _, token in tokens[index:])
+        keys = tuple(phrase_key(token) for _, token in tokens[index:])
         phrase = next(
             (
                 (len(phrase_words), item)
-                for phrase_words, item in _ENGLISH_PHRASES
+                for phrase_words, item in ENGLISH_PHRASES
                 if keys[: len(phrase_words)] == phrase_words
             ),
             None,
@@ -261,12 +261,12 @@ def _sentence_claims(masked: str, text: str, start: int, end: int) -> list[_Clai
     item of the figure before it in the same sentence. An unknown word in its head or
     tail, an item phrase in its tail, or two items in its head leave it without one.
     """
-    found = [figure for figure in _figure_spans(masked[:end]) if figure.start >= start]
+    found = [figure for figure in figure_spans(masked[:end]) if figure.start >= start]
     if not found:
         return []
     years = [
         (match.start(), int(match.group(0)))
-        for match in _YEAR.finditer(text, start, end)
+        for match in YEAR.finditer(text, start, end)
         if not any(figure.unit_start <= match.start() < figure.unit_end for figure in found)
     ]
     heads: list[tuple[int, list[_Word]]] = []
@@ -329,7 +329,7 @@ def _issuer_subjects(text: str, issuer: str | None) -> str:
     pattern = re.compile(rf"(?<!\w){re.escape(issuer)}(?![\w'’])")
     masked = text
     for match in pattern.finditer(text):
-        before = _blank(masked[: match.start()])
+        before = blank(masked[: match.start()])
         start = max((end.end() for end in _SENTENCE_BREAK.finditer(before)), default=0)
         if all(
             word.kind == "filler" and not _POSSESSIVE.fullmatch(word.text)
@@ -358,7 +358,7 @@ def _claims(text: str, *, issuer: str | None = None) -> list[_Claim]:
     """Read every figure of a text as a claim, sentence by sentence."""
     formatted = _STRONG.sub(lambda match: "  " + match[1] + "  ", text)
     subject = _issuer_subjects(formatted, issuer)
-    masked = _blank(_SAME_ITEM_QUALIFIER.sub(lambda match: " " * len(match.group(0)), subject))
+    masked = blank(SAME_ITEM_QUALIFIER.sub(lambda match: " " * len(match.group(0)), subject))
     bounds = [0, *(match.start() for match in _SENTENCE_BREAK.finditer(masked)), len(masked)]
     return [
         claim
@@ -367,7 +367,7 @@ def _claims(text: str, *, issuer: str | None = None) -> list[_Claim]:
     ]
 
 
-def _within(figure: _Figure, amount: Decimal, target: Decimal, scale: Decimal) -> bool:
+def _within(figure: Figure, amount: Decimal, target: Decimal, scale: Decimal) -> bool:
     """Whether a stated amount equals a target, allowing rounding to its last digit.
 
     A converted figure may be rounded to its own last expressed digit (half of it either
@@ -384,7 +384,7 @@ def _within(figure: _Figure, amount: Decimal, target: Decimal, scale: Decimal) -
 
 
 def _compare(
-    figure: _Figure,
+    figure: Figure,
     value: Decimal,
     other: Decimal,
     scale: Decimal | None,
@@ -411,7 +411,7 @@ def _compare(
         if figure.currency or marked:
             return "uncertain"
         return "match" if _within(figure, value, other, Decimal(1)) else "no"
-    same = _same_currency(figure.stated_currency, currency)
+    same = same_currency(figure.stated_currency, currency)
     if same == "no":
         return "no"
     stated = figure.stated_scale

@@ -27,26 +27,26 @@ import re
 from typing import Literal
 
 from app.figures.currency import (
-    _ANY_CURRENCY,
-    _CODES,
-    _CONFLICT,
-    _FAMILIES,
-    _UNKNOWN,
-    _currencies_in,
-    _currency_of,
-    _resolve,
+    ANY_CURRENCY,
+    CODES,
+    CONFLICT,
+    FAMILIES,
+    UNKNOWN,
+    currencies_in,
+    currency_of,
+    resolve,
 )
 from app.figures.text import (
-    _KOREAN_SCALE,
-    _YEAR,
-    _blank,
-    _english_factor,
-    _figure_spans,
-    _korean_factor,
-    _signed,
-    _values,
+    KOREAN_SCALE,
+    YEAR,
+    blank,
+    english_factor,
+    figure_spans,
+    korean_factor,
+    signed,
+    values,
 )
-from app.figures.vocabulary import _PHRASE_ITEMS, _SAME_ITEM_QUALIFIER, _phrase_key
+from app.figures.vocabulary import PHRASE_ITEMS, SAME_ITEM_QUALIFIER, phrase_key
 
 # Unit declarations are read with a small explicit grammar, not from any scale word in
 # the text. A parenthetical declares a unit when it is up to three words, "in" and words
@@ -67,23 +67,23 @@ _BARE_DECLARATION = re.compile(
 _UNITS_CLAUSE = re.compile(r"\bunits?\s*[:：]\s*[A-Za-z$][^()\d]*", re.IGNORECASE)
 _SCALE_WORD = (
     r"(?P<scale>thousands|millions|billions|trillions)"
-    rf"(?:\s+of\s+(?P<of>{_ANY_CURRENCY}))?"
+    rf"(?:\s+of\s+(?P<of>{ANY_CURRENCY}))?"
 )
 # "In millions [of <currency>]", optionally led by a currency or "Amounts".
 _SCALE_DECLARATION = re.compile(
-    rf"\s*(?:(?P<prefix>amounts|{_ANY_CURRENCY})\s+)?in\s+{_SCALE_WORD}"
+    rf"\s*(?:(?P<prefix>amounts|{ANY_CURRENCY})\s+)?in\s+{_SCALE_WORD}"
     r"(?P<per_share>\s*,\s*except\s+(?:for\s+)?(?:share\s+and\s+)?per[\s-]share"
     r"(?:\s+and\s+share)?(?:\s+(?:data|amounts|information|figures))?)?\s*",
     re.IGNORECASE,
 )
 # "In <currency>" ("(In U.S. dollars)") declares a currency, and plain units only when no
 # other note of the table states a scale; "(In millions) (In U.S. dollars)" is millions.
-_PLAIN_DECLARATION = re.compile(rf"\s*in\s+(?P<currency>{_ANY_CURRENCY})\s*", re.IGNORECASE)
+_PLAIN_DECLARATION = re.compile(rf"\s*in\s+(?P<currency>{ANY_CURRENCY})\s*", re.IGNORECASE)
 # A currency-only declaration states no scale at all: "(USD)", "(Currency: KRW)",
 # "(Expressed in U.S. dollars)".
 _CURRENCY_DECLARATION = re.compile(
     r"\s*(?:(?:currency|denomination)\s*[:：]\s*|(?:expressed|presented|reported)\s+in\s+)?"
-    rf"(?P<currency>{_ANY_CURRENCY})\s*",
+    rf"(?P<currency>{ANY_CURRENCY})\s*",
     re.IGNORECASE,
 )
 _UNITS_DECLARATION = re.compile(rf"\s*units?\s*[:：]\s*{_SCALE_WORD}\s*", re.IGNORECASE)
@@ -240,20 +240,20 @@ def _english_note(declaration: str) -> _Note:
     """Read one English declaration, unknown unless all of it is understood."""
     if scale := _SCALE_DECLARATION.fullmatch(declaration):
         prefix = scale.group("prefix") or ""
-        currency = _currencies_in(" ".join((prefix, scale.group("of") or "")))
+        currency = currencies_in(" ".join((prefix, scale.group("of") or "")))
         return _Note(
             "scale",
-            _english_factor(scale.group("scale")),
+            english_factor(scale.group("scale")),
             scale.group("per_share") is not None,
             currency,
         )
     if units := _UNITS_DECLARATION.fullmatch(declaration):
-        currency = _currencies_in(units.group("of") or "")
-        return _Note("scale", _english_factor(units.group("scale")), currency=currency)
+        currency = currencies_in(units.group("of") or "")
+        return _Note("scale", english_factor(units.group("scale")), currency=currency)
     if plain := _PLAIN_DECLARATION.fullmatch(declaration):
-        return _Note("currency", currency=_currencies_in(plain.group("currency")), plain=True)
+        return _Note("currency", currency=currencies_in(plain.group("currency")), plain=True)
     if named := _CURRENCY_DECLARATION.fullmatch(declaration):
-        return _Note("currency", currency=_currencies_in(named.group("currency")))
+        return _Note("currency", currency=currencies_in(named.group("currency")))
     return _Note("unknown")
 
 
@@ -265,12 +265,12 @@ def _korean_note(content: str) -> _Note:
     if parts[0] == "%":
         return _Note("percent")
     korean = _KOREAN_NOTE.fullmatch(parts[0])
-    currency = _currency_of(korean.group("currency")) if korean else None
+    currency = currency_of(korean.group("currency")) if korean else None
     if korean is not None and currency is not None:
         # A 단위 note states the unit itself, so a bare currency ("원") means plain units.
         prefix = korean.group("scale")
-        scale = _KOREAN_SCALE.fullmatch(prefix) if prefix else None
-        factor = _korean_factor(scale) if scale is not None else Decimal(1)
+        scale = KOREAN_SCALE.fullmatch(prefix) if prefix else None
+        factor = korean_factor(scale) if scale is not None else Decimal(1)
         return _Note("scale", factor, currency=frozenset({currency}))
     return _Note("unknown")
 
@@ -325,7 +325,7 @@ def read_table_unit(fragment: Mapping[str, object]) -> TableUnit:
         scales = {Decimal(1)}
     currency = frozenset(marker for note in notes for marker in note.currency)
     monetary = bool(scales or currency)
-    if len(scales) > 1 or _resolve(currency) == _CONFLICT or (percent and monetary):
+    if len(scales) > 1 or resolve(currency) == CONFLICT or (percent and monetary):
         return TableUnit("conflicting", percent=percent)
     per_share_plain = any(note.per_share_plain for note in notes)
     return TableUnit("known", next(iter(scales), None), percent, per_share_plain, currency)
@@ -359,7 +359,7 @@ def _column_years(
         first = _int(header["column"])
         if first < end and start < first + _int(header.get("colspan", 1)):
             text = str(header.get("text", ""))
-            written = {int(year) for year in _YEAR.findall(text)}
+            written = {int(year) for year in YEAR.findall(text)}
             if not written and (term := _term_year(text, terms)) is not None:
                 written = {term}
             years.update(written)
@@ -374,7 +374,7 @@ def _row_labels(fragment: Mapping[str, object]) -> dict[int, str]:
     for member in _entries(fragment, "cells"):
         for source in _entries(member, "sources"):
             text = str(source.get("text", "")).strip()
-            if text and not _values(text):
+            if text and not values(text):
                 row, column = _int(source["row"]), _int(source["column"])
                 if row not in labels or column < labels[row][0]:
                     labels[row] = (column, text)
@@ -389,13 +389,13 @@ def _label_item(label: str) -> str | None:
     row ("Net income (attributable to noncontrolling interests)"), so the label names
     no item. Korean labels are compared without spaces.
     """
-    text = _SAME_ITEM_QUALIFIER.sub("", _ENUMERATOR.sub("", label))
+    text = SAME_ITEM_QUALIFIER.sub("", _ENUMERATOR.sub("", label))
     if re.search(r"[()（）]", text):
         return None
-    key = _phrase_key(text).rstrip(":").strip()
+    key = phrase_key(text).rstrip(":").strip()
     if not key.isascii():
         key = key.replace(" ", "")
-    return _PHRASE_ITEMS.get(key)
+    return PHRASE_ITEMS.get(key)
 
 
 # The DART statement axis whose consolidated member is the entity as a whole.
@@ -444,7 +444,7 @@ def _statement_scope(statement: TableStatement | None) -> str | None:
         return _SEPARATE_SCOPE
     if statement.scope == "consolidated" and statement.kind in _ENTITY_STATEMENTS:
         return None
-    return _UNKNOWN
+    return UNKNOWN
 
 
 def _scope(dimensions: tuple[tuple[str, str], ...]) -> str | None:
@@ -472,18 +472,18 @@ def _with_fact(
         overrides.append("year")
     scope = _scope(fact.dimensions)
     tagged_separate = _SEPARATE_SCOPE in (scope or "")
-    if reading.scope != _UNKNOWN and (reading.scope == _SEPARATE_SCOPE) != tagged_separate:
+    if reading.scope != UNKNOWN and (reading.scope == _SEPARATE_SCOPE) != tagged_separate:
         overrides.append("scope")
     scale, percent, resolved = reading.scale, reading.percent, reading.currency
     measure = None
     currency = _ISO_CURRENCY.fullmatch(fact.numerator or "")
     if currency is not None and fact.denominator in (None, "xbrli:shares"):
         measure = "amount" if fact.denominator is None else "per_share"
-        code = currency.group(1) if currency.group(1) in _CODES else _UNKNOWN
+        code = currency.group(1) if currency.group(1) in CODES else UNKNOWN
         scale = Decimal(10) ** (fact.scale or 0)
         if reading.scale is not None and reading.scale != scale:
             overrides.append("scale")
-        percent, resolved = False, _resolve(frozenset({code}) | notes)
+        percent, resolved = False, resolve(frozenset({code}) | notes)
     elif fact.numerator is not None:
         measure = "other"
     return replace(
@@ -522,7 +522,7 @@ def read_table_cells(
     caption_years = {
         int(year)
         for caption in _entries(fragment, "caption_sources")
-        for year in _YEAR.findall(str(caption.get("text", "")))
+        for year in YEAR.findall(str(caption.get("text", "")))
     }
     unit = read_table_unit(fragment)
     known = unit.status == "known"
@@ -531,8 +531,8 @@ def read_table_cells(
     for member in _entries(fragment, "cells"):
         for source in _entries(member, "sources"):
             text = str(source.get("text", ""))
-            values = _values(text)
-            if values:
+            cell_values = values(text)
+            if cell_values:
                 label = labels.get(_int(source["row"]))
                 per_share = label is not None and _PER_SHARE.search(label)
                 scale = unit.scale if known else None
@@ -550,24 +550,24 @@ def read_table_cells(
                 # Only markers bound to the cell's own numbers count; other words in the
                 # cell ("원가") name no denomination.
                 own = frozenset(
-                    marker for figure in _figure_spans(_blank(text)) for marker in figure.currency
+                    marker for figure in figure_spans(blank(text)) for marker in figure.currency
                 )
                 row, column = _int(source["row"]), _int(source["column"])
                 reading = TableCellReading(
                     row,
                     column,
-                    frozenset(values),
+                    frozenset(cell_values),
                     frozenset(_column_years(source, headers, caption_years, terms)),
                     scale,
                     _label_item(label) if label is not None else None,
                     percent,
-                    _resolve(unit.currency | own),
+                    resolve(unit.currency | own),
                     bool(own),
                     label,
                     scope=_statement_scope(statement),
                 )
                 tagged = facts.get((row, column), ())
-                if len(tagged) == 1 and _values(tagged[0].text) == values:
+                if len(tagged) == 1 and values(tagged[0].text) == cell_values:
                     reading = _with_fact(reading, tagged[0], unit.currency | own)
                 cells.append(reading)
     return cells
@@ -586,14 +586,14 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     stripped = text.strip()
     if not stripped or not stripped.strip("-–—‐ "):
         return CellInterpretation("blank", None, None, None)
-    spans = [figure for figure in _figure_spans(_blank(text)) if figure.value is not None]
+    spans = [figure for figure in figure_spans(blank(text)) if figure.value is not None]
     distinct = set(readings)
     if not spans or not distinct:
         return CellInterpretation("not_numeric", None, None, None)
     if len(spans) > 1 or len(distinct) > 1:
         return CellInterpretation("conflicting", "more than one figure", None, None)
     reading = next(iter(distinct))
-    value = _signed(spans[0])
+    value = signed(spans[0])
     if value is None:
         return CellInterpretation("conflicting", "sign marker is ambiguous", None, reading)
     if reading.measure == "other":
@@ -603,15 +603,15 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     if not reading.percent:
         if reading.scale is None:
             return CellInterpretation("scale_unknown", "no readable scale", value, reading)
-        if reading.currency == _CONFLICT:
+        if reading.currency == CONFLICT:
             return CellInterpretation("conflicting", "currencies disagree", value, reading)
-        if reading.currency is None or reading.currency in _FAMILIES:
+        if reading.currency is None or reading.currency in FAMILIES:
             return CellInterpretation(
                 "currency_unconfirmed", "no explicit currency", value, reading
             )
     if len(reading.years) != 1:
         return CellInterpretation("period_unknown", "no single fiscal year", value, reading)
-    if reading.scope == _UNKNOWN:
+    if reading.scope == UNKNOWN:
         return CellInterpretation(
             "scope_unknown", "the filing declares no entity scope for it", value, reading
         )

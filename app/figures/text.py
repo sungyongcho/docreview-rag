@@ -9,17 +9,17 @@ from decimal import Decimal, InvalidOperation
 import re
 
 from app.figures.currency import (
-    _CODES,
-    _CURRENCY,
-    _CURRENCY_AFTER,
-    _CURRENCY_BEFORE,
-    _UNKNOWN,
-    _UNKNOWN_AFTER,
-    _UNKNOWN_BEFORE,
-    _currency_of,
-    _resolve,
+    CODES,
+    CURRENCY,
+    CURRENCY_AFTER,
+    CURRENCY_BEFORE,
+    UNKNOWN,
+    UNKNOWN_AFTER,
+    UNKNOWN_BEFORE,
+    currency_of,
+    resolve,
 )
-from app.figures.vocabulary import _CHANGES, _CONNECTIVES, _FILLERS, _ITEM_WORDS
+from app.figures.vocabulary import CHANGES, CONNECTIVES, FILLERS, ITEM_WORDS
 
 # A figure: digits with optional thousands separators and decimals, optionally signed.
 # A trailing comma is punctuation, not a separator ("In 2024, revenue ...").
@@ -37,8 +37,8 @@ _NOT_FIGURES = re.compile(
     r"\d\s?분기|제\s?\d+\s?기",
     re.IGNORECASE,
 )
-_BARE_YEAR = re.compile(r"(?:19|20)\d{2}")
-_YEAR = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
+BARE_YEAR = re.compile(r"(?:19|20)\d{2}")
+YEAR = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 
 # Scale words written after a figure ("25.8 billion", "25.8bn").
 _ENGLISH_SCALE = re.compile(
@@ -81,13 +81,13 @@ _CURRENCY_CODE = re.compile(
 )
 # Korean scales compose: a 십/백/천 prefix multiplies a 만/억/조 base ("천억" = 10^3 x 10^8).
 # A bare 천 ("천원", "천US$") is a thousand.
-_KOREAN_SCALE = re.compile(r"([십백천]?)([만억조])|천")
+KOREAN_SCALE = re.compile(r"([십백천]?)([만억조])|천")
 _KOREAN_PREFIX = {"": 1, "십": 10, "백": 100, "천": 1000}
 _KOREAN_BASE = {"만": Decimal(10) ** 4, "억": Decimal(10) ** 8, "조": Decimal(10) ** 12}
 
 
 @dataclass(frozen=True, slots=True)
-class _Figure:
+class Figure:
     """One figure occurrence with its position and the unit written with it.
 
     ``value`` is None when a unit glued to the figure cannot be read, so the figure
@@ -118,8 +118,8 @@ class _Figure:
 
     @property
     def stated_currency(self) -> str | None:
-        """Return the currency the figure's own markers resolve to (see ``_resolve``)."""
-        return _resolve(self.currency)
+        """Return the currency the figure's own markers resolve to (see ``resolve``)."""
+        return resolve(self.currency)
 
 
 def _value(text: str) -> Decimal | None:
@@ -135,7 +135,7 @@ def _value(text: str) -> Decimal | None:
         return None
 
 
-def _blank(text: str) -> str:
+def blank(text: str) -> str:
     """Blank identifiers and dates out of a text while keeping every position."""
     return _NOT_FIGURES.sub(lambda match: " " * len(match.group(0)), text)
 
@@ -144,26 +144,24 @@ def _markers_before(text: str, start: int) -> tuple[set[str], int]:
     """Read the whole run of currency markers written right before a figure.
 
     Returns the markers and where the run begins. A supported "$" form with a letter
-    glued in front ("NZ$", "ZZ$") and any unsupported sign or code is ``_UNKNOWN``.
+    glued in front ("NZ$", "ZZ$") and any unsupported sign or code is ``UNKNOWN``.
     """
     markers: set[str] = set()
     position = start
     while True:
-        if known := _CURRENCY_BEFORE.search(text, 0, position):
+        if known := CURRENCY_BEFORE.search(text, 0, position):
             written = known.group(0).strip()
             qualified = known.start() > 0 and text[known.start() - 1].isalpha()
-            currency = _currency_of(written)
-            markers.add(
-                _UNKNOWN if currency is None or ("$" in written and qualified) else currency
-            )
+            currency = currency_of(written)
+            markers.add(UNKNOWN if currency is None or ("$" in written and qualified) else currency)
             position = known.start()
-        elif unknown := _UNKNOWN_BEFORE.search(text, 0, position):
-            markers.add(_UNKNOWN)
+        elif unknown := UNKNOWN_BEFORE.search(text, 0, position):
+            markers.add(UNKNOWN)
             position = unknown.start()
         elif (shaped := _CODE_SHAPED_BEFORE.search(text, 0, position)) and _code_shaped(
             shaped.group(1)
         ):
-            markers.add(_UNKNOWN)
+            markers.add(UNKNOWN)
             position = shaped.start()
         else:
             return markers, position
@@ -174,14 +172,14 @@ def _markers_after(text: str, end: int) -> tuple[set[str], int]:
     markers: set[str] = set()
     position = end
     while True:
-        if known := _CURRENCY_AFTER.match(text, position):
-            markers.add(_currency_of(known.group(0)) or _UNKNOWN)
+        if known := CURRENCY_AFTER.match(text, position):
+            markers.add(currency_of(known.group(0)) or UNKNOWN)
             position = known.end()
-        elif unknown := _UNKNOWN_AFTER.match(text, position):
-            markers.add(_UNKNOWN)
+        elif unknown := UNKNOWN_AFTER.match(text, position):
+            markers.add(UNKNOWN)
             position = unknown.end()
         elif (shaped := _CODE_SHAPED_AFTER.match(text, position)) and _code_shaped(shaped.group(1)):
-            markers.add(_UNKNOWN)
+            markers.add(UNKNOWN)
             position = shaped.end()
         else:
             return markers, position
@@ -195,11 +193,11 @@ def _code_shaped(word: str) -> bool:
     other three-letter word is treated as an unsupported currency, never ignored.
     """
     key = word.casefold()
-    ordinary = _FILLERS | _CONNECTIVES | _CHANGES | _ORDINARY_SHORT_WORDS | _ITEM_WORDS
-    return key not in ordinary and _currency_of(word) is None
+    ordinary = FILLERS | CONNECTIVES | CHANGES | _ORDINARY_SHORT_WORDS | ITEM_WORDS
+    return key not in ordinary and currency_of(word) is None
 
 
-def _korean_factor(match: re.Match[str]) -> Decimal:
+def korean_factor(match: re.Match[str]) -> Decimal:
     """Return the factor of one Korean scale match ("백만" = 10^6, bare "천" = 10^3)."""
     prefix, base = match.groups()
     if base is None:
@@ -207,7 +205,7 @@ def _korean_factor(match: re.Match[str]) -> Decimal:
     return _KOREAN_PREFIX[prefix or ""] * _KOREAN_BASE[base]
 
 
-def _english_factor(word: str) -> Decimal:
+def english_factor(word: str) -> Decimal:
     """Return the factor of one English scale word."""
     return Decimal(10) ** _ENGLISH_EXPONENTS[word.casefold().removesuffix("s")]
 
@@ -223,23 +221,23 @@ def _unit_after(
     """
     if end < len(text) and text[end].isascii() and text[end].isalpha():
         if word := _ENGLISH_SCALE.match(text, end):
-            return _english_factor(word.group(0)), True, word.end()
+            return english_factor(word.group(0)), True, word.end()
         if currency and (letter := _SCALE_LETTER.match(text, end)):
             return Decimal(10) ** _LETTER_EXPONENTS[letter.group(0)], True, letter.end()
-        code = _CURRENCY_AFTER.match(text, end)
-        if code is not None and _currency_of(code.group(0)) in _CODES:
+        code = CURRENCY_AFTER.match(text, end)
+        if code is not None and currency_of(code.group(0)) in CODES:
             # A glued ISO code ("25,785USD") is a currency, read after the figure.
             return None, True, end
         return None, False, end
     gap = end + len(text[end:]) - len(text[end:].lstrip(" \t"))
     if word := _ENGLISH_SCALE.match(text, gap):
-        return _english_factor(word.group(0)), True, word.end()
-    if korean := _KOREAN_SCALE.match(text, gap):
-        return _korean_factor(korean), True, korean.end()
+        return english_factor(word.group(0)), True, word.end()
+    if korean := KOREAN_SCALE.match(text, gap):
+        return korean_factor(korean), True, korean.end()
     return None, True, end
 
 
-def _figure_spans(blanked: str) -> list[_Figure]:
+def figure_spans(blanked: str) -> list[Figure]:
     """Return each figure of an identifier-free text with its own position and unit.
 
     Only the explicitly recognized identifier shapes are left out: the blanked FY/Q/H,
@@ -255,7 +253,7 @@ def _figure_spans(blanked: str) -> list[_Figure]:
     is kept, so disagreeing markers ("USD EUR 25") resolve as a conflict. A marker run
     that touches two figures could belong to either, so both are marked unknown.
     """
-    found: list[_Figure] = []
+    found: list[Figure] = []
     for match in _NUMBER.finditer(blanked):
         token = match.group(0)
         start, end = match.span()
@@ -264,7 +262,7 @@ def _figure_spans(blanked: str) -> list[_Figure]:
         before = blanked[:start].rstrip()
         code = prefix is not None and _CURRENCY_CODE.fullmatch(prefix.group(0)) is not None
         markers, unit_start = _markers_before(blanked, start)
-        currency = code or bool(markers) or (bool(before) and before[-1] in _CURRENCY)
+        currency = code or bool(markers) or (bool(before) and before[-1] in CURRENCY)
         glued = token + (suffix.group(0) if suffix else "")
         if prefix is None and not currency and _IDENTIFIER.fullmatch(glued):
             continue
@@ -277,17 +275,17 @@ def _figure_spans(blanked: str) -> list[_Figure]:
         after, unit_end = _markers_after(blanked, unit_end)
         markers |= after
         amount = currency or bool(markers) or scale is not None or percent or not readable
-        if _BARE_YEAR.fullmatch(token.strip("()△▲-")) and not amount:
+        if BARE_YEAR.fullmatch(token.strip("()△▲-")) and not amount:
             continue
         digits = token.rstrip(")")
         decimals = len(digits.split(".")[1]) if "." in digits else 0
         value = _value(token) if readable else None
         if found and found[-1].unit_end > unit_start:
             # One marker run between two figures: neither can claim it alone.
-            markers.add(_UNKNOWN)
-            found[-1] = replace(found[-1], currency=found[-1].currency | {_UNKNOWN})
+            markers.add(UNKNOWN)
+            found[-1] = replace(found[-1], currency=found[-1].currency | {UNKNOWN})
         found.append(
-            _Figure(
+            Figure(
                 token,
                 start,
                 end,
@@ -305,15 +303,15 @@ def _figure_spans(blanked: str) -> list[_Figure]:
 
 def figures(text: str) -> tuple[str, ...]:
     """Return the figures a text states, without identifiers, dates or bare years."""
-    return tuple(figure.text for figure in _figure_spans(_blank(text)))
+    return tuple(figure.text for figure in figure_spans(blank(text)))
 
 
-def _values(text: str) -> set[Decimal]:
+def values(text: str) -> set[Decimal]:
     """Return the magnitudes of every readable figure a text states."""
-    return {figure.value for figure in _figure_spans(_blank(text)) if figure.value is not None}
+    return {figure.value for figure in figure_spans(blank(text)) if figure.value is not None}
 
 
-def _signed(figure: _Figure) -> Decimal | None:
+def signed(figure: Figure) -> Decimal | None:
     """Return a figure's value with the sign its notation writes; None for ``▲``.
 
     ``(1,234)``, ``△1,234`` and ``-1,234`` are losses. ``▲`` marks a loss in some
