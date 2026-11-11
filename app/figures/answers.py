@@ -100,6 +100,16 @@ class EvidenceText:
     table_cells: Sequence[TableCellReading] | None = None
 
 
+# What a report says in place of an answer that ``unit_unverified`` withholds.
+UNIT_UNVERIFIED_ANSWER = (
+    "The cited evidence names this item, but the unit of its figures could not be "
+    "confirmed, so no figure is reported."
+)
+UNIT_UNVERIFIED_ANSWER_KO = (
+    "인용 근거에 해당 항목은 있지만 수치의 단위를 확인할 수 없어 수치를 보고하지 않습니다."
+)
+
+
 @dataclass(frozen=True, slots=True)
 class FigureCheck:
     """The outcome for one figure stated in the answer.

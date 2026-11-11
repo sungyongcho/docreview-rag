@@ -22,7 +22,12 @@ from app.agent.types import (
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
-from app.figures.answers import EvidenceText, FiguresResult, check_figures
+from app.figures.answers import (
+    UNIT_UNVERIFIED_ANSWER,
+    EvidenceText,
+    FiguresResult,
+    check_figures,
+)
 from app.llm.decoding import strict_response_format, validation_errors
 
 type EvidenceReader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, EvidenceText]]]
@@ -138,12 +143,6 @@ def period_mismatch_report(
         rationale="The cited figures belong to a different period than the question asks about.",
     )
     return report, mismatch
-
-
-UNIT_UNVERIFIED_ANSWER = (
-    "The cited evidence names this item, but the unit of its figures could not be "
-    "confirmed, so no figure is reported."
-)
 
 
 def unit_unverified_report(

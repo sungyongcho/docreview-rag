@@ -7,7 +7,12 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel
 
 from app.contracts.evidence import EvidenceCitation
-from app.figures.answers import EvidenceText, check_figures
+from app.figures.answers import (
+    UNIT_UNVERIFIED_ANSWER,
+    UNIT_UNVERIFIED_ANSWER_KO,
+    EvidenceText,
+    check_figures,
+)
 from app.figures.tables import TableCellReading
 from app.llm.schemas import (
     AnswerDecision,
@@ -45,13 +50,6 @@ DOWNGRADE_REASON = (
 )
 FIGURES_REASON = (
     "The answer stated figures its cited evidence could not confirm for the requested period."
-)
-UNIT_UNVERIFIED_ANSWER = (
-    "The cited evidence names this item, but the unit of its figures could not be "
-    "confirmed, so no figure is reported."
-)
-UNIT_UNVERIFIED_ANSWER_KO = (
-    "인용 근거에 해당 항목은 있지만 수치의 단위를 확인할 수 없어 수치를 보고하지 않습니다."
 )
 
 

@@ -30,7 +30,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from mcp import Client
 import pytest
 
-from app.agent.final_answer import FINAL_NOT_ALONE, UNIT_UNVERIFIED_ANSWER
+from app.agent.final_answer import FINAL_NOT_ALONE
 from app.agent.loop import run_agent
 from app.agent.review_middleware import (
     CitedEvidenceReadError,
@@ -44,7 +44,7 @@ from app.agent.tools.registry import ToolRegistry
 from app.agent.types import AgentReportAnswer, AgentResult, ToolCall
 from app.contracts.evidence import EvidenceCitation
 from app.db.session_factory import SessionFactory
-from app.figures.answers import EvidenceText
+from app.figures.answers import UNIT_UNVERIFIED_ANSWER, EvidenceText
 from app.figures.tables import read_table_cells
 from app.mcp.client import mcp_tool_registry
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn

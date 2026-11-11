@@ -1,9 +1,9 @@
 """The written final-answer verdicts judge_written_answer returns."""
 
-from app.agent.final_answer import UNIT_UNVERIFIED_ANSWER, judge_written_answer
+from app.agent.final_answer import judge_written_answer
 from app.agent.types import AgentAnswer, AgentPeriodMismatch, AgentUnitUnverified
 from app.contracts.evidence import EvidenceCitation
-from app.figures.answers import EvidenceText
+from app.figures.answers import UNIT_UNVERIFIED_ANSWER, EvidenceText
 from app.figures.tables import read_table_cells
 from tests.workflow.support import INCOME_TABLE, USD_INCOME_TABLE, income_table_hit
 
