@@ -90,3 +90,52 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-10-26
 - source: commit 25a16a19 on mcp-and-langgraph (user instruction recorded in the 2026-10-26 fact-tag log; entry added by the 2026-11-11 audit)
 - decision: For DART tables without fact tags, parsing reads the statement kind, scope and basis that the report itself declares (section codes, table-group classes and summary headings) into parsed_tables.statement_kind, statement_scope and statement_basis; cells of a declared consolidated statement are entity-wide, cells of a separate statement are scope_qualified, and cells of notes, equity-change statements and undeclared tables are scope_unknown; this narrows D-8's "untagged cells keep the text rules" for scope only and is an exception to D-3's schema-freeze clause for this change only.
+
+### D-11 — An answer's figures are read by answer rules and cited text by filing rules
+- status: active
+- category: interface
+- date: 2026-11-11
+- source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- decision: In a model's written answer an identifier (note or item reference, period, date, form name) is only a bounded short shape, and a number that is longer than that shape or carries a unit (percent sign, scale word, currency not followed by another number) is an amount to be checked wherever it stands; a cited passage or header is the filing's own text and keeps the filing rules, so a reference number in it is never a fact; a unitless short number after a reference word, a bare 1900-2099 integer and amounts written without digits remain outside the check and are listed as known limits.
+
+### D-12 — Stored table readings are served only by the code that read them
+- status: active
+- category: interface
+- date: 2026-11-11
+- source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- decision: A stored table whose builder identity or resolver identity (which now includes the fact reader) differs from the running code is stale: its cell catalog is served as unavailable, the figure check on every path receives no cells and no body for it, paid agent runs of the live script are refused before the attempt is claimed, and schema check, the corpus status and /ready report the stale count without degrading readiness; evaluation snapshots keep serving their frozen readings; consequently any change to the table-reading files requires re-indexing before table-based answers verify again, and a deployment that changes those files must ship re-indexed data.
+
+### D-13 — A table chunk is never read as running text by the figure check
+- status: active
+- category: interface
+- date: 2026-11-11
+- source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- decision: The figure check builds its evidence for every cited chunk through one rule shared by the agent path and the review workflow: running text gives its body, a table chunk with usable current readings gives its body and those cells, and a table chunk without usable readings (stale, or stored without table rows) gives neither, because reading a table's text as prose was measured to be looser than its cells, not stricter.
+
+### D-14 — A tagged cell's standard concept must be one its row label's item accepts
+- status: active
+- category: interface
+- date: 2026-11-11
+- source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- decision: For a cell tagged with a us-gaap or ifrs-full concept, the item read from the row label stands only when that concept is in the item's accepted-concept table; otherwise the cell has no established item and records a concept override, because 38 of the 957 known cells of the local corpus were another concept under a matching label (change in receivables, pro forma revenue and net income); company-extension concepts and DART dart_ codes keep the row-label rule; this narrows D-8's "items still come only from row labels" for tagged cells.
+
+### D-15 — A table cell is known only when its own text, tag and table establish it
+- status: active
+- category: interface
+- date: 2026-11-11
+- source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- decision: The table reader holds, and the reading the figure check compares carries the hold for, a percentage whose sign sits in its own cell, a figure with malformed digit grouping or one its single tag disputes, a cell scale word against a table that declares a scale, and an unsigned figure under a loss-only label (status only; magnitudes still compare); a value's sign comes from its notation or its inline XBRL tag; for untagged cells a header naming a period shorter than a fiscal year dates nothing, a column that is not the reported amount, a row under a part of the entity and a row with a second label are scope_unknown, a caption's single year dates only a table's one value column, and a column whose tagged cell moves the year leaves its untagged cells undated; the status set is unchanged.
+
+### D-16 — The cell-selection gate reports only what it checked and asks for one cell per item and year
+- status: active
+- category: interface
+- date: 2026-11-11
+- source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- decision: A not_found proposal is accepted only after a retrieval tool has returned in the question (zero hits count); a selected cell is checked against its claim and the question before a unit hold is reported; a percentage cell, a cell only partly in its chunk, a cell without one item or one fiscal year, and a second cell for the same item and fiscal year are returned to the model; the period-mismatch and no-item reports state only what was checked and every report's rationale follows the answer's language; the question's items are read around the issuer names the application already knows (items_named(issuers=...)), a qualifier or unknown word beside an item names no item, and words that restate the entity scope are not qualifiers.
+
+### D-17 — The live experiment script fails closed on mode, money and results
+- status: active
+- category: tooling
+- date: 2026-11-11
+- source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- decision: scripts/mcp/live.py refuses MODE=prod at both entry points, counts model and embedding usage observed above its reservation against the cap and refuses the next send that no longer fits, ends a search over the embedding cap as a system failure instead of a model-facing tool error, reports why a question ended without an answer, checks the key and the issuer's names before the attempt is claimed, and leaves a result file for every way a claimed run can end.
