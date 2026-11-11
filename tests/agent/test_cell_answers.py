@@ -283,6 +283,75 @@ def test_a_held_cell_that_matches_is_withheld_even_for_another_period():
     assert [check["decision"] for check in both.checks] == ["held", "held"]
 
 
+def test_two_cells_for_one_item_and_year_are_returned_for_correction():
+    """Refuse two amounts for the same item and year instead of reporting both."""
+    other = stored("2025:r1c1", value="99999")
+    result = review_cell_selection(
+        proposal(("2024:r1c1", "revenue", 2024), ("2025:r1c1", "revenue", 2024)),
+        ledger=ledger_of(stored(), other),
+        evidence={2024: identity(2024), 2025: identity(2025)},
+        stored={"2024:r1c1": stored(), "2025:r1c1": other},
+        requested_items=frozenset({"revenue"}),
+        requested_years=(2024,),
+    )
+    assert result.report is None and result.problem == (
+        "cells 2024:r1c1 and 2025:r1c1 both answer revenue for fiscal 2024; select one cell "
+        "for each item and fiscal year"
+    )
+
+
+def test_cells_for_different_years_or_items_are_still_answered_together():
+    """Keep reporting one cell per item and year, in selection order."""
+    years = review(
+        proposal(("2024:r1c1", "revenue", 2024), ("2024:r1c2", "revenue", 2023)),
+        stored(),
+        stored("2024:r1c2", value="22680", fiscal_years=[2023]),
+        years=(2023, 2024),
+    )
+    items = review(
+        proposal(("2024:r1c1", "revenue", 2024), ("2024:r2c1", "net income", 2024)),
+        stored(),
+        stored("2024:r2c1", value="1641", item="net income", row_label="Net income"),
+        items=frozenset({"revenue", "net income"}),
+    )
+    assert years.report is not None and years.report.answer == (
+        "FY2024 Net revenue: 25,785 million USD. FY2023 Net revenue: 22,680 million USD."
+    )
+    assert items.report is not None and items.report.answer == (
+        "FY2024 Net revenue: 25,785 million USD. FY2024 Net income: 1,641 million USD."
+    )
+
+
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [
+        (
+            {"percent": True, "value": "49", "item": "gross profit", "row_label": "Gross margin"},
+            "cell 2024:r1c1 is a percentage, not the amount of gross profit; select the "
+            "amount's cell or report cannot_resolve for its chunk",
+        ),
+        (
+            {"complete": False, "item": "gross profit"},
+            "cell 2024:r1c1 is only partly in its chunk's text, so it is not one established "
+            "amount; select another cell or report cannot_resolve for its chunk",
+        ),
+        (
+            {"percent": True, "value": "49", "item": "gross profit", **HELD},
+            "cell 2024:r1c1 is a percentage, not the amount of gross profit; select the "
+            "amount's cell or report cannot_resolve for its chunk",
+        ),
+    ],
+)
+def test_a_percentage_or_partial_cell_is_not_an_amount(cell, expected):
+    """Never state a percentage or a partly cited cell as an item's amount."""
+    result = review(
+        proposal(("2024:r1c1", "gross profit", 2024)),
+        stored(**cell),
+        items=frozenset({"gross profit"}),
+    )
+    assert result.report is None and result.problem == expected
+
+
 def test_a_cell_not_fetched_in_this_question_is_refused():
     """Knowing a ref is not enough: the cell must have been fetched in this question."""
     result = review(proposal(("2024:r1c1", "revenue", 2024)), stored(), fetched=())

@@ -219,13 +219,24 @@ def _cell_problem(selection: CellSelection, cell: StoredCell) -> str | None:
 
     A known cell and a cell held only for its unit or currency are both checked
     against the claimed item and fiscal year; a cell with no item or no single year
-    matches no claim. Any other status is not one established amount.
+    matches no claim. Any other status, a cell only partly in its chunk's text and a
+    percentage are not one established amount of an item.
     """
     status, item, years = cell.cell["status"], cell.cell["item"], cell.cell["fiscal_years"]
     if status != "known" and status not in UNIT_HOLDS:
         return (
             f"cell {cell.ref} is {status}; it is not one established amount, "
             "so report cannot_resolve for its chunk instead"
+        )
+    if cell.cell["complete"] is not True:
+        return (
+            f"cell {cell.ref} is only partly in its chunk's text, so it is not one "
+            "established amount; select another cell or report cannot_resolve for its chunk"
+        )
+    if cell.cell["percent"]:
+        return (
+            f"cell {cell.ref} is a percentage, not the amount of {selection.claimed_item}; "
+            "select the amount's cell or report cannot_resolve for its chunk"
         )
     if item is None:
         return (
@@ -335,6 +346,15 @@ def review_cell_selection(
         problem = _cell_problem(selection, cell)
         if problem is not None:
             return CellVerdict(problem=problem)
+    first: dict[tuple[str, int], str] = {}
+    for cell in cells:
+        pair = (cell.cell["item"], cell.cell["fiscal_years"][0])
+        if pair in first:
+            return CellVerdict(
+                problem=f"cells {first[pair]} and {cell.ref} both answer {pair[0]} for fiscal "
+                f"{pair[1]}; select one cell for each item and fiscal year"
+            )
+        first[pair] = cell.ref
     if not requested_items:
         return CellVerdict(
             AgentReportAnswer(
