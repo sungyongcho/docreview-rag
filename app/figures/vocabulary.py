@@ -189,22 +189,32 @@ KOREAN_PHRASES = {phrase: item for phrase, item in PHRASE_ITEMS.items() if not p
 ITEM_WORDS = frozenset(word for words, _ in ENGLISH_PHRASES for word in words)
 
 
-# How a question's words stand around its item phrases (see :func:`items_named`).
-# Words a walk from an item phrase passes over: fillers without "%", "percent" and
-# "us" ("US revenue" is a segment), connectives, "FY", Korean year words, the
-# question's own company ("the company's", "당사의") and words that only restate the
-# entity scope ("consolidated", "total", "연결 기준", "전체", "총"). "별도", "segment"
-# and "부문" are not among them: they narrow the scope, so they qualify the item.
+# How a question's words are read around its item phrases (see :func:`items_named`).
+# Words that leave an item plain: fillers without "%", "percent" and "us" ("US
+# revenue" is a segment), connectives, question words, a fiscal year in any form
+# ("2024", "FY2024", "fiscal 2024", "2024년", "annual", "연간"), the question's own company ("the
+# company's", "당사의") and words that only restate the entity scope ("consolidated",
+# "total", "연결 기준", "전체", "총"). "별도", "segment" and "부문" narrow the scope, so
+# they are not among them.
 _QUESTION_PASS = (FILLERS - {"%", "percent", "us"}) | CONNECTIVES
 _QUESTION_PASS |= {"fy", "company's", "companies'", "consolidated", "total"}
+_QUESTION_PASS |= {"what", "what's", "which", "how", "much", "did", "does", "do", "please"}
+_QUESTION_PASS |= {"tell", "show", "give", "me", "report", "annual", "full-year"}
 _QUESTION_PASS_KO = frozenset({"년", "년도", "회계연도", "사업연도", "각각", "회사의", "당사의"})
-_QUESTION_PASS_KO |= {"연결", "기준", "연결기준", "전체", "총"}
+_QUESTION_PASS_KO |= {"연결", "기준", "연결기준", "전체", "총", "연간"}
+_QUESTION_WORDS_KO = ("얼마", "무엇", "몇", "어떻게")
 # Scope words that may be written glued to a Korean item ("연결매출액", "총매출액").
 _SCOPE_PREFIXES_KO = ("연결", "전체", "총")
-# Words that end such a walk because what lies beyond them no longer qualifies the item.
-_QUESTION_STOPS = frozenset({"what", "which", "how", "much", "did", "does", "do", "?", "!"})
-_QUESTION_STOPS |= {"tell", "show", "give", "me", "？"}
-_QUESTION_STOPS_KO = ("얼마", "무엇", "몇", "어떻게")
+# Periods shorter than a fiscal year. Stored cells carry a fiscal year only, so such a
+# period always qualifies the item, whatever list its words may also appear in.
+_SUB_ANNUAL = frozenset(
+    {"q", "h", "quarter", "quarters", "quarterly", "half", "halves", "half-year"}
+    | {"semiannual", "semi-annual", "interim", "month", "months", "ytd", "year-to-date"}
+    | {"three-month", "six-month", "nine-month", "first-half", "second-half"}
+)
+_SUB_ANNUAL_KO = ("분기", "반기")
+# Only these end a sentence of a question; "." does not ("U.S.", "Inc.").
+_QUESTION_ENDS = frozenset({"?", "!", "？", "！"})
 _QUESTION_YEAR = re.compile(r"(?:19|20)\d{2}")
 # A day of the month after its month ("December 31, 2024") is passed over.
 _QUESTION_DAY = re.compile(r"\d{1,2}")
@@ -218,18 +228,21 @@ _QUESTION_ENDINGS_KO = (
     *("은", "는", "이", "가", "을", "를", "의", "에", "도", "와", "과", "로", "만", "고", "며"),
 )
 # Words an issuer name made only of would blank out of the vocabulary itself.
-_VOCABULARY_WORDS = FILLERS | CONNECTIVES | ITEM_WORDS | _QUESTION_STOPS | _QUESTION_PASS
+_VOCABULARY_WORDS = FILLERS | CONNECTIVES | ITEM_WORDS | _QUESTION_ENDS | _QUESTION_PASS
 
-type _QuestionKind = Literal["item", "pass", "stop", "unknown"]
+type _QuestionKind = Literal["item", "pass", "end", "unknown"]
 
 
 def _korean_question_word(word: str) -> tuple[_QuestionKind, str | None]:
     """Classify one Korean question word, reading at most one particle off its end.
 
-    A scope word written glued to the front of an item ("연결매출액") keeps the item.
+    A scope word written glued to the front of an item ("연결매출액") keeps the item;
+    a word naming a quarter or half ("1분기", "상반기") is unknown.
     """
-    if word.startswith(_QUESTION_STOPS_KO):
-        return "stop", None
+    if any(period in word for period in _SUB_ANNUAL_KO):
+        return "unknown", None
+    if word.startswith(_QUESTION_WORDS_KO):
+        return "pass", None
     for prefix in ("", *_SCOPE_PREFIXES_KO):
         if prefix and not word.startswith(prefix):
             continue
@@ -248,24 +261,29 @@ def _korean_question_word(word: str) -> tuple[_QuestionKind, str | None]:
 def _question_word(word: str) -> _QuestionKind:
     """Classify one question word outside any English item phrase."""
     key = phrase_key(word)
-    if key in _QUESTION_STOPS or _QUESTION_YEAR.fullmatch(key):
-        return "stop"
-    if key in _QUESTION_PASS:
+    if key in _SUB_ANNUAL:
+        return "unknown"
+    if key in _QUESTION_ENDS:
+        return "end"
+    if key in _QUESTION_PASS or _QUESTION_YEAR.fullmatch(key):
         return "pass"
     return "unknown"
 
 
-def _plain_side(kinds: Sequence[_QuestionKind], start: int, step: int) -> bool:
-    """Whether the words from ``start`` outward, by ``step``, leave an item phrase plain.
+def _plain_sentences(kinds: Sequence[_QuestionKind]) -> bool:
+    """Whether every sentence holding an item phrase holds no unknown word.
 
-    The walk passes fillers, connectives and scope words and succeeds at the text's
-    edge, a stop word, a year or another item phrase; any unknown word on the way,
-    including a company name the caller did not pass, qualifies the item.
+    A sentence ends at "?" or "!"; a sentence without an item phrase is not read.
     """
-    index = start
-    while 0 <= index < len(kinds) and kinds[index] == "pass":
-        index += step
-    return not 0 <= index < len(kinds) or kinds[index] in {"item", "stop"}
+    sentence: list[_QuestionKind] = []
+    for kind in (*kinds, "end"):
+        if kind != "end":
+            sentence.append(kind)
+            continue
+        if "item" in sentence and "unknown" in sentence:
+            return False
+        sentence = []
+    return True
 
 
 def _issuer_names(issuers: Collection[str]) -> re.Pattern[str] | None:
@@ -296,14 +314,22 @@ def _issuer_names(issuers: Collection[str]) -> re.Pattern[str] | None:
 def items_named(text: str, *, issuers: Collection[str] = ()) -> frozenset[str]:
     """Return the financial items a question names, read with the answers' vocabulary.
 
+    Rule: an item phrase names its item only when every other word of its sentence
+    is a filler, connective, question word, fiscal year, entity-scope word, issuer
+    name or another item phrase; any other word anywhere in that sentence, including
+    a period shorter than a fiscal year ("Q4", "상반기"), qualifies it, and then the
+    question names no item at all, so a total annual row never answers a qualified
+    question.
+
     English phrases match whole words, longest first; a Korean word names an item when
     it is a listed phrase with at most one particle, so "매출원가" is never also read as
-    "매출" and "영업이익률" names nothing. Like an answer's figure, an item phrase that
-    an unknown or qualifying word touches ("Data Center revenue", "별도 기준 매출액")
-    is not the plain item; then the question names no item at all, so a total row can
-    never answer a qualified question. A "(loss)" or note reference keeps the item, as
-    in a row label. A question naming no listed phrase names no item: nothing is
+    "매출" and "영업이익률" names nothing. A "(loss)" or note reference keeps the item,
+    as in a row label. A question naming no listed phrase names no item: nothing is
     inferred from other words.
+
+    Boundary: a sentence ends only at "?" or "!", so a qualifier in another such
+    sentence ("Data Center grew! What was revenue?") is not read; a qualifier left
+    unwritten, or an issuer name that is itself a segment, is not detected.
 
     Parameters
     ----------
@@ -344,7 +370,5 @@ def items_named(text: str, *, issuers: Collection[str] = ()) -> frozenset[str]:
         else:
             kind = _question_word(written[index])
         kinds[index] = kind
-    plain = all(
-        _plain_side(kinds, start - 1, -1) and _plain_side(kinds, end, 1) for start, end, _ in spans
-    )
+    plain = _plain_sentences(kinds)
     return frozenset(item for _, _, item in spans) if plain else frozenset()

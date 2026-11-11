@@ -16,7 +16,7 @@ from app.agent.cell_answers import (
     review_cell_selection,
 )
 from app.agent.types import CellSelectionAnswer
-from app.figures.vocabulary import PHRASE_ITEMS
+from app.figures.vocabulary import PHRASE_ITEMS, items_named
 from app.retrieval.tables import cell_ref_chunk
 
 SOURCE = "a" * 64
@@ -439,6 +439,18 @@ def test_a_question_without_a_recognized_item_is_withheld():
         "수치를 보고하지 않습니다."
     )
     assert "25,785" not in result.report.answer + korean.report.answer
+
+
+def test_a_quarterly_question_is_never_answered_from_the_annual_cell():
+    """Withhold, never support, the FY2024 annual cell for a Q4 2024 question."""
+    asked = items_named("What was AMD's Q4 2024 revenue?", issuers=("AMD",))
+    annual = items_named("What was AMD's 2024 revenue?", issuers=("AMD",))
+    choice = proposal(("2024:r1c1", "revenue", 2024))
+    quarter = review(choice, stored(), items=asked)
+    assert quarter.report is not None and quarter.report.label == "UNVERIFIED"
+    assert "25,785" not in quarter.report.answer
+    whole = review(choice, stored(), items=annual)
+    assert whole.report is not None and whole.report.label == "SUPPORTED"
 
 
 def test_cannot_resolve_and_not_found_are_distinct_reports():
