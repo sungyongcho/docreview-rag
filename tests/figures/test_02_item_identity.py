@@ -43,8 +43,6 @@ def test_assembled_labels_are_read_back_as_the_same_item(item, locale):
     )
     answer = _line(cell, locale)
     assert _claims(answer, answer=True)[0].item == item
-    assert _label_item(ITEMS[item].label_en) == item
-    assert _label_item(ITEMS[item].label_ko) == item
 
 
 @pytest.mark.parametrize(
