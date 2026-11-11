@@ -50,7 +50,7 @@ FILING_CUES = re.compile(
 
 FOLLOWUP_CUES = re.compile(
     r"^(?:what about|how about|and\b|then\b|also\b|그럼|그러면|그것|이것|그거|이거)|"
-    r"(?:는|은|년)(?:요)?[?？]?$|(?<!\d)(?:19|20)\d{2}(?!\d)",
+    r"(?:는|은|년)(?:요)?[?？]?$|(?<!\d)(?:19|20)\d{2}(?!\d)|\bfy\s?['’]?\d{2}(?!\d)",
     re.IGNORECASE,
 )
 CASUAL_CUES = re.compile(
@@ -415,7 +415,8 @@ for _word in (*_KO_TOPIC_WORDS, *_KO_FILLER_WORDS, *_KO_PARTICLES):
     _KO_BY_INITIAL[_word[0]] = (*_KO_BY_INITIAL.get(_word[0], ()), _word)
 
 _NUMERIC_TOKEN = re.compile(
-    rf"(?:fy\s?\d{{4}}|(?:19|20)\d{{2}}년?(?:{'|'.join(_KO_PARTICLES)})?|"
+    rf"(?:fy['’]?(?:\d{{4}}|\d{{2}})(?:{'|'.join(_KO_PARTICLES)})?|"
+    rf"(?:19|20)\d{{2}}년?(?:{'|'.join(_KO_PARTICLES)})?|"
     rf"\d+(?:[.,]\d+)?%?|q[1-4]|h[12]|\d+분기)",
     re.IGNORECASE,
 )

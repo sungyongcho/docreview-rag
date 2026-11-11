@@ -118,6 +118,8 @@ def test_clear_roleplay_is_rejected_without_a_model(query: str, scope_index) -> 
     "query",
     [
         "그럼 2024년은?",
+        "What about FY24?",
+        "그럼 FY24는?",
         "What about Samsung Electronics?",
         "Please explain that again in Korean",
     ],

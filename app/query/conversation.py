@@ -7,7 +7,6 @@ to evidence review.
 
 import hashlib
 import json
-import re
 from typing import cast
 
 from app.api.errors import ApiProblemError, unavailable
@@ -26,6 +25,7 @@ from app.query.intent import (
     is_filing_followup,
     is_filing_turn,
 )
+from app.query.periods import names_fiscal_year, without_fiscal_years
 from app.query.resolution import ScopeResolver
 
 _INTENT_CLASSIFIER_INSTRUCTIONS = (
@@ -216,8 +216,8 @@ class ConversationRouter:
         index = self._scope.manifest_index()
         if index.match(query):
             prior = index.without_aliases(prior)
-        if re.search(r"(?:19|20)\d{2}", query):
-            prior = re.sub(r"(?:19|20)\d{2}년?", "", prior)
+        if names_fiscal_year(query):
+            prior = without_fiscal_years(prior)
         return f"{prior.strip()} — {query}"
 
     async def _classify_intent(self, request: ReviewRequest) -> ConversationDecision:

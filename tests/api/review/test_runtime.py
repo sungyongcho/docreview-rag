@@ -408,6 +408,8 @@ def routing_service(tmp_path):
     [
         ("삼성전자는?", "005930", 2023),
         ("그럼 2024년은?", "NVDA", 2024),
+        ("What about FY24?", "NVDA", 2024),
+        ("what about fiscal year 24?", "NVDA", 2024),
         ("Please explain that again in Korean", "NVDA", 2023),
     ],
 )
