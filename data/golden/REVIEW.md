@@ -9,11 +9,27 @@ before job admission and again before execution. Missing sources and stale parse
 inputs are preparation states. Built-in and user-revision provenance remain separate from
 human review; no approval flags were upgraded. The audit snapshot below predates this fix.
 
-## Current audit — 2026-09-08
+## Dataset at commit 150fb55f
+
+The seven files contain 124 cases: 102 positive and 22 absent. Counts below
+were validated with `GOLDEN_CASES` and `validate_unique_cases`; source files were
+not revalidated for this count.
+
+| File | Cases | Positive | Absent | Referenced documents |
+|---|---:|---:|---:|---:|
+| `dart_retrieval.json` | 28 | 24 | 4 | 2 |
+| `dart_retrieval_ko.json` | 28 | 24 | 4 | 2 |
+| `retrieval.json` | 16 | 12 | 4 | 10 |
+| `retrieval_ko.json` | 16 | 12 | 4 | 10 |
+| `sec_en_v2_astra.json` | 12 | 10 | 2 | 9 |
+| `sec_ko_v2_astra.json` | 12 | 10 | 2 | 9 |
+| `sec_mixed_v2_astra.json` | 12 | 10 | 2 | 9 |
+
+## Audit — 2026-09-08
 
 “Built-in golden set” describes bundled evaluation questions and reference evidence. It does
 not mean human-approved ground truth or readiness against every locally acquired corpus.
-All seven currently registered suites remain `agent-curated`, `pending-author-approval`,
+At the time of the audit, all seven registered suites were `agent-curated`, `pending-author-approval`,
 and `human_verified: false`.
 
 ### Dataset structure
@@ -33,7 +49,7 @@ these totals include parallel language versions, not 172 distinct questions.
 | `dart_retrieval.json` | 28 | 24 | 4 | 2 |
 | `dart_retrieval_ko.json` | 28 | 24 | 4 | 2 |
 
-### Current corpus compatibility
+### Corpus compatibility at the audit
 
 The inspected local manifest contains six SK hynix annual reports for FY2020–FY2025.
 It has no SEC reports and no Samsung Electronics FY2024 report. Its selection IDs are
@@ -73,10 +89,11 @@ that an answer is absent from the benchmark corpus.
 
 No golden JSON, raw source, database, approval flag, or evaluation result was modified by
 this audit. The historical SEC-only notes below are retained as prior evidence; their old
-source-validation claims do not establish readiness for today's local corpus. In particular,
-the current base SEC files reference 19 documents, whereas those notes describe 20.
+source-validation claims do not establish readiness for today's local corpus. The historical SEC-only notes describe the files as reviewed at that time.
 
-## Historical SEC-only review
+## Historical SEC-only review — before 2026-09-08
+
+This section, including the case table and counts, records the earlier set and is not a description of the files at commit 150fb55f.
 
 ## Status
 
