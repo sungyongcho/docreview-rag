@@ -11,6 +11,7 @@ from decimal import Decimal
 from functools import partial
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -19,6 +20,7 @@ import httpx2
 from langchain.mcp import MCPAdapter
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
+import mcp
 import openai
 from pydantic import SecretStr
 import pytest
@@ -78,6 +80,11 @@ def offline_settings(environment: str = "dev") -> SimpleNamespace:
     return SimpleNamespace(
         environment=environment, embedding_provider="deterministic", openai_api_key=None
     )
+
+
+def keyed_settings() -> SimpleNamespace:
+    """Development settings with an offline-only key in the MODE-selected slot."""
+    return SimpleNamespace(**vars(offline_settings()) | {"openai_api_key": SecretStr(FAKE_KEY)})
 
 
 @pytest.fixture(autouse=True)
@@ -1087,12 +1094,12 @@ SELECTION = {
 
 
 def run_cell_question(
-    tmp_path: Path, monkeypatch, replies: list[dict[str, Any]]
+    tmp_path: Path, monkeypatch, replies: list[dict[str, Any]], server: Any = None
 ) -> SimpleNamespace:
     """Run ``run_review_agent_over_mcp`` over the cell server and the offline endpoint.
 
     Only the database is replaced: the engine is never queried and the stored-cell
-    re-read returns the cell the server served.
+    re-read returns the cell the server served. ``server`` replaces the cell server.
     """
     fake = FakeOpenAI(counts=[1000, 1200, 1400][: len(replies)], replies=replies)
     monkeypatch.setattr(
@@ -1117,9 +1124,10 @@ def run_cell_question(
     monkeypatch.setattr(stored_evidence, "read_selected_cells", read_selected_cells)
     log = tmp_path / "events.jsonl"
     log.touch()
-    server = module_server(
-        "tests.scripts.mcp.cell_filings", str(log), env={"PYTHONPATH": str(REPO_ROOT)}
-    )
+    if server is None:
+        server = module_server(
+            "tests.scripts.mcp.cell_filings", str(log), env={"PYTHONPATH": str(REPO_ROOT)}
+        )
     argv = ["r", "agent", "--issuer", "TEST", "--years", "2024", "--question", CELL_QUESTION]
     args = parser().parse_args([*argv, "--via", "create-agent", "--model-attempts", "3"])
     settings = live.agent_model_settings(args)
@@ -1185,6 +1193,7 @@ def test_the_agent_run_starts_its_server_with_cells(tmp_path, monkeypatch):
     async def require_indexed(issuer, years) -> None:
         """Stand in for the database index check."""
 
+    monkeypatch.setattr(config, "get_settings", keyed_settings)
     monkeypatch.setattr(live, "require_indexed", require_indexed)
     monkeypatch.setattr(live, "run_review_agent_over_mcp", run_review_agent_over_mcp)
     argv = ["r", "--out", str(tmp_path), *AGENT_ARGV[1:], "--via", "create-agent"]
@@ -1202,3 +1211,199 @@ def test_the_agent_run_starts_its_server_with_cells(tmp_path, monkeypatch):
     assert servers[0].args[:2] == ["-m", "scripts.mcp.live"]
     live.main(servers[0].args[2:])
     assert started == [True]
+
+
+# Every ending of a claimed run leaves a result
+FAILING_SERVER = SimpleNamespace(
+    command=sys.executable, args=["-c", "import sys; sys.exit(3)"], env=None
+)
+
+
+def test_a_server_that_fails_to_start_is_reported_without_a_model_turn(tmp_path, monkeypatch):
+    """A server that exits at once ends the question as setup_error before any count."""
+    asked = run_cell_question(tmp_path, monkeypatch, [], server=FAILING_SERVER)
+    assert (asked.outcome["status"], asked.outcome["answer"]) == ("setup_error", None)
+    assert asked.outcome["failure"].endswith(": server start failed")
+    assert asked.fake.requests == [] and asked.outcome["budget"]["attempts"] == 0
+
+
+@pytest.mark.parametrize(
+    ("target", "attribute", "stage"),
+    [(MCPAdapter, "list_tools", "tool listing"), (live, "review_agent", "agent build")],
+    ids=["tool-listing", "agent-build"],
+)
+def test_a_setup_failure_after_the_server_started_is_reported(
+    tmp_path, monkeypatch, target, attribute, stage
+):
+    """A tool-listing or agent-build failure is setup_error naming only its type and stage."""
+
+    def fail(*_: object, **__: object) -> Any:
+        raise RuntimeError(f"private detail {FAKE_KEY}")
+
+    async def fail_async(*_: object, **__: object) -> Any:
+        fail()
+
+    monkeypatch.setattr(target, attribute, fail_async if attribute == "list_tools" else fail)
+    asked = run_cell_question(tmp_path, monkeypatch, [])
+    assert (asked.outcome["status"], asked.outcome["failure"]) == (
+        "setup_error",
+        f"RuntimeError: {stage} failed",
+    )
+    assert FAKE_KEY not in json.dumps(asked.outcome) and asked.fake.requests == []
+
+
+class FakeClient:
+    """Stands in for the MCP client of ``run``; fails where the test chooses."""
+
+    start_error: BaseException | None = None
+    call_error: BaseException | None = None
+    stop_error: BaseException | None = None
+
+    def __init__(self, server: object, **_: object) -> None:
+        self.server = server
+
+    async def __aenter__(self) -> FakeClient:
+        """Start, or fail to start, the server."""
+        if self.start_error is not None:
+            raise self.start_error
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        """Stop the server, or fail to."""
+        if self.stop_error is not None:
+            raise self.stop_error
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> SimpleNamespace:
+        """Return an empty search result, or fail."""
+        if self.call_error is not None:
+            raise self.call_error
+        return SimpleNamespace(
+            is_error=False, structured_content=None, model_dump=lambda **_: {"hits": []}
+        )
+
+
+SEARCH_ARGV = ["r", "search", "--issuer", "AMD", "--year", "2024", "--query", "revenue"]
+
+
+def run_claimed(tmp_path: Path, monkeypatch, argv: list[str], **client: Any) -> Path:
+    """Run ``run`` offline with a fake MCP client; return its run directory."""
+
+    async def require_indexed(issuer, years) -> None:
+        """Stand in for the database index check."""
+
+    monkeypatch.setattr(config, "get_settings", keyed_settings)
+    monkeypatch.setattr(live, "require_indexed", require_indexed)
+    monkeypatch.setattr(mcp, "Client", type("Client", (FakeClient,), client))
+    asyncio.run(live.run(parser().parse_args([argv[0], "--out", str(tmp_path), *argv[1:]])))
+    return tmp_path / argv[0]
+
+
+def result_of(run_dir: Path) -> dict[str, Any]:
+    """Read a run's result file."""
+    return json.loads((run_dir / "result.json").read_text())
+
+
+def test_an_ordinary_tool_run_records_its_result(tmp_path, monkeypatch):
+    """A search that succeeds writes its normal record, without a status or failure."""
+    run_dir = run_claimed(tmp_path, monkeypatch, SEARCH_ARGV)
+    assert result_of(run_dir)["result"] == {"hits": []}
+    assert "failure" not in result_of(run_dir)
+
+
+def test_a_server_stop_failure_keeps_the_finished_tool_result(tmp_path, monkeypatch):
+    """The search result is kept and the stop failure added beside it."""
+    run_dir = run_claimed(tmp_path, monkeypatch, SEARCH_ARGV, stop_error=RuntimeError(FAKE_KEY))
+    record = result_of(run_dir)
+    assert record["result"] == {"hits": []}
+    assert record["server_stop_failure"] == "RuntimeError: server stop failed"
+
+
+def test_a_server_stop_failure_keeps_the_answered_cell_question(tmp_path, monkeypatch):
+    """A question answered before its server failed to stop still reports ok."""
+    stop, ask = MCPAdapter.__aexit__, live.ask_review_agent
+    answered: list[dict[str, Any]] = []
+
+    async def asked_once(*args: Any) -> dict[str, Any]:
+        answered.append(await ask(*args))
+        return answered[-1]
+
+    async def failing_stop(self: MCPAdapter, *exc: Any) -> Any:
+        await stop(self, *exc)
+        if answered:  # the adapter also exits inner sessions while listing tools
+            raise RuntimeError(FAKE_KEY)
+
+    monkeypatch.setattr(live, "ask_review_agent", asked_once)
+    monkeypatch.setattr(MCPAdapter, "__aexit__", failing_stop)
+    asked = run_cell_question(
+        tmp_path,
+        monkeypatch,
+        [
+            response("call_search", "search_filings", SEARCH, (990, 40)),
+            response("call_fetch", "fetch_chunk", {"chunk_id": 2024}, (1190, 40)),
+            response("call_final", "final_answer", SELECTION, (1390, 60)),
+        ],
+    )
+    assert asked.outcome["status"] == "ok"
+    assert asked.outcome["server_stop_failure"] == "RuntimeError: server stop failed"
+
+
+@pytest.mark.parametrize(
+    ("argv", "client", "stage"),
+    [
+        (SEARCH_ARGV, {"start_error": RuntimeError(FAKE_KEY)}, "server start"),
+        (SEARCH_ARGV, {"call_error": RuntimeError(FAKE_KEY)}, "tool call"),
+        (AGENT_ARGV, {"start_error": RuntimeError(FAKE_KEY)}, "server start"),
+    ],
+    ids=["tool-server-start", "tool-call", "run-agent-server-start"],
+)
+def test_a_failed_claimed_run_records_how_it_ended(tmp_path, monkeypatch, argv, client, stage):
+    """The exception propagates after result.json names its type and stage, nothing else."""
+    with pytest.raises(RuntimeError):
+        run_claimed(tmp_path, monkeypatch, argv, **client)
+    record = result_of(tmp_path / "r")
+    ending = record if "tool" in record else record["agent"]
+    assert (ending["status"], ending["failure"]) == ("error", f"RuntimeError: {stage} failed")
+    assert FAKE_KEY not in json.dumps(record)
+
+
+@pytest.mark.parametrize(
+    ("raised", "status", "failure"),
+    [
+        (RuntimeError(FAKE_KEY), "error", "RuntimeError: agent run failed"),
+        (asyncio.CancelledError(), "interrupted", "CancelledError: agent run interrupted"),
+    ],
+    ids=["error", "cancelled"],
+)
+def test_a_create_agent_run_that_raises_still_records_and_keeps_its_marker(
+    tmp_path, monkeypatch, raised, status, failure
+):
+    """An escaped error or cancellation is recorded, re-raised, and the run ID stays used."""
+
+    async def run_review_agent_over_mcp(*_: object) -> dict[str, Any]:
+        raise raised
+
+    monkeypatch.setattr(live, "run_review_agent_over_mcp", run_review_agent_over_mcp)
+    argv = [*AGENT_ARGV, "--via", "create-agent"]
+    with pytest.raises(type(raised)):
+        run_claimed(tmp_path, monkeypatch, argv)
+    assert result_of(tmp_path / "r")["agent"] == {
+        "via": "create-agent",
+        "answer": None,
+        "status": status,
+        "failure": failure,
+    }
+    with pytest.raises(SystemExit, match="already attempted"):
+        run_claimed(tmp_path, monkeypatch, argv)
+
+
+def test_an_agent_run_without_a_key_stops_before_claiming(tmp_path, monkeypatch):
+    """A missing key slot is found before the attempt marker, so the run ID stays free."""
+    run_claimed_args = ["r", "--out", str(tmp_path), *AGENT_ARGV[1:]]
+
+    async def require_indexed(issuer, years) -> None:
+        """Stand in for the database index check."""
+
+    monkeypatch.setattr(live, "require_indexed", require_indexed)
+    with pytest.raises(SystemExit, match="OpenAI key slot"):
+        asyncio.run(live.run(parser().parse_args(run_claimed_args)))
+    assert not (tmp_path / "r").exists()

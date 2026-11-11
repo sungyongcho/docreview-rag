@@ -1090,7 +1090,12 @@ async def run_agent_over_mcp(
 async def run_review_agent_over_mcp(
     server: StdioServerParameters, run_dir: Path, args: argparse.Namespace, settings: ModelSettings
 ) -> dict[str, Any]:
-    """Ask the question through ``create_agent`` with every model turn counted and reserved."""
+    """Ask the question through ``create_agent`` with every model turn counted and reserved.
+
+    A failure while starting the server, listing its tools or building the agent ends
+    as ``setup_error``, its failure naming the exception type and the stage, so the
+    run still reports how it ended; no model turn was sent by then.
+    """
     from fastmcp.client.transports import StdioTransport
     from langchain.mcp import MCPAdapter
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -1113,10 +1118,13 @@ async def run_review_agent_over_mcp(
     model = counted_model(settings, gate, api_key=config.openai_api_key.get_secret_value())
     transport = StdioTransport(server.command, server.args, env=server.env, keep_alive=False)
     engine = read_only_engine()
+    stage = "server start"
     try:
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         async with MCPAdapter(transport) as adapter:
+            stage = "tool listing"
             tools = await adapter.list_tools()
+            stage = "agent build"
             agent = review_agent(model, tools, build_default_registry(sessions), gate, cells=True)
             context = ReviewContext(
                 question_fiscal_years(args.question, utc_today()),
@@ -1126,9 +1134,20 @@ async def run_review_agent_over_mcp(
                 locale=args.locale or "en",
                 cell_reader=partial(read_selected_cells, sessions),
             )
-            return await ask_review_agent(agent, args.question, context, gate)
+            stage = "agent run"
+            outcome = await ask_review_agent(agent, args.question, context, gate)
+            stage = "server stop"
+    except Exception as error:
+        if stage == "agent run":
+            raise  # ask_review_agent reports every Exception; anything else is unexpected.
+        if stage != "server stop":
+            # Before the question ran, no model turn was sent; report where it stopped.
+            return gate.outcome("setup_error", failure=safe_runtime_error(error, stage))
+        # The question was answered; a failure while stopping the server does not undo it.
+        outcome["server_stop_failure"] = safe_runtime_error(error, stage)
     finally:
         await engine.dispose()
+    return outcome
 
 
 def tool_request(args: argparse.Namespace) -> tuple[str, dict[str, Any]] | None:
@@ -1149,12 +1168,37 @@ def tool_request(args: argparse.Namespace) -> tuple[str, dict[str, Any]] | None:
     return None
 
 
+def write_result(run_dir: Path, record: dict[str, Any]) -> None:
+    """Write the run's ``result.json``."""
+    (run_dir / "result.json").write_text(
+        json.dumps(record, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8"
+    )
+
+
+def ended_record(
+    args: argparse.Namespace, request: tuple[str, dict[str, Any]] | None, status: str, failure: str
+) -> dict[str, Any]:
+    """Return a result that says how a claimed run ended without its normal record."""
+    ending = {"status": status, "failure": failure}
+    if request is not None:
+        name, arguments = request
+        return {"tool": name, "arguments": arguments, **ending}
+    return {"agent": {"via": args.via, "answer": None, **ending}}
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     """Claim the run, start the capped server, and record one experiment result.
 
-    ``MODE=prod`` is refused before any option, database or paid work.
+    ``MODE=prod`` is refused before any option, database or paid work, and a missing
+    OpenAI key stops an agent run before its attempt is claimed. Once the attempt is
+    claimed, every ending writes ``result.json``: the normal record; or, for an
+    exception, ``status`` ``error`` (``interrupted`` for a cancellation, interrupt or
+    exit) with a failure naming only the exception type and the stage it stopped in,
+    after which the exception propagates. The attempt marker is never released.
     """
     from mcp import Client, StdioServerParameters
+
+    from app.config import get_settings
 
     refuse_production()
     settings = agent_model_settings(args)
@@ -1163,6 +1207,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         await require_indexed(args.issuer, [args.year])
     elif args.command in {"compare", "agent"}:
         await require_indexed(args.issuer, args.years)
+    if args.command == "agent" and get_settings().openai_api_key is None:
+        raise SystemExit("the agent experiment requires the MODE-selected OpenAI key slot")
     request = tool_request(args)
     payload: tuple[str, dict[str, Any]] | dict[str, Any]
     if request is not None:
@@ -1172,46 +1218,60 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         if settings is not None:
             payload |= {"via": "create-agent", "model": settings.record()}
     claim_attempt(run_dir, {"command": args.command, "request": payload})
-    server = StdioServerParameters(
-        command=sys.executable,
-        args=[
-            "-m",
-            "scripts.mcp.live",
-            args.run_id,
-            "--out",
-            str(args.out),
-            "serve",
-            "--embedding-cap",
-            args.embedding_cap,
-            "--embedding-attempts",
-            str(args.embedding_attempts),
-            *(["--include-cells"] if settings is not None else []),
-        ],
-        env=dict(os.environ),
-    )
-    if settings is not None:
-        record = {"agent": await run_review_agent_over_mcp(server, run_dir, args, settings)}
-        (run_dir / "result.json").write_text(
-            json.dumps(record, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8"
+    stage = "server start"
+    record: dict[str, Any] = {}
+    try:
+        server = StdioServerParameters(
+            command=sys.executable,
+            args=[
+                "-m",
+                "scripts.mcp.live",
+                args.run_id,
+                "--out",
+                str(args.out),
+                "serve",
+                "--embedding-cap",
+                args.embedding_cap,
+                "--embedding-attempts",
+                str(args.embedding_attempts),
+                *(["--include-cells"] if settings is not None else []),
+            ],
+            env=dict(os.environ),
         )
-        return record
-    async with Client(
-        server, mode="2026-07-28", read_timeout_seconds=SERVER_TIMEOUT_SECONDS
-    ) as client:
-        if request is None:
-            record = {"agent": await run_agent_over_mcp(client, run_dir, args)}
+        if settings is not None:
+            stage = "agent run"
+            record = {"agent": await run_review_agent_over_mcp(server, run_dir, args, settings)}
         else:
-            name, arguments = request
-            result = await client.call_tool(name, arguments)
-            record = {"tool": name, "arguments": arguments}
-            record["result"] = result.model_dump(mode="json", by_alias=True)
-            if name == "fetch_chunk" and not result.is_error:
-                record["matches_database"] = await fetch_matches_database(
-                    result.structured_content or {}
-                )
-    (run_dir / "result.json").write_text(
-        json.dumps(record, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8"
-    )
+            async with Client(
+                server, mode="2026-07-28", read_timeout_seconds=SERVER_TIMEOUT_SECONDS
+            ) as client:
+                if request is None:
+                    stage = "agent run"
+                    record = {"agent": await run_agent_over_mcp(client, run_dir, args)}
+                else:
+                    stage = "tool call"
+                    name, arguments = request
+                    result = await client.call_tool(name, arguments)
+                    record = {"tool": name, "arguments": arguments}
+                    record["result"] = result.model_dump(mode="json", by_alias=True)
+                    if name == "fetch_chunk" and not result.is_error:
+                        stage = "database check"
+                        record["matches_database"] = await fetch_matches_database(
+                            result.structured_content or {}
+                        )
+                stage = "server stop"
+    except Exception as error:
+        failure = safe_runtime_error(error, stage)
+        if stage != "server stop":
+            write_result(run_dir, ended_record(args, request, "error", failure))
+            raise
+        # The run's own work finished; a failure while stopping the server does not undo it.
+        record["server_stop_failure"] = failure
+    except BaseException as error:
+        failure = f"{type(error).__name__}: {stage} interrupted"
+        write_result(run_dir, ended_record(args, request, "interrupted", failure))
+        raise
+    write_result(run_dir, record)
     return record
 
 
