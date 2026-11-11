@@ -100,6 +100,34 @@ _PER_SHARE = re.compile(r"per\s+share|주당", re.IGNORECASE)
 # grouping ("25,7851" with a glued footnote, "4,5,28" note numbers) is no one amount.
 _GROUPED = re.compile(r"[(△▲-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\)?")
 
+# A column header naming a period shorter than a fiscal year ("Three Months Ended",
+# "13 Weeks Ended", "Fourth Quarter", "Q4", "4분기", "3개월"); twelve months, 52 or 53
+# weeks and a year-end date name the fiscal year.
+_SHORT_PERIOD = re.compile(
+    r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|[1-9]|1[01])[\s-]+months?\b"
+    r"|\b(?:13|26|39|thirteen|twenty[\s-]six|thirty[\s-]nine)[\s-]+weeks?\b"
+    r"|\bquarter(?:s|ly)?\b|\bQ[1-4]\b|\b[1-4]Q(?:\d{2})?\b|\b(?:first|second)\s+half\b"
+    r"|분기|반기|(?<!\d)(?:[1-9]|1[01])\s*개월",
+    re.IGNORECASE,
+)
+# A column header naming figures other than the item's reported amount: adjustments,
+# adjusted and non-GAAP measures, changes and percentages ("Adjustments", "Non-GAAP",
+# "% Change", "증감").
+_NOT_AMOUNT = re.compile(
+    r"\b(?:adjust(?:ments?|ed)|non-gaap|changes?|variances?|increases?|decreases?"
+    r"|pro\s+forma|eliminations?)\b|%|\bpercent(?:age)?\b|증감|증가|감소|변동|조정",
+    re.IGNORECASE,
+)
+# A label-only row naming a part of the entity ("Data Center segment:", "DS 부문").
+_PART = re.compile(
+    r"\b(?:segments?|divisions?|regions?|geographic\w*|subsidiar\w*|joint\s+ventures?"
+    r"|affiliates?|investees?|guarantors?|discontinued|pro\s+forma)\b"
+    r"|부문|사업부|지역|종속|관계기업|공동기업|피투자",
+    re.IGNORECASE,
+)
+# A cell that only cites notes ("Note 5", "주석 4,5") labels no row.
+_NOTE_CITATION = re.compile(r"\s*(?:notes?|주석?)\s*[\d,\s~-]*", re.IGNORECASE)
+
 _ENUMERATOR = re.compile(r"^\s*(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|\d+|[ivx]+|[가-하])[.)]\s*", re.IGNORECASE)
 
 
@@ -349,31 +377,99 @@ def _term_year(text: str, terms: Mapping[str, int]) -> int | None:
     return terms.get(word.removesuffix("말")) if word else None
 
 
+def _headers_over(
+    source: Mapping[str, object], headers: Sequence[Mapping[str, object]]
+) -> list[str]:
+    """Return the texts of the header cells whose columns overlap one data cell's."""
+    start = _int(source["column"])
+    end = start + _int(source.get("colspan", 1))
+    return [
+        str(header.get("text", ""))
+        for header in headers
+        if _int(header["column"]) < end
+        and start < _int(header["column"]) + _int(header.get("colspan", 1))
+    ]
+
+
 def _column_years(
-    source: Mapping[str, object],
-    headers: Sequence[Mapping[str, object]],
-    caption_years: set[int],
-    terms: Mapping[str, int],
+    over: Sequence[str], caption_years: set[int], terms: Mapping[str, int]
 ) -> set[int]:
     """Return the years the headers above one data cell's columns name.
 
     A header names years by writing them or, when it writes none, by being one period
-    word its document defines (see :func:`_term_year`).
+    word its document defines (see :func:`_term_year`). A header naming a period
+    shorter than a fiscal year ("Three Months Ended December 28, 2024") names none.
     """
-    start = _int(source["column"])
-    end = start + _int(source.get("colspan", 1))
+    if any(_SHORT_PERIOD.search(text) for text in over):
+        return set()
     years: set[int] = set()
-    for header in headers:
-        first = _int(header["column"])
-        if first < end and start < first + _int(header.get("colspan", 1)):
-            text = str(header.get("text", ""))
-            written = {int(year) for year in YEAR.findall(text)}
-            if not written and (term := _term_year(text, terms)) is not None:
-                written = {term}
-            years.update(written)
+    for text in over:
+        written = {int(year) for year in YEAR.findall(text)}
+        if not written and (term := _term_year(text, terms)) is not None:
+            written = {term}
+        years.update(written)
     if not years and len(caption_years) == 1:
         return set(caption_years)
     return years
+
+
+def _not_amount(over: Sequence[str]) -> bool:
+    """Whether a header above a cell names figures other than the reported amount.
+
+    Unit declarations ("(In millions, except for percentages)", "(단위 : %)") are set
+    aside first, so only the header's own words count.
+    """
+    for text in over:
+        words = _KOREAN_UNIT_NOTE.sub(" ", text)
+        words = _PARENTHESIS.sub(
+            lambda match: " " if _DECLARATION.fullmatch(match.group(1)) else match.group(0),
+            words,
+        )
+        if _NOT_AMOUNT.search(words):
+            return True
+    return False
+
+
+def _worded(text: str) -> bool:
+    """Whether a cell without figures carries words that label a row.
+
+    Currency markers ("$", "원") and note citations ("Note 5") label nothing.
+    """
+    return (
+        re.search(r"[^\W\d_]", blank(text)) is not None
+        and currency_of(text.strip()) is None
+        and _NOTE_CITATION.fullmatch(text) is None
+    )
+
+
+def _row_structure(fragment: Mapping[str, object]) -> tuple[set[int], dict[int, list[int]]]:
+    """Return the rows under a part of the entity, and each row's worded columns.
+
+    A label-only row holds one worded cell and no figure. From one naming a part of
+    the entity ("Data Center segment:"), every following row of the table is read as
+    possibly that part's. The worded columns of a row are where its labels stand; the
+    leftmost is its row label.
+    """
+    worded: dict[int, set[int]] = {}
+    texts: dict[int, str] = {}
+    figured: set[int] = set()
+    for member in _entries(fragment, "cells"):
+        for source in _entries(member, "sources"):
+            text = str(source.get("text", "")).strip()
+            row = _int(source["row"])
+            if values(text):
+                figured.add(row)
+            elif text and _worded(text):
+                worded.setdefault(row, set()).add(_int(source["column"]))
+                texts[row] = text
+    under: set[int] = set()
+    part = False
+    for row in sorted(set(worded) | figured):
+        if row not in figured and len(worded.get(row, ())) == 1:
+            part = part or _PART.search(texts[row]) is not None
+        elif part:
+            under.add(row)
+    return under, {row: sorted(columns) for row, columns in worded.items()}
 
 
 def _row_labels(fragment: Mapping[str, object]) -> dict[int, str]:
@@ -563,6 +659,7 @@ def read_table_cells(
     unit = read_table_unit(fragment)
     known = unit.status == "known"
     labels = _row_labels(fragment)
+    under_part, label_columns = _row_structure(fragment)
     cells = []
     for member in _entries(fragment, "cells"):
         for source in _entries(member, "sources"):
@@ -597,18 +694,26 @@ def read_table_cells(
                     marker for figure in figure_spans(blank(text)) for marker in figure.currency
                 )
                 row, column = _int(source["row"]), _int(source["column"])
+                over = _headers_over(source, headers)
+                scope = _statement_scope(statement)
+                second_label = any(col < column for col in label_columns.get(row, [])[1:])
+                if scope is None and (row in under_part or second_label or _not_amount(over)):
+                    # A part's row, a row with a second label ("Revenue | Data Center")
+                    # and a column of adjustments or changes are not shown to be the
+                    # whole entity's reported amount.
+                    scope = UNKNOWN
                 reading = TableCellReading(
                     row,
                     column,
                     frozenset(cell_values),
-                    frozenset(_column_years(source, headers, caption_years, terms)),
+                    frozenset(_column_years(over, caption_years, terms)),
                     scale,
                     _label_item(label) if label is not None else None,
                     percent,
                     resolve(unit.currency | own),
                     bool(own),
                     label,
-                    scope=_statement_scope(statement),
+                    scope=scope,
                 )
                 tagged = facts.get((row, column), ())
                 if len(tagged) == 1 and values(tagged[0].text) == cell_values:

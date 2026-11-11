@@ -451,3 +451,101 @@ def test_a_tagged_scale_that_the_cells_scale_word_contradicts_is_conflicting():
         "conflicting",
         "the cell's scale word disagrees with its unit",
     )
+
+
+def statuses(html: str, facts: dict | None = None) -> dict[tuple[int, int], str]:
+    """Interpret every figure cell of one chunked table by its source coordinates."""
+    fragment = table_fragment(html)
+    texts = {(s["row"], s["column"]): s["text"] for c in fragment["cells"] for s in c["sources"]}
+    return {
+        (cell.row, cell.column): interpret_table_cell(texts[(cell.row, cell.column)], [cell]).status
+        for cell in read_table_cells(fragment, facts)
+    }
+
+
+def one_column(header: str, *rows: tuple[str, str]) -> str:
+    """Render a table in U.S. dollar millions with one value column under ``header``."""
+    body = "".join(f"<tr><td>{label}</td><td>{value}</td></tr>" for label, value in rows)
+    return f"<table><tr><td>(In millions of U.S. dollars)</td><td>{header}</td></tr>{body}</table>"
+
+
+@pytest.mark.parametrize(
+    ("header", "status"),
+    [
+        ("Three Months Ended December 28, 2024", "period_unknown"),
+        ("Six Months Ended June 29, 2024", "period_unknown"),
+        ("13 Weeks Ended December 28, 2024", "period_unknown"),
+        ("Fourth Quarter 2024", "period_unknown"),
+        ("Q4 2024", "period_unknown"),
+        ("2024년 4분기", "period_unknown"),
+        ("2024년 3개월", "period_unknown"),
+        ("December 28, 2024", "known"),
+        ("Dec 28, 2024", "known"),
+        ("2024", "known"),
+        ("Fiscal 2024", "known"),
+        ("Year Ended December 31, 2024", "known"),
+        ("Year Ended Jan 28, 2024", "known"),
+        ("Twelve Months Ended December 31, 2024", "known"),
+        ("52 Weeks Ended December 28, 2024", "known"),
+    ],
+)
+def test_a_header_naming_a_period_shorter_than_a_year_dates_nothing(header, status):
+    """A quarter or a few months is not the fiscal year; a year-end or a year still is."""
+    assert statuses(one_column(header, ("Net revenue", "7,658")))[(1, 1)] == status
+
+
+def test_columns_other_than_the_reported_amount_are_not_the_entitys():
+    """Adjustments, non-GAAP and change columns hold no reported amount of the entity."""
+    html = (
+        '<table><tr><td>(In millions of U.S. dollars)</td><td colspan="5">Fiscal 2024</td></tr>'
+        "<tr><td></td><td>GAAP</td><td>Adjustments</td><td>Non-GAAP</td><td>% Change</td>"
+        "<td>Change</td></tr>"
+        "<tr><td>Gross profit</td><td>100</td><td>5</td><td>105</td><td>7</td><td>2</td></tr>"
+        "</table>"
+    )
+    assert statuses(html) == {
+        (2, 1): "known",
+        (2, 2): "scope_unknown",
+        (2, 3): "scope_unknown",
+        (2, 4): "scope_unknown",
+        (2, 5): "scope_unknown",
+    }
+
+
+def test_a_tagged_cell_in_a_change_column_keeps_its_tags_scope():
+    """Column words decide only untagged cells; a tag states its own scope."""
+    html = (
+        "<table><tr><td>(In millions of U.S. dollars)</td><td>Fiscal 2024 Change</td></tr>"
+        "<tr><td>Net revenue</td><td>25,785</td></tr></table>"
+    )
+    assert statuses(html) == {(1, 1): "scope_unknown"}
+    assert statuses(html, {(1, 1): (fact(),)}) == {(1, 1): "known"}
+
+
+def test_rows_under_a_part_of_the_entity_are_not_the_entitys():
+    """Rows after a label-only row naming a segment hold that part's figures."""
+    html = one_column(
+        "2024",
+        ("Current assets:", ""),
+        ("Cash and cash equivalents", "5,000"),
+        ("Data Center segment:", ""),
+        ("Revenue", "47,525"),
+        ("Operating income", "32,016"),
+    )
+    assert statuses(html) == {(2, 1): "known", (4, 1): "scope_unknown", (5, 1): "scope_unknown"}
+
+
+def test_a_row_with_a_second_label_is_not_the_entitys():
+    """ "Revenue | Data Center | 47,525" is a part; a "$" or note cell is no label."""
+    html = (
+        "<table><tr><td>(In millions of U.S. dollars)</td><td></td><td>2024</td></tr>"
+        "<tr><td>Revenue</td><td>Data Center</td><td>47,525</td></tr>"
+        "<tr><td>Revenue</td><td>Note 5</td><td>60,922</td></tr>"
+        "<tr><td>Net income</td><td>$</td><td>29,760</td></tr></table>"
+    )
+    assert statuses(html) == {(1, 2): "scope_unknown", (2, 2): "known", (3, 2): "known"}
+
+
+def test_the_annual_income_statement_stays_known():
+    """The AMD statement's year-end columns and rows keep every amount known."""
+    assert set(statuses(USD_INCOME_TABLE).values()) == {"known"}
