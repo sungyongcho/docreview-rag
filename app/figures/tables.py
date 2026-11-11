@@ -504,19 +504,29 @@ def _column_years(
     """Return the years the headers above one data cell's columns name.
 
     A header names years by writing them or, when it writes none, by being one period
-    word its document defines (see :func:`_term_year`). A header with a word naming a
+    word its document defines (see :func:`_term_year`). Stacked headers that differ in
+    breadth date the column by the most specific one: a header naming exactly one
+    year narrows those naming several years that include it; otherwise the column
+    keeps every year named, and so no single one. A header with a word naming a
     period of its own ("Three Months Ended December 28, 2024") names none.
     ``caption_years`` are the caption's years when they may date this column (see
     :func:`_caption_dates`); the column takes them only when they are one year.
     """
     if _header_reading(over)[0]:
         return set()
-    years: set[int] = set()
+    named: list[set[int]] = []
     for text in over:
         written = {int(year) for year in YEAR.findall(text)}
         if not written and (term := _term_year(text, terms)) is not None:
             written = {term}
-        years.update(written)
+        if written:
+            named.append(written)
+    years = set().union(*named)
+    leaves = {next(iter(written)) for written in named if len(written) == 1}
+    if len(leaves) == 1 and all(leaves <= written for written in named):
+        # A spanning header naming several years ("Years Ended December 28, 2024 and
+        # December 30, 2023") is narrowed by the leaf header naming one of them.
+        return leaves
     if not years and caption_years is not None and len(caption_years) == 1:
         return set(caption_years)
     return years

@@ -125,12 +125,12 @@ UNIT_UNVERIFIED_ANSWER_KO = (
 # Why such an answer is withheld: the unit, the currency or the direction is not established.
 UNIT_UNVERIFIED_RATIONALE = (
     "The cited table states no readable unit or explicit currency, or contradictory ones, in "
-    "its own notes, cells or a caption linked to it, the answer states none, or the table does "
-    "not establish whether the figure is a gain or a loss."
+    "its own notes, cells or a caption linked to it, the answer states none, or the table or "
+    "the answer does not establish whether the figure is a gain or a loss."
 )
 UNIT_UNVERIFIED_RATIONALE_KO = (
     "인용한 표 자체나 셀, 표에 연결된 단위 주석에서 단위나 명시적 통화를 확인할 수 없거나 서로 "
-    "다르거나, 답변에 단위나 통화가 없거나, 표가 수치의 손익 방향을 확정하지 않습니다."
+    "다르거나, 답변에 단위나 통화가 없거나, 표나 답변이 수치의 손익 방향을 확정하지 않습니다."
 )
 
 
@@ -559,8 +559,12 @@ def _judge(
     wanted = {claim.year} if claim.year is not None else requested
 
     def in_period(years: frozenset[int]) -> bool:
-        """Whether a cell's column belongs to the claim's period."""
-        return not wanted or bool(years & wanted)
+        """Whether a cell's column is one fiscal year of the claim's period.
+
+        A column of several years (a spanning header nothing narrows, "2023-2024")
+        holds no one year's value, so it belongs to no single-year period.
+        """
+        return not wanted or (len(years) == 1 and years <= wanted)
 
     compared = [
         (
@@ -601,7 +605,10 @@ def _judge(
         return FigureCheck(shown, "unit_unverified", evidenced, item), False
     if certain:
         evidenced = tuple(sorted(frozenset[int]().union(*certain)))
-        verdict: Verdict = "period_mismatch" if all(certain) else "unverified"
+        # Only cells of one known other year make it another period's value.
+        verdict: Verdict = (
+            "period_mismatch" if all(len(years) == 1 for years in certain) else "unverified"
+        )
         return FigureCheck(shown, verdict, evidenced, item), False
     outcome = _best(
         {

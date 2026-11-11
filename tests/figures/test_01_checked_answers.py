@@ -1308,3 +1308,72 @@ def test_korean_losses_agree_in_direction(answer, gain, loss):
         }
         evidence = EvidenceText(9, "", "연결 손익계산서", tuple(read_table_cells(fragment)))
         assert checked(answer, evidence) == [expected]
+
+
+# A spanning header naming both years over leaf headers naming one each.
+STACKED_YEARS_TABLE = (
+    "<table><tr><td>(In millions of U.S. dollars)</td>"
+    '<td colspan="2">Years Ended December 28, 2024 and December 30, 2023</td></tr>'
+    "<tr><td></td><td>2024</td><td>2023</td></tr>"
+    "<tr><td>Net revenue</td><td>25,785</td><td>22,680</td></tr></table>"
+)
+
+
+@pytest.mark.parametrize(
+    ("answer", "verdicts"),
+    [
+        ("FY2024 net revenue was $22,680 million.", ["period_mismatch"]),
+        ("FY2024 net revenue was $25,785 million.", ["verified"]),
+        ("FY2023 net revenue was $22,680 million.", ["verified"]),
+    ],
+)
+def test_a_leaf_year_header_narrows_a_spanning_two_year_header(answer, verdicts):
+    """Each column of "Years Ended 2024 and 2023 | 2024, 2023" holds its own year."""
+    assert checked(answer, table_evidence(STACKED_YEARS_TABLE), (2023, 2024)) == verdicts
+
+
+@pytest.mark.parametrize(
+    ("answer", "years", "verdicts"),
+    [
+        ("FY2024 net revenue was $48,465 million.", (2024,), ["unverified"]),
+        ("FY2023 net revenue was $48,465 million.", (2023,), ["unverified"]),
+        ("Net revenue was $48,465 million.", (2024,), ["unverified"]),
+        ("FY2024 net revenue was $25,785 million.", (2024,), ["verified"]),
+    ],
+)
+def test_a_column_of_several_years_confirms_no_one_year(answer, years, verdicts):
+    """A cumulative "2023-2024" column is neither year's value, nor another period's."""
+    fragment = {
+        "header_cells": [
+            {"row": 0, "column": 0, "text": "(In millions of U.S. dollars)"},
+            {"row": 0, "column": 1, "text": "2024"},
+            {"row": 0, "column": 2, "text": "2023-2024"},
+        ],
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": "Net revenue"}]},
+            {"sources": [{"row": 1, "column": 1, "text": "25,785"}]},
+            {"sources": [{"row": 1, "column": 2, "text": "48,465"}]},
+        ],
+    }
+    evidence = EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
+    assert {cell.years for cell in evidence.table_cells or ()} == {
+        frozenset({2024}),
+        frozenset({2023, 2024}),
+    }
+    assert checked(answer, evidence, years) == verdicts
+
+
+def test_a_loss_stated_twice_is_still_a_loss():
+    """A loss phrase with a negative figure ("net loss was -$1,641") states one loss.
+
+    "net income was -$1,641" and "net loss was $(1,641)" read the same way.
+    """
+    loss_table = USD_INCOME_TABLE.replace("<td>1,641</td>", "<td>(1,641)</td>")
+    for answer in (
+        "Net loss was -$1,641 million in 2024.",
+        "Net income was -$1,641 million in 2024.",
+        "Net loss was $(1,641) million in 2024.",
+        "Net loss was $1,641 million in 2024.",
+    ):
+        assert checked(answer, table_evidence(loss_table)) == ["verified"]
+        assert checked(answer, table_evidence()) == ["unverified"]
