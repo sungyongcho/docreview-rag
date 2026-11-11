@@ -3,12 +3,14 @@
 import asyncio
 import sys
 from types import SimpleNamespace
+from typing import get_args
 
 from pydantic import ValidationError
 import pytest
 
-from app.agent.tools.filings import build_default_registry
+from app.agent.tools.filings import CatalogCell, build_default_registry
 from app.agent.tools.registry import ToolError
+from app.figures.tables import CellStatus
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from tests.agent.support import FakeSessionFactory
 from tests.retrieval.support import hit
@@ -193,3 +195,9 @@ def test_filter_violations_are_reported_as_invalid_arguments(name, arguments, fi
     assert outcome.error is not None
     assert outcome.error.startswith(f"invalid arguments for {name}:"), outcome.error
     assert field in outcome.error
+
+
+def test_a_catalog_cell_status_is_any_listed_cell_status():
+    """Publish every cell status except the blank and non-numeric ones the catalog leaves out."""
+    published = set(get_args(CatalogCell.model_fields["status"].annotation))
+    assert published == set(get_args(CellStatus)) - {"blank", "not_numeric"}

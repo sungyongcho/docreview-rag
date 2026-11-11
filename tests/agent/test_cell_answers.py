@@ -7,8 +7,15 @@ from typing import Any
 from pydantic import ValidationError
 import pytest
 
-from app.agent.cell_answers import StaleCellError, StoredCell, cell_digest, review_cell_selection
+from app.agent.cell_answers import (
+    _ITEM_LABELS_KO,
+    StaleCellError,
+    StoredCell,
+    cell_digest,
+    review_cell_selection,
+)
 from app.agent.types import CellSelectionAnswer
+from app.figures.vocabulary import PHRASE_ITEMS
 from app.retrieval.tables import cell_ref_chunk
 
 SOURCE = "a" * 64
@@ -220,3 +227,8 @@ def test_the_schema_has_no_place_for_an_amount_or_a_loose_value(change):
     """Reject an extra amount field, a boolean year, an unknown ref shape and version."""
     with pytest.raises(ValidationError):
         proposal(**change)
+
+
+def test_every_item_has_a_korean_label():
+    """Name in Korean exactly the items the figure vocabulary recognizes."""
+    assert set(_ITEM_LABELS_KO) == set(PHRASE_ITEMS.values())

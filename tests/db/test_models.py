@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 import subprocess
 import sys
+from typing import get_args, get_type_hints
 
 import pytest
 from sqlalchemy import func, insert, null, select, update
@@ -11,6 +12,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import EMBEDDING_DIMENSIONS
 from app.db.models import (
+    TABLE_CELL_STATUSES,
+    TABLE_UNIT_STATUSES,
     BM25CorpusStat,
     Chunk,
     ChunkEmbedding,
@@ -24,6 +27,7 @@ from app.db.models import (
     TableSourceCell,
     TableSourceFact,
 )
+from app.figures.tables import CellStatus, TableUnit
 from app.ingestion.persistence import persist_seed_batch
 from app.retrieval.indexing.bm25 import backfill_term_stats
 from tests.ingestion.seed.support import sample_batch, table_batch, tagged_table_batch
@@ -237,3 +241,9 @@ def test_source_facts_reject_bad_spans_and_unknown_contexts():
                         await session.execute(update(TableSourceFact).values(**values))
 
     asyncio.run(exercise())
+
+
+def test_stored_statuses_are_the_statuses_the_reader_assigns():
+    """Allow in the database exactly the cell and unit statuses the table reader assigns."""
+    assert get_args(CellStatus) == TABLE_CELL_STATUSES
+    assert get_args(get_type_hints(TableUnit)["status"]) == TABLE_UNIT_STATUSES
