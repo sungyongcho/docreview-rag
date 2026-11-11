@@ -883,3 +883,39 @@ def test_an_opening_label_cannot_turn_a_duration_tag_into_an_opening_instant():
         },
     )
     assert next(c for c in cells if c.row == 2).years == frozenset()
+
+
+@pytest.mark.parametrize(
+    "header,instant,expected",
+    [("2024", date(2023, 12, 30), {2024}), ("December 28, 2024", date(2024, 12, 28), frozenset())],
+)
+def test_only_an_established_ending_instant_can_shift_the_column(header, instant, expected):
+    """An unknown instant role cannot stand in for proof of the header's closing role."""
+    html = one_column(header, ("Revenue", "1,234"), ("Net income", "100"))
+    cells = read_table_cells(
+        table_fragment(html), {(1, 1): (fact(text="1,234", fiscal_year=2025, instant=instant),)}
+    )
+    assert next(c for c in cells if c.row == 2).years == expected
+
+
+@pytest.mark.parametrize(
+    "header", ["Dec. 28, 2024", "2024-12-28", "2024 . 12 . 28", "2024년 12월 28일"]
+)
+def test_ending_role_uses_the_existing_literal_header_date_forms(header):
+    """Understood literal column dates establish an instant's closing role."""
+    html = one_column(header, ("Other balance", "1,234"), ("Net income", "100"))
+    cells = read_table_cells(
+        table_fragment(html),
+        {(1, 1): (fact(text="1,234", fiscal_year=2025, instant=date(2024, 12, 28)),)},
+    )
+    assert next(c for c in cells if c.row == 2).years == frozenset()
+
+
+def test_a_closing_label_establishes_the_role_without_a_literal_header_date():
+    """A declared closing instant moves a bare-year column; an unknown instant cannot."""
+    html = one_column("2024", ("Closing balance", "1,234"), ("Net income", "100"))
+    cells = read_table_cells(
+        table_fragment(html),
+        {(1, 1): (fact(text="1,234", fiscal_year=2025, instant=date(2024, 12, 28)),)},
+    )
+    assert next(c for c in cells if c.row == 2).years == frozenset()

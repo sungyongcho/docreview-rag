@@ -27,7 +27,7 @@ unknown.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 import re
 from typing import Literal
@@ -929,14 +929,56 @@ _OPENING_BALANCE = re.compile(
 )
 
 
-def _shifted_columns(
-    cells: Sequence[TableCellReading], facts: Mapping[tuple[int, int], Sequence[CellFact]]
-) -> set[int]:
-    """Undate siblings only for an established fiscal-period-end mapping conflict.
+_CLOSING_BALANCE = re.compile(
+    r"(?:balance(?:s)?(?:,| at)? (?:the )?end of (?:the )?(?:year|period)"
+    r"|(?:closing|ending) balance(?:s)?|기말(?:잔액|금액)?|연말잔액)",
+    re.I,
+)
 
-    An instant at a duration's opening boundary has a different role from the
-    column's annual end; its prior-year mapping cannot undate the closing balance.
-    Facts without context dates establish no role and no column-wide conflict.
+
+def _header_end_dates(over: Sequence[str]) -> set[date]:
+    """Read unambiguous literal end dates from the column's own header identifiers."""
+    dated: list[set[date]] = []
+    formats = (
+        "%B %d, %Y",
+        "%B %d %Y",
+        "%b %d, %Y",
+        "%b %d %Y",
+        "%Y-%m-%d",
+        "%Y.%m.%d",
+        "%Y/%m/%d",
+        "%m/%d/%Y",
+        "%Y년%m월%d일",
+    )
+    for text in over:
+        dates: set[date] = set()
+        for match in _HEADER_DATES.finditer(text):
+            written = " ".join(match.group().split())
+            written = re.sub(r"\b([A-Za-z]{3})[A-Za-z]*\.?", r"\1", written)
+            written = re.sub(r"\s*([./-]|년|월|일)\s*", r"\1", written)
+            for form in formats:
+                try:
+                    dates.add(datetime.strptime(written, form).date())
+                    break
+                except ValueError:
+                    continue
+        if dates:
+            dated.append(dates)
+    leaves = set().union(*(dates for dates in dated if len(dates) == 1))
+    return leaves if len(leaves) == 1 and all(leaves <= dates for dates in dated) else set()
+
+
+def _shifted_columns(
+    cells: Sequence[TableCellReading],
+    facts: Mapping[tuple[int, int], Sequence[CellFact]],
+    headers: Sequence[Mapping[str, object]],
+    terms: Mapping[str, int],
+) -> set[int]:
+    """Undate siblings only for an established annual-ending mapping conflict.
+
+    Opening instants and unknown instant roles are not evidence of an ending-role
+    conflict. A closing instant is established by its own closing label, a literal
+    column-end date, or the end of a duration in the header's fiscal year.
     """
     matched = {
         (cell.row, cell.column): facts[(cell.row, cell.column)][0]
@@ -947,22 +989,36 @@ def _shifted_columns(
     for cell in cells:
         if "year" not in cell.overrides or (fact := matched.get((cell.row, cell.column))) is None:
             continue
-        starts = {
-            other.period_start
+        over = _headers_over({"row": cell.row, "column": cell.column}, headers)
+        header_years = _column_years(over, None, terms)
+        durations = [
+            other
             for (_, col), other in matched.items()
             if col == cell.column
+            and other.fiscal_year in header_years
             and other.period_start is not None
             and other.period_end is not None
-        }
+        ]
         instant = fact.instant
         label = _label_key(cell.row_label or "")
-        opening = instant is not None and (
-            (label is not None and _OPENING_BALANCE.fullmatch(label) is not None)
-            or any(instant in {start, start - timedelta(days=1)} for start in starts)
-        )
-        if opening:
-            continue
-        if instant is not None or (fact.period_start is not None and fact.period_end is not None):
+        if instant is not None:
+            explicit_opening = label is not None and _OPENING_BALANCE.fullmatch(label) is not None
+            explicit_closing = label is not None and _CLOSING_BALANCE.fullmatch(label) is not None
+            opening = any(
+                other.period_start is not None
+                and instant in {other.period_start, other.period_start - timedelta(days=1)}
+                for other in durations
+            )
+            closing = (
+                explicit_closing
+                or instant in _header_end_dates(over)
+                or any(instant == other.period_end for other in durations)
+            )
+            if explicit_opening or (opening and not explicit_closing):
+                continue
+            if closing:
+                shifted.add(cell.column)
+        elif fact.period_start is not None and fact.period_end is not None:
             shifted.add(cell.column)
     return shifted
 
@@ -1120,7 +1176,7 @@ def read_table_cells(
         else cell
         for cell in cells
     ]
-    shifted = _shifted_columns(cells, facts)
+    shifted = _shifted_columns(cells, facts, headers, terms)
     return [
         replace(cell, years=frozenset())
         if cell.basis == "text" and cell.column in shifted
