@@ -818,8 +818,8 @@ def _with_fact(
     tagged IncreaseDecreaseInAccountsReceivable) records ``concept`` and leaves the
     cell no item.
     An inline XBRL tag's sign is the value's sign: when it differs from the sign the
-    cell's notation writes (``negative``), ``sign`` is recorded and the interpretation
-    applies the tag's.
+    cell's notation writes (``negative``), ``sign`` is recorded and the reading
+    carries the tag's resolved signed value.
     An inline XBRL amount or per-share unit also fixes the currency (with the table's
     notes and the cell's own markers still able to contradict it) and the scale.
     Other units (shares, ratios) are not amounts, and DART facts state no unit, so
@@ -903,14 +903,13 @@ def _split_percent(fragment: Mapping[str, object]) -> set[tuple[int, int]]:
 def _directed(reading: TableCellReading, notations: list[Decimal | None]) -> TableCellReading:
     """Give a reading's values the sign its notation or its tag establishes.
 
-    A tag's ``sign`` override reverses the notation. Where neither establishes the
-    direction (a ``▲`` figure, or an unsigned figure under a loss-only label that no
-    tag signs), the values stay as written and ``direction`` is recorded.
+    This runs before tags are joined. Ambiguous triangles and unsigned loss-only
+    rows retain their magnitudes with a direction hold; a subsequent explicit tag
+    sign may replace that hold with its resolved signed value.
     """
     if any(value is None for value in notations):
         return replace(reading, overrides=(*reading.overrides, "direction"))
-    flip = -1 if "sign" in reading.overrides else 1
-    values = frozenset(flip * value for value in notations if value is not None)
+    values = frozenset(value for value in notations if value is not None)
     if reading.measure is None and _loss_only(reading.row_label) and all(v > 0 for v in values):
         return replace(reading, values=values, overrides=(*reading.overrides, "direction"))
     return replace(reading, values=values)
@@ -921,6 +920,13 @@ def _negative(text: str) -> bool | None:
     spans = [figure for figure in figure_spans(blank(text)) if figure.value is not None]
     value = signed(spans[0]) if len(spans) == 1 else None
     return None if value is None else value < 0
+
+
+_OPENING_BALANCE = re.compile(
+    r"(?:balance(?:s)?(?:,| at)? (?:the )?beginning of (?:the )?(?:year|period)"
+    r"|(?:opening|beginning) balance(?:s)?|기초(?:잔액|금액)?|연초잔액)",
+    re.I,
+)
 
 
 def _shifted_columns(
@@ -949,8 +955,10 @@ def _shifted_columns(
             and other.period_end is not None
         }
         instant = fact.instant
-        opening = instant is not None and any(
-            instant in {start, start - timedelta(days=1)} for start in starts
+        label = _label_key(cell.row_label or "")
+        opening = instant is not None and (
+            (label is not None and _OPENING_BALANCE.fullmatch(label) is not None)
+            or any(instant in {start, start - timedelta(days=1)} for start in starts)
         )
         if opening:
             continue

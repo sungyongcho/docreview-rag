@@ -616,6 +616,8 @@ def test_a_row_with_a_second_label_is_not_the_entitys():
         "<tr><td>Net income</td><td>$</td><td>29,760</td></tr></table>"
     )
     assert statuses(html) == {(1, 2): "scope_unknown", (2, 2): "known", (3, 2): "known"}
+    cells = read_table_cells(table_fragment(html))
+    assert next(c for c in cells if c.row == 1).scope_cause == "second_label"
 
 
 def test_the_annual_income_statement_stays_known():
@@ -849,3 +851,35 @@ def test_a_closing_instant_that_moves_the_year_still_undates_siblings():
         table_fragment(), {(1, 1): (fact(fiscal_year=2025, instant=date(2024, 12, 28)),)}
     )
     assert next(c for c in cells if (c.row, c.column) == (2, 1)).years == frozenset()
+
+
+@pytest.mark.parametrize(
+    "label", ["Balance at beginning of year", "Opening balance", "Beginning balance", "기초잔액"]
+)
+def test_a_declared_opening_instant_needs_no_sibling_duration_tag(label):
+    """An explicit opening label with an instant cannot move the column's closing year."""
+    html = one_column("2024", (label, "2,124"), ("Revenue", "2,136"))
+    cells = read_table_cells(
+        table_fragment(html),
+        {(1, 1): (fact(text="2,124", fiscal_year=2023, instant=date(2023, 12, 30)),)},
+    )
+    assert next(c for c in cells if c.row == 2).years == {2024}
+
+
+def test_an_opening_label_cannot_turn_a_duration_tag_into_an_opening_instant():
+    """An annual duration retains its ending role even under an opening-row label."""
+    html = one_column("2024", ("Opening balance", "2,124"), ("Revenue", "2,136"))
+    cells = read_table_cells(
+        table_fragment(html),
+        {
+            (1, 1): (
+                fact(
+                    text="2,124",
+                    fiscal_year=2023,
+                    period_start=date(2023, 1, 1),
+                    period_end=date(2023, 12, 31),
+                ),
+            )
+        },
+    )
+    assert next(c for c in cells if c.row == 2).years == frozenset()
