@@ -418,3 +418,36 @@ def test_a_glued_footnote_with_its_tag_is_not_an_amount():
 def test_a_figure_with_malformed_grouping_is_not_one_amount(text, status):
     """Only digits grouped in threes, or not grouped at all, stand as one amount."""
     assert interpret_table_cell(text, [reading()]).status == status
+
+
+@pytest.mark.parametrize(
+    ("note", "cell", "status", "scale"),
+    [
+        ("(In U.S. dollars)", "25.8 billion", "known", Decimal(10) ** 9),
+        ("(In U.S. dollars)", "$25.8B", "known", Decimal(10) ** 9),
+        ("(단위 : 원)", "300조", "known", Decimal(10) ** 12),
+        ("(In millions of U.S. dollars)", "25.8 billion", "conflicting", None),
+        ("(단위 : 백만원)", "300조", "conflicting", None),
+        ("(In U.S. dollars)", "25,785", "known", Decimal(1)),
+        ("(In millions of U.S. dollars)", "25,785", "known", Decimal(10) ** 6),
+        ("(In millions)", "25.8 billion", "conflicting", None),
+    ],
+)
+def test_a_scale_word_in_the_cell_is_its_unit_only_under_plain_units(note, cell, status, scale):
+    """A cell's own scale word applies under plain units and contradicts a table scale."""
+    html = (
+        f"<table><tr><td>{note}</td><td>2024</td></tr>"
+        f"<tr><td>Net revenue</td><td>{cell}</td></tr></table>"
+    )
+    (reading_,) = read_table_cells(table_fragment(html))
+    assert reading_.scale == scale
+    assert interpret_table_cell(cell, [reading_]).status == status
+
+
+def test_a_tagged_scale_that_the_cells_scale_word_contradicts_is_conflicting():
+    """A billion written in a cell tagged at millions is no one amount."""
+    result = interpret_table_cell("25.8 billion", [reading(scale=Decimal(10) ** 6)])
+    assert (result.status, result.reason) == (
+        "conflicting",
+        "the cell's scale word disagrees with its unit",
+    )

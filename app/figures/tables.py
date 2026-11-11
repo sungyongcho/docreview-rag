@@ -3,7 +3,8 @@
 A table's unit is read from unit declarations in its own header cells or in the
 caption run the chunker linked to it with source spans, every one of them fully read.
 When the unit of the item's cells is absent, not fully readable or contradictory, no
-unit is guessed.
+unit is guessed. A scale word written in a cell ("25.8 billion") is that cell's unit
+under a table in plain currency units and contradicts a table that states a scale.
 
 A cell whose figure the filing tags as a fact (inline XBRL, or a DART ``ACONTEXT``)
 takes its fiscal year and scope from the tag, and an inline XBRL fact also its
@@ -576,6 +577,14 @@ def read_table_cells(
                     # the whole table is; under a scaled note its unit is ambiguous.
                     plain = unit.per_share_plain or unit.scale == 1
                     scale = Decimal(1) if plain and unit.scale is not None else None
+                written = {
+                    figure.scale for figure in figure_spans(blank(text)) if figure.scale is not None
+                }
+                if written and known and unit.scale is not None:
+                    # A scale word in the cell ("25.8 billion", "300조") states its unit
+                    # under a table in plain currency units; beside a table scale it
+                    # contradicts the table, so no unit is taken.
+                    scale = written.pop() if unit.scale == 1 and len(written) == 1 else None
                 percent: bool | None = "%" in text or (
                     known and unit.percent and unit.scale is None
                 )
@@ -623,6 +632,9 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     that is no amount (``not_monetary``) or a dimensional scope (``scope_qualified``)
     does too.
 
+    A scale word written in the cell that its reading's unit does not carry (a
+    billion beside a table in millions) is ``conflicting``.
+
     A figure whose digits are not grouped in threes, or whose one tag shows another
     number (``number``), is not one established amount: ``conflicting``.
 
@@ -664,6 +676,10 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
         # percentage the reading of its source cell does not carry.
         return CellInterpretation(
             "conflicting", "a percent sign outside the figure's own cell", value, reading
+        )
+    if spans[0].scale is not None and reading.percent is False and spans[0].scale != reading.scale:
+        return CellInterpretation(
+            "conflicting", "the cell's scale word disagrees with its unit", value, reading
         )
     if reading.percent is None:
         return CellInterpretation("scale_unknown", "percentage unknown", value, reading)
