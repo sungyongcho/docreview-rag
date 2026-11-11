@@ -1491,7 +1491,7 @@ describe("in-message review lifecycle", () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       if (requestRoute(input, init) === "POST /review/stream") {
         submitted = JSON.parse(String(init?.body));
-        return Promise.resolve(new Response('event: report\ndata: {"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed contextual answer.","citations":[]}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
+        return Promise.resolve(new Response('event: report\ndata: {"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed contextual answer.","citations":[],"reasons":[]}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
       }
       return ordinaryFetch(input, init);
     });
@@ -1509,7 +1509,7 @@ describe("in-message review lifecycle", () => {
     expect(screen.getByText("Re-checking selected evidence")).toBeVisible();
     fireEvent.click(within(request.summary).getByText("Execution summary"));
     await waitFor(() => expect(request.summary.open).toBe(false));
-    await act(async () => { request.stream.enqueue(request.encoder.encode('event: report\ndata: {"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed answer.","citations":[]}}\n\nevent: done\ndata: {}\n\n')); request.stream.close(); });
+    await act(async () => { request.stream.enqueue(request.encoder.encode('event: report\ndata: {"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed answer.","citations":[],"reasons":[]}}\n\nevent: done\ndata: {}\n\n')); request.stream.close(); });
     await waitFor(() => expect(loadConversations()[0].messages[2].pending).toBe(false));
     expect(loadConversations()[0].messages[2].id).toBe(request.id);
     expect(loadConversations()[0].messages[1].text).toBe("Data center revenue grew on Hopper demand.");
