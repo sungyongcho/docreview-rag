@@ -7,6 +7,7 @@ to the model with the problem it can act on.
 """
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
 import functools
 from typing import Any
 
@@ -21,7 +22,7 @@ from app.agent.types import (
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
-from app.figures.answers import EvidenceText, FiguresResult
+from app.figures.answers import EvidenceText, FiguresResult, check_figures
 from app.llm.decoding import strict_response_format, validation_errors
 
 type EvidenceReader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, EvidenceText]]]
@@ -171,3 +172,58 @@ def unit_unverified_report(
 def as_report(answer: AgentAnswer) -> AgentReportAnswer:
     """Widen an accepted model answer to the report type, as ``run_agent`` does."""
     return AgentReportAnswer.model_validate(answer.model_dump())
+
+
+@dataclass(frozen=True, slots=True)
+class WrittenAnswerJudgement:
+    """What the figure check makes of one ``SUPPORTED`` written answer.
+
+    ``report`` is the answer to end the run on, or None when the answer goes back to
+    the model with ``problem``. ``period_mismatch`` and ``unit_unverified`` are the
+    typed records of a report the check qualifies; a plain accepted answer has neither.
+    """
+
+    report: AgentReportAnswer | None
+    problem: str = ""
+    period_mismatch: AgentPeriodMismatch | None = None
+    unit_unverified: AgentUnitUnverified | None = None
+
+
+def judge_written_answer(
+    answer: AgentAnswer,
+    texts: Mapping[int, EvidenceText],
+    requested_fiscal_years: Sequence[int],
+) -> WrittenAnswerJudgement:
+    """Check a ``SUPPORTED`` answer's figures against its cited evidence and judge it.
+
+    Parameters
+    ----------
+    answer : AgentAnswer
+        An identity-checked ``SUPPORTED`` answer.
+    texts : Mapping[int, EvidenceText]
+        The cited evidence the caller read; a cited chunk missing from it gives the
+        check nothing to confirm.
+    requested_fiscal_years : Sequence[int]
+        Fiscal years the question asks about.
+
+    Returns
+    -------
+    WrittenAnswerJudgement
+        An unconfirmed figure returns the answer to the model; an uncertain unit
+        withholds it; another period reports that period; otherwise it is accepted.
+    """
+    cited = tuple(citation.chunk_id for citation in answer.citations)
+    figures = check_figures(
+        answer.answer,
+        [texts[chunk_id] for chunk_id in cited if chunk_id in texts],
+        requested_fiscal_years,
+    )
+    if figures.verdict == "unverified":
+        return WrittenAnswerJudgement(None, figures_problem(figures, requested_fiscal_years))
+    if figures.verdict == "unit_unverified":
+        report, held = unit_unverified_report(answer, figures)
+        return WrittenAnswerJudgement(report, unit_unverified=held)
+    if figures.verdict == "period_mismatch":
+        report, mismatch = period_mismatch_report(answer, figures, requested_fiscal_years)
+        return WrittenAnswerJudgement(report, period_mismatch=mismatch)
+    return WrittenAnswerJudgement(as_report(answer))

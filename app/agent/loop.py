@@ -11,10 +11,8 @@ from app.agent.final_answer import (
     FINAL_NOT_ALONE,
     EvidenceReader,
     as_report,
-    figures_problem,
     final_answer_spec,
-    period_mismatch_report,
-    unit_unverified_report,
+    judge_written_answer,
     validate_final_answer,
 )
 from app.agent.provider import ProviderTurn, ToolCallingProvider
@@ -41,7 +39,6 @@ from app.agent.types import (
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
-from app.figures.answers import check_figures
 
 # The Responses API rejects max_output_tokens below 16, so a smaller remaining
 # allowance can only buy a failed request: the run is out of budget, and saying
@@ -440,23 +437,17 @@ async def run_agent(
                     return finish(
                         "tool_error", failure=safe_runtime_error(error, "cited evidence read")
                     )
-                figures = check_figures(
-                    answer.answer,
-                    [texts[chunk_id] for chunk_id in cited if chunk_id in texts],
-                    requested_fiscal_years,
-                )
-                if figures.verdict == "unverified":
-                    answer, problem = None, figures_problem(figures, requested_fiscal_years)
-                elif figures.verdict == "unit_unverified":
+                judged = judge_written_answer(answer, texts, requested_fiscal_years)
+                if judged.report is None:
+                    answer, problem = None, judged.problem
+                else:
                     record_step(turn, (), usage)
-                    report, held = unit_unverified_report(answer, figures)
-                    return finish("ok", answer=report, unit_unverified=held)
-                elif figures.verdict == "period_mismatch":
-                    record_step(turn, (), usage)
-                    report, mismatch = period_mismatch_report(
-                        answer, figures, requested_fiscal_years
+                    return finish(
+                        "ok",
+                        answer=judged.report,
+                        period_mismatch=judged.period_mismatch,
+                        unit_unverified=judged.unit_unverified,
                     )
-                    return finish("ok", answer=report, period_mismatch=mismatch)
             if answer is not None:
                 record_step(turn, (), usage)
                 return finish("ok", answer=answer)

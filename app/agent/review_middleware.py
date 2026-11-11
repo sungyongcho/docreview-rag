@@ -42,10 +42,8 @@ from app.agent.final_answer import (
     FINAL_NOT_ALONE,
     EvidenceReader,
     as_report,
-    figures_problem,
     final_answer_spec,
-    period_mismatch_report,
-    unit_unverified_report,
+    judge_written_answer,
     validate_final_answer,
 )
 from app.agent.tools.filings import FetchChunkParams
@@ -53,7 +51,6 @@ from app.agent.tools.registry import FINAL_ANSWER_NAME, Tool, ToolRegistry, safe
 from app.agent.types import AgentReportAnswer, CellSelectionAnswer, ToolCall
 from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
-from app.figures.answers import check_figures
 from app.llm.decoding import validation_errors
 
 type EvidenceLedger = dict[int, dict[str, Any]]
@@ -522,25 +519,16 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
             except Exception as error:
                 failure = safe_runtime_error(error, "cited evidence read")
                 raise CitedEvidenceReadError(message, call, failure) from error
-            figures = check_figures(
-                answer.answer,
-                [texts[chunk_id] for chunk_id in cited if chunk_id in texts],
-                context.requested_fiscal_years,
-            )
-            if figures.verdict == "unverified":
-                answer, problem = None, figures_problem(figures, context.requested_fiscal_years)
-            elif figures.verdict == "unit_unverified":
-                report, held = unit_unverified_report(answer, figures)
-                return _accepted(
-                    message, call, report, unit_unverified=held.model_dump(mode="json")
-                )
-            elif figures.verdict == "period_mismatch":
-                report, mismatch = period_mismatch_report(
-                    answer, figures, context.requested_fiscal_years
-                )
-                return _accepted(
-                    message, call, report, period_mismatch=mismatch.model_dump(mode="json")
-                )
+            judged = judge_written_answer(answer, texts, context.requested_fiscal_years)
+            if judged.report is None:
+                answer, problem = None, judged.problem
+            else:
+                records: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
+                if judged.unit_unverified is not None:
+                    records["unit_unverified"] = judged.unit_unverified.model_dump(mode="json")
+                if judged.period_mismatch is not None:
+                    records["period_mismatch"] = judged.period_mismatch.model_dump(mode="json")
+                return _accepted(message, call, judged.report, **records)
         if answer is None:
             return _rejected(message, [call], problem)
         return _accepted(message, call, as_report(answer))
