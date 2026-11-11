@@ -210,3 +210,86 @@ def test_a_qualifier_in_another_question_sentence_is_not_read():
     """State the boundary: a sentence ending in "?" or "!" is read on its own."""
     assert items_named("Data Center grew! What was revenue in 2024?") == {"revenue"}
     assert items_named("What was revenue in 2024? And Data Center revenue?") == frozenset()
+
+
+TESTCO = ("TEST", "TestCo")
+NVIDIA = ("NVDA", "NVIDIA", "엔비디아")
+HYNIX = ("000660", "SK hynix", "SK하이닉스")
+
+
+@pytest.mark.parametrize(
+    ("question", "issuers", "expected"),
+    [
+        ("TestCo (2024) 매출 근거를 찾아줘", TESTCO, {"revenue"}),
+        ("TestCo 매출 근거를 찾아줘", TESTCO, {"revenue"}),
+        ("2024년 AMD 순매출을 근거와 함께 알려줘", AMD, {"revenue"}),
+        ("AMD 2024 net revenue는 몇 USD million인가?", AMD, {"revenue"}),
+        ("TestCo의 FY2024 매출은?", TESTCO, {"revenue"}),
+        (
+            "AMD FY2023의 research and development expense는 얼마인가요?",
+            AMD,
+            {"research and development"},
+        ),
+        (
+            "NVIDIA FY2024 revenue와 net income은 각각 얼마인가요?",
+            NVIDIA,
+            {
+                "revenue",
+                "net income",
+            },
+        ),
+        (
+            "2024 회계연도 엔비디아의 매출과 순이익은 각각 얼마였습니까?",
+            NVIDIA,
+            {
+                "revenue",
+                "net income",
+            },
+        ),
+        ("What was NVIDIA's R&D expense in fiscal 2022?", NVIDIA, {"research and development"}),
+        ("Find the evidence for TestCo's 2024 revenue.", TESTCO, {"revenue"}),
+        ("Show me AMD's 2024 revenue with citations, please.", AMD, {"revenue"}),
+        ("What was AMD's 2024 revenue in millions of dollars?", AMD, {"revenue"}),
+        ("SK하이닉스의 2024년 매출액은 몇 백만원인가요?", HYNIX, {"revenue"}),
+        ("SK하이닉스 2024년 영업이익을 출처와 함께 보여주세요.", HYNIX, {"operating income"}),
+    ],
+)
+def test_a_question_asking_to_be_told_or_shown_in_a_unit_names_its_item(
+    question, issuers, expected
+):
+    """Read request, citation and answer-unit words, glued particles and synonyms as plain."""
+    assert items_named(question, issuers=issuers) == expected
+
+
+@pytest.mark.parametrize(
+    ("question", "issuers"),
+    [
+        ("How did AMD's gross margin percentage change from fiscal 2018 to fiscal 2019?", AMD),
+        ("In fiscal 2022, how did AMD's Data Center net revenue compare with Client?", AMD),
+        (
+            "2022 회계연도에 AMD의 Data Center 부문 순매출은 "
+            "Client 부문 순매출과 비교해 어떠했습니까?",
+            AMD,
+        ),
+        (
+            "엔비디아의 매출과 매출총이익률은 2019 회계연도에서 "
+            "2020 회계연도까지 어떻게 변화했습니까?",
+            NVIDIA,
+        ),
+        ("NVIDIA FY2022 R&D expense와 FY2021 대비 증가액을 알려주세요.", NVIDIA),
+        ("What was SK hynix's consolidated revenue in 2024, and how does it compare?", HYNIX),
+        ("SK하이닉스가 제시한 2025 회계연도 매출 가이던스는 얼마인가요?", HYNIX),
+        ("Roughly what share of SK hynix's revenue arises in US dollars?", HYNIX),
+        ("2024년 매출에서 DX 부문과 DS 부문 중 어느 쪽 비중이 더 크고, 각각 얼마였나요?", HYNIX),
+        ("올해 매출은 전년 대비 얼마나 늘었나", ()),
+        ("What drove NVIDIA data center revenue growth?", NVIDIA),
+        ("What was AMD's USD revenue in 2024?", AMD),
+        ("In millions, what was AMD's 2024 revenue?", AMD),
+        ("SK하이닉스의 달러 매출액은?", HYNIX),
+        ("2024년 AMD 순매출 증가율을 알려줘", AMD),
+        ("AMD 2024 Data Center revenue는 몇 USD million인가?", AMD),
+    ],
+)
+def test_a_real_question_with_a_qualifier_still_names_no_item(question, issuers):
+    """Keep comparison, growth, ratio, segment, guidance and unit-first questions unread."""
+    assert items_named(question, issuers=issuers) == frozenset()
