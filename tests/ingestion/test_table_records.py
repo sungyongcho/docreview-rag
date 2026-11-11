@@ -3,6 +3,7 @@
 from dataclasses import asdict, replace
 from datetime import date
 from decimal import Decimal
+import re
 
 import pytest
 
@@ -10,7 +11,7 @@ from app.contracts.figures import read_table_cells
 from app.ingestion.chunking import CellFragment, TableFragment, chunk_filing
 from app.ingestion.parsing.facts import FilingFacts, PeriodTerm, StatementDeclaration
 from app.ingestion.parsing.models import Block
-from app.ingestion.table_records import table_records
+from app.ingestion.table_records import builder_identity, resolver_identity, table_records
 from app.ingestion.tokens import InputBudget
 from tests.ingestion.chunk.support import build_filing
 from tests.ingestion.seed.support import table_batch, tagged_table_batch
@@ -267,3 +268,9 @@ def test_a_filing_of_one_scope_declares_no_statement():
     """SEC tables carry no statement, so their cells keep the entity scope."""
     record = only_record(table_chunks(USD_TABLE))
     assert record.statement is None and record.statement_basis is None
+
+
+def test_code_identities_are_sha256_hex_digests():
+    """Fingerprint the builder and resolver code as 64 lowercase hex characters."""
+    for identity in (builder_identity(), resolver_identity()):
+        assert re.fullmatch(r"[0-9a-f]{64}", identity)

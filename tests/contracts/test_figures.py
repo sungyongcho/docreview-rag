@@ -1355,6 +1355,56 @@ def test_a_cell_without_one_figure_is_not_selectable():
     assert interpret_table_cell("1,234 / 5,678", [reading()]).status == "conflicting"
 
 
+@pytest.mark.parametrize(
+    ("text", "changes", "status", "reason"),
+    [
+        ("▲1,234", {"measure": "other"}, "conflicting", "sign marker is ambiguous"),
+        (
+            "1,234",
+            {"measure": "other", "scale": None},
+            "not_monetary",
+            "tagged unit is not an amount",
+        ),
+        (
+            "1,234",
+            {"measure": "other", "percent": None},
+            "not_monetary",
+            "tagged unit is not an amount",
+        ),
+        ("1,234", {"percent": None, "currency": None}, "scale_unknown", "percentage unknown"),
+        ("1,234", {"scale": None, "currency": "!"}, "scale_unknown", "no readable scale"),
+        ("1,234", {"scale": None, "years": frozenset()}, "scale_unknown", "no readable scale"),
+        ("1,234", {"currency": "!", "years": frozenset()}, "conflicting", "currencies disagree"),
+        (
+            "1,234",
+            {"currency": None, "years": frozenset()},
+            "currency_unconfirmed",
+            "no explicit currency",
+        ),
+        ("1,234", {"currency": "$", "item": None}, "currency_unconfirmed", "no explicit currency"),
+        ("1,234", {"years": frozenset(), "item": None}, "period_unknown", "no single fiscal year"),
+        ("1,234", {"years": frozenset(), "scope": "?"}, "period_unknown", "no single fiscal year"),
+        (
+            "1,234",
+            {"scope": "?", "item": None},
+            "scope_unknown",
+            "the filing declares no entity scope for it",
+        ),
+        ("1,234", {"scope": "axis=member", "item": None}, "scope_qualified", "axis=member"),
+        (
+            "12.5%",
+            {"percent": True, "scale": None, "currency": None, "years": frozenset()},
+            "period_unknown",
+            "no single fiscal year",
+        ),
+    ],
+)
+def test_a_cell_missing_two_facts_reports_the_first_in_a_fixed_order(text, changes, status, reason):
+    """Pin which status wins when two facts are missing at once."""
+    result = interpret_table_cell(text, [reading(**changes)])
+    assert (result.status, result.reason) == (status, reason)
+
+
 def fact(**changes) -> CellFact:
     """Build one inline XBRL USD million revenue fact for FY2024, changed where asked."""
     base = CellFact("us-gaap:Revenues", 2024, (), "iso4217:USD", None, 6, "25,785")
@@ -1580,3 +1630,34 @@ def test_a_note_reference_is_part_of_the_row_label_not_a_figure(label):
     readings = read_table_cells(fragment)
     assert {(cell.column, cell.item) for cell in readings} == {(1, "revenue"), (2, "revenue")}
     assert figures(label) == ()
+
+
+@pytest.mark.parametrize(
+    ("label", "item"),
+    [
+        *((shape, None) for shape in ("FY2024", "FY 24", "fy24", "Q4", "H1", "4Q", "1H")),
+        *((shape, None) for shape in ("10-K", "20-F", "Item 7", "Item 1A", "Items 7 and 8")),
+        *((shape, None) for shape in ("Note 5", "Notes 2 and 3", "Notes 4, 5 & 6")),
+        *((shape, None) for shape in ("Section 13.1", "Exhibit 99.1", "Part 2")),
+        *((shape, None) for shape in ("(주29)", "(주 5, 30)", "(주석 12)", "(주3~5)", "（주 7）")),
+        *((shape, None) for shape in ("December 28, 2024", "Dec. 31 2024", "Jan 1, 2023")),
+        *((shape, None) for shape in ("2024.12.31", "2024-12-31", "2024/12/31", "12/31/2024")),
+        *((shape, None) for shape in ("2024년", "2024년 12월", "2024년 12월 31일", "12월 31일")),
+        *((shape, None) for shape in ("1분기", "제56기", "제 56 기", "Net revenue FY2024")),
+        ("Revenue (Note 5)", "revenue"),
+        ("Revenue (Notes 2 and 3)", "revenue"),
+        ("매출액 (주29)", "revenue"),
+    ],
+)
+def test_every_identifier_shape_states_no_figure_and_stays_a_row_label(label, item):
+    """An identifier or date is no figure, so a cell holding one is the row's label."""
+    fragment = {
+        **DART_FRAGMENT,
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": label}]},
+            {"sources": [{"row": 1, "column": 1, "text": "300,870,903"}]},
+        ],
+    }
+    readings = read_table_cells(fragment)
+    assert figures(label) == ()
+    assert [(cell.column, cell.row_label, cell.item) for cell in readings] == [(1, label, item)]
