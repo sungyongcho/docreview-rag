@@ -44,6 +44,7 @@ def builder_identity() -> str:
 RESOLVER_FILES = (
     "figures/currency.py",
     "figures/items.py",
+    "figures/periods.py",
     "figures/vocabulary.py",
     "figures/text.py",
     "figures/tables.py",

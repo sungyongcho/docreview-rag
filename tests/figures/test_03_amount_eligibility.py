@@ -105,3 +105,53 @@ def test_a_table_body_or_context_cannot_smuggle_in_a_prose_claim():
     claim = "Revenue was USD 1,234 million."
     assert check_figures(claim, [EvidenceText(1, claim, claim, [])], []).verdict == "unverified"
     assert check_figures(claim, [EvidenceText(1, claim, "", None)], []).verdict == "verified"
+
+
+@pytest.mark.parametrize(
+    "phrase,annual",
+    [
+        ("FY2024", True),
+        ("fiscal 2024", True),
+        ("2024 회계연도", True),
+        ("year ended December 28, 2024", True),
+        ("fiscal year ending on Dec. 28, 2024", True),
+        ("Q4 2024", False),
+        ("4Q24", False),
+        ("fourth quarter 2024", False),
+        ("H1 2024", False),
+        ("1H24", False),
+        ("second half 2024", False),
+        ("three months ended December 28, 2024", False),
+        ("nine months 2024", False),
+        ("December 2024", False),
+        ("2024년 12월", False),
+        ("period ended March 30, 2024", False),
+        ("2024년 4분기", False),
+        ("2024년 상반기", False),
+        ("2024년 하반기", False),
+        ("2024년 9개월", False),
+    ],
+)
+def test_three_readers_share_annual_versus_nonannual_periods(phrase, annual):
+    """Question, header and answer use the same period classification before blanking."""
+    from app.figures.periods import classify_period
+    from app.figures.vocabulary import items_named
+
+    assert (classify_period(phrase) == "annual") is annual
+    assert bool(items_named(f"What was revenue for {phrase}?")) is annual
+    fragment = {
+        "header_cells": [{"column": 1, "text": phrase}],
+        "caption_sources": [linked("(In millions of U.S. dollars)")],
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": "Revenue"}]},
+            {"sources": [{"row": 1, "column": 1, "text": "1,234"}]},
+        ],
+    }
+    cell = read_table_cells(fragment)[0]
+    assert (len(cell.years) == 1 and cell.scope is None) is annual
+    verdict = check_figures(
+        f"Revenue for {phrase} was USD 1,234 million.",
+        [EvidenceText(1, "", "", [reading()])],
+        [2024],
+    ).verdict
+    assert (verdict == "verified") is annual

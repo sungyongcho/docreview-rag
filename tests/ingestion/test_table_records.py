@@ -327,6 +327,7 @@ def test_the_resolver_identity_covers_the_fact_reader(tmp_path, monkeypatch):
     assert RESOLVER_FILES == (
         "figures/currency.py",
         "figures/items.py",
+        "figures/periods.py",
         "figures/vocabulary.py",
         "figures/text.py",
         "figures/tables.py",

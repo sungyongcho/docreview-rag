@@ -43,6 +43,7 @@ from app.figures.currency import (
     resolve,
 )
 from app.figures.items import ITEMS
+from app.figures.periods import PERIOD_WORDS, classify_period
 from app.figures.text import (
     KOREAN_SCALE,
     YEAR,
@@ -125,7 +126,7 @@ _HEADER_DATES = re.compile(
 )
 _ANNUAL_WORDS = re.compile(
     r"\b(?:twelve|12)[\s-]+months?\b|\b(?:52|53|fifty[\s-]two|fifty[\s-]three)[\s-]+weeks?\b"
-    r"|\b(?:fiscal|years?|ended|ending|end|as|of|at|and|consolidated|reported|gaap)\b"
+    r"|\b(?:fiscal|years?|ended|ending|end|as|of|at|on|and|consolidated|reported|gaap)\b"
     r"|제\s*\d+\s*기|회계\s*연도|사업\s*연도|전\s*전\s*기|당\s*기|전\s*기|기\s*말|현\s*재|연\s*결|말",
     re.IGNORECASE,
 )
@@ -138,13 +139,6 @@ _RANGE = re.compile(_DATE + r"\s*[~–-]\s*" + _DATE)
 # A word naming a period of its own, which leaves the fiscal year not established
 # ("Three Months Ended", "13 Weeks", "H1", "YTD", "Interim", "4분기", "누적", "기초"),
 # including a month left without its day ("December 2024", "2023년 8월").
-_PERIOD_WORDS = re.compile(
-    r"\b(?:months?|weeks?|quarter(?:s|ly)?|q[1-4]|[1-4]q(?:\d{2})?|h[12]|half(?:[\s-]year)?"
-    r"|ytd|year[\s-]to[\s-]date|to[\s-]date|interim|periods?|semi[\s-]?annual)\b"
-    r"|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b"
-    r"|분\s*기|반\s*기|개월|누적|누계|기\s*초|기간|(?<!\d)\d{1,2}\s*월",
-    re.IGNORECASE,
-)
 # A label-only row naming a part of the entity ("Data Center segment:", "DS 부문").
 _PART = re.compile(
     r"\b(?:segments?|divisions?|regions?|geographic\w*|subsidiar\w*|joint\s+ventures?"
@@ -537,8 +531,8 @@ def _header_reading(over: Sequence[str]) -> tuple[bool, bool]:
         residue = _header_residue(text)
         if not residue:
             continue
-        rest = _PERIOD_WORDS.sub(" ", residue)
-        period = period or rest != residue
+        rest = PERIOD_WORDS.sub(" ", residue)
+        period = period or classify_period(residue) in {"subannual", "date"}
         scope = scope or bool(_HEADER_PUNCTUATION.sub(" ", rest).strip())
     return period, scope
 

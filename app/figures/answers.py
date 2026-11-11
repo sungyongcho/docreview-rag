@@ -37,6 +37,7 @@ import re
 from typing import Literal
 
 from app.figures.currency import same_currency
+from app.figures.periods import PeriodKind, classify_period
 from app.figures.tables import TableCellReading
 from app.figures.text import (
     BARE_YEAR,
@@ -204,6 +205,7 @@ class _Claim:
     change: bool
     loss: bool = False
     negative: bool | None = False
+    period: PeriodKind = "none"
 
 
 def _korean_word(start: int, text: str) -> _Word:
@@ -362,6 +364,7 @@ def _sentence_claims(masked: str, text: str, start: int, end: int, answer: bool)
                 _is_change(head, tail),
                 loss,
                 _negative(masked, figure, loss),
+                classify_period(text[start:end]),
             )
         )
     return claims
@@ -553,7 +556,12 @@ def _judge(
             return "uncertain"
         return "no" if other != 0 and (other < 0) != negative else outcome
 
-    if figure.value is None or item is None or claim.dated_ambiguously:
+    if (
+        figure.value is None
+        or item is None
+        or claim.dated_ambiguously
+        or claim.period in {"subannual", "date"}
+    ):
         return FigureCheck(shown, "unverified", (), item), False
     value = figure.value
     wanted = {claim.year} if claim.year is not None else requested

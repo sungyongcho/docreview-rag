@@ -12,6 +12,7 @@ from typing import Literal
 
 from app.figures.currency import CURRENCY
 from app.figures.items import ITEMS
+from app.figures.periods import MONTH_NAMES, classify_period
 
 # Words of an answer: English words (with "&", apostrophes and hyphens inside), Korean
 # words, digit runs, and single other characters.
@@ -149,15 +150,11 @@ _QUESTION_WORDS_KO += ("되나", "되었", "됩니", "됐", "돼", "기록", "�
 # ("for the year ended Dec. 28, 2024", which names the year whatever the month), an
 # annual filing ("10-K", "20-F"), and "according to" / "want to know". No other date
 # form is rewritten, so a month or a date anywhere else qualifies the item.
-_MONTH_NAMES = (
-    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?"
-    r"|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
-)
 _QUESTION_REWRITES = (
     (
         re.compile(
             r"(?<![\w-])(?:fiscal\s+)?year\s+end(?:ed|ing)\s+(?:on\s+)?"
-            + _MONTH_NAMES
+            + MONTH_NAMES
             + r"\.?\s+\d{1,2},?\s+((?:19|20)\d{2})(?!\w)",
             re.IGNORECASE,
         ),
@@ -360,6 +357,12 @@ def items_named(text: str, *, issuers: Collection[str] = ()) -> frozenset[str]:
         or Korean particle ("삼성전자의"), before items are read. No other company
         name is guessed, so without them a company name next to an item qualifies it.
     """
-    _, kinds, spans = _question_words(text, issuers)
-    plain = _plain_sentences(kinds)
-    return frozenset(item for _, _, item in spans) if plain else frozenset()
+    named: set[str] = set()
+    for sentence in re.split(r"[?!？！]", text):
+        _, kinds, spans = _question_words(sentence, issuers)
+        if spans and (
+            not _plain_sentences(kinds) or classify_period(sentence) in {"subannual", "date"}
+        ):
+            return frozenset()
+        named.update(item for _, _, item in spans)
+    return frozenset(named)

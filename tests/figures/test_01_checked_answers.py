@@ -938,10 +938,11 @@ def test_an_unsupported_code_shaped_currency_is_held_not_dropped(note, cell, ans
     ],
 )
 def test_a_year_beside_ordinary_words_stays_period_context(note, cell, answer):
-    """Read "2024 net", "2024 the" or a date as the period, not as an extra amount."""
+    """Read years as context; a calendar date cannot claim an annual amount."""
     result = check_figures(answer, [note_cell(note, cell)], [2024])
-    assert [(check.figure, check.verdict) for check in result.checks] == [("25", "verified")]
-    assert result.checks[0].evidenced_years == (2024,)
+    expected = "unverified" if answer.startswith("As of") else "verified"
+    assert [(check.figure, check.verdict) for check in result.checks] == [("25", expected)]
+    assert result.checks[0].evidenced_years == (() if expected == "unverified" else (2024,))
 
 
 def test_distinct_claims_keep_their_own_currency_codes():
@@ -1053,7 +1054,7 @@ def test_a_single_note_reference_before_a_matching_amount_stays_verified(answer)
     """
     result = check_figures(answer, [table_evidence()], [2024])
     assert [check.figure for check in result.checks] == ["25,785"]
-    assert result.verdict == "verified"
+    assert result.verdict == ("unverified" if "Q4" in answer else "verified")
 
 
 @pytest.mark.parametrize(
