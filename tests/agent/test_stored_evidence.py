@@ -87,3 +87,31 @@ def test_a_table_chunk_stored_without_its_table_is_not_read_as_prose():
             assert check_figures("Revenue grew 14%.", [evidence], []).verdict == "unverified"
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("status", ["not_table", "missing_records", "stale_reading"])
+def test_selected_cell_reader_does_not_read_unavailable_catalog_payloads(monkeypatch, status):
+    """Every nonselectable state returns no cells without querying stored values."""
+    from app.agent import stored_evidence
+    from tests.agent.support import FakeSessionFactory
+
+    async def catalog(session, chunk_id):
+        """Stand in for the catalog; the fake session cannot execute a value query."""
+        return {"status": status}
+
+    monkeypatch.setattr(stored_evidence, "load_cell_catalog", catalog)
+    assert asyncio.run(stored_evidence.read_selected_cells(FakeSessionFactory(), ("1:r1c1",))) == {}
+
+
+def test_selected_cell_reader_refuses_an_unknown_catalog_state(monkeypatch):
+    """A new unhandled state cannot silently masquerade as an empty catalog."""
+    from app.agent import stored_evidence
+    from tests.agent.support import FakeSessionFactory
+
+    async def catalog(session, chunk_id):
+        """Return an unrecognized wire value."""
+        return {"status": "unavailable"}
+
+    monkeypatch.setattr(stored_evidence, "load_cell_catalog", catalog)
+    with pytest.raises(ValueError, match="unknown cell catalog status"):
+        asyncio.run(stored_evidence.read_selected_cells(FakeSessionFactory(), ("1:r1c1",)))

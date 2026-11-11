@@ -52,8 +52,13 @@ async def read_selected_cells(
     async with session_factory() as session:
         for chunk_id in chunk_ids:
             catalog = await load_cell_catalog(session, chunk_id)
-            if catalog["status"] != "available":
-                continue
+            match catalog["status"]:
+                case "not_table" | "missing_records" | "stale_reading":
+                    continue
+                case "available":
+                    pass
+                case _:
+                    raise ValueError("unknown cell catalog status")
             values = {
                 cell_ref(chunk_id, row, column): value
                 for row, column, value in await session.execute(

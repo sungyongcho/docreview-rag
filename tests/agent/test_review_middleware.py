@@ -574,7 +574,11 @@ def test_a_fetch_whose_cell_content_changed_within_the_question_is_refused():
 
 def test_a_chunk_without_stored_cells_adds_no_cells():
     """Leave the cell ledger alone for running text and for tables stored without cells."""
-    for table in ({"status": "not_table"}, {"status": "unavailable"}):
+    for table in (
+        {"status": "not_table"},
+        {"status": "missing_records"},
+        {"status": "stale_reading"},
+    ):
         answer, _ = gate_call(
             "fetch_chunk", {"chunk_id": 2024}, {2024: identity(2024)}, fetched_result(table=table)
         )

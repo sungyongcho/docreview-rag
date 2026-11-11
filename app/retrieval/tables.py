@@ -424,9 +424,9 @@ def catalog_cells(
 async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, object]:
     """Return the selectable cells one stored chunk carries, with what makes them known.
 
-    ``status`` is ``not_table`` for running text and ``unavailable`` for a table chunk
-    stored without its table, or whose table was built or read by code other than the
-    running code (stale until the document is ingested again; see ``current_table``);
+    ``status`` is ``not_table`` for running text, ``missing_records`` for a table
+    chunk stored without rows, and ``stale_reading`` with both identities when its
+    table was built or read by other code (see ``current_table``);
     neither means the documents lack an answer. Blank and
     non-numeric cells are left out; every other cell is listed with its own status, so a
     cell whose unit, currency, period or item is unknown is visible but not certified.
@@ -442,12 +442,22 @@ async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, o
         )
     ).all()
     if not members:
-        return {"status": "unavailable"}
+        return {"status": "missing_records"}
     table_id = members[0].table_id
     table = await session.get(ParsedTable, table_id)
     assert table is not None
     if not current_table(table):
-        return {"status": "unavailable"}
+        return {
+            "status": "stale_reading",
+            "stored_identity": {
+                "builder_identity": table.builder_identity,
+                "resolver_identity": table.resolver_identity,
+            },
+            "running_identity": {
+                "builder_identity": builder_identity(),
+                "resolver_identity": resolver_identity(),
+            },
+        }
     normalized = {
         (cell.source_row, cell.column_index): cell
         for cell in await session.scalars(select(TableCell).where(TableCell.table_id == table_id))

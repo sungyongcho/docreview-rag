@@ -159,8 +159,15 @@ def _returned_cells(message: ToolMessage, chunk_id: int) -> CellLedger:
     artifact = message.artifact if isinstance(message.artifact, dict) else {}
     structured = artifact.get("structured_content")
     catalog = structured.get("table") if isinstance(structured, dict) else None
-    if not isinstance(catalog, dict) or catalog.get("status") != "available":
+    if not isinstance(catalog, dict):
         return {}
+    match catalog.get("status"):
+        case "not_table" | "missing_records" | "stale_reading":
+            return {}
+        case "available":
+            pass
+        case _:
+            raise ValueError("unknown cell catalog status")
     records: CellLedger = {}
     for cell in catalog["cells"]:
         records = merge_identities(records, {cell["ref"]: cell_record(cell, catalog, chunk_id)})

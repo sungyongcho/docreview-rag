@@ -1,10 +1,10 @@
 """Filing search, chunk inspection, and fiscal-year comparison tools."""
 
 from collections.abc import Sequence
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic.functional_validators import field_validator
+from pydantic.functional_validators import field_validator, model_validator
 
 from app.agent.tools.registry import Tool, ToolError, ToolRegistry
 from app.contracts.evidence import EvidenceCitation
@@ -155,19 +155,47 @@ class CatalogUnit(StrictSchema):
     currency: tuple[str, ...]
 
 
-class CellCatalog(StrictSchema):
-    """The stored cells of a fetched chunk, or why it has none.
+class TableReadingIdentity(StrictSchema):
+    """The builder and resolver versions that jointly identify a stored table reading."""
 
-    ``not_table`` is running text; ``unavailable`` is a table chunk stored without its
-    table or by code other than the running code. Neither means the documents lack an
-    answer.
+    builder_identity: NonBlank
+    resolver_identity: NonBlank
+
+
+class CellCatalog(StrictSchema):
+    """The stored cells, or their absence due to missing rows or stale interpretation.
+
+    ``not_table`` is running text. ``missing_records`` means the table has no stored
+    rows; ``stale_reading`` gives its stored and running builder/resolver identities.
+    Neither table state means the documents lack an answer, and neither carries cells.
     """
 
-    status: Literal["available", "not_table", "unavailable"]
+    status: Literal["available", "not_table", "missing_records", "stale_reading"]
     stable_key: str | None = None
     resolver_identity: str | None = None
+    stored_identity: TableReadingIdentity | None = None
+    running_identity: TableReadingIdentity | None = None
     unit: CatalogUnit | None = None
     cells: tuple[CatalogCell, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_catalog_state(self) -> Self:
+        """Require stale identities and exclude selectable payloads from absent readings."""
+        if self.status == "stale_reading":
+            if self.stored_identity is None or self.running_identity is None:
+                raise ValueError("stale_reading requires stored and running identities")
+            if self.stored_identity == self.running_identity:
+                raise ValueError("stale_reading requires differing identities")
+        elif self.stored_identity is not None or self.running_identity is not None:
+            raise ValueError("only stale_reading carries stored and running identities")
+        if self.status != "available" and (
+            self.cells
+            or self.unit is not None
+            or self.stable_key is not None
+            or self.resolver_identity is not None
+        ):
+            raise ValueError("a catalog without available readings cannot carry selectable data")
+        return self
 
 
 class FetchedChunk(StrictSchema):

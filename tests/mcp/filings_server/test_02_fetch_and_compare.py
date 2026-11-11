@@ -158,6 +158,13 @@ def test_only_cell_mode_publishes_the_fetch_output_schema_and_its_catalog(tmp_pa
     cell_tools, cell_fetch = results["cells"]
     assert all(tool.output_schema is None for tool in legacy_tools.values())
     assert cell_tools["fetch_chunk"].output_schema == FetchedChunk.model_json_schema()
+    schema = cell_tools["fetch_chunk"].output_schema
+    assert schema["$defs"]["CellCatalog"]["properties"]["status"]["enum"] == [
+        "available",
+        "not_table",
+        "missing_records",
+        "stale_reading",
+    ]
     assert cell_tools["search_filings"].output_schema is None
     assert [tool.input_schema for tool in cell_tools.values()] == [
         tool.input_schema for tool in legacy_tools.values()
@@ -167,6 +174,8 @@ def test_only_cell_mode_publishes_the_fetch_output_schema_and_its_catalog(tmp_pa
         "status": "not_table",
         "stable_key": None,
         "resolver_identity": None,
+        "stored_identity": None,
+        "running_identity": None,
         "unit": None,
         "cells": [],
     }

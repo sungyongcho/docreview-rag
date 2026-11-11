@@ -12,7 +12,7 @@ from app.db.models import Chunk, ChunkTableCell, ParsedTable
 from app.figures.answers import EvidenceText
 from app.figures.tables import TableCellReading
 from app.ingestion.persistence import persist_seed_batch
-from app.ingestion.table_records import resolver_identity
+from app.ingestion.table_records import builder_identity, resolver_identity
 from app.retrieval.tables import (
     figure_evidence,
     load_cell_catalog,
@@ -95,7 +95,7 @@ def test_the_cell_catalog_lists_stored_cells_and_says_why_a_chunk_has_none():
             )
             assert await load_cell_catalog(session, 999_999) == {"status": "not_table"}
             await session.execute(delete(ChunkTableCell))
-            assert await load_cell_catalog(session, chunk_id) == {"status": "unavailable"}
+            assert await load_cell_catalog(session, chunk_id) == {"status": "missing_records"}
 
     asyncio.run(exercise())
 
@@ -161,7 +161,19 @@ def test_a_table_from_other_code_has_no_catalog_and_no_usable_readings(identity)
             current = (await load_table_readings(session, [chunk_id]))[chunk_id]
             assert {reading.item for reading in current} == {"revenue", "net income"}
             await session.execute(update(ParsedTable).values({identity: "0" * 64}))
-            assert await load_cell_catalog(session, chunk_id) == {"status": "unavailable"}
+            stale = await load_cell_catalog(session, chunk_id)
+            assert stale == {
+                "status": "stale_reading",
+                "stored_identity": {
+                    "builder_identity": builder_identity(),
+                    "resolver_identity": resolver_identity(),
+                    identity: "0" * 64,
+                },
+                "running_identity": {
+                    "builder_identity": builder_identity(),
+                    "resolver_identity": resolver_identity(),
+                },
+            }
             assert set(await load_chunk_tables(session, [chunk_id])) == {chunk_id}
             assert await load_chunk_tables(session, [chunk_id], current_only=True) == {}
             assert await load_table_readings(session, [chunk_id]) == {}
@@ -181,3 +193,37 @@ def test_figure_evidence_gives_no_body_or_cells_for_a_table_without_usable_readi
     assert figure_evidence(3, "table", "Revenue grew 14%.", "h", {2: (reading,)}) == (
         EvidenceText(3, "", "h", ())
     )
+
+
+@pytest.mark.parametrize("changed", [None, "builder_identity", "resolver_identity", "both"])
+def test_catalog_distinguishes_missing_records_from_stale_identities_without_db(changed):
+    """Missing rows and either stale reader component explain emptiness without exposing cells."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.agent.tools.filings import CellCatalog
+
+    stored = {"builder_identity": builder_identity(), "resolver_identity": resolver_identity()}
+    if changed == "both":
+        stored = {key: "old" for key in stored}
+    elif changed is not None:
+        stored[changed] = "old"
+    members = [] if changed is None else [SimpleNamespace(table_id="t")]
+    session = SimpleNamespace(
+        get=AsyncMock(side_effect=[Chunk(id=1, kind="table"), ParsedTable(table_id="t", **stored)]),
+        scalars=AsyncMock(return_value=SimpleNamespace(all=lambda: members)),
+    )
+    result = asyncio.run(load_cell_catalog(session, 1))
+    model = CellCatalog.model_validate(result)
+    assert model.cells == () and model.unit is None
+    if changed is None:
+        assert result == {"status": "missing_records"}
+    else:
+        assert result == {
+            "status": "stale_reading",
+            "stored_identity": stored,
+            "running_identity": {
+                "builder_identity": builder_identity(),
+                "resolver_identity": resolver_identity(),
+            },
+        }

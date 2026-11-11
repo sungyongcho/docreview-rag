@@ -201,3 +201,42 @@ def test_a_catalog_cell_status_is_any_listed_cell_status():
     """Publish every cell status except the blank and non-numeric ones the catalog leaves out."""
     published = set(get_args(CatalogCell.model_fields["status"].annotation))
     assert published == set(get_args(CellStatus)) - {"blank", "not_numeric"}
+
+
+@pytest.mark.parametrize("status", ["not_table", "missing_records", "stale_reading", "unavailable"])
+def test_catalog_states_cannot_silently_supply_cells(status):
+    """Old/unknown states and stale/missing payloads cannot certify selectable data."""
+    from app.agent.tools.filings import CellCatalog
+
+    if status in {"not_table", "missing_records"}:
+        assert CellCatalog(status=status).cells == ()
+    else:
+        with pytest.raises(ValueError):
+            CellCatalog.model_validate({"status": status})
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "status": "stale_reading",
+            "stored_identity": {"builder_identity": "a", "resolver_identity": "b"},
+            "running_identity": {"builder_identity": "a", "resolver_identity": "b"},
+        },
+        {"status": "missing_records", "stable_key": "not-selectable"},
+        {
+            "status": "missing_records",
+            "stored_identity": {"builder_identity": "a", "resolver_identity": "b"},
+        },
+        {
+            "status": "stale_reading",
+            "stored_identity": {"builder_identity": "a", "resolver_identity": "b"},
+        },
+    ],
+)
+def test_catalog_schema_refuses_inconsistent_state_details(payload):
+    """Only genuinely different complete identity pairs explain stale readings."""
+    from app.agent.tools.filings import CellCatalog
+
+    with pytest.raises(ValueError):
+        CellCatalog.model_validate(payload)

@@ -3138,7 +3138,7 @@ export interface components {
         };
         /**
          * PeriodMismatch
-         * @description Every figure of a supported answer came from a period other than the requested one.
+         * @description Figures of the answer matched only a different known fiscal period.
          */
         PeriodMismatch: {
             /**
