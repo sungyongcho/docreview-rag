@@ -693,3 +693,41 @@ def test_a_standard_concept_must_be_one_accepted_for_the_labels_item(
 def test_every_item_a_label_can_name_has_accepted_concepts():
     """The accepted-concept table covers exactly the items row labels name."""
     assert set(_ITEM_CONCEPTS) == set(PHRASE_ITEMS.values())
+
+
+ROLLFORWARD_TABLE = one_column(
+    "December 28, 2024",
+    ("Balance at beginning of year", "$ 2,124"),
+    ("Charges to income tax expense", "9"),
+    ("Balance at end of year", "$ 2,136"),
+)
+
+
+def test_a_rollforward_column_undates_its_untagged_closing_balance():
+    """Known limit (CL-8): a tagged opening balance's prior-year instant undates the column.
+
+    Its year override is legitimate, yet the rule cannot tell it from a fiscal year
+    named after another calendar year, so the untagged closing balance names no year.
+    """
+    readings = {
+        (cell.row, cell.column): cell
+        for cell in read_table_cells(
+            table_fragment(ROLLFORWARD_TABLE),
+            {
+                (1, 1): (fact(text="2,124", fiscal_year=2023),),
+                (2, 1): (fact(text="9", fiscal_year=2024),),
+            },
+        )
+    }
+    assert readings[(1, 1)].overrides == ("year",)
+    assert readings[(2, 1)].years == {2024}
+    assert readings[(3, 1)].years == frozenset()
+
+
+def test_a_part_named_without_a_part_word_is_still_read_as_the_entity():
+    """Known limit (CL-6): a label-only row naming a segment by its name alone.
+
+    "Data Center:" carries no part word, so the rows after it stay the entity's.
+    """
+    html = one_column("2024", ("Data Center:", ""), ("Revenue", "47,525"))
+    assert statuses(html) == {(2, 1): "known"}
