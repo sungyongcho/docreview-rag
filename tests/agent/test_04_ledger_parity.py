@@ -87,6 +87,15 @@ def test_stored_identity_changes_end_both_agents_before_final(versions, candidat
         ),
     )
     replies = [AIMessage(content="", tool_calls=batch) for batch in [*batches, [final]]]
+    check_reset = versions == ("a", "b") and candidate == "a" and parallel
+    if check_reset:
+        fresh_final = {**final, "args": {**final["args"], "citations": [identity("c")]}}
+        replies.extend(
+            [
+                AIMessage(content="", tool_calls=calls("c")),
+                AIMessage(content="", tool_calls=[fresh_final]),
+            ]
+        )
     model = ScriptedChatModel.from_replies(*replies)
     agent = create_agent(
         model,
@@ -114,6 +123,15 @@ def test_stored_identity_changes_end_both_agents_before_final(versions, candidat
             {"configurable": {"thread_id": "ledger"}},
         )
         result = await run_agent("Read the entity", registry=registry, provider=provider)
+        if check_reset:
+            # The unused old final proposal is refused on the new question before its own reads.
+            fresh = await agent.ainvoke(
+                {"messages": [HumanMessage("A new question")]},
+                {"configurable": {"thread_id": "ledger"}},
+            )
+            assert fresh["failure"] is None
+            assert fresh["evidence"] == {1: identity("c")}
+            assert fresh["structured_response"].citations[0].source_sha256 == "c" * 64
         return state, result
 
     state, result = asyncio.run(run())
@@ -122,8 +140,63 @@ def test_stored_identity_changes_end_both_agents_before_final(versions, candidat
         assert state.get("structured_response") is None
         assert result.status == "tool_error"
         assert "conflicting immutable identity for chunk 1" in result.failure
-        assert len(model.requests) == len(batches)
+        assert len(model.requests) == len(batches) + (3 if check_reset else 0)
         assert len(provider.requests) == len(batches)
     else:
         assert state["structured_response"].label == "SUPPORTED"
         assert result.status == "ok"
+
+
+def test_unexpected_evidence_extraction_errors_are_system_failures_on_both_paths():
+    """An extractor's unexpected error ends both agents instead of escaping the middleware."""
+
+    async def read(params):
+        """Return a result whose evidence extractor cannot interpret it."""
+        return {"hits": [{}]}
+
+    def extract(output):
+        """Stand in for an extractor discovering malformed successful evidence."""
+        raise KeyError("private malformed field")
+
+    @tool(response_format="content_and_artifact")
+    async def read_chunk(version: str):
+        """Read one malformed stored result."""
+        output = await read(ReadParams(version=version))
+        return json.dumps(output), {"structured_content": output}
+
+    registry = ToolRegistry()
+    registry.register(
+        Tool(
+            name="read_chunk",
+            description="Read stored data",
+            parameters=ReadParams,
+            run=read,
+            evidence_ids=extract,
+        )
+    )
+    model = ScriptedChatModel.from_replies(AIMessage(content="", tool_calls=calls("a")))
+    agent = create_agent(
+        model, [read_chunk], middleware=[StopOnSystemFailure(), ReviewGate(registry)]
+    )
+    provider = RecordingToolProvider(
+        [
+            turn(
+                tool_calls=(
+                    ToolCall(call_id="read", name="read_chunk", arguments_json='{"version":"a"}'),
+                )
+            )
+        ]
+    )
+
+    async def run():
+        """Observe both terminal failures from the public entry points."""
+        state = await agent.ainvoke({"messages": [HumanMessage("Read source")]})
+        result = await run_agent("Read source", registry=registry, provider=provider)
+        return state, result
+
+    state, result = asyncio.run(run())
+    assert (
+        state["failure"] == result.failure == "KeyError: tool read_chunk evidence extraction failed"
+    )
+    assert result.status == "tool_error" and result.answer is None
+    assert len(model.requests) == len(provider.requests) == 1

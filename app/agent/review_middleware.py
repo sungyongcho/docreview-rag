@@ -403,7 +403,7 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
             return result
         try:
             found = citation_records(_returned_identities(tool, result))
-        except (ValueError, TypeError) as error:
+        except Exception as error:
             raise MCPError(
                 code=INTERNAL_ERROR,
                 message=safe_runtime_error(error, f"tool {tool.name} evidence extraction"),
