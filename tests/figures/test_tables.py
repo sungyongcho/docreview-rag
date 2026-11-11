@@ -294,3 +294,36 @@ def test_a_consolidated_tag_in_a_separate_statement_overrides_its_declaration():
         ),
     )
     assert (agreeing.scope, agreeing.overrides) == (SEPARATE, ())
+
+
+# NVDA's layout: the percent sign of a margin sits in a source cell of its own.
+SPLIT_PERCENT_TABLE = (
+    '<table><tr><td>(In millions of U.S. dollars)</td><td colspan="2">2024</td></tr>'
+    "<tr><td>Net revenue</td><td>25,785</td><td></td></tr>"
+    "<tr><td>Gross margin</td><td>72.7</td><td>%</td></tr></table>"
+)
+
+
+def test_a_percent_sign_in_its_own_cell_is_never_an_amount():
+    """The margin's "%" cell makes "72.7 %" a percentage its reading does not carry."""
+    readings = {(c.row, c.column): c for c in read_table_cells(table_fragment(SPLIT_PERCENT_TABLE))}
+    margin = interpret_table_cell("72.7 %", [readings[(2, 1)]])
+    assert (margin.status, margin.reason) == (
+        "conflicting",
+        "a percent sign outside the figure's own cell",
+    )
+    assert interpret_table_cell("25,785", [readings[(1, 1)]]).status == "known"
+
+
+@pytest.mark.parametrize(
+    ("text", "changes", "status"),
+    [
+        ("12.5 %", {}, "conflicting"),
+        ("12.5 %", {"percent": None}, "conflicting"),
+        ("12.5 %", {"percent": True, "scale": None, "currency": None}, "known"),
+        ("12.5%", {"percent": True, "scale": None, "currency": None}, "known"),
+    ],
+)
+def test_a_percentage_is_known_only_when_its_reading_is_one(text, changes, status):
+    """A normalized percentage stays known only on a reading that is a percentage."""
+    assert interpret_table_cell(text, [reading(**changes)]).status == status

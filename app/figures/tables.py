@@ -598,6 +598,12 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
         return CellInterpretation("conflicting", "sign marker is ambiguous", None, reading)
     if reading.measure == "other":
         return CellInterpretation("not_monetary", "tagged unit is not an amount", value, reading)
+    if spans[0].percent and reading.percent is not True:
+        # A percent sign in a source cell of its own ("72.7 | %") makes the figure a
+        # percentage the reading of its source cell does not carry.
+        return CellInterpretation(
+            "conflicting", "a percent sign outside the figure's own cell", value, reading
+        )
     if reading.percent is None:
         return CellInterpretation("scale_unknown", "percentage unknown", value, reading)
     if not reading.percent:
