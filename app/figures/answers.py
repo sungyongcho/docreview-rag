@@ -25,7 +25,7 @@ period, so they confirm only claims for which no period is asked or stated.
 An amount is certified only when both sides state its unit: the answer by a scale
 word or currency, the table by its own unit declarations. When the unit of the item's
 cells is absent, not fully readable or contradictory, or the answer states none, no
-unit is guessed and the figure is ``unit_unverified``: withheld, neither confirmed nor
+unit is guessed and the figure is ``withheld``: withheld, neither confirmed nor
 reported as absent. One such figure withholds the whole answer, even beside a figure
 that is wrong.
 """
@@ -59,6 +59,12 @@ from app.figures.vocabulary import (
     TOKEN,
     phrase_key,
 )
+from app.figures.withholding import (
+    Comparison,
+    UncertainComparison,
+    WithholdingCause,
+    ordered_causes,
+)
 
 # Rounding is accepted only for figures stated with at least this many significant digits.
 _MIN_ROUNDED_DIGITS = 3
@@ -89,16 +95,10 @@ _KOREAN_FILLERS |= {"기록", "수준", "규모", "각각", "회계연도"}
 _KOREAN_UNIT = re.compile(r"(?:[십백천]?[만억조]|천)?(?:원|달러|불)?")
 _KOREAN_CHANGES = ("증가", "감소", "성장", "상승", "하락", "늘어", "줄어", "증대")
 
-# ``unit_unverified``: the figure names an item whose cited cells' unit, or whose own
-# unit, is missing, not fully readable or contradictory, so the value can be neither
-# confirmed nor refuted. It is withheld, never reported as absent from the documents.
-type Verdict = Literal["verified", "period_mismatch", "unit_unverified", "unverified"]
-type _Comparison = Literal["match", "uncertain", "no"]
-_FACT_VERDICTS: dict[_Comparison, Verdict] = {
-    "match": "verified",
-    "uncertain": "unit_unverified",
-    "no": "unverified",
-}
+# ``withheld``: an item's figure cannot be confirmed or refuted because the
+# comparison did not establish its scale, currency or direction. It is withheld,
+# never reported as absent from the documents.
+type Verdict = Literal["verified", "period_mismatch", "withheld", "unverified"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,26 +115,6 @@ class EvidenceText:
     table_cells: Sequence[TableCellReading] | None = None
 
 
-# What a report says in place of an answer that ``unit_unverified`` withholds.
-UNIT_UNVERIFIED_ANSWER = (
-    "The cited evidence names this item, but the unit or sign of its figures could not be "
-    "confirmed, so no figure is reported."
-)
-UNIT_UNVERIFIED_ANSWER_KO = (
-    "인용 근거에 해당 항목은 있지만 수치의 단위나 부호를 확인할 수 없어 수치를 보고하지 않습니다."
-)
-# Why such an answer is withheld: the unit, the currency or the direction is not established.
-UNIT_UNVERIFIED_RATIONALE = (
-    "The cited table states no readable unit or explicit currency, or contradictory ones, in "
-    "its own notes, cells or a caption linked to it, the answer states none, or the table or "
-    "the answer does not establish whether the figure is a gain or a loss."
-)
-UNIT_UNVERIFIED_RATIONALE_KO = (
-    "인용한 표 자체나 셀, 표에 연결된 단위 주석에서 단위나 명시적 통화를 확인할 수 없거나 서로 "
-    "다르거나, 답변에 단위나 통화가 없거나, 표나 답변이 수치의 손익 방향을 확정하지 않습니다."
-)
-
-
 @dataclass(frozen=True, slots=True)
 class FigureCheck:
     """The outcome for one figure stated in the answer.
@@ -147,6 +127,14 @@ class FigureCheck:
     verdict: Verdict
     evidenced_years: tuple[int, ...] = ()
     item: str | None = None
+    causes: tuple[WithholdingCause, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Require causes exactly for a withheld figure and canonicalize their order."""
+        causes = ordered_causes(self.causes)
+        if bool(causes) != (self.verdict == "withheld"):
+            raise ValueError("only withheld figures require causes")
+        object.__setattr__(self, "causes", causes)
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,15 +144,20 @@ class FiguresResult:
     checks: tuple[FigureCheck, ...]
 
     @property
-    def verdict(self) -> Verdict:
-        """Withhold an uncertain unit first, then fail an unverified figure, then mismatch.
+    def causes(self) -> tuple[WithholdingCause, ...]:
+        """Return only the withheld figures' causes, once each in fixed order."""
+        return ordered_causes(cause for check in self.checks for cause in check.causes)
 
-        A figure whose unit cannot be confirmed outranks every other outcome, so missing
-        unit certainty never turns into a statement that the documents lack the answer or
+    @property
+    def verdict(self) -> Verdict:
+        """Withhold an uncertain figure first, then fail an unverified figure, then mismatch.
+
+        A figure whose scale, currency or direction is uncertain outranks other outcomes,
+        so uncertainty never turns into a statement that the documents lack the answer or
         that it belongs to another period; the whole answer is withheld instead.
         """
         verdicts = {check.verdict for check in self.checks}
-        for verdict in ("unit_unverified", "unverified", "period_mismatch"):
+        for verdict in ("withheld", "unverified", "period_mismatch"):
             if verdict in verdicts:
                 return verdict
         return "verified"
@@ -490,7 +483,7 @@ def _compare(
     percent: bool | None,
     currency: str | None,
     marked: bool = False,
-) -> _Comparison:
+) -> Comparison:
     """Compare a figure with one evidence value of the given unit and currency.
 
     Percentages compare only with percentages, without a scale or currency; ``percent``
@@ -503,28 +496,39 @@ def _compare(
     converted.
     """
     if percent is None:
-        return "uncertain"
+        return UncertainComparison(("scale",))
     if figure.percent != percent:
         return "no"
     if percent:
         if figure.currency or marked:
-            return "uncertain"
+            return UncertainComparison(("currency",))
         return "match" if _within(figure, value, other, Decimal(1)) else "no"
     same = same_currency(figure.stated_currency, currency)
     if same == "no":
         return "no"
     stated = figure.stated_scale
-    if same == "uncertain" or stated is None or scale is None:
-        return "uncertain"
+    causes: list[WithholdingCause] = []
+    if stated is None or scale is None:
+        causes.append("scale")
+    if isinstance(same, UncertainComparison):
+        causes.extend(same.causes)
+    if causes:
+        return UncertainComparison(tuple(causes))
+    assert stated is not None and scale is not None
     return "match" if _within(figure, value * stated, other * scale, stated) else "no"
 
 
-def _best(comparisons: set[_Comparison]) -> _Comparison:
+def _best(comparisons: set[Comparison]) -> Comparison:
     """Return the strongest outcome among one evidence item's values."""
-    for comparison in ("match", "uncertain"):
-        if comparison in comparisons:
-            return comparison
-    return "no"
+    if "match" in comparisons:
+        return "match"
+    causes = ordered_causes(
+        cause
+        for comparison in comparisons
+        if isinstance(comparison, UncertainComparison)
+        for cause in comparison.causes
+    )
+    return UncertainComparison(causes) if causes else "no"
 
 
 def _written(figure: Figure) -> str:
@@ -545,7 +549,7 @@ def _judge(
     Only a table cell holding the claim's item, value and period, in units both sides
     state, confirms a level; a cell scoped to a dimension holds a part of the entity,
     not its item, so it is not compared. A cell of the item whose unit, or the claim's own unit, is
-    uncertain withholds the claim (``unit_unverified``) whatever its digits, instead of
+    uncertain withholds the claim (``withheld``) whatever its digits, instead of
     confirming, refuting or calling it another period. A change claim, or any claim
     when a period is asked or stated, gets no help from labels or running text, which
     cannot show a period;
@@ -555,12 +559,12 @@ def _judge(
     shown = _written(figure)
     negative = claim.negative
 
-    def directed(outcome: _Comparison, other: Decimal, established: bool) -> _Comparison:
+    def directed(outcome: Comparison, other: Decimal, established: bool) -> Comparison:
         """Hold a match whose direction is unknown; refuse one in the other direction."""
         if outcome != "match" or claim.change:
             return outcome
         if not established or negative is None:
-            return "uncertain"
+            return UncertainComparison(("direction",))
         return "no" if other != 0 and (other < 0) != negative else outcome
 
     if (
@@ -607,17 +611,20 @@ def _judge(
         if not claim.change and cell.item == item and cell.evidence_eligible
     ]
     certain = [years for years, outcome in compared if outcome == "match"]
-    unsure = [years for years, outcome in compared if outcome == "uncertain"]
+    unsure = [
+        (years, outcome) for years, outcome in compared if isinstance(outcome, UncertainComparison)
+    ]
     if any(in_period(years) for years in certain):
         evidenced = tuple(sorted(frozenset[int]().union(*certain)))
         outside = bool(requested) and claim.year is not None and claim.year not in requested
         return FigureCheck(shown, "verified", evidenced, item), outside
-    if unsure and (not certain or any(in_period(years) for years in unsure)):
+    if unsure and (not certain or any(in_period(years) for years, _ in unsure)):
         # No unit is guessed, so the digits cannot pick a cell: report the item's cells of
         # the claim's period, or all of them when none is in that period.
-        held = [years for years in unsure if in_period(years)] or unsure
-        evidenced = tuple(sorted(frozenset[int]().union(*held)))
-        return FigureCheck(shown, "unit_unverified", evidenced, item), False
+        held = [(years, outcome) for years, outcome in unsure if in_period(years)] or unsure
+        evidenced = tuple(sorted(frozenset[int]().union(*(years for years, _ in held))))
+        causes = ordered_causes(cause for _, outcome in held for cause in outcome.causes)
+        return FigureCheck(shown, "withheld", evidenced, item, causes), False
     if certain:
         evidenced = tuple(sorted(frozenset[int]().union(*certain)))
         # Only cells of one known other year make it another period's value.
@@ -649,7 +656,9 @@ def _judge(
             and fact.figure.value is not None
         }
     )
-    return FigureCheck(shown, _FACT_VERDICTS[outcome], (), item), False
+    if isinstance(outcome, UncertainComparison):
+        return FigureCheck(shown, "withheld", (), item, outcome.causes), False
+    return FigureCheck(shown, "verified" if outcome == "match" else "unverified", (), item), False
 
 
 def check_figures(

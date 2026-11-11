@@ -109,6 +109,7 @@ def runs(tmp_path_factory):
                     case,
                     registry=bridge,
                     provider=DeterministicToolProvider([*steps, step("final_answer", FINISH)]),
+                    locale="en",
                 )
                 observed[case] = (result, logged_events(log_path, start))
         return bridge, observed

@@ -515,7 +515,7 @@ class ModelGate:
             "answer": None,
             "failure": None,
             "period_mismatch": None,
-            "unit_unverified": None,
+            "withheld": None,
             **report,
             "model": self.settings.record(),
             "budget": {
@@ -867,7 +867,7 @@ async def ask_review_agent(
         answer=None if answer is None else answer.model_dump(mode="json"),
         failure=failure,
         period_mismatch=state.get("period_mismatch"),
-        unit_unverified=state.get("unit_unverified"),
+        withheld=state.get("withheld"),
     )
 
 

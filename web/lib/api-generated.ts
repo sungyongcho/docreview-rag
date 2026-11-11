@@ -2442,25 +2442,6 @@ export interface components {
             rejected_chunk_ids?: number[] | null;
         };
         /**
-         * FiguresUnitUnverified
-         * @description A supported answer's figures name cited items whose unit cannot be established.
-         *
-         *     The cited table states no fully readable unit, or contradictory units, in its own
-         *     header cells or the caption run linked to it, or the answer states none. No unit is
-         *     guessed, so the figures can be neither confirmed nor refuted, and one of them
-         *     withholds the whole answer instead of calling it absent from the documents or from
-         *     another period.
-         */
-        FiguresUnitUnverified: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            code: "figures_unit_unverified";
-            /** Figures */
-            figures: string[];
-        };
-        /**
          * FiguresUnverified
          * @description A supported answer stated figures its cited evidence contradicts or cannot hold.
          *
@@ -2475,6 +2456,20 @@ export interface components {
              * @enum {string}
              */
             code: "figures_unverified";
+            /** Figures */
+            figures: string[];
+        };
+        /**
+         * FiguresWithheld
+         * @description Figures withheld for the established scale, currency or direction causes.
+         */
+        FiguresWithheld: {
+            causes: components["schemas"]["WithholdingCauses"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            code: "figures_withheld";
             /** Figures */
             figures: string[];
         };
@@ -4350,7 +4345,10 @@ export interface components {
             /** Message */
             message: string;
         };
-        WorkflowReason: components["schemas"]["RetrievalEmpty"] | components["schemas"]["DuplicateRetrievedChunks"] | components["schemas"]["DuplicateEvidenceText"] | components["schemas"]["DocumentQuotaApplied"] | components["schemas"]["ContextTruncated"] | components["schemas"]["GradeReferencesFiltered"] | components["schemas"]["GradeCoverageIncomplete"] | components["schemas"]["RelevanceBelowThreshold"] | components["schemas"]["CitationsFiltered"] | components["schemas"]["SupportDowngraded"] | components["schemas"]["FiguresUnverified"] | components["schemas"]["FiguresUnitUnverified"] | components["schemas"]["PeriodMismatch"] | components["schemas"]["ProviderFailure"] | components["schemas"]["NodeError"];
+        /** @enum {string} */
+        WithholdingCause: "scale" | "currency" | "direction";
+        WithholdingCauses: components["schemas"]["WithholdingCause"][];
+        WorkflowReason: components["schemas"]["RetrievalEmpty"] | components["schemas"]["DuplicateRetrievedChunks"] | components["schemas"]["DuplicateEvidenceText"] | components["schemas"]["DocumentQuotaApplied"] | components["schemas"]["ContextTruncated"] | components["schemas"]["GradeReferencesFiltered"] | components["schemas"]["GradeCoverageIncomplete"] | components["schemas"]["RelevanceBelowThreshold"] | components["schemas"]["CitationsFiltered"] | components["schemas"]["SupportDowngraded"] | components["schemas"]["FiguresUnverified"] | components["schemas"]["FiguresWithheld"] | components["schemas"]["PeriodMismatch"] | components["schemas"]["ProviderFailure"] | components["schemas"]["NodeError"];
         /**
          * WorkflowReport
          * @description The guarded answer and its complete degradation provenance.

@@ -8,23 +8,25 @@ type ReportLabel = Extract<NonNullable<ReviewRun["report"]>, { label: unknown }>
 const EVIDENCE_LABELS: Record<ReportLabel, NonNullable<ChatMessage["evidenceLabel"]>> = {
   SUPPORTED: "Cited evidence",
   PERIOD_MISMATCH: "Cited evidence — different period",
-  UNVERIFIED: "Cited evidence — unit not confirmed",
+  UNVERIFIED: "Cited evidence — figures withheld",
   NOT_IN_DOCS: "Related evidence — not direct support",
 };
 
 /** Decode the current terminal wire report once for both review request paths. */
-export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "text" | "performance" | "evidenceLabel" | "citations" | "trace" | "diagnostics" | "failureFix"> {
+export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "text" | "performance" | "evidenceLabel" | "citations" | "trace" | "diagnostics" | "failureFix" | "withholdingCauses"> {
   const report = run.report;
   const failure = run.failure ? failureReport(run.failure) : undefined;
   let text: string;
   let evidenceLabel: ChatMessage["evidenceLabel"];
   let citations: number | undefined;
+  let withholdingCauses: ChatMessage["withholdingCauses"];
   if (report && "label" in report) {
     // A period mismatch answer is the server's statement of which period the cited figures belong to;
     // an UNVERIFIED answer is the server's notice that the figures are withheld, never the model's numbers.
     text = report.label === "NOT_IN_DOCS" ? report.rationale : report.answer;
     evidenceLabel = EVIDENCE_LABELS[report.label];
     citations = report.citations.length;
+    withholdingCauses = report.reasons.find(reason => reason.code === "figures_withheld")?.causes;
   } else if (report?.report_kind === "conversation") {
     text = report.answer;
   } else if (failure) {
@@ -35,7 +37,7 @@ export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "
   }
   const traceFields = ["status", "total_requests", "total_input_tokens", "total_output_tokens", "total_time_seconds"] as const;
   return {
-    pending: false, text, performance: run.execution ?? undefined, evidenceLabel, citations,
+    pending: false, text, performance: run.execution ?? undefined, evidenceLabel, citations, withholdingCauses,
     trace: traceFields.filter(key => run[key] !== undefined).map(key => `${key}=${String(run[key])}`).join(" · "),
     diagnostics: runDiagnostics(run), failureFix: failure?.fix,
   };

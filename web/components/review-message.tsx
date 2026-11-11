@@ -26,6 +26,20 @@ interface ReviewMessageProps {
   onUseSelected: () => void;
 }
 
+/** Display only causes established by the server; generic saved notices stay generic. */
+function withholdingLabel(causes: ChatMessage["withholdingCauses"]): string {
+  const labels: Record<string, string> = {
+    scale: "Scale not confirmed",
+    currency: "Currency not confirmed",
+    direction: "Gain/loss direction not confirmed",
+    "scale,currency": "Scale and currency not confirmed",
+    "scale,direction": "Scale and gain/loss direction not confirmed",
+    "currency,direction": "Currency and gain/loss direction not confirmed",
+    "scale,currency,direction": "Scale, currency and gain/loss direction not confirmed",
+  };
+  return labels[causes?.join(",") ?? ""] ?? "Figures withheld";
+}
+
 /** Verdict pill derived from the terminal label; conversation replies carry no label and get no pill. */
 export function verdictPill(message: ChatMessage): { className: string; text: string } | null {
   if (message.evidenceLabel === "Cited evidence") {
@@ -34,7 +48,7 @@ export function verdictPill(message: ChatMessage): { className: string; text: st
   }
   if (message.evidenceLabel === "Cited evidence — different period") return { className: "period-mismatch", text: "Different period" };
   // Withheld figures share the caution style of a period mismatch; the text names the hold.
-  if (message.evidenceLabel === "Cited evidence — unit not confirmed") return { className: "period-mismatch unit-unverified", text: "Unit not confirmed" };
+  if (message.evidenceLabel === "Cited evidence — figures withheld") return { className: "period-mismatch withheld", text: withholdingLabel(message.withholdingCauses) };
   if (message.evidenceLabel === "Related evidence — not direct support") return { className: "not-in-docs", text: "Not in documents" };
   if (message.evidenceLabel === "Retrieved candidates — answer not generated") return { className: "failed", text: "Answer not generated" };
   const decision = message.execution?.pathDecision;

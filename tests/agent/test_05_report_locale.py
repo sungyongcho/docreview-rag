@@ -22,11 +22,12 @@ from app.agent.review_middleware import (
 from app.agent.tools.registry import Tool, ToolRegistry
 from app.agent.types import CellSelection, CellSelectionAnswer, ToolCall
 from app.contracts.evidence import EvidenceCitation
+from app.contracts.report_text import withheld_text
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
-from app.workflow.types import WorkflowRequest, initial_state
+from app.workflow.types import FiguresWithheld, WorkflowRequest, initial_state
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
 from tests.workflow.support import (
     INCOME_TABLE,
@@ -44,10 +45,16 @@ class SearchParams(BaseModel):
 
 
 @pytest.mark.parametrize("locale", ["en", "ko"])
-@pytest.mark.parametrize("kind", ["unit", "direction", "period", "supported"])
+@pytest.mark.parametrize("kind", ["currency", "scale", "direction", "mixed", "period", "supported"])
 def test_all_report_paths_use_the_resolved_locale(locale, kind):
     """The same checked evidence yields the same sentences wherever that report is available."""
-    html = INCOME_TABLE if kind == "unit" else USD_INCOME_TABLE
+    html = INCOME_TABLE if kind == "currency" else USD_INCOME_TABLE
+    if kind == "scale":
+        html = html.replace("(In millions of U.S. dollars)", "(USD)")
+    if kind == "mixed":
+        html = html.replace(
+            "</table>", "<tr><td>Net loss</td><td>1,641</td><td>854</td></tr></table>"
+        )
     if kind == "direction":
         html = html.replace("Net revenue", "Net loss")
     hit, fragment = income_table_hit(html=html)
@@ -64,6 +71,14 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
     item = "net loss" if kind == "direction" else "net revenue"
     # An English answer proves that the explicitly resolved locale owns report text.
     answer = f"FY2024 {item} was USD {amount} million."
+    if kind == "mixed":
+        answer = "FY2024 net revenue was 25,785 and net loss was USD 1,641 million."
+    causes = {
+        "currency": ("currency",),
+        "scale": ("scale",),
+        "direction": ("direction",),
+        "mixed": ("scale", "currency", "direction"),
+    }.get(kind)
     proposed = dict(
         label="SUPPORTED",
         answer=answer,
@@ -133,9 +148,10 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
             {"messages": [HumanMessage(question)]},
             context=ReviewContext((2024,), read, locale=locale),
         )
-        return direct.answer, state["structured_response"]
+        return direct, state
 
-    direct, middleware = asyncio.run(run())
+    result, agent_state = asyncio.run(run())
+    direct, middleware = result.answer, agent_state["structured_response"]
     state = initial_state(
         WorkflowRequest(
             run_id="locale",
@@ -176,6 +192,14 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
     if kind != "supported":
         assert ("확인" in direct.answer) if locale == "ko" else ("The " in direct.answer)
 
+    if causes is not None:
+        assert result.withheld is not None and result.withheld.causes == causes
+        assert agent_state["withheld"]["causes"] == list(causes)
+        reason = next(r for r in workflow.reasons if isinstance(r, FiguresWithheld))
+        assert reason.causes == causes
+        assert (direct.answer, direct.rationale) == withheld_text(causes, locale=locale)
+    if kind == "mixed":
+        return  # Selection aggregates distinct cells, covered by its own mixed-cause check.
     year = 2023 if kind == "period" else 2024
     ref = f"{hit.chunk_id}:r1c1"
     cell: dict[str, Any] = dict(
@@ -186,11 +210,13 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
         item="net income" if kind == "direction" else "revenue",
         fiscal_years=[year],
         scale="1000000",
-        currency="$" if kind == "unit" else "USD",
+        currency="$" if kind == "currency" else "USD",
         percent=False,
         complete=True,
         status="currency_unconfirmed"
-        if kind == "unit"
+        if kind == "currency"
+        else "scale_unknown"
+        if kind == "scale"
         else "conflicting"
         if kind == "direction"
         else "known",
@@ -227,7 +253,8 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
         assert selected.report is None and "conflicting" in selected.problem
     else:
         assert selected.report is not None and selected.report.label == direct.label
-        if kind == "unit":
+        if kind in {"currency", "scale"}:
+            assert selected.withheld is not None and selected.withheld.causes == causes
             assert (selected.report.answer, selected.report.rationale) == (
                 direct.answer,
                 direct.rationale,

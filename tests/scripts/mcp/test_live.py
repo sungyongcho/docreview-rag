@@ -649,7 +649,9 @@ def asked(request, tmp_path_factory) -> SimpleNamespace:
         """Run the question through the experiment's own agent composition."""
         async with MCPAdapter(transport) as adapter:
             agent = review_agent(model, await adapter.list_tools(), contracts(), gate)
-            return await ask_review_agent(agent, QUESTION, ReviewContext((2024,), usd_table), gate)
+            return await ask_review_agent(
+                agent, QUESTION, ReviewContext((2024,), usd_table, locale="en"), gate
+            )
 
     outcome = asyncio.run(ask())
     return SimpleNamespace(settings=settings, fake=fake, outcome=outcome, work=work, log=log)
@@ -810,7 +812,7 @@ def ask_with_search(tmp_path: Path, search_filings: BaseTool) -> dict[str, Any]:
     )
     model = counted_model(LUNA, gate, api_key=FAKE_KEY, http_async_client=fake.client())
     agent = review_agent(model, [search_filings], contracts(), gate)
-    return asyncio.run(ask_review_agent(agent, QUESTION, ReviewContext((2024,)), gate))
+    return asyncio.run(ask_review_agent(agent, QUESTION, ReviewContext((2024,), locale="en"), gate))
 
 
 def test_trace_retains_tool_exception_without_private_details(tmp_path):
@@ -880,7 +882,9 @@ def ask_offline(
     gate = ModelGate(budget, LUNA, max_input)
     model = counted_model(LUNA, gate, api_key=FAKE_KEY, http_async_client=fake.client())
     agent = review_agent(model, [], contracts(), gate)
-    outcome = asyncio.run(ask_review_agent(agent, QUESTION, ReviewContext((2024,)), gate))
+    outcome = asyncio.run(
+        ask_review_agent(agent, QUESTION, ReviewContext((2024,), locale="en"), gate)
+    )
     return outcome, budget
 
 

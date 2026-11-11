@@ -18,25 +18,18 @@ from typing import Any, Literal
 from app.agent.types import (
     AgentPeriodMismatch,
     AgentReportAnswer,
-    AgentUnitUnverified,
+    AgentWithheld,
     CellSelection,
     CellSelectionAnswer,
 )
 from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text
-from app.figures.answers import (
-    UNIT_UNVERIFIED_ANSWER,
-    UNIT_UNVERIFIED_ANSWER_KO,
-    UNIT_UNVERIFIED_RATIONALE,
-    UNIT_UNVERIFIED_RATIONALE_KO,
-)
+from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text, withheld_text
 from app.figures.items import ITEMS
+from app.figures.tables import WITHHOLDING_CAUSES
+from app.figures.withholding import ordered_causes
 
 type Locale = Literal["en", "ko"]
-
-# Statuses whose missing unit or currency withholds the whole answer.
-UNIT_HOLDS = frozenset({"scale_unknown", "currency_unconfirmed"})
 
 _SCALES_EN = {0: "", 3: "thousand", 6: "million", 9: "billion", 12: "trillion"}
 _SCALES_KO = {0: "", 3: "천", 4: "만", 6: "백만", 8: "억", 9: "십억", 12: "조"}
@@ -101,7 +94,7 @@ class CellVerdict:
     report: AgentReportAnswer | None = None
     problem: str | None = None
     period_mismatch: AgentPeriodMismatch | None = None
-    unit_unverified: AgentUnitUnverified | None = None
+    withheld: AgentWithheld | None = None
     checks: tuple[dict[str, Any], ...] = field(default=())
 
 
@@ -195,7 +188,7 @@ def _cell_problem(selection: CellSelection, cell: StoredCell) -> str | None:
     percentage are not one established amount of an item.
     """
     status, item, years = cell.cell["status"], cell.cell["item"], cell.cell["fiscal_years"]
-    if status != "known" and status not in UNIT_HOLDS:
+    if status != "known" and status not in WITHHOLDING_CAUSES:
         return (
             f"cell {cell.ref} is {status}; it is not one established amount, "
             "so report cannot_resolve for its chunk instead"
@@ -238,7 +231,7 @@ def review_cell_selection(
     requested_items: frozenset[str],
     requested_years: Sequence[int],
     searched: bool,
-    locale: Locale = "en",
+    locale: Locale,
 ) -> CellVerdict:
     """Decide on one cell-selecting final answer.
 
@@ -365,19 +358,19 @@ def review_cell_selection(
     # model claimed and of the asked item and, when any selected cell is of an asked
     # year, of an asked year. It outranks a period mismatch, so with no selected cell
     # of an asked year a held cell still withholds rather than names another period.
-    held = [cell for cell in cells if cell.cell["status"] in UNIT_HOLDS]
+    held = [cell for cell in cells if cell.cell["status"] in WITHHOLDING_CAUSES]
     if held:
+        causes = ordered_causes(WITHHOLDING_CAUSES[cell.cell["status"]] for cell in held)
+        text, rationale = withheld_text(causes, locale=locale)
         return CellVerdict(
             AgentReportAnswer(
                 label="UNVERIFIED",
-                answer=UNIT_UNVERIFIED_ANSWER_KO if locale == "ko" else UNIT_UNVERIFIED_ANSWER,
+                answer=text,
                 citations=_citations(chunk_ids, evidence),
-                rationale=UNIT_UNVERIFIED_RATIONALE_KO
-                if locale == "ko"
-                else UNIT_UNVERIFIED_RATIONALE,
+                rationale=rationale,
             ),
-            unit_unverified=AgentUnitUnverified(
-                figures=tuple(cell.cell["raw_text"] for cell in held)
+            withheld=AgentWithheld(
+                causes=causes, figures=tuple(cell.cell["raw_text"] for cell in held)
             ),
             checks=tuple(_check(cell, "held") for cell in cells),
         )

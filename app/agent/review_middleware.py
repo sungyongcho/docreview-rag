@@ -14,7 +14,7 @@ though nothing were found.
 """
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from typing import Annotated, Any, Literal, NotRequired
 
@@ -93,7 +93,7 @@ class ReviewContext:
     evidence_reader: EvidenceReader | None = None
     cell_answers: bool = False
     requested_items: frozenset[str] = frozenset()
-    locale: Literal["en", "ko"] = "en"
+    locale: Literal["en", "ko"] = field(kw_only=True)
     cell_reader: CellReader | None = None
 
 
@@ -199,9 +199,9 @@ def keep_first_failure(left: str | None, right: str | None) -> str | None:
 class ReviewState(AgentState[Any]):
     """Agent state with this question's evidence identities and report records.
 
-    ``period_mismatch`` and ``unit_unverified`` hold the JSON form of the loop's
+    ``period_mismatch`` and ``withheld`` hold the JSON form of the loop's
     :class:`~app.agent.types.AgentPeriodMismatch` and
-    :class:`~app.agent.types.AgentUnitUnverified` when the accepted report is a period
+    :class:`~app.agent.types.AgentWithheld` when the accepted report is a period
     mismatch or withholds its figures; otherwise they are ``None``.
     """
 
@@ -209,7 +209,7 @@ class ReviewState(AgentState[Any]):
     cells: Annotated[NotRequired[CellLedger], merge_identities]
     cell_checks: NotRequired[list[dict[str, Any]] | None]
     period_mismatch: NotRequired[dict[str, Any] | None]
-    unit_unverified: NotRequired[dict[str, Any] | None]
+    withheld: NotRequired[dict[str, Any] | None]
 
 
 class StopState(ReviewState):
@@ -240,7 +240,7 @@ def _accepted(
 ) -> ModelResponse | ExtendedModelResponse:
     """Acknowledge the final call under its id and end on ``report`` with its records.
 
-    ``records`` are the ``period_mismatch``/``unit_unverified`` state updates of a
+    ``records`` are the ``period_mismatch``/``withheld`` state updates of a
     report the loop qualifies; a plain answer needs none, because each question
     starts with both cleared.
     """
@@ -352,7 +352,7 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
             "cells": None,
             "cell_checks": None,
             "period_mismatch": None,
-            "unit_unverified": None,
+            "withheld": None,
             "structured_response": None,
         }
 
@@ -432,7 +432,7 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         ----------
         request : ModelRequest[Any]
             The model call with the current graph state and the question's
-            :class:`ReviewContext`, if one was given.
+            :class:`ReviewContext` with its resolved locale.
         handler : ModelHandler
             Calls the model through the inner middleware.
 
@@ -462,7 +462,8 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
             return _rejected(message, message.tool_calls, FINAL_NOT_ALONE)
         (call,) = finals
         context = request.runtime.context
-        context = context if isinstance(context, ReviewContext) else ReviewContext()
+        if not isinstance(context, ReviewContext):
+            raise ValueError("review context with resolved locale is required")
         evidence = request.state.get("evidence") or {}
         if context.cell_answers:
             cells = request.state.get("cells") or {}
@@ -510,8 +511,8 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
                 answer, problem = None, judged.problem
             else:
                 records: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
-                if judged.unit_unverified is not None:
-                    records["unit_unverified"] = judged.unit_unverified.model_dump(mode="json")
+                if judged.withheld is not None:
+                    records["withheld"] = judged.withheld.model_dump(mode="json")
                 if judged.period_mismatch is not None:
                     records["period_mismatch"] = judged.period_mismatch.model_dump(mode="json")
                 return _accepted(message, call, judged.report, **records)
@@ -574,8 +575,8 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         }
         if verdict.period_mismatch is not None:
             records["period_mismatch"] = verdict.period_mismatch.model_dump(mode="json")
-        if verdict.unit_unverified is not None:
-            records["unit_unverified"] = verdict.unit_unverified.model_dump(mode="json")
+        if verdict.withheld is not None:
+            records["withheld"] = verdict.withheld.model_dump(mode="json")
         return _accepted(message, call, verdict.report, **records)
 
 

@@ -15,7 +15,7 @@ from app.agent.cell_answers import (
     review_cell_selection,
 )
 from app.agent.types import CellSelectionAnswer
-from app.figures.answers import UNIT_UNVERIFIED_ANSWER_KO, UNIT_UNVERIFIED_RATIONALE_KO
+from app.contracts.report_text import withheld_text
 from app.figures.items import ITEMS
 from app.figures.vocabulary import PHRASE_ITEMS, items_named
 from app.retrieval.tables import cell_ref_chunk
@@ -203,8 +203,11 @@ def test_every_korean_report_has_a_korean_rationale():
         locale="ko",
     )
     absent = review(proposal(label="NOT_IN_DOCS", reason="not_found", selections=[]), locale="ko")
-    assert unit.report is not None and unit.report.answer == UNIT_UNVERIFIED_ANSWER_KO
-    assert unit.report.rationale == UNIT_UNVERIFIED_RATIONALE_KO
+    assert (
+        unit.report is not None
+        and unit.report.answer == withheld_text(("currency",), locale="ko")[0]
+    )
+    assert unit.report.rationale == withheld_text(("currency",), locale="ko")[1]
     assert unresolved.report is not None
     assert (
         unresolved.report.answer
@@ -222,8 +225,8 @@ def test_an_unconfirmed_currency_withholds_every_amount():
     result = review(proposal(("2024:r1c1", "revenue", 2024)), dollar)
     assert result.report is not None and result.report.label == "UNVERIFIED"
     assert "25,785" not in result.report.answer + result.report.rationale
-    assert result.unit_unverified is not None
-    assert result.unit_unverified.figures == ("$ 25785",)
+    assert result.withheld is not None
+    assert result.withheld.figures == ("$ 25785",)
 
 
 HELD = {"currency": "$", "status": "currency_unconfirmed"}
@@ -267,7 +270,7 @@ def test_a_held_cell_is_checked_against_its_claim_and_the_question_first(
     """Return a held cell that is not what was claimed or asked, as for a known cell."""
     result = review(proposal(("2024:r1c1", *claim)), stored(**cell), items=frozenset(items))
     assert result.report is None and result.problem == expected
-    assert result.unit_unverified is None
+    assert result.withheld is None
 
 
 def test_a_held_cell_that_matches_is_withheld_even_for_another_period():
@@ -275,7 +278,7 @@ def test_a_held_cell_that_matches_is_withheld_even_for_another_period():
     for years in ((2024,), (2023,)):
         result = review(proposal(("2024:r1c1", "revenue", 2024)), stored(**HELD), years=years)
         assert result.report is not None and result.report.label == "UNVERIFIED"
-        assert result.unit_unverified is not None and result.period_mismatch is None
+        assert result.withheld is not None and result.period_mismatch is None
     known, held = stored(), stored("2024:r1c2", item="net income", **HELD)
     both = review(
         proposal(("2024:r1c1", "revenue", 2024), ("2024:r1c2", "net income", 2024)),
@@ -284,7 +287,7 @@ def test_a_held_cell_that_matches_is_withheld_even_for_another_period():
         items=frozenset({"revenue", "net income"}),
     )
     assert both.report is not None and both.report.label == "UNVERIFIED"
-    assert both.unit_unverified is not None and both.unit_unverified.figures == ("$ 25785",)
+    assert both.withheld is not None and both.withheld.figures == ("$ 25785",)
     assert [check["decision"] for check in both.checks] == ["held", "held"]
 
 
@@ -299,6 +302,7 @@ def test_two_cells_for_one_item_and_year_are_returned_for_correction():
         requested_items=frozenset({"revenue"}),
         requested_years=(2024,),
         searched=True,
+        locale="en",
     )
     assert result.report is None and result.problem == (
         "cells 2024:r1c1 and 2025:r1c1 both answer revenue for fiscal 2024; select one cell "
@@ -343,7 +347,7 @@ def test_a_cell_of_an_unasked_year_beside_an_asked_one_is_returned_for_correctio
     )
     problem = "cell 2024:r1c2 is fiscal 2023; the question asks for fiscal 2024"
     assert known.report is None and known.problem == problem
-    assert held.report is None and held.problem == problem and held.unit_unverified is None
+    assert held.report is None and held.problem == problem and held.withheld is None
     assert wider.problem == "cell 2024:r1c2 is fiscal 2022; the question asks for fiscal 2023, 2024"
 
 
@@ -361,8 +365,8 @@ def test_years_the_question_asks_for_or_does_not_restrict_are_still_answered():
         years=(2023, 2024),
     )
     assert asked_held.report is not None and asked_held.report.label == "UNVERIFIED"
-    assert asked_held.unit_unverified is not None
-    assert asked_held.unit_unverified.figures == ("$ 25785",)
+    assert asked_held.withheld is not None
+    assert asked_held.withheld.figures == ("$ 25785",)
     only_older = review(proposal(("2024:r1c2", "revenue", 2023)), older)
     assert only_older.report is not None and only_older.report.label == "PERIOD_MISMATCH"
 
@@ -547,3 +551,29 @@ def test_the_schema_has_no_place_for_an_amount_or_a_loose_value(change):
 def test_every_item_has_a_korean_label():
     """Name in Korean exactly the items the figure vocabulary recognizes."""
     assert set(ITEMS) == set(PHRASE_ITEMS.values())
+
+
+@pytest.mark.parametrize("locale", ["en", "ko"])
+def test_distinct_cells_aggregate_each_actual_cause_once_in_fixed_order(locale):
+    """A duplicate scale hold and a currency hold never imply a direction hold."""
+    cells = (
+        stored(status="currency_unconfirmed", currency="$"),
+        stored("2024:r1c2", status="scale_unknown", fiscal_years=[2023]),
+        stored("2024:r1c3", status="scale_unknown", item="net income"),
+    )
+    result = review(
+        proposal(
+            ("2024:r1c1", "revenue", 2024),
+            ("2024:r1c2", "revenue", 2023),
+            ("2024:r1c3", "net income", 2024),
+        ),
+        *cells,
+        locale=locale,
+        years=(2023, 2024),
+        items=frozenset({"revenue", "net income"}),
+    )
+    assert result.withheld is not None and result.withheld.causes == ("scale", "currency")
+    assert result.report is not None
+    assert (result.report.answer, result.report.rationale) == withheld_text(
+        ("scale", "currency"), locale=locale
+    )

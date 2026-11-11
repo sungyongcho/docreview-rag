@@ -9,6 +9,7 @@ from pydantic.functional_validators import model_validator
 
 from app.contracts.evidence import EvidenceCitation, ReportLabel, validate_answer_citations
 from app.contracts.validation import NonBlank, NonNegativeInt, PositiveInt, StrictSchema
+from app.figures.withholding import WithholdingCauses
 from app.llm.schemas import AnswerDecision, BudgetExceeded, ProviderBudget
 from app.observability.types import Budget, RunId, RunStatus, StepTrace, WorkflowNode
 from app.retrieval.types import ChunkHit, RetrievalFilters
@@ -149,17 +150,11 @@ class FiguresUnverified(StrictSchema):
     figures: tuple[NonBlank, ...]
 
 
-class FiguresUnitUnverified(StrictSchema):
-    """A supported answer's figures name cited items whose unit cannot be established.
+class FiguresWithheld(StrictSchema):
+    """Figures withheld for the established scale, currency or direction causes."""
 
-    The cited table states no fully readable unit, or contradictory units, in its own
-    header cells or the caption run linked to it, or the answer states none. No unit is
-    guessed, so the figures can be neither confirmed nor refuted, and one of them
-    withholds the whole answer instead of calling it absent from the documents or from
-    another period.
-    """
-
-    code: Literal["figures_unit_unverified"] = "figures_unit_unverified"
+    code: Literal["figures_withheld"] = "figures_withheld"
+    causes: WithholdingCauses
     figures: tuple[NonBlank, ...]
 
 
@@ -218,7 +213,7 @@ type WorkflowReason = Annotated[
     | CitationsFiltered
     | SupportDowngraded
     | FiguresUnverified
-    | FiguresUnitUnverified
+    | FiguresWithheld
     | PeriodMismatch
     | ProviderFailure
     | NodeError,
@@ -292,7 +287,7 @@ class WorkflowState(StrictSchema):
     # Set by check when a supported answer's figures all came from other periods.
     period_mismatch: PeriodMismatch | None = None
     # Set by check when a supported answer's figures are withheld for an uncertain unit.
-    unit_unverified: FiguresUnitUnverified | None = None
+    withheld: FiguresWithheld | None = None
     reasons: tuple[WorkflowReason, ...] = ()
     failure: ProviderFailure | NodeError | None = None
     node_path: tuple[WorkflowNode, ...] = ()

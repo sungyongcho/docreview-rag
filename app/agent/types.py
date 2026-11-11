@@ -20,6 +20,7 @@ from app.contracts.validation import (
     PositiveInt,
     StrictSchema,
 )
+from app.figures.withholding import WithholdingCauses
 from app.llm.schemas import TokenUsageDetails
 
 type AgentStatus = Literal["ok", "budget_exceeded", "provider_error", "tool_error"]
@@ -33,9 +34,10 @@ class AgentPeriodMismatch(StrictSchema):
     figures: tuple[NonBlank, ...]
 
 
-class AgentUnitUnverified(StrictSchema):
-    """Figures of a supported answer withheld because their evidence unit is uncertain."""
+class AgentWithheld(StrictSchema):
+    """Figures withheld for the established scale, currency or direction causes."""
 
+    causes: WithholdingCauses
     figures: tuple[NonBlank, ...]
 
 
@@ -178,7 +180,7 @@ class AgentReportAnswer(AgentAnswer):
     """The answer a run reports.
 
     Only the loop, never the model, reports a period mismatch or withholds figures
-    whose evidence unit it cannot confirm (``UNVERIFIED``).
+    whose scale, currency or direction it cannot confirm (``UNVERIFIED``).
     """
 
     label: ReportLabel
@@ -191,7 +193,7 @@ class AgentResult(StrictSchema):
     answer: AgentReportAnswer | None
     failure: NonBlank | None
     period_mismatch: AgentPeriodMismatch | None = None
-    unit_unverified: AgentUnitUnverified | None = None
+    withheld: AgentWithheld | None = None
     iterations: NonNegativeInt
     total_input_tokens: NonNegativeInt
     total_output_tokens: NonNegativeInt

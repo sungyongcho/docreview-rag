@@ -87,7 +87,7 @@ def test_a_linked_scale_caption_without_an_explicit_currency_is_withheld(caption
     assert chunk.table_fragment is not None
     assert [source.text for source in chunk.table_fragment.caption_sources] == [caption]
     answer = "2024 net revenue was $25,785 million."
-    assert check_figures(answer, [evidence(chunk)], [2024]).verdict == "unit_unverified"
+    assert check_figures(answer, [evidence(chunk)], [2024]).verdict == "withheld"
 
 
 def test_a_korean_caption_paragraph_certifies_the_next_table():
@@ -108,7 +108,7 @@ def test_a_table_without_any_linked_unit_is_withheld():
     (chunk,) = table_chunks(Block("table", "", html=SEC_TABLE, source_pos=0, end_pos=200))
     assert chunk.table_fragment is not None and chunk.table_fragment.caption_sources == ()
     answer = "2024 net revenue was $25,785 million."
-    assert check_figures(answer, [evidence(chunk)], [2024]).verdict == "unit_unverified"
+    assert check_figures(answer, [evidence(chunk)], [2024]).verdict == "withheld"
 
 
 @pytest.mark.parametrize("boundary", ["heading", "paragraph", "group"])
@@ -130,7 +130,7 @@ def test_a_caption_across_a_context_boundary_does_not_reach_the_table(boundary):
     (chunk,) = table_chunks(*blocks)
     assert chunk.table_fragment is not None and chunk.table_fragment.caption_sources == ()
     answer = "2024 net revenue was $25,785 million."
-    assert check_figures(answer, [evidence(chunk)], [2024]).verdict == "unit_unverified"
+    assert check_figures(answer, [evidence(chunk)], [2024]).verdict == "withheld"
 
 
 def test_a_caption_annotates_only_the_table_right_after_it():
@@ -144,7 +144,7 @@ def test_a_caption_annotates_only_the_table_right_after_it():
     first, second = table_chunks(*blocks)
     answer = "2024 net revenue was $25,785 million."
     assert check_figures(answer, [evidence(first)], [2024]).verdict == "verified"
-    assert check_figures(answer, [evidence(second)], [2024]).verdict == "unit_unverified"
+    assert check_figures(answer, [evidence(second)], [2024]).verdict == "withheld"
 
 
 def test_a_blank_paragraph_between_caption_and_table_keeps_the_link():
@@ -199,7 +199,7 @@ def test_a_connected_caption_run_reaches_the_table_whole(captions):
         (block.source_pos, block.end_pos) for block in blocks[:-1]
     ]
     answer = "2024 net revenue was $25,785 million."
-    assert check_figures(answer, [evidence(chunk)], [2024]).verdict == "unit_unverified"
+    assert check_figures(answer, [evidence(chunk)], [2024]).verdict == "withheld"
 
 
 @pytest.mark.parametrize(
@@ -246,7 +246,7 @@ def test_an_unreadable_linked_unit_is_withheld():
     """Withhold a figure whose linked note names a non-monetary unit."""
     (chunk,) = table_chunks(*caption_then_table("(단위 : 천주)", DART_TABLE))
     assert check_figures("매출액은 300.9조원이다.", [evidence(chunk)], [2024]).verdict == (
-        "unit_unverified"
+        "withheld"
     )
 
 

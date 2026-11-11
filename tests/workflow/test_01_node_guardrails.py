@@ -17,8 +17,8 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
-    FiguresUnitUnverified,
     FiguresUnverified,
+    FiguresWithheld,
     GradeCoverageIncomplete,
     GradeReferencesFiltered,
     PeriodMismatch,
@@ -439,7 +439,7 @@ def test_an_uncertain_unit_is_reported_as_unverified_not_absence(answer, table):
     assert [citation.chunk_id for citation in report.citations] == [7]
     assert "25,785" not in report.answer and report.answer != "NOT_IN_DOCS"
     held = report.reasons[-1]
-    assert isinstance(held, FiguresUnitUnverified)
+    assert isinstance(held, FiguresWithheld)
     assert held.figures == ("25,785",)
     assert checked.period_mismatch is None
 
@@ -454,7 +454,7 @@ def test_a_currency_bearing_year_like_amount_is_never_dropped():
         report = report_node(check_node(state, _ok_result(decision), fragments)).report
         assert report is not None and report.label == label, text
         reason = report.reasons[-1]
-        assert isinstance(reason, FiguresUnitUnverified | FiguresUnverified), text
+        assert isinstance(reason, FiguresWithheld | FiguresUnverified), text
         assert reason.figures == ("2024",), text
 
 

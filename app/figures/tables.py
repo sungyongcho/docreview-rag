@@ -55,6 +55,7 @@ from app.figures.text import (
     values,
 )
 from app.figures.vocabulary import PHRASE_ITEMS, SAME_ITEM_QUALIFIER, phrase_key
+from app.figures.withholding import WithholdingCause
 
 # Unit declarations are read with a small explicit grammar, not from any scale word in
 # the text. A parenthetical declares a unit when it is up to three words, "in" and words
@@ -302,6 +303,13 @@ CellStatus = Literal[
     "scope_unknown",
     "item_unknown",
 ]
+
+
+# The first missing cell fact; direction conflicts are refused, never withheld here.
+WITHHOLDING_CAUSES: dict[CellStatus, WithholdingCause] = {
+    "scale_unknown": "scale",
+    "currency_unconfirmed": "currency",
+}
 
 
 @dataclass(frozen=True, slots=True)

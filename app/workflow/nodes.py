@@ -7,12 +7,8 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel
 
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text
+from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text, withheld_text
 from app.figures.answers import (
-    UNIT_UNVERIFIED_ANSWER,
-    UNIT_UNVERIFIED_ANSWER_KO,
-    UNIT_UNVERIFIED_RATIONALE,
-    UNIT_UNVERIFIED_RATIONALE_KO,
     check_figures,
 )
 from app.figures.tables import TableCellReading
@@ -34,8 +30,8 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
-    FiguresUnitUnverified,
     FiguresUnverified,
+    FiguresWithheld,
     GradeCoverageIncomplete,
     GradeOrCheckNode,
     GradeReferencesFiltered,
@@ -472,7 +468,7 @@ def check_node(
         guarded = decision
 
     mismatch: PeriodMismatch | None = None
-    held: FiguresUnitUnverified | None = None
+    held: FiguresWithheld | None = None
     if guarded.label == "SUPPORTED":
         evidence_by_id = {hit.chunk_id: hit for hit in state.evidence}
         readings = table_cells or {}
@@ -501,9 +497,10 @@ def check_node(
                     "답변의 수치를 인용 근거에서 요청한 기간의 값으로 확인하지 못했습니다.",
                 ),
             )
-        elif figures.verdict == "unit_unverified":
-            held = FiguresUnitUnverified(
-                figures=tuple(c.figure for c in figures.checks if c.verdict == "unit_unverified")
+        elif figures.verdict == "withheld":
+            held = FiguresWithheld(
+                causes=figures.causes,
+                figures=tuple(c.figure for c in figures.checks if c.verdict == "withheld"),
             )
             reasons.append(held)
         elif figures.verdict == "period_mismatch":
@@ -520,7 +517,7 @@ def check_node(
         update={
             "decision": guarded,
             "period_mismatch": mismatch,
-            "unit_unverified": held,
+            "withheld": held,
             "reasons": tuple(reasons),
             "node_path": (*state.node_path, "check"),
         }
@@ -612,16 +609,18 @@ def report_node(state: WorkflowState) -> WorkflowState:
             for hit in (evidence_by_id[chunk_id] for chunk_id in state.decision.citation_chunk_ids)
         )
         mismatch = state.period_mismatch
-        if state.unit_unverified is not None:
+        if state.withheld is not None:
             # Withhold the figures: the answer text would assert numbers whose unit or
             # direction the evidence cannot confirm, so the report states only that.
+            text, rationale = withheld_text(
+                state.withheld.causes,
+                locale=detect_query_language(state.original_query or state.query),
+            )
             report = WorkflowReport(
                 label="UNVERIFIED",
-                answer=_fixed_rationale(state, UNIT_UNVERIFIED_ANSWER, UNIT_UNVERIFIED_ANSWER_KO),
+                answer=text,
                 citations=citations,
-                rationale=_fixed_rationale(
-                    state, UNIT_UNVERIFIED_RATIONALE, UNIT_UNVERIFIED_RATIONALE_KO
-                ),
+                rationale=rationale,
                 reasons=state.reasons,
             )
         else:

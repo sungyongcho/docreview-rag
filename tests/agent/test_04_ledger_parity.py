@@ -12,7 +12,12 @@ from pydantic import BaseModel
 import pytest
 
 from app.agent.loop import run_agent
-from app.agent.review_middleware import ReviewGate, StopOnSystemFailure, final_answer_format
+from app.agent.review_middleware import (
+    ReviewContext,
+    ReviewGate,
+    StopOnSystemFailure,
+    final_answer_format,
+)
 from app.agent.tools.registry import Tool, ToolRegistry
 from app.agent.types import ToolCall
 from app.contracts.evidence import EvidenceCitation
@@ -121,13 +126,17 @@ def test_stored_identity_changes_end_both_agents_before_final(versions, candidat
         state = await agent.ainvoke(
             {"messages": [HumanMessage("Read the entity")]},
             {"configurable": {"thread_id": "ledger"}},
+            context=ReviewContext(locale="en"),
         )
-        result = await run_agent("Read the entity", registry=registry, provider=provider)
+        result = await run_agent(
+            "Read the entity", registry=registry, provider=provider, locale="en"
+        )
         if check_reset:
             # The unused old final proposal is refused on the new question before its own reads.
             fresh = await agent.ainvoke(
                 {"messages": [HumanMessage("A new question")]},
                 {"configurable": {"thread_id": "ledger"}},
+                context=ReviewContext(locale="en"),
             )
             assert fresh["failure"] is None
             assert fresh["evidence"] == {1: identity("c")}
@@ -191,7 +200,7 @@ def test_unexpected_evidence_extraction_errors_are_system_failures_on_both_paths
     async def run():
         """Observe both terminal failures from the public entry points."""
         state = await agent.ainvoke({"messages": [HumanMessage("Read source")]})
-        result = await run_agent("Read source", registry=registry, provider=provider)
+        result = await run_agent("Read source", registry=registry, provider=provider, locale="en")
         return state, result
 
     state, result = asyncio.run(run())

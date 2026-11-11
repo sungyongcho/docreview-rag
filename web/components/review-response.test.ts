@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { verdictPill } from "./review-message";
 import { terminalMessage } from "./review-response";
+import { KO } from "@/lib/messages-ko";
 import type { ReviewRun } from "@/lib/types";
 
 const citation = {
@@ -33,23 +34,42 @@ describe("terminal review message", () => {
   });
 
   it("shows the server's hold notice for withheld figures, distinct from absence", () => {
-    const notice = "The cited evidence names this item, but the unit or sign of its figures could not be confirmed, so no figure is reported.";
+    const notice = "The cited evidence names this item, but the currency of its figures could not be confirmed, so no figure is reported.";
     const message = terminalMessage(run({
       label: "UNVERIFIED",
       answer: notice,
       citations: [citation],
-      rationale: "The cited table states no readable unit.",
-      reasons: [{ code: "figures_unit_unverified", figures: ["25,785"] }],
+      rationale: "The comparison did not establish the currency.",
+      reasons: [{ code: "figures_withheld", causes: ["currency"], figures: ["25,785"] }],
     }));
 
     expect(message.text).toBe(notice);
     expect(message.text).not.toContain("25,785");
-    expect(message.evidenceLabel).toBe("Cited evidence — unit not confirmed");
+    expect(message.evidenceLabel).toBe("Cited evidence — figures withheld");
     expect(message.evidenceLabel).not.toBe("Related evidence — not direct support");
     expect(message.citations).toBe(1);
     const pill = verdictPill({ id: "a", role: "assistant", ...message });
-    expect(pill?.text).toBe("Unit not confirmed");
-    expect(pill?.className).toContain("unit-unverified");
+    expect(pill?.text).toBe("Currency not confirmed");
+    expect(pill?.className).toContain("withheld");
+  });
+
+  it.each([
+    [["scale"], "Scale not confirmed", "측정 척도 미확인"],
+    [["currency"], "Currency not confirmed", "통화 미확인"],
+    [["direction"], "Gain/loss direction not confirmed", "손익 방향 미확인"],
+    [["scale", "currency"], "Scale and currency not confirmed", "측정 척도·통화 미확인"],
+    [["scale", "direction"], "Scale and gain/loss direction not confirmed", "측정 척도·손익 방향 미확인"],
+    [["currency", "direction"], "Currency and gain/loss direction not confirmed", "통화·손익 방향 미확인"],
+    [["scale", "currency", "direction"], "Scale, currency and gain/loss direction not confirmed", "측정 척도·통화·손익 방향 미확인"],
+  ])("keeps typed causes %j and localizes only their notice", (causes, english, korean) => {
+    const message = terminalMessage(run({
+      label: "UNVERIFIED", answer: "Server notice", citations: [citation], rationale: "Checked",
+      reasons: [{ code: "figures_withheld", figures: ["25,785"], causes }],
+    }));
+    expect(message.withholdingCauses).toEqual(causes);
+    const pill = verdictPill({ id: "a", role: "assistant", ...message });
+    expect(pill?.text).toBe(english);
+    expect(KO[pill!.text]).toBe(korean);
   });
 
   it("gives every report label its own verdict pill", () => {
@@ -58,7 +78,7 @@ describe("terminal review message", () => {
       const message = terminalMessage(run({ label, answer: absent ? "NOT_IN_DOCS" : "Notice.", citations: absent ? [] : [citation], rationale: "Reason." }));
       return verdictPill({ id: label, role: "assistant", ...message })?.text;
     });
-    expect(pills).toEqual(["Supported · 1 citation", "Different period", "Unit not confirmed", "Not in documents"]);
+    expect(pills).toEqual(["Supported · 1 citation", "Different period", "Figures withheld", "Not in documents"]);
   });
 
   it("keeps supported answers and absence explanations unchanged", () => {

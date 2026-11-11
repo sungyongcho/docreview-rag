@@ -43,8 +43,9 @@ from app.agent.tools.filings import build_default_registry
 from app.agent.tools.registry import ToolRegistry
 from app.agent.types import AgentReportAnswer, AgentResult, ToolCall
 from app.contracts.evidence import EvidenceCitation
+from app.contracts.report_text import withheld_text
 from app.db.session_factory import SessionFactory
-from app.figures.answers import UNIT_UNVERIFIED_ANSWER, EvidenceText
+from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.mcp.client import mcp_tool_registry
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
@@ -220,7 +221,7 @@ MISMATCH = {
     "evidenced_fiscal_years": [2023],
     "figures": ["22,680"],
 }
-HELD = {"figures": ["25,785"]}
+HELD = {"figures": ["25,785"], "causes": ["currency"]}
 RECORDS = {"currency unknown": (None, HELD), "other-period figure": (MISMATCH, None)}
 
 
@@ -371,6 +372,7 @@ async def run_direct(bridge: ToolRegistry, case: Case, wire: Wire) -> Direct:
         provider=provider,
         requested_fiscal_years=YEARS,
         evidence_reader=reader,
+        locale="en",
     )
     sent, loads = wire.since(mark)
     return Direct(result, provider, sent, loads, reader.reads if reader else [])
@@ -382,7 +384,7 @@ async def run_through_agent(tools: list[BaseTool], case: Case, wire: Wire) -> Ag
     reader = Reader(case.reader) if case.reader else None
     mark = wire.mark()
     state = await review_agent(model, tools).ainvoke(
-        {"messages": [HumanMessage(QUESTION)]}, context=ReviewContext(YEARS, reader)
+        {"messages": [HumanMessage(QUESTION)]}, context=ReviewContext(YEARS, reader, locale="en")
     )
     sent, loads = wire.since(mark)
     return Agent(dict(state), model, sent, loads, reader.reads if reader else [])
@@ -430,9 +432,9 @@ def test_both_paths_keep_the_same_period_and_withheld_figure_records(case, outco
     expected = RECORDS.get(case.name, (None, None))
     direct_records = tuple(
         None if record is None else record.model_dump(mode="json")
-        for record in (direct.result.period_mismatch, direct.result.unit_unverified)
+        for record in (direct.result.period_mismatch, direct.result.withheld)
     )
-    agent_records = (agent.state.get("period_mismatch"), agent.state.get("unit_unverified"))
+    agent_records = (agent.state.get("period_mismatch"), agent.state.get("withheld"))
     assert direct_records == agent_records == expected
 
 
@@ -467,7 +469,7 @@ def test_an_accepted_report_keeps_its_citation_and_acknowledges_its_call(case, o
     report = agent.report
     assert report is not None and report["citations"] == [CITED]
     if case.label == "UNVERIFIED":
-        assert report["answer"] == UNIT_UNVERIFIED_ANSWER
+        assert report["answer"] == withheld_text(("currency",), locale="en")[0]
         assert not any(character.isdigit() for character in report["answer"])
     elif case.label == "SUPPORTED":
         assert report["answer"] == REVENUE
@@ -520,7 +522,7 @@ def ask_on_one_thread(work: Path, questions: list[tuple[list[tuple[Call, ...]], 
                 await agent.ainvoke(
                     {"messages": [HumanMessage(f"Question {number}")]},
                     config,
-                    context=ReviewContext(YEARS, reader),
+                    context=ReviewContext(YEARS, reader, locale="en"),
                 )
                 states.append(dict((await agent.aget_state(config)).values))
         return states
@@ -538,7 +540,7 @@ def records(state: dict[str, Any]) -> tuple[Any, ...]:
     """The answer label and every per-question record a state holds."""
     answer = state.get("structured_response")
     label = answer.label if isinstance(answer, AgentReportAnswer) else answer
-    return label, state.get("period_mismatch"), state.get("unit_unverified"), state.get("failure")
+    return label, state.get("period_mismatch"), state.get("withheld"), state.get("failure")
 
 
 def test_each_new_question_starts_without_the_previous_report(tmp_path):
@@ -605,7 +607,7 @@ def model_call(
 
     request = SimpleNamespace(
         state={"messages": [], "evidence": {2024: CITED}},
-        runtime=SimpleNamespace(context=ReviewContext(YEARS, reader)),
+        runtime=SimpleNamespace(context=ReviewContext(YEARS, reader, locale="en")),
     )
     answer = asyncio.run(gate_or_stop.awrap_model_call(cast(Any, request), handler))
     assert len(calls) == 1

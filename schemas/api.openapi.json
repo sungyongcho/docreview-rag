@@ -3346,31 +3346,6 @@
         "title": "ExecutionStageResult",
         "type": "object"
       },
-      "FiguresUnitUnverified": {
-        "additionalProperties": false,
-        "description": "A supported answer's figures name cited items whose unit cannot be established.\n\nThe cited table states no fully readable unit, or contradictory units, in its own\nheader cells or the caption run linked to it, or the answer states none. No unit is\nguessed, so the figures can be neither confirmed nor refuted, and one of them\nwithholds the whole answer instead of calling it absent from the documents or from\nanother period.",
-        "properties": {
-          "code": {
-            "const": "figures_unit_unverified",
-            "default": "figures_unit_unverified",
-            "title": "Code",
-            "type": "string"
-          },
-          "figures": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "title": "Figures",
-            "type": "array"
-          }
-        },
-        "required": [
-          "figures"
-        ],
-        "title": "FiguresUnitUnverified",
-        "type": "object"
-      },
       "FiguresUnverified": {
         "additionalProperties": false,
         "description": "A supported answer stated figures its cited evidence contradicts or cannot hold.\n\nA figure is confirmed only by a cited table cell whose row is the item the answer\nnames, whose column is the requested (or stated) period, and whose value matches in\nunits both sides state. Running text cannot show which period a figure belongs to,\nso it confirms a figure only when no period is asked or stated.",
@@ -3394,6 +3369,35 @@
           "figures"
         ],
         "title": "FiguresUnverified",
+        "type": "object"
+      },
+      "FiguresWithheld": {
+        "additionalProperties": false,
+        "description": "Figures withheld for the established scale, currency or direction causes.",
+        "properties": {
+          "causes": {
+            "$ref": "#/components/schemas/WithholdingCauses"
+          },
+          "code": {
+            "const": "figures_withheld",
+            "default": "figures_withheld",
+            "title": "Code",
+            "type": "string"
+          },
+          "figures": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Figures",
+            "type": "array"
+          }
+        },
+        "required": [
+          "causes",
+          "figures"
+        ],
+        "title": "FiguresWithheld",
         "type": "object"
       },
       "GoldenCanonicalResource": {
@@ -8012,6 +8016,21 @@
         "title": "ValidationIssue",
         "type": "object"
       },
+      "WithholdingCause": {
+        "enum": [
+          "scale",
+          "currency",
+          "direction"
+        ],
+        "type": "string"
+      },
+      "WithholdingCauses": {
+        "items": {
+          "$ref": "#/components/schemas/WithholdingCause"
+        },
+        "minItems": 1,
+        "type": "array"
+      },
       "WorkflowReason": {
         "discriminator": {
           "mapping": {
@@ -8020,8 +8039,8 @@
             "document_quota_applied": "#/components/schemas/DocumentQuotaApplied",
             "duplicate_evidence_text": "#/components/schemas/DuplicateEvidenceText",
             "duplicate_retrieved_chunks": "#/components/schemas/DuplicateRetrievedChunks",
-            "figures_unit_unverified": "#/components/schemas/FiguresUnitUnverified",
             "figures_unverified": "#/components/schemas/FiguresUnverified",
+            "figures_withheld": "#/components/schemas/FiguresWithheld",
             "grade_coverage_incomplete": "#/components/schemas/GradeCoverageIncomplete",
             "grade_references_filtered": "#/components/schemas/GradeReferencesFiltered",
             "node_error": "#/components/schemas/NodeError",
@@ -8068,7 +8087,7 @@
             "$ref": "#/components/schemas/FiguresUnverified"
           },
           {
-            "$ref": "#/components/schemas/FiguresUnitUnverified"
+            "$ref": "#/components/schemas/FiguresWithheld"
           },
           {
             "$ref": "#/components/schemas/PeriodMismatch"

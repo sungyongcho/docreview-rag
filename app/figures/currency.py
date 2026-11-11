@@ -9,8 +9,9 @@ still-ambiguous or conflicting currency withholds the figure.
 """
 
 import re
-from typing import Literal
 import unicodedata
+
+from app.figures.withholding import Comparison, UncertainComparison
 
 CURRENCY = "$€£¥₩"
 
@@ -156,7 +157,7 @@ def resolve(markers: frozenset[str]) -> str | None:
     return next(iter(families)) if len(families) == 1 else CONFLICT
 
 
-def same_currency(answer: str | None, evidence: str | None) -> Literal["match", "uncertain", "no"]:
+def same_currency(answer: str | None, evidence: str | None) -> Comparison:
     """Compare a claim's resolved currency with its evidence's, never converting.
 
     Two codes match only when equal. A family on the answer ("$") takes an evidence code
@@ -165,11 +166,11 @@ def same_currency(answer: str | None, evidence: str | None) -> Literal["match", 
     the other side's family is ``no``.
     """
     if answer is None or evidence is None or CONFLICT in (answer, evidence):
-        return "uncertain"
+        return UncertainComparison(("currency",))
     if answer not in FAMILIES and evidence not in FAMILIES:
         return "match" if answer == evidence else "no"
     if answer in FAMILIES and evidence not in FAMILIES:
         return "match" if evidence in FAMILIES[answer] else "no"
     if evidence in FAMILIES and answer not in FAMILIES:
-        return "uncertain" if answer in FAMILIES[evidence] else "no"
-    return "uncertain" if answer == evidence else "no"
+        return UncertainComparison(("currency",)) if answer in FAMILIES[evidence] else "no"
+    return UncertainComparison(("currency",)) if answer == evidence else "no"

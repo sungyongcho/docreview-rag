@@ -34,7 +34,7 @@ from app.agent.types import (
     AgentResult,
     AgentStatus,
     AgentStep,
-    AgentUnitUnverified,
+    AgentWithheld,
     Observation,
     StepUsage,
     ToolCall,
@@ -184,7 +184,7 @@ async def run_agent(
     budget: AgentBudget | None = None,
     requested_fiscal_years: Sequence[int] = (),
     evidence_reader: EvidenceReader | None = None,
-    locale: Literal["en", "ko"] = "en",
+    locale: Literal["en", "ko"],
 ) -> AgentResult:
     """Run the agent loop until final_answer, a budget stop, or a provider or tool failure.
 
@@ -271,7 +271,7 @@ async def run_agent(
         answer: AgentAnswer | None = None,
         failure: str | None = None,
         period_mismatch: AgentPeriodMismatch | None = None,
-        unit_unverified: AgentUnitUnverified | None = None,
+        withheld: AgentWithheld | None = None,
     ) -> AgentResult:
         """Build the terminal result, letting the model reject impossible success states."""
         report = (
@@ -283,7 +283,7 @@ async def run_agent(
                 "answer": report,
                 "failure": failure,
                 "period_mismatch": period_mismatch,
-                "unit_unverified": unit_unverified,
+                "withheld": withheld,
                 "iterations": len(steps),
                 "total_input_tokens": total_input,
                 "total_output_tokens": total_output,
@@ -454,7 +454,7 @@ async def run_agent(
                         "ok",
                         answer=judged.report,
                         period_mismatch=judged.period_mismatch,
-                        unit_unverified=judged.unit_unverified,
+                        withheld=judged.withheld,
                     )
             if answer is not None:
                 record_step(turn, (), usage)

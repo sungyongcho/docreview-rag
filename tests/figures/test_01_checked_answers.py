@@ -42,7 +42,7 @@ from tests.figures.support import (
     ],
 )
 @pytest.mark.parametrize(
-    ("html", "verdict"), [(INCOME_TABLE, "unit_unverified"), (USD_INCOME_TABLE, "verified")]
+    ("html", "verdict"), [(INCOME_TABLE, "withheld"), (USD_INCOME_TABLE, "verified")]
 )
 def test_bold_and_cited_issuer_subjects_preserve_financial_checks(answer, html, verdict):
     """Read the live-run wording while preserving the filed table's currency uncertainty."""
@@ -165,8 +165,8 @@ def test_a_wrong_korean_compound_scale_is_unverified():
 def test_an_amount_split_across_two_figures_is_withheld():
     """Withhold "300조 8,709억원": its first half states no currency of its own."""
     result = check_figures("매출액은 300조 8,709억원이다.", [dart_evidence()], [2024])
-    assert [check.verdict for check in result.checks] == ["unit_unverified", "unverified"]
-    assert result.verdict == "unit_unverified"
+    assert [check.verdict for check in result.checks] == ["withheld", "unverified"]
+    assert result.verdict == "withheld"
 
 
 @pytest.mark.parametrize(
@@ -235,12 +235,12 @@ def test_each_occurrence_of_a_figure_keeps_its_own_unit(answer, verdicts):
 def test_a_missing_unit_withholds_the_figure_instead_of_comparing_magnitudes():
     """Withhold a unitless answer or a unit-less table; digits that never agree still fail."""
     unitless = check_figures("2024 revenue was 25,785.", [table_evidence()], [2024])
-    assert unitless.verdict == "unit_unverified"
+    assert unitless.verdict == "withheld"
     assert unitless.checks[0].evidenced_years == (2024,)
     bare = table_evidence(INCOME_TABLE.replace("(In millions)", "Line item"))
     for figure in ("$25,785 billion", "$25.8 billion", "$25,785", "$26,000 million", "$99,999mn"):
         answer = f"2024 net revenue was {figure}."
-        assert check_figures(answer, [bare], [2024]).verdict == "unit_unverified", figure
+        assert check_figures(answer, [bare], [2024]).verdict == "withheld", figure
     # With both units established a wrong value is still an ordinary rejection.
     wrong = check_figures("2024 net revenue was $99,999 million.", [table_evidence()], [2024])
     assert wrong.verdict == "unverified"
@@ -253,7 +253,7 @@ def test_the_same_answer_passes_once_the_evidence_states_its_unit():
         INCOME_TABLE.replace("(In millions)", "(In billions of U.S. dollars)")
     )
     answer = "2024 net revenue was $25,785 billion."
-    assert check_figures(answer, [bare], [2024]).verdict == "unit_unverified"
+    assert check_figures(answer, [bare], [2024]).verdict == "withheld"
     assert check_figures(answer, [billions], [2024]).verdict == "verified"
     assert check_figures(answer, [table_evidence()], [2024]).verdict == "unverified"
 
@@ -267,19 +267,19 @@ def test_the_same_answer_passes_once_the_evidence_states_its_unit():
         ((linked("(In millions)"), linked("(in millions of USD)", 40)), "verified"),
         ((linked("(In millions of U.S. dollars, except per share data)"),), "verified"),
         ((linked("(In thousands of U.S. dollars)"),), "unverified"),
-        ((), "unit_unverified"),
-        (({"text": "(In millions of U.S. dollars)"},), "unit_unverified"),
-        ((linked("(단위 : 주)"),), "unit_unverified"),
-        ((linked("(단위 : 천주)"),), "unit_unverified"),
-        ((linked("(In millions)"), linked("(In thousands)", 40)), "unit_unverified"),
-        ((linked("(Dollars in thousands, shares in millions)"),), "unit_unverified"),
-        ((linked("(In millions, except net revenue in dollars)"),), "unit_unverified"),
-        ((linked("(In millions) (Units: widgets)"),), "unit_unverified"),
-        ((linked("(In millions) (in widgets)"),), "unit_unverified"),
-        ((linked("(In millions)"), linked("(Units: widgets)", 40)), "unit_unverified"),
-        ((linked("(Shares in millions)"),), "unit_unverified"),
-        ((linked("(단위 : 백만달러, 천주, %)"),), "unit_unverified"),
-        ((linked("(Currency: USD)"),), "unit_unverified"),
+        ((), "withheld"),
+        (({"text": "(In millions of U.S. dollars)"},), "withheld"),
+        ((linked("(단위 : 주)"),), "withheld"),
+        ((linked("(단위 : 천주)"),), "withheld"),
+        ((linked("(In millions)"), linked("(In thousands)", 40)), "withheld"),
+        ((linked("(Dollars in thousands, shares in millions)"),), "withheld"),
+        ((linked("(In millions, except net revenue in dollars)"),), "withheld"),
+        ((linked("(In millions) (Units: widgets)"),), "withheld"),
+        ((linked("(In millions) (in widgets)"),), "withheld"),
+        ((linked("(In millions)"), linked("(Units: widgets)", 40)), "withheld"),
+        ((linked("(Shares in millions)"),), "withheld"),
+        ((linked("(단위 : 백만달러, 천주, %)"),), "withheld"),
+        ((linked("(Currency: USD)"),), "withheld"),
     ],
 )
 def test_the_table_unit_comes_only_from_agreeing_linked_notes(captions, verdict):
@@ -301,7 +301,7 @@ def test_the_table_unit_comes_only_from_agreeing_linked_notes(captions, verdict)
 def test_a_scale_note_without_an_explicit_currency_is_withheld(captions):
     """Withhold a "$" answer when the table states a scale but no unambiguous currency."""
     answer = "2024 net revenue was $25,785 million."
-    assert check_figures(answer, [unit_fragment(*captions)], [2024]).verdict == ("unit_unverified")
+    assert check_figures(answer, [unit_fragment(*captions)], [2024]).verdict == ("withheld")
 
 
 def test_a_context_header_unit_without_provenance_is_not_the_table_unit():
@@ -309,7 +309,7 @@ def test_a_context_header_unit_without_provenance_is_not_the_table_unit():
     legacy = unit_fragment()
     header = EvidenceText(7, "", "AMD FY2024 · (In millions of U.S. dollars)", legacy.table_cells)
     answer = "2024 net revenue was $25,785 million."
-    assert check_figures(answer, [header], [2024]).verdict == "unit_unverified"
+    assert check_figures(answer, [header], [2024]).verdict == "withheld"
 
 
 def test_uncertain_units_never_become_a_period_mismatch_or_absence():
@@ -325,17 +325,17 @@ def test_uncertain_units_never_become_a_period_mismatch_or_absence():
     evidence = [EvidenceText(7, "", "", tuple(read_table_cells(fragment)))]
     for answer in ("2024 net revenue was $22,680 million.", "2024 net revenue was $1 million."):
         result = check_figures(answer, evidence, [2024])
-        assert (result.verdict, result.checks[0].evidenced_years) == ("unit_unverified", (2024,))
+        assert (result.verdict, result.checks[0].evidenced_years) == ("withheld", (2024,))
     dated = check_figures("2023 net revenue was $22,680 million.", evidence, [2024])
-    assert (dated.verdict, dated.checks[0].evidenced_years) == ("unit_unverified", (2023,))
+    assert (dated.verdict, dated.checks[0].evidenced_years) == ("withheld", (2023,))
 
 
 def test_a_withheld_figure_holds_the_whole_answer_beside_a_wrong_one():
     """Withhold the whole answer instead of calling it absent while a unit is unresolved."""
     answer = "2024 net revenue was 25,785 and net revenue was $99,999 million."
     result = check_figures(answer, [table_evidence()], [2024])
-    assert [check.verdict for check in result.checks] == ["unit_unverified", "unverified"]
-    assert result.verdict == "unit_unverified"
+    assert [check.verdict for check in result.checks] == ["withheld", "unverified"]
+    assert result.verdict == "withheld"
 
 
 @pytest.mark.parametrize(
@@ -345,22 +345,22 @@ def test_a_withheld_figure_holds_the_whole_answer_beside_a_wrong_one():
         ("In millions", "verified"),
         ("(In millions, except per share data)", "verified"),
         ("(Dollars in millions, except per share amounts)", "verified"),
-        ("(In millions, except net revenue in dollars)", "unit_unverified"),
-        ("(In millions, except where noted)", "unit_unverified"),
-        ("(In millions) (Units: widgets)", "unit_unverified"),
-        ("(In millions) (in widgets)", "unit_unverified"),
+        ("(In millions, except net revenue in dollars)", "withheld"),
+        ("(In millions, except where noted)", "withheld"),
+        ("(In millions) (Units: widgets)", "withheld"),
+        ("(In millions) (in widgets)", "withheld"),
         ("(Units: millions)", "verified"),
-        ("(in widgets)", "unit_unverified"),
-        ("Change in revenue", "unit_unverified"),
-        ("(In millions) (단위 : %)", "unit_unverified"),
-        ("(In millions) Units: widgets", "unit_unverified"),
-        ("Units: widgets", "unit_unverified"),
-        ("in widgets", "unit_unverified"),
-        ("(단위 : 백만원) (단위 : 백만달러)", "unit_unverified"),
-        ("(In millions of U.S. dollars) (단위 : 백만원)", "unit_unverified"),
+        ("(in widgets)", "withheld"),
+        ("Change in revenue", "withheld"),
+        ("(In millions) (단위 : %)", "withheld"),
+        ("(In millions) Units: widgets", "withheld"),
+        ("Units: widgets", "withheld"),
+        ("in widgets", "withheld"),
+        ("(단위 : 백만원) (단위 : 백만달러)", "withheld"),
+        ("(In millions of U.S. dollars) (단위 : 백만원)", "withheld"),
         ("(Dollars in millions) (단위 : 백만달러)", "verified"),
         ("(In millions) (단위 : 백만달러)", "verified"),
-        ("(In millions) (단위 : 백만원)", "unit_unverified"),
+        ("(In millions) (단위 : 백만원)", "withheld"),
         ("Units: millions", "verified"),
     ],
 )
@@ -378,10 +378,10 @@ def test_a_header_note_counts_only_with_its_whole_applicability(note, verdict):
 def test_declarations_in_separate_header_cells_are_all_read():
     """Read an unparenthesized declaration in another header cell beside a known one."""
     for extra, verdict in (
-        ("Units: widgets", "unit_unverified"),
-        ("in widgets", "unit_unverified"),
+        ("Units: widgets", "withheld"),
+        ("in widgets", "withheld"),
         ("Change in revenue", "verified"),
-        ("(단위 : %)", "unit_unverified"),
+        ("(단위 : %)", "withheld"),
     ):
         fragment = {
             "header_cells": [
@@ -411,11 +411,11 @@ def test_declarations_in_separate_header_cells_are_all_read():
             "$1.00",
             "verified",
         ),
-        ("(In millions)", "Earnings per share", "1.00", "$1.00", "unit_unverified"),
-        ("(In millions)", "Diluted earnings per share", "1.00", "$1.00 million", "unit_unverified"),
+        ("(In millions)", "Earnings per share", "1.00", "$1.00", "withheld"),
+        ("(In millions)", "Diluted earnings per share", "1.00", "$1.00 million", "withheld"),
         ("(In dollars)", "Earnings per share", "1.00", "$1.00", "verified"),
-        ("(In thousands)", "Earnings per share", "1.00", "$1.00", "unit_unverified"),
-        ("", "Earnings per share", "1.00", "$1.00", "unit_unverified"),
+        ("(In thousands)", "Earnings per share", "1.00", "$1.00", "withheld"),
+        ("", "Earnings per share", "1.00", "$1.00", "withheld"),
         (
             "(In millions, except per share data)",
             "Earnings per share",
@@ -447,9 +447,9 @@ def test_per_share_rows_use_plain_currency_only_when_the_note_says_so(
             "2024 diluted EPS was $1.00.",
             "verified",
         ),
-        ("(In millions, except per share data)", "2024 diluted EPS was $1.00.", "unit_unverified"),
-        (None, "2024 diluted EPS was $1.00.", "unit_unverified"),
-        ("(단위 : 주)", "2024 diluted EPS was $1.00.", "unit_unverified"),
+        ("(In millions, except per share data)", "2024 diluted EPS was $1.00.", "withheld"),
+        (None, "2024 diluted EPS was $1.00.", "withheld"),
+        ("(단위 : 주)", "2024 diluted EPS was $1.00.", "withheld"),
         ("(단위 : %)", "2024 diluted EPS was $1.00.", "unverified"),
         ("(단위 : 원)", "2024 diluted EPS was 1.00원.", "verified"),
     ],
@@ -470,7 +470,7 @@ def test_per_share_rows_need_a_monetary_table_note(caption, answer, verdict):
         ("(단위 : %)", "14.5", "2024년 매출액은 14.5%이다.", "unverified"),
         ("(단위 : %)", "14.5", "2024년 매출액은 14.5백만원이다.", "unverified"),
         ("(단위 : 백만원)", "14.5%", "2024년 매출액은 14.5%이다.", "unverified"),
-        (None, "14.5", "2024년 매출액은 14.5%이다.", "unit_unverified"),
+        (None, "14.5", "2024년 매출액은 14.5%이다.", "withheld"),
         (None, "14.5%", "2024년 매출액은 14.5%이다.", "unverified"),
         (None, "14.5%", "2024년 매출액은 14.6%이다.", "unverified"),
     ],
@@ -492,11 +492,9 @@ def test_only_an_explicit_unit_note_sets_the_table_scale():
     assert check_figures("매출액은 300.9조원이다.", [adjusted], [2024]).verdict == "verified"
     unannotated = dart_evidence("(조정후)")
     for answer in ("매출액은 300.9조원이다.", "매출액은 300,870,903백만원이다."):
-        assert check_figures(answer, [unannotated], [2024]).verdict == "unit_unverified"
+        assert check_figures(answer, [unannotated], [2024]).verdict == "withheld"
     # No unit is guessed: even digits that agree with nothing are withheld, not refuted.
-    assert check_figures("매출액은 999조원이다.", [unannotated], [2024]).verdict == (
-        "unit_unverified"
-    )
+    assert check_figures("매출액은 999조원이다.", [unannotated], [2024]).verdict == ("withheld")
 
 
 @pytest.mark.parametrize(
@@ -795,7 +793,7 @@ def test_unverified_checks_name_the_item_they_were_read_for():
         ("(In millions of U.S. dollars)", "25,785 million Canadian dollars", "unverified"),
         ("(In millions of U.S. dollars)", "A$25,785 million", "unverified"),
         ("(In millions of U.S. dollars)", "25,785 million yen", "unverified"),
-        ("(In millions of U.S. dollars)", "25,785 million", "unit_unverified"),
+        ("(In millions of U.S. dollars)", "25,785 million", "withheld"),
         ("(In millions of Korean won)", "25,785 million won", "verified"),
         ("(In millions of Korean won)", "₩25,785 million", "verified"),
         ("(In millions of Korean won)", "$25,785 million", "unverified"),
@@ -818,18 +816,18 @@ def test_a_claim_currency_must_match_its_explicit_source_currency(note, answer, 
 @pytest.mark.parametrize(
     ("note", "cell", "answer", "verdict"),
     [
-        ("(In millions)", "$ 25,785", "$25,785 million", "unit_unverified"),
-        ("(In millions)", "$ 25,785", "US$25,785 million", "unit_unverified"),
+        ("(In millions)", "$ 25,785", "$25,785 million", "withheld"),
+        ("(In millions)", "$ 25,785", "US$25,785 million", "withheld"),
         ("(In millions)", "$ 25,785", "€25,785 million", "unverified"),
-        ("(In millions)", "¥ 25,785", "¥25,785 million", "unit_unverified"),
-        ("(In millions)", "¥ 25,785", "JPY 25,785 million", "unit_unverified"),
+        ("(In millions)", "¥ 25,785", "¥25,785 million", "withheld"),
+        ("(In millions)", "¥ 25,785", "JPY 25,785 million", "withheld"),
         ("(In millions)", "¥ 25,785", "$25,785 million", "unverified"),
         ("(In millions)", "US$ 25,785", "$25,785 million", "verified"),
         ("(In millions)", "25,785 USD", "US$25,785 million", "verified"),
         ("(In millions of U.S. dollars)", "$ 25,785", "$25,785 million", "verified"),
-        ("(In millions of U.S. dollars)", "₩ 25,785", "$25,785 million", "unit_unverified"),
+        ("(In millions of U.S. dollars)", "₩ 25,785", "$25,785 million", "withheld"),
         ("(In millions) (USD)", "25,785", "$25,785 million", "verified"),
-        ("(USD)", "25,785", "$25,785 million", "unit_unverified"),
+        ("(USD)", "25,785", "$25,785 million", "withheld"),
         ("(In millions) (In U.S. dollars)", "25,785", "$25,785 million", "verified"),
         ("(In U.S. dollars)", "25,785", "$25,785", "verified"),
         ("(In U.S. dollars)", "25,785", "$25,785 million", "unverified"),
@@ -853,7 +851,7 @@ def test_conflicting_currency_markers_on_one_claim_are_withheld(answer):
     """Never pick one of two currencies written with the same figure."""
     claim = f"2024 net revenue was {answer}."
     result = check_figures(claim, [currency_table("(In millions of U.S. dollars)")], [2024])
-    assert result.checks[0].verdict in {"unit_unverified", "unverified"}
+    assert result.checks[0].verdict in {"withheld", "unverified"}
     assert result.verdict != "verified"
 
 
@@ -868,20 +866,20 @@ def test_cells_and_tables_never_lend_each_other_a_currency():
         "verified"
     )
     assert check_figures("2024 net revenue was $25,785 million.", [rows], [2024]).verdict == (
-        "unit_unverified"
+        "withheld"
     )
     other = currency_table("(In millions of U.S. dollars)", "$ 1")
     revenue_only_in_rows = check_figures(
         "2024 net revenue was $25,785 million.", [rows, other], [2024]
     )
-    assert revenue_only_in_rows.verdict == "unit_unverified"
+    assert revenue_only_in_rows.verdict == "withheld"
 
 
 def test_the_amd_table_as_filed_is_withheld_until_its_currency_is_explicit():
     """Withhold AMD's "$"-only table; the same answer passes once the note names USD."""
     answer = "2024 net revenue was $25,785 million."
     as_filed = check_figures(answer, [table_evidence(INCOME_TABLE)], [2024])
-    assert (as_filed.verdict, as_filed.checks[0].evidenced_years) == ("unit_unverified", (2024,))
+    assert (as_filed.verdict, as_filed.checks[0].evidenced_years) == ("withheld", (2024,))
     assert check_figures(answer, [table_evidence(USD_INCOME_TABLE)], [2024]).verdict == "verified"
 
 
@@ -891,8 +889,8 @@ def test_the_amd_table_as_filed_is_withheld_until_its_currency_is_explicit():
         ("(단위 : 원)", "99", "USD 2024", "unverified"),
         ("(단위 : 원)", "99", "2024 USD", "unverified"),
         ("(단위 : 원)", "99", "2024원", "unverified"),
-        ("(단위 : 원)", "99", "₹2024", "unit_unverified"),
-        ("(단위 : 원)", "99", "INR 2024", "unit_unverified"),
+        ("(단위 : 원)", "99", "₹2024", "withheld"),
+        ("(단위 : 원)", "99", "INR 2024", "withheld"),
         ("(단위 : 원)", "2,024", "2024원", "verified"),
         ("(단위 : 원)", "2,024", "2025원", "unverified"),
         ("(In millions of U.S. dollars)", "2,024", "USD 2024 million", "verified"),
@@ -924,7 +922,7 @@ def test_an_unsupported_code_shaped_currency_is_held_not_dropped(note, cell, ans
     claim = f"2024 net revenue was {answer}."
     result = check_figures(claim, [note_cell(note, cell)], [2024])
     assert len(result.checks) == 1
-    assert result.verdict == "unit_unverified"
+    assert result.verdict == "withheld"
 
 
 @pytest.mark.parametrize(
@@ -950,15 +948,15 @@ def test_distinct_claims_keep_their_own_currency_codes():
     evidence = [two_year_table("(In millions of U.S. dollars)")]
     answer = "2024 net revenue was USD 25 million and 2023 net revenue was BHD 22 million."
     result = check_figures(answer, evidence, [2024])
-    assert [check.verdict for check in result.checks] == ["verified", "unit_unverified"]
+    assert [check.verdict for check in result.checks] == ["verified", "withheld"]
 
 
 @pytest.mark.parametrize(
     ("note", "cell", "answer", "verdict"),
     [
-        ("(In millions) (EUR)", "25", "USD EUR 25 million", "unit_unverified"),
-        ("(In millions of U.S. dollars)", "25", "25 million USD KRW", "unit_unverified"),
-        ("(In millions of U.S. dollars)", "25", "USD 25 million KRW", "unit_unverified"),
+        ("(In millions) (EUR)", "25", "USD EUR 25 million", "withheld"),
+        ("(In millions of U.S. dollars)", "25", "25 million USD KRW", "withheld"),
+        ("(In millions of U.S. dollars)", "25", "USD 25 million KRW", "withheld"),
         ("(In millions of U.S. dollars)", "25", "US$25 million USD", "verified"),
         ("(In millions of U.S. dollars)", "25", "USD 25 million U.S. dollars", "verified"),
     ],
@@ -975,7 +973,7 @@ def test_a_marker_between_two_figures_certifies_neither():
     shared = check_figures(
         "2024 net revenue was 25 million USD 22 million in 2023.", evidence, [2024]
     )
-    assert [check.verdict for check in shared.checks] == ["unit_unverified", "unit_unverified"]
+    assert [check.verdict for check in shared.checks] == ["withheld", "withheld"]
     separate = check_figures(
         "2024 net revenue was 25 million USD, up from USD 22 million in 2023.", evidence, [2024]
     )
@@ -1002,11 +1000,11 @@ def test_a_figure_stating_both_a_currency_and_a_percentage_is_withheld(cell, ans
 @pytest.mark.parametrize(
     ("cell", "verdict"),
     [
-        ("NZ$25", "unit_unverified"),
-        ("ZZ$25", "unit_unverified"),
-        ("₹25", "unit_unverified"),
-        ("INR 25", "unit_unverified"),
-        ("25 NZD", "unit_unverified"),
+        ("NZ$25", "withheld"),
+        ("ZZ$25", "withheld"),
+        ("₹25", "withheld"),
+        ("INR 25", "withheld"),
+        ("25 NZD", "withheld"),
         ("US$25", "verified"),
         ("$25", "verified"),
         ("25", "verified"),
@@ -1118,9 +1116,9 @@ GLUED_FOOTNOTE_TABLE = USD_INCOME_TABLE.replace(
 @pytest.mark.parametrize(
     ("answer", "verdicts"),
     [
-        ("Gross margin was $72.7 million in 2024.", ["unit_unverified"]),
-        ("Gross margin was 72.7 million U.S. dollars in 2024.", ["unit_unverified"]),
-        ("Gross margin was 72.7% in 2024.", ["unit_unverified"]),
+        ("Gross margin was $72.7 million in 2024.", ["withheld"]),
+        ("Gross margin was 72.7 million U.S. dollars in 2024.", ["withheld"]),
+        ("Gross margin was 72.7% in 2024.", ["withheld"]),
         ("Net revenue was $25,785 million in 2024.", ["verified"]),
     ],
 )
@@ -1166,7 +1164,7 @@ def test_a_cell_whose_tag_shows_another_number_confirms_no_claim(answer, verdict
             "<tr><td>Net income</td><td>1,641</td></tr></table>",
             None,
             "Net revenue was $25.8 million in 2024.",
-            ["unit_unverified"],
+            ["withheld"],
         ),
         (
             "<table><tr><td>(In U.S. dollars)</td><td>2024</td></tr>"
@@ -1174,7 +1172,7 @@ def test_a_cell_whose_tag_shows_another_number_confirms_no_claim(answer, verdict
             "<tr><td>Net income</td><td>1,641</td></tr></table>",
             {(1, 1): (fact(text="25.8", scale=6),)},
             "Net revenue was $25.8 million in 2024.",
-            ["unit_unverified"],
+            ["withheld"],
         ),
         (
             "<table><tr><td>(In U.S. dollars)</td><td>2024</td></tr>"
@@ -1211,9 +1209,9 @@ def test_a_scale_word_against_the_cells_unit_confirms_no_claim(html, facts, answ
 def test_a_cell_whose_direction_is_not_established_withholds_the_claim(answer):
     """ "Net loss | 1,641" states no sign, so no direction of 1,641 is confirmed."""
     html = USD_INCOME_TABLE.replace("Net income", "Net loss")
-    assert checked(answer, table_evidence(html)) == ["unit_unverified"]
+    assert checked(answer, table_evidence(html)) == ["withheld"]
     triangle = USD_INCOME_TABLE.replace("<td>1,641</td>", "<td>▲1,641</td>")
-    assert checked(answer, table_evidence(triangle)) == ["unit_unverified"]
+    assert checked(answer, table_evidence(triangle)) == ["withheld"]
 
 
 @pytest.mark.parametrize(

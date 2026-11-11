@@ -237,6 +237,7 @@ async def check(issuer: str, years: Sequence[int]) -> list[dict[str, Any]]:
                 start = len(log_path.read_text().splitlines())
                 result = await run_agent(
                     question.name,
+                    locale="en",
                     registry=bridge,
                     provider=DeterministicToolProvider(
                         [*(turn(name, arguments) for name, arguments in question.steps), finish]

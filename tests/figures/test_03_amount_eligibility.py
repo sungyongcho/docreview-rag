@@ -82,9 +82,9 @@ def test_non_amount_tags_never_borrow_a_tables_monetary_note(numerator, denomina
     "changes,verdict",
     [
         ({}, "verified"),
-        ({"scale": None}, "unit_unverified"),
-        ({"currency": None}, "unit_unverified"),
-        ({"overrides": ("direction",)}, "unit_unverified"),
+        ({"scale": None}, "withheld"),
+        ({"currency": None}, "withheld"),
+        ({"overrides": ("direction",)}, "withheld"),
         ({"years": frozenset({2023})}, "period_mismatch"),
     ],
 )

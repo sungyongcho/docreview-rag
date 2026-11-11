@@ -195,7 +195,7 @@ async def exercise(url: str, log_path: Path, process: subprocess.Popen[bytes]) -
                 for name, arguments in [*actions, ("final_answer", finish)]
             ]
             result = await run_agent(
-                case, registry=bridge, provider=DeterministicToolProvider(turns)
+                case, registry=bridge, provider=DeterministicToolProvider(turns), locale="en"
             )
             questions[case] = (result, logged_events(log_path, start))
 

@@ -212,7 +212,7 @@ def test_an_unconfirmed_currency_is_withheld_without_the_amount():
     report = state["structured_response"]
     assert report.label == "UNVERIFIED"
     assert "25,785" not in report.answer + report.rationale
-    assert state["unit_unverified"] == {"figures": ["$ 25,785"]}
+    assert state["withheld"] == {"figures": ["$ 25,785"], "causes": ["currency"]}
 
 
 def test_a_held_cell_claimed_as_another_item_is_returned_before_it_is_withheld():

@@ -91,9 +91,11 @@ export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   evidence?: EvidenceHit[];
-  evidenceLabel?: "Cited evidence" | "Cited evidence — different period" | "Cited evidence — unit not confirmed" | "Related evidence — not direct support" | "Retrieved candidates — answer not generated";
+  evidenceLabel?: "Cited evidence" | "Cited evidence — different period" | "Cited evidence — figures withheld" | "Related evidence — not direct support" | "Retrieved candidates — answer not generated";
   /** Citations the report actually made; the evidence list above is the wider candidate pool. */
   citations?: number;
+  /** Established causes from the server's withholding reason, retained with the message. */
+  withholdingCauses?: Extract<NonNullable<Extract<NonNullable<ReviewRun["report"]>, { label: unknown }>["reasons"]>[number], { code: "figures_withheld" }>["causes"];
   trace?: string;
   /** Only events observed for this request; user messages have no execution. */
   execution?: ReviewExecution;

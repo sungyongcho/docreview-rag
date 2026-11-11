@@ -23,7 +23,7 @@ def test_prose_and_labels_must_name_the_same_item():
         "unverified"
     )
     unitless = EvidenceText(3, "Body text.", "Net revenue of 25,785 · Item 8", None)
-    assert check_figures("Net revenue was 25,785.", [unitless], []).verdict == "unit_unverified"
+    assert check_figures("Net revenue was 25,785.", [unitless], []).verdict == "withheld"
 
 
 @pytest.mark.parametrize(
@@ -43,9 +43,7 @@ def test_labels_and_running_text_cannot_confirm_a_period(answer, requested):
 def test_prose_fallback_needs_the_same_currency():
     """Hold or refuse running-text figures whose currency is ambiguous or different."""
     dollars = EvidenceText(3, "Body text.", "Net revenue of $25,785 million · Item 8", None)
-    assert check_figures("Net revenue was $25.8 billion.", [dollars], []).verdict == (
-        "unit_unverified"
-    )
+    assert check_figures("Net revenue was $25.8 billion.", [dollars], []).verdict == ("withheld")
     assert check_figures("Net revenue was €25.8 billion.", [dollars], []).verdict == "unverified"
     won = EvidenceText(3, "Body text.", "Net revenue of 25,785 million won · Item 8", None)
     assert check_figures("Net revenue was US$25,785 million.", [won], []).verdict == "unverified"
@@ -205,3 +203,45 @@ def test_a_reported_figure_keeps_only_its_own_parentheses():
     assert reported("Net loss was (1,234) million.") == ["(1,234)"]
     assert reported("Net revenue (99,999 million) was high.") == ["99,999"]
     assert reported("Net revenue (Note 2: 99,999) was reported.") == ["99,999"]
+
+
+@pytest.mark.parametrize(
+    ("body", "answer", "causes"),
+    [
+        ("Net revenue was $25,785 million.", "Net revenue was USD 25,785 million.", ("currency",)),
+        ("Net revenue was 25,785.", "Net revenue was 25,785.", ("scale", "currency")),
+        ("Net income was ▲1,641 million USD.", "Net income was USD 1,641 million.", ("direction",)),
+        ("Net revenue was USD 25,785 million.", "Net revenue was USD 25,785 million.", ()),
+        ("Net revenue was EUR 25,785 million.", "Net revenue was USD 25,785 million.", ()),
+    ],
+)
+def test_narrative_comparisons_carry_only_the_uncertainty_they_detect(body, answer, causes):
+    """Undated prose shares typed unit/direction causes without changing pass/refusal rules."""
+    result = check_figures(answer, [prose_evidence(body)], [])
+    assert result.causes == causes
+    assert result.checks[0].causes == causes
+    assert result.verdict == (
+        "withheld" if causes else "verified" if "EUR" not in body else "unverified"
+    )
+
+
+def test_period_filtering_and_a_confirmed_match_do_not_inherit_other_cells_causes():
+    """Only relevant uncertain comparisons contribute; a real match still wins."""
+    from dataclasses import replace
+
+    from tests.figures.support import table_evidence
+
+    original = table_evidence()
+    revenue = next(
+        cell for cell in original.table_cells if cell.item == "revenue" and 2024 in cell.years
+    )
+    scale = replace(revenue, scale=None)
+    other_currency = replace(revenue, years=frozenset({2023}), currency=None)
+    evidence = replace(original, table_cells=(other_currency, scale))
+    answer = "FY2024 net revenue was USD 25,785 million."
+    held = check_figures(answer, [evidence], [2024])
+    assert held.verdict == "withheld" and held.causes == ("scale",)
+    confirmed = check_figures(
+        answer, [replace(evidence, table_cells=(*evidence.table_cells, revenue))], [2024]
+    )
+    assert confirmed.verdict == "verified" and confirmed.causes == ()

@@ -113,6 +113,7 @@ def run_loop(turns, *, registry=None, budget=None):
             registry=registry if registry is not None else registry_with_search(),
             provider=provider,
             budget=budget,
+            locale="en",
         )
     )
     return result, provider
@@ -358,6 +359,7 @@ def test_exhausted_budget_stops_before_a_futile_request(
             registry=registry_with_search(),
             provider=provider,
             budget=budget,
+            locale="en",
         )
     )
 
@@ -409,9 +411,7 @@ def test_provider_failure_does_not_expose_exception_secrets():
 
     result = asyncio.run(
         run_agent(
-            "question",
-            registry=registry_with_search(),
-            provider=SecretProvider(),
+            "question", registry=registry_with_search(), provider=SecretProvider(), locale="en"
         )
     )
 
@@ -579,6 +579,7 @@ def _figures_run(answer_text, *, reader, then=None):
             provider=provider,
             requested_fiscal_years=(2024,),
             evidence_reader=reader,
+            locale="en",
         )
     )
     return result, provider
@@ -723,9 +724,9 @@ def test_an_uncertain_unit_ends_as_unverified_without_stating_the_figure(answer_
     assert result.answer is not None and result.answer.label == "UNVERIFIED"
     assert [citation.chunk_id for citation in result.answer.citations] == [7]
     assert not any(character.isdigit() for character in result.answer.answer)
-    assert result.unit_unverified is not None
+    assert result.withheld is not None
     held = answer_text.split("was ")[1].split(" ")[0].lstrip("$").rstrip(".")
-    assert result.unit_unverified.figures == (held,)
+    assert result.withheld.figures == (held,)
     assert result.period_mismatch is None
     assert len(provider.requests) == 2
 
@@ -744,7 +745,7 @@ def test_contradictory_or_unknown_currency_markers_end_as_unverified(answer_text
 
     assert result.answer is not None and result.answer.label == "UNVERIFIED"
     assert not any(character.isdigit() for character in result.answer.answer)
-    assert result.unit_unverified is not None and held in result.unit_unverified.figures
+    assert result.withheld is not None and held in result.withheld.figures
     assert [citation.chunk_id for citation in result.answer.citations] == [7]
     assert len(provider.requests) == 2
 
@@ -760,7 +761,7 @@ def test_the_withheld_answer_is_supported_once_the_table_states_its_unit():
     assert result.answer is not None and result.answer.label == "SUPPORTED"
     assert result.answer.answer == answer
     assert [citation.chunk_id for citation in result.answer.citations] == [7]
-    assert result.unit_unverified is None
+    assert result.withheld is None
 
 
 def test_a_failed_evidence_read_ends_the_run_as_a_tool_error():
@@ -906,6 +907,7 @@ def test_observed_budget_failure_names_the_resource_that_exceeded_its_cap(
             registry=registry_with_search(),
             provider=provider,
             budget=AgentBudget(max_total_cost_usd=Decimal(cost_cap)),
+            locale="en",
         )
     )
     assert result.status == "budget_exceeded"
@@ -923,7 +925,9 @@ def test_provider_side_budget_refusal_keeps_its_reason_and_never_dispatches_tool
             raise BudgetExhaustedError("approved model budget exhausted")
 
     result = asyncio.run(
-        run_agent("Question", registry=registry_with_search(), provider=RefusedProvider([]))
+        run_agent(
+            "Question", registry=registry_with_search(), provider=RefusedProvider([]), locale="en"
+        )
     )
     assert result.status == "budget_exceeded"
     assert result.failure == "approved model budget exhausted"

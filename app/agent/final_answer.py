@@ -18,16 +18,12 @@ from app.agent.types import (
     AgentAnswer,
     AgentPeriodMismatch,
     AgentReportAnswer,
-    AgentUnitUnverified,
+    AgentWithheld,
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text
+from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text, withheld_text
 from app.figures.answers import (
-    UNIT_UNVERIFIED_ANSWER,
-    UNIT_UNVERIFIED_ANSWER_KO,
-    UNIT_UNVERIFIED_RATIONALE,
-    UNIT_UNVERIFIED_RATIONALE_KO,
     EvidenceText,
     FiguresResult,
     check_figures,
@@ -128,7 +124,7 @@ def period_mismatch_report(
     figures: FiguresResult,
     requested: Sequence[int],
     *,
-    locale: Literal["en", "ko"] = "en",
+    locale: Literal["en", "ko"],
 ) -> tuple[AgentReportAnswer, AgentPeriodMismatch]:
     """Report the cited figures' own period instead of the answer that misdated them."""
     mismatched = [c for c in figures.checks if c.verdict == "period_mismatch"]
@@ -153,22 +149,24 @@ def period_mismatch_report(
     return report, mismatch
 
 
-def unit_unverified_report(
-    answer: AgentAnswer, figures: FiguresResult, *, locale: Literal["en", "ko"] = "en"
-) -> tuple[AgentReportAnswer, AgentUnitUnverified]:
+def withheld_report(
+    answer: AgentAnswer, figures: FiguresResult, *, locale: Literal["en", "ko"]
+) -> tuple[AgentReportAnswer, AgentWithheld]:
     """Withhold figures whose evidence unit or direction is uncertain, keeping the citations.
 
     The report states no number: the withheld figures travel only in the typed
-    ``AgentUnitUnverified`` record, so nothing unconfirmed is presented as fact.
+    ``AgentWithheld`` record, so nothing unconfirmed is presented as fact.
     """
-    held = AgentUnitUnverified(
-        figures=tuple(c.figure for c in figures.checks if c.verdict == "unit_unverified")
+    held = AgentWithheld(
+        causes=figures.causes,
+        figures=tuple(c.figure for c in figures.checks if c.verdict == "withheld"),
     )
+    text, rationale = withheld_text(held.causes, locale=locale)
     report = AgentReportAnswer(
         label="UNVERIFIED",
-        answer=UNIT_UNVERIFIED_ANSWER_KO if locale == "ko" else UNIT_UNVERIFIED_ANSWER,
+        answer=text,
         citations=answer.citations,
-        rationale=UNIT_UNVERIFIED_RATIONALE_KO if locale == "ko" else UNIT_UNVERIFIED_RATIONALE,
+        rationale=rationale,
     )
     return report, held
 
@@ -183,14 +181,14 @@ class WrittenAnswerJudgement:
     """What the figure check makes of one ``SUPPORTED`` written answer.
 
     ``report`` is the answer to end the run on, or None when the answer goes back to
-    the model with ``problem``. ``period_mismatch`` and ``unit_unverified`` are the
+    the model with ``problem``. ``period_mismatch`` and ``withheld`` are the
     typed records of a report the check qualifies; a plain accepted answer has neither.
     """
 
     report: AgentReportAnswer | None
     problem: str = ""
     period_mismatch: AgentPeriodMismatch | None = None
-    unit_unverified: AgentUnitUnverified | None = None
+    withheld: AgentWithheld | None = None
 
 
 def judge_written_answer(
@@ -198,7 +196,7 @@ def judge_written_answer(
     texts: Mapping[int, EvidenceText],
     requested_fiscal_years: Sequence[int],
     *,
-    locale: Literal["en", "ko"] = "en",
+    locale: Literal["en", "ko"],
 ) -> WrittenAnswerJudgement:
     """Check a ``SUPPORTED`` answer's figures against its cited evidence and judge it.
 
@@ -229,9 +227,9 @@ def judge_written_answer(
     )
     if figures.verdict == "unverified":
         return WrittenAnswerJudgement(None, figures_problem(figures, requested_fiscal_years))
-    if figures.verdict == "unit_unverified":
-        report, held = unit_unverified_report(answer, figures, locale=locale)
-        return WrittenAnswerJudgement(report, unit_unverified=held)
+    if figures.verdict == "withheld":
+        report, held = withheld_report(answer, figures, locale=locale)
+        return WrittenAnswerJudgement(report, withheld=held)
     if figures.verdict == "period_mismatch":
         report, mismatch = period_mismatch_report(
             answer, figures, requested_fiscal_years, locale=locale

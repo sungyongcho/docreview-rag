@@ -44,4 +44,4 @@ def test_amd_2024_income_statement_withholds_figures_it_gives_no_currency_for(
         "AMD's 2024 net revenue was $22,680 million.",
     ):
         result = check_figures(answer, evidence, [2024])
-        assert result.verdict == "unit_unverified", answer
+        assert result.verdict == "withheld", answer
