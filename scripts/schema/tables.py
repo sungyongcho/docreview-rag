@@ -34,6 +34,8 @@ from app.retrieval.tables import load_table_fragments
 # Marks frozen tables rebuilt from a stored fragment rather than by the table builder.
 FRAGMENT_BUILDER = "fragment"
 FRAGMENT_COLUMNS = (("chunks", "id"), ("snapshot_chunks", "chunk_id"))
+# A source cell's span, absent from fragments stored before spans were recorded.
+SPAN_KEYS = ("start_char", "end_char")
 
 
 def _fragment_table_id(doc_id: str, chunk_id: int) -> str:
@@ -74,8 +76,8 @@ def snapshot_rows(
                 "rowspan": cell["rowspan"],
                 "colspan": cell["colspan"],
                 "text": cell["text"],
-                "start_char": cell["start_char"],
-                "end_char": cell["end_char"],
+                "start_char": cell.get("start_char"),
+                "end_char": cell.get("end_char"),
                 **reading_columns(reading),
             }
         )
@@ -175,13 +177,54 @@ async def _fragment_column_present(session: AsyncSession, table: str) -> bool:
     )
 
 
+def _spanless(cell: object) -> object:
+    """Drop a source cell's span keys that are null, so absent and null spans compare equal."""
+    if not isinstance(cell, dict):
+        return cell
+    return {key: value for key, value in cell.items() if key not in SPAN_KEYS or value is not None}
+
+
+def comparable(fragment: object) -> object:
+    """Return a fragment with every unspanned source cell in one shape, for comparison.
+
+    Fragments stored before cell spans were recorded lack the span keys; a fragment
+    rebuilt from their table rows has them as null. Neither knows a span, so both
+    compare equal; a cell with a span keeps it.
+    """
+    if not isinstance(fragment, dict):
+        return fragment
+    result = dict(fragment)
+    if isinstance(cells := fragment.get("cells"), list):
+        result["cells"] = [
+            {**member, "sources": [_spanless(source) for source in member["sources"]]}
+            if isinstance(member, dict) and isinstance(member.get("sources"), list)
+            else member
+            for member in cells
+        ]
+    if isinstance(headers := fragment.get("header_cells"), list):
+        result["header_cells"] = [_spanless(cell) for cell in headers]
+    if isinstance(captions := fragment.get("caption_sources"), list):
+        result["caption_sources"] = [
+            {**caption, "cells": [_spanless(cell) for cell in caption["cells"]]}
+            if isinstance(caption, dict) and isinstance(caption.get("cells"), list)
+            else caption
+            for caption in captions
+        ]
+    return result
+
+
 async def _mismatches(
     session: AsyncSession, stored: Mapping[int, object], snapshot_id: int | None
 ) -> list[int]:
-    """Return the chunks whose rebuilt fragment differs from the stored one."""
+    """Return the chunks whose rebuilt fragment differs from the stored one, spans aside.
+
+    Only a span both lack counts as equal; see ``comparable``.
+    """
     rebuilt = await load_table_fragments(session, stored, snapshot_id)
     return sorted(
-        chunk_id for chunk_id, fragment in stored.items() if rebuilt.get(chunk_id) != fragment
+        chunk_id
+        for chunk_id, fragment in stored.items()
+        if comparable(rebuilt.get(chunk_id)) != comparable(fragment)
     )
 
 
