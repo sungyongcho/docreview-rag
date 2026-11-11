@@ -1198,3 +1198,16 @@ def test_a_loss_only_label_is_checked_by_magnitude_as_every_loss_is():
     """
     html = USD_INCOME_TABLE.replace("Net income", "Net loss")
     assert checked("Net loss was $1,641 million in 2024.", table_evidence(html)) == ["verified"]
+
+
+@pytest.mark.parametrize(
+    ("concept", "verdicts"),
+    [
+        ("us-gaap:BusinessAcquisitionsProFormaRevenue", ["unverified"]),
+        ("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", ["verified"]),
+    ],
+)
+def test_a_tag_of_another_concept_confirms_no_claim_for_the_labels_item(concept, verdicts):
+    """A pro forma revenue tag under "Net revenue" is not the entity's revenue."""
+    evidence = tagged_evidence(USD_INCOME_TABLE, {(1, 1): (fact(concept=concept),)})
+    assert checked("Net revenue was $25,785 million in 2024.", evidence) == verdicts

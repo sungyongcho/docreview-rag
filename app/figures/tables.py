@@ -565,6 +565,94 @@ def _loss_only(label: str | None) -> bool:
     return key is not None and key in PHRASE_ITEMS and ("loss" in key or "손실" in key)
 
 
+# A concept of a standard taxonomy, as inline XBRL ("us-gaap:Revenues") and DART
+# ("ifrs-full_Revenue") name it. Company extensions ("amd:...") and DART's own codes
+# ("dart_OperatingIncomeLoss") cannot be judged from a list, so their rows keep the
+# label's item.
+_STANDARD_CONCEPT = re.compile(r"(?:us-gaap|ifrs-full)[:_](?P<name>\w+)")
+# The standard concepts that report each item a row label names (see PHRASE_ITEMS).
+# A tagged cell whose standard concept is not listed for its label's item (a cash-flow
+# change, a pro forma figure) is not established as that item.
+_ITEM_CONCEPTS: dict[str, frozenset[str]] = {
+    "revenue": frozenset(
+        {
+            "Revenues",
+            "Revenue",
+            "RevenueFromContractWithCustomerExcludingAssessedTax",
+            "RevenueFromContractWithCustomerIncludingAssessedTax",
+            "SalesRevenueNet",
+            "RevenueFromContractsWithCustomers",
+        }
+    ),
+    "cost of revenue": frozenset(
+        {
+            "CostOfRevenue",
+            "CostOfGoodsAndServicesSold",
+            "CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization",
+            "CostOfGoodsSold",
+            "CostOfSales",
+        }
+    ),
+    "gross profit": frozenset({"GrossProfit"}),
+    "operating income": frozenset({"OperatingIncomeLoss", "ProfitLossFromOperatingActivities"}),
+    "net income": frozenset({"NetIncomeLoss", "ProfitLoss"}),
+    "earnings per share": frozenset(
+        {
+            "EarningsPerShareBasic",
+            "EarningsPerShareDiluted",
+            "EarningsPerShareBasicAndDiluted",
+            "BasicEarningsLossPerShare",
+            "DilutedEarningsLossPerShare",
+            "BasicAndDilutedEarningsLossPerShare",
+        }
+    ),
+    "basic earnings per share": frozenset(
+        {
+            "EarningsPerShareBasic",
+            "EarningsPerShareBasicAndDiluted",
+            "BasicEarningsLossPerShare",
+            "BasicAndDilutedEarningsLossPerShare",
+        }
+    ),
+    "diluted earnings per share": frozenset(
+        {
+            "EarningsPerShareDiluted",
+            "EarningsPerShareBasicAndDiluted",
+            "DilutedEarningsLossPerShare",
+            "BasicAndDilutedEarningsLossPerShare",
+        }
+    ),
+    "research and development": frozenset(
+        {
+            "ResearchAndDevelopmentExpense",
+            "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost",
+        }
+    ),
+    "sales and marketing": frozenset({"SellingAndMarketingExpense"}),
+    "selling, general and administrative": frozenset({"SellingGeneralAndAdministrativeExpense"}),
+    "income tax": frozenset({"IncomeTaxExpenseBenefit", "IncomeTaxExpenseContinuingOperations"}),
+    "accounts receivable": frozenset(
+        {
+            "AccountsReceivableNetCurrent",
+            "AccountsReceivableNet",
+            "CurrentTradeReceivables",
+            "TradeReceivables",
+        }
+    ),
+    "total assets": frozenset({"Assets"}),
+    "total liabilities": frozenset({"Liabilities"}),
+    "total equity": frozenset(
+        {
+            "StockholdersEquity",
+            "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+            "Equity",
+        }
+    ),
+    "cash and cash equivalents": frozenset(
+        {"CashAndCashEquivalentsAtCarryingValue", "CashAndCashEquivalents"}
+    ),
+}
+
 # The DART statement axis whose consolidated member is the entity as a whole.
 _ENTITY_SCOPE = (
     (
@@ -634,6 +722,9 @@ def _with_fact(
     the tag contradicts (a consolidated tag in a separate statement) is overridden.
     In a filing that declares its statements (``declared``), a tag with no dimension
     at all ("CFY2024dFY") states no statement scope, so the declared one stays.
+    A standard concept not accepted for the row label's item ("Accounts receivable"
+    tagged IncreaseDecreaseInAccountsReceivable) records ``concept`` and leaves the
+    cell no item.
     An inline XBRL tag's sign is the value's sign: when it differs from the sign the
     cell's notation writes (``negative``), ``sign`` is recorded and the interpretation
     applies the tag's.
@@ -669,9 +760,16 @@ def _with_fact(
         resolved = resolve(frozenset({code}) | notes)
     elif fact.numerator is not None:
         measure = "other"
+    item = reading.item
+    standard = _STANDARD_CONCEPT.fullmatch(fact.concept)
+    if item is not None and standard is not None:
+        if standard.group("name") not in _ITEM_CONCEPTS.get(item, frozenset()):
+            overrides.append("concept")
+            item = None
     return replace(
         reading,
         years=years,
+        item=item,
         scale=scale,
         percent=percent,
         currency=resolved,
@@ -918,5 +1016,10 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     if reading.scope is not None:
         return CellInterpretation("scope_qualified", reading.scope, value, reading)
     if reading.item is None:
-        return CellInterpretation("item_unknown", "row label names no item", value, reading)
+        reason = (
+            "the tag's concept is not the row label's item"
+            if "concept" in reading.overrides
+            else "row label names no item"
+        )
+        return CellInterpretation("item_unknown", reason, value, reading)
     return CellInterpretation("known", None, value, reading)

@@ -6,11 +6,13 @@ from decimal import Decimal
 import pytest
 
 from app.figures.tables import (
+    _ITEM_CONCEPTS,
     TableStatement,
     interpret_table_cell,
     read_table_cells,
     read_table_unit,
 )
+from app.figures.vocabulary import PHRASE_ITEMS
 from tests.figures.support import (
     DART_FRAGMENT,
     INCOME_TABLE,
@@ -384,11 +386,17 @@ def test_an_inline_xbrl_sign_is_the_values_sign(changes, text, overrides, value)
 def test_a_tag_without_a_sign_overrides_a_negative_notation():
     """ "(1,641)" tagged with no sign attribute is the positive value the tag states."""
     html = INCOME_TABLE.replace("<td>1,641</td>", "<td>(1,641)</td>")
-    readings = read_table_cells(table_fragment(html), {(2, 1): (fact(text="1,641", sign="+"),)})
+    readings = read_table_cells(
+        table_fragment(html),
+        {(2, 1): (fact(text="1,641", sign="+", concept="us-gaap:NetIncomeLoss"),)},
+    )
     cell = next(c for c in readings if (c.row, c.column) == (2, 1))
     assert cell.overrides == ("sign",)
     assert interpret_table_cell("(1,641)", [cell]).value == Decimal(1641)
-    agreeing = read_table_cells(table_fragment(html), {(2, 1): (fact(text="1,641", sign="-"),)})
+    agreeing = read_table_cells(
+        table_fragment(html),
+        {(2, 1): (fact(text="1,641", sign="-", concept="us-gaap:NetIncomeLoss"),)},
+    )
     cell = next(c for c in agreeing if (c.row, c.column) == (2, 1))
     assert (cell.overrides, interpret_table_cell("(1,641)", [cell]).value) == ((), Decimal(-1641))
 
@@ -654,3 +662,34 @@ def test_a_tagged_year_override_leaves_its_columns_untagged_cells_undated():
     }
     assert agreeing[(2, 1)].years == {2024}
     assert interpret_table_cell("1,641", [agreeing[(2, 1)]]).status == "known"
+
+
+@pytest.mark.parametrize(
+    ("concept", "item", "overrides", "status"),
+    [
+        ("us-gaap:Revenues", "revenue", (), "known"),
+        ("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", "revenue", (), "known"),
+        ("ifrs-full_Revenue", "revenue", (), "known"),
+        ("us-gaap:BusinessAcquisitionsProFormaRevenue", None, ("concept",), "item_unknown"),
+        ("us-gaap:IncreaseDecreaseInAccountsReceivable", None, ("concept",), "item_unknown"),
+        ("us-gaap:SomeFutureRevenueConcept", None, ("concept",), "item_unknown"),
+        ("ifrs-full_AdjustmentsForIncomeTaxExpense", None, ("concept",), "item_unknown"),
+        ("amd:NetRevenueOfSegments", "revenue", (), "known"),
+        ("dart_OperatingIncomeLoss", "revenue", (), "known"),
+    ],
+)
+def test_a_standard_concept_must_be_one_accepted_for_the_labels_item(
+    concept, item, overrides, status
+):
+    """A pro forma or cash-flow tag is not the row's item; extensions keep the label's."""
+    cell = tagged_revenue(fact(concept=concept))
+    assert (cell.item, cell.overrides) == (item, overrides)
+    result = interpret_table_cell("$ 25,785", [cell])
+    assert result.status == status
+    if status == "item_unknown":
+        assert result.reason == "the tag's concept is not the row label's item"
+
+
+def test_every_item_a_label_can_name_has_accepted_concepts():
+    """The accepted-concept table covers exactly the items row labels name."""
+    assert set(_ITEM_CONCEPTS) == set(PHRASE_ITEMS.values())
