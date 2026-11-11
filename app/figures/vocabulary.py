@@ -119,12 +119,15 @@ TOKEN = re.compile(r"[A-Za-z]+(?:[&'’-][A-Za-z]+)*['’]?|[가-힣]+|\d+(?:[.,
 
 # The only parentheticals that keep a label or answer phrase the same item. A label may
 # cite a list of notes ("(Notes 2 and 3)"); in an answer a note reference has exactly
-# one number, so a figure written after it stays a figure.
-_QUALIFIER = r"\s*[(（]\s*(?:loss|losses|손실|(?:notes?|주석?)\s*\d+[a-z]?"
+# one short number, so a figure written after it or in its place stays a figure.
+_QUALIFIER_WORD = r"\s*[(（]\s*(?:loss|losses|손실|(?:notes?|주석?)\s*"
+_QUALIFIER = _QUALIFIER_WORD + r"\d+[a-z]?"
 _QUALIFIER_LIST = r"(?:\s*(?:[,，、~-]|and|&)\s*\d+[a-z]?)*"
 _QUALIFIER_END = r")\s*[)）]"
 SAME_ITEM_QUALIFIER = re.compile(_QUALIFIER + _QUALIFIER_LIST + _QUALIFIER_END, re.IGNORECASE)
-ANSWER_SAME_ITEM_QUALIFIER = re.compile(_QUALIFIER + _QUALIFIER_END, re.IGNORECASE)
+ANSWER_SAME_ITEM_QUALIFIER = re.compile(
+    _QUALIFIER_WORD + r"\d{1,3}[a-z]?" + _QUALIFIER_END, re.IGNORECASE
+)
 
 
 # English words that may stand around a figure without changing which item it is.

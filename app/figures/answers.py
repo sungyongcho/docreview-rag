@@ -261,7 +261,7 @@ def _sentence_claims(masked: str, text: str, start: int, end: int) -> list[_Clai
     item of the figure before it in the same sentence. An unknown word in its head or
     tail, an item phrase in its tail, or two items in its head leave it without one.
     """
-    found = [figure for figure in figure_spans(masked[:end]) if figure.start >= start]
+    found = [figure for figure in figure_spans(masked[:end], answer=True) if figure.start >= start]
     if not found:
         return []
     years = [
@@ -430,6 +430,16 @@ def _best(comparisons: set[_Comparison]) -> _Comparison:
     return "no"
 
 
+def _written(figure: Figure) -> str:
+    """Return a figure as the answer wrote it, without a parenthesis that is not its own.
+
+    "(1,234)" is a figure in parentheses; in "(Note 2: 99,999)" or "(99,999 million)" the
+    parenthesis belongs to the sentence.
+    """
+    text = figure.text
+    return text.strip("()") if text.startswith("(") != text.endswith(")") else text
+
+
 def _judge(
     claim: _Claim, cells: Sequence[TableCellReading], facts: Sequence[_Claim], requested: set[int]
 ) -> tuple[FigureCheck, bool]:
@@ -445,8 +455,9 @@ def _judge(
     otherwise a fact of the same item, kind and value confirms or withholds it alike.
     """
     figure, item = claim.figure, claim.item
+    shown = _written(figure)
     if figure.value is None or item is None or claim.dated_ambiguously:
-        return FigureCheck(figure.text, "unverified", (), item), False
+        return FigureCheck(shown, "unverified", (), item), False
     value = figure.value
     wanted = {claim.year} if claim.year is not None else requested
 
@@ -472,17 +483,17 @@ def _judge(
     if any(in_period(years) for years in certain):
         evidenced = tuple(sorted(frozenset[int]().union(*certain)))
         outside = bool(requested) and claim.year is not None and claim.year not in requested
-        return FigureCheck(figure.text, "verified", evidenced, item), outside
+        return FigureCheck(shown, "verified", evidenced, item), outside
     if unsure and (not certain or any(in_period(years) for years in unsure)):
         # No unit is guessed, so the digits cannot pick a cell: report the item's cells of
         # the claim's period, or all of them when none is in that period.
         held = [years for years in unsure if in_period(years)] or unsure
         evidenced = tuple(sorted(frozenset[int]().union(*held)))
-        return FigureCheck(figure.text, "unit_unverified", evidenced, item), False
+        return FigureCheck(shown, "unit_unverified", evidenced, item), False
     if certain:
         evidenced = tuple(sorted(frozenset[int]().union(*certain)))
         verdict: Verdict = "period_mismatch" if all(certain) else "unverified"
-        return FigureCheck(figure.text, verdict, evidenced, item), False
+        return FigureCheck(shown, verdict, evidenced, item), False
     outcome = _best(
         {
             _compare(
@@ -502,7 +513,7 @@ def _judge(
             and fact.figure.value is not None
         }
     )
-    return FigureCheck(figure.text, _FACT_VERDICTS[outcome], (), item), False
+    return FigureCheck(shown, _FACT_VERDICTS[outcome], (), item), False
 
 
 def check_figures(

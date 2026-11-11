@@ -63,5 +63,80 @@ def test_prose_fallback_needs_the_same_currency():
 def test_an_amount_after_a_note_reference_is_still_a_claim(answer, amount):
     """Check an amount written right after a note reference instead of dropping it."""
     result = check_figures(answer, [EvidenceText(1, "body", "ctx")], [2024])
-    assert amount in {check.figure.strip("()") for check in result.checks}
+    assert amount in {check.figure for check in result.checks}
     assert result.verdict != "verified"
+
+
+@pytest.mark.parametrize(
+    "lead",
+    [
+        "Net revenue was ",
+        "Net revenue was Note ",
+        "Net revenue was Item ",
+        "Net revenue was Section ",
+        "Net revenue was Exhibit ",
+        "Net revenue was FY ",
+        "Net revenue was Q",
+        "Net revenue was H",
+        "Net revenue (Note ",
+        "Net revenue (Note 2: ",
+        "Net revenue (consolidated ",
+        "매출액은 ",
+        "매출액 (주석 ",
+        "매출액 (주 ",
+        "매출액은 제 ",
+        "매출액 (연결 ",
+    ],
+)
+@pytest.mark.parametrize("amount", ["99,999", "99999", "25,785.5"])
+@pytest.mark.parametrize("tail", ["", ")", " million.", "백만원", " 기", "-K", "th", "H"])
+def test_an_amount_is_a_claim_wherever_an_identifier_number_could_stand(lead, amount, tail):
+    """Never drop an amount-shaped number as an identifier, whatever is written around it."""
+    result = check_figures(lead + amount + tail, [EvidenceText(1, "body", "ctx")], [2024])
+    assert amount in {check.figure for check in result.checks}
+    assert result.verdict != "verified"
+
+
+@pytest.mark.parametrize(
+    "answer", ["Net revenue was 26B in 2024.", "Net revenue was 99M.", "Net revenue was 3T."]
+)
+def test_a_bare_scale_letter_amount_fails_instead_of_dropping_out(answer):
+    """Fail a number with a glued scale letter and no currency sign as unreadable."""
+    result = check_figures(answer, [EvidenceText(1, "body", "ctx")], [2024])
+    assert len(result.checks) == 1
+    assert result.verdict == "unverified"
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "As disclosed in Note 5 and Item 7A of the 10-K, net revenue grew.",
+        "See Exhibit 99.1 and Section 13 of the FY2024 10K for the Q4 and 1H results.",
+        "Net revenue grew in the 3rd quarter ended March 31, 2024 (2024-03-31, 3/31/2024).",
+        "매출액은 제56기 3분기(2024년 9월 30일)에 증가했다 (주 29).",
+        "5G revenue grew in FY24.",
+    ],
+)
+def test_bounded_identifiers_and_dates_state_no_claim(answer):
+    """Leave references, periods, form names, ordinals and dates out of the check."""
+    assert check_figures(answer, [EvidenceText(1, "body", "ctx")], [2024]).checks == ()
+
+
+def test_a_bare_calendar_year_is_a_date_until_something_marks_it_an_amount():
+    """Pin the boundary: an unmarked 1900-2099 integer cannot be told from a year."""
+    evidence = [EvidenceText(1, "body", "ctx")]
+    assert check_figures("Net revenue was 2024.", evidence, [2024]).checks == ()
+    for answer in ("Net revenue was 2,024.", "Net revenue was 2024 million.", "USD 2024."):
+        assert check_figures(answer, evidence, [2024]).verdict != "verified"
+
+
+def test_a_reported_figure_keeps_only_its_own_parentheses():
+    """Report "(1,234)" as written and drop a parenthesis that belongs to the sentence."""
+    evidence = [EvidenceText(1, "body", "ctx")]
+
+    def reported(answer):
+        return [check.figure for check in check_figures(answer, evidence, [2024]).checks]
+
+    assert reported("Net loss was (1,234) million.") == ["(1,234)"]
+    assert reported("Net revenue (99,999 million) was high.") == ["99,999"]
+    assert reported("Net revenue (Note 2: 99,999) was reported.") == ["99,999"]

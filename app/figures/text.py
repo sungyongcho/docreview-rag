@@ -26,14 +26,17 @@ from app.figures.vocabulary import CHANGES, CONNECTIVES, FILLERS, ITEM_WORDS
 _NUMBER = re.compile(r"[(△▲-]?\d(?:[\d,]*\d)?(?:\.\d+)?\)?")
 # Identifiers and calendar dates carry digits but state no figure.
 _PERIODS_AND_CODES = r"\b(?:FY|Q|H)\s?\d+|\b\d+[QH]\b|\d+-[A-Z]\b|"
-_REFERENCE = r"\b(?:Item|Note|Part|Exhibit|Section)s?\s+\d+[A-Z]?(?:\.\d+)*"
+_REFERENCE_WORD = r"\b(?:Item|Note|Part|Exhibit|Section)s?\s+"
+_REFERENCE = _REFERENCE_WORD + r"\d+[A-Z]?(?:\.\d+)*"
 _REFERENCE_LIST = r"(?:\s*(?:,|and|&)\s*\d+[A-Z]?(?:\.\d+)*)*"
 # A Korean note reference: "(주29)", "(주 5, 30)", "(주석 12)".
-_KOREAN_NOTE = r"[(（]\s*주석?\s*\d+[A-Za-z]?"
+_KOREAN_NOTE_WORD = r"[(（]\s*주석?\s*"
+_KOREAN_NOTE = _KOREAN_NOTE_WORD + r"\d+[A-Za-z]?"
 _KOREAN_NOTE_LIST = r"(?:\s*[,，、~-]\s*\d+[A-Za-z]?)*"
 _KOREAN_NOTE_END = r"\s*[)）]|"
+_MONTH_AND_DAY = r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+"
 _DATES = (
-    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}|"
+    _MONTH_AND_DAY + r"\d{4}|"
     r"\d{4}\s?[./-]\s?\d{1,2}\s?[./-]\s?\d{1,2}|\d{1,2}/\d{1,2}/\d{4}|"
     r"\d{4}\s?년(?:\s?\d{1,2}\s?월)?(?:\s?\d{1,2}\s?일)?|\d{1,2}\s?월\s?\d{1,2}\s?일|"
     r"\d\s?분기|제\s?\d+\s?기"
@@ -51,10 +54,31 @@ _NOT_FIGURES = re.compile(
     + _DATES,
     re.IGNORECASE,
 )
-# In an answer a reference is followed by exactly its own number, so a figure written
-# after it ("Note 5, 99,999 million") stays a figure and is checked.
+# An answer is checked figure by figure, so its identifiers have bounded shapes: a
+# reference is followed by exactly its own short number, a period by its own one to four
+# digits and a date by a calendar year. No identifier number is part of a longer number
+# ("FY 99,999", "25,785.5H"). An amount written where such a number would stand
+# ("Note 5, 99,999 million", "Note 99,999", "FY 99999 million") stays a figure.
+_OWN_START = r"(?<![\d,.])"
+_OWN_END = r"(?!\d|[,.]\d)"
+_CALENDAR_YEAR = r"(?:19|20)\d{2}" + _OWN_END
 _ANSWER_NOT_FIGURES = re.compile(
-    _PERIODS_AND_CODES + _REFERENCE + "|" + _KOREAN_NOTE + _KOREAN_NOTE_END + _DATES,
+    "|".join(
+        (
+            r"\b(?:FY\s?(?:\d{4}|\d{2})|[QH]\s?\d)" + _OWN_END,
+            _OWN_START + r"\d[QH]\b",
+            _OWN_START + r"\d{1,2}-[A-Z]\b",
+            _REFERENCE_WORD + r"\d{1,3}[A-Z]?(?:\.\d{1,3})*" + _OWN_END,
+            _KOREAN_NOTE_WORD + r"\d{1,3}[A-Za-z]?\s*[)）]",
+            _MONTH_AND_DAY + _CALENDAR_YEAR,
+            _OWN_START + r"(?:19|20)\d{2}\s?[./-]\s?\d{1,2}\s?[./-]\s?\d{1,2}" + _OWN_END,
+            _OWN_START + r"\d{1,2}/\d{1,2}/" + _CALENDAR_YEAR,
+            _OWN_START + r"(?:19|20)\d{2}\s?년(?:\s?\d{1,2}\s?월)?(?:\s?\d{1,2}\s?일)?",
+            _OWN_START + r"\d{1,2}\s?월\s?\d{1,2}\s?일",
+            _OWN_START + r"\d\s?분기",
+            r"제\s?\d{1,3}\s?기",
+        )
+    ),
     re.IGNORECASE,
 )
 BARE_YEAR = re.compile(r"(?:19|20)\d{2}")
@@ -94,6 +118,10 @@ _ORDINARY_SHORT_WORDS = frozenset(
 # The only digit-bearing words left out as identifiers besides _NOT_FIGURES: one or two
 # digits glued to one capital ("3M", "10K", "5G") and ordinals ("3rd").
 _IDENTIFIER = re.compile(r"\d{1,2}[A-Z]|\d+(?:st|nd|rd|th)")
+# In an answer a scale letter glued to a number may state an amount ("26B"), so only the
+# other capitals ("5G"), the SEC form names written without a hyphen and short ordinals
+# are identifiers.
+_ANSWER_IDENTIFIER = re.compile(r"\d{1,2}[AC-JLN-SU-Z]|10[KQ]|[68]K|[24]0F|\d{1,3}(?:st|nd|rd|th)")
 _LETTERS_BEFORE = re.compile(r"[A-Za-z]+$")
 _LETTERS_AFTER = re.compile(r"[A-Za-z]+")
 _CURRENCY_CODE = re.compile(
@@ -161,7 +189,7 @@ def blank(text: str) -> str:
 
 
 def blank_answer(text: str) -> str:
-    """Blank an answer's identifiers and dates, each reference with only its own number."""
+    """Blank an answer's identifiers and dates, each of a bounded shape with its own number."""
     return _ANSWER_NOT_FIGURES.sub(lambda match: " " * len(match.group(0)), text)
 
 
@@ -262,8 +290,13 @@ def _unit_after(
     return None, True, end
 
 
-def figure_spans(blanked: str) -> list[Figure]:
+def figure_spans(blanked: str, *, answer: bool = False) -> list[Figure]:
     """Return each figure of an identifier-free text with its own position and unit.
+
+    ``answer`` reads the text as an answer's or a passage's prose rather than a table
+    label or cell: only the bounded identifier shapes of an answer are left out, so a
+    scale letter glued to a number with no currency sign ("26B") is an unreadable figure
+    that fails, like "25785M", instead of an identifier that drops out.
 
     Only the explicitly recognized identifier shapes are left out: the blanked FY/Q/H,
     date and Item references, one or two digits glued to one capital ("3M", "10K",
@@ -278,6 +311,7 @@ def figure_spans(blanked: str) -> list[Figure]:
     is kept, so disagreeing markers ("USD EUR 25") resolve as a conflict. A marker run
     that touches two figures could belong to either, so both are marked unknown.
     """
+    identifier = _ANSWER_IDENTIFIER if answer else _IDENTIFIER
     found: list[Figure] = []
     for match in _NUMBER.finditer(blanked):
         token = match.group(0)
@@ -289,7 +323,7 @@ def figure_spans(blanked: str) -> list[Figure]:
         markers, unit_start = _markers_before(blanked, start)
         currency = code or bool(markers) or (bool(before) and before[-1] in CURRENCY)
         glued = token + (suffix.group(0) if suffix else "")
-        if prefix is None and not currency and _IDENTIFIER.fullmatch(glued):
+        if prefix is None and not currency and identifier.fullmatch(glued):
             continue
         scale, readable, unit_end = _unit_after(blanked, start, end, currency)
         readable = readable and (prefix is None or code)
