@@ -332,6 +332,45 @@ def test_cells_for_different_years_or_items_are_still_answered_together():
     )
 
 
+def test_a_cell_of_an_unasked_year_beside_an_asked_one_is_returned_for_correction():
+    """Refuse an unasked year like an unasked item once another cell answers the asked year."""
+    older = stored("2024:r1c2", value="22680", fiscal_years=[2023])
+    held_older = stored("2024:r1c2", value="22680", fiscal_years=[2023], **HELD)
+    two_years = proposal(("2024:r1c1", "revenue", 2024), ("2024:r1c2", "revenue", 2023))
+    known = review(two_years, stored(), older)
+    held = review(two_years, stored(), held_older)
+    wider = review(
+        proposal(("2024:r1c1", "revenue", 2024), ("2024:r1c2", "revenue", 2022)),
+        stored(),
+        stored("2024:r1c2", fiscal_years=[2022]),
+        years=(2023, 2024),
+    )
+    problem = "cell 2024:r1c2 is fiscal 2023; the question asks for fiscal 2024"
+    assert known.report is None and known.problem == problem
+    assert held.report is None and held.problem == problem and held.unit_unverified is None
+    assert wider.problem == "cell 2024:r1c2 is fiscal 2022; the question asks for fiscal 2023, 2024"
+
+
+def test_years_the_question_asks_for_or_does_not_restrict_are_still_answered():
+    """Answer every asked year, any year of an undated question, and hold an asked held cell."""
+    older = stored("2024:r1c2", value="22680", fiscal_years=[2023])
+    two_years = proposal(("2024:r1c1", "revenue", 2024), ("2024:r1c2", "revenue", 2023))
+    undated = review(two_years, stored(), older, years=())
+    assert undated.report is not None and undated.report.label == "SUPPORTED"
+    assert "FY2023 Net revenue: 22,680 million USD." in undated.report.answer
+    asked_held = review(
+        two_years,
+        stored(**HELD),
+        older,
+        years=(2023, 2024),
+    )
+    assert asked_held.report is not None and asked_held.report.label == "UNVERIFIED"
+    assert asked_held.unit_unverified is not None
+    assert asked_held.unit_unverified.figures == ("$ 25785",)
+    only_older = review(proposal(("2024:r1c2", "revenue", 2023)), older)
+    assert only_older.report is not None and only_older.report.label == "PERIOD_MISMATCH"
+
+
 @pytest.mark.parametrize(
     ("cell", "expected"),
     [

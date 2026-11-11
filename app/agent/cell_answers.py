@@ -376,8 +376,24 @@ def review_cell_selection(
         return CellVerdict(
             problem=f"cell {off_item.ref} is {off_item.cell['item']}; the question asks for {asked}"
         )
+    # Like an unasked item, a cell of an unasked year is returned once another selected
+    # cell is of an asked year; when none is, the selection is a period mismatch below.
+    years = {cell.cell["fiscal_years"][0] for cell in cells}
+    requested = set(requested_years)
+    if years & requested:
+        off_year = next(
+            (cell for cell in cells if cell.cell["fiscal_years"][0] not in requested), None
+        )
+        if off_year is not None:
+            asked = ", ".join(str(year) for year in sorted(requested))
+            return CellVerdict(
+                problem=f"cell {off_year.ref} is fiscal {off_year.cell['fiscal_years'][0]}; "
+                f"the question asks for fiscal {asked}"
+            )
     # A unit hold withholds the whole answer, but only once the held cell is what the
-    # model claimed and what the question asks for; it outranks a period mismatch.
+    # model claimed and of the asked item and, when any selected cell is of an asked
+    # year, of an asked year. It outranks a period mismatch, so with no selected cell
+    # of an asked year a held cell still withholds rather than names another period.
     held = [cell for cell in cells if cell.cell["status"] in UNIT_HOLDS]
     if held:
         return CellVerdict(
@@ -392,8 +408,6 @@ def review_cell_selection(
             ),
             checks=tuple(_check(cell, "held") for cell in cells),
         )
-    years = {cell.cell["fiscal_years"][0] for cell in cells}
-    requested = set(requested_years)
     if requested and not years & requested:
         mismatch = AgentPeriodMismatch(
             requested_fiscal_years=tuple(sorted(requested)),
