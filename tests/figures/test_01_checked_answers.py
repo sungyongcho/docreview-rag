@@ -1,64 +1,32 @@
-"""Answer figures checked against the period of the cited evidence."""
+"""Answer figures checked against the period of the cited table and text evidence."""
 
-from dataclasses import asdict, replace
-from decimal import Decimal
+from dataclasses import replace
 
 import pytest
 
 from app.figures.answers import EvidenceText, check_figures
-from app.figures.tables import (
-    CellFact,
-    TableCellReading,
-    TableStatement,
-    interpret_table_cell,
-    read_table_cells,
-    read_table_unit,
-)
+from app.figures.tables import read_table_cells
 from app.figures.text import figures
-from app.ingestion.chunking import Chunk, chunk_filing
-from app.ingestion.parsing.models import Block
-from tests.ingestion.chunk.support import build_filing
-
-# AMD FY2024 consolidated statement of operations, as the filing lays it out: its note
-# states a scale but no currency, and its cells carry only the ambiguous "$".
-INCOME_TABLE = (
-    "<table><tr><td>(In millions)</td><td>December 28, 2024</td>"
-    "<td>December 30, 2023</td></tr>"
-    "<tr><td>Net revenue</td><td>$ 25,785</td><td>$ 22,680</td></tr>"
-    "<tr><td>Net income</td><td>1,641</td><td>854</td></tr></table>"
+from tests.figures.support import (
+    CROSSED_TABLE,
+    DART_FRAGMENT,
+    EPS_TABLE,
+    INCOME_TABLE,
+    ROWS_TABLE,
+    USD_INCOME_TABLE,
+    currency_table,
+    dart_evidence,
+    fact,
+    fragment_evidence,
+    linked,
+    note_cell,
+    noted,
+    table_chunk,
+    table_evidence,
+    table_fragment,
+    two_year_table,
+    unit_fragment,
 )
-# The same table with an explicit currency added to its note, for checks of other behavior.
-USD_INCOME_TABLE = INCOME_TABLE.replace("(In millions)", "(In millions of U.S. dollars)")
-
-
-def table_chunk(html: str = USD_INCOME_TABLE) -> Chunk:
-    """Chunk one table through the real chunker."""
-    block = Block("table", "", html=html, source_pos=0, end_pos=len(html))
-    filing = build_filing([block])
-    filing.source_length = len(html)
-    (chunk,) = chunk_filing(filing)
-    assert chunk.table_fragment is not None
-    return chunk
-
-
-def table_fragment(html: str = USD_INCOME_TABLE) -> dict:
-    """Return one chunked table's fragment as the JSON a stored table rebuilds."""
-    fragment = table_chunk(html).table_fragment
-    assert fragment is not None
-    return asdict(fragment)
-
-
-def table_evidence(html: str = USD_INCOME_TABLE) -> EvidenceText:
-    """Read one chunked table as cited evidence with its figure readings."""
-    chunk = table_chunk(html)
-    return EvidenceText(
-        1, chunk.body, chunk.context_header, tuple(read_table_cells(table_fragment(html)))
-    )
-
-
-def prose_evidence(body: str) -> EvidenceText:
-    """Read one narrative chunk as cited evidence."""
-    return EvidenceText(2, body, "AMD FY2024 · Item 7")
 
 
 @pytest.mark.parametrize(
@@ -152,65 +120,11 @@ def test_without_a_requested_period_any_cited_figure_is_verified():
     assert result.verdict == "verified"
 
 
-def test_a_prose_figure_cannot_prove_a_requested_period():
-    """Refuse a running-text figure when the question asks for a period."""
-    prose = prose_evidence("Net revenue increased 14% compared with the prior year.")
-    assert check_figures("Revenue grew 14%.", [prose], [2024]).verdict == "unverified"
-    assert check_figures("Revenue grew 14%.", [prose], []).verdict == "verified"
-
-
 def test_losses_match_by_magnitude():
     """Match "a loss of 33" to a filing's parenthesized (33)."""
     html = USD_INCOME_TABLE.replace("854", "(33)")
     result = check_figures("The 2023 net loss was $33 million.", [table_evidence(html)], [2023])
     assert result.verdict == "verified"
-
-
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("Revenue was $25,785 million in fiscal 2024.", ("25,785",)),
-        ("FY2024 Item 7 of the 10-K, Q4 results.", ()),
-        ("As of December 28, 2024 and 2024.12.31, revenue was 1,641.", ("1,641",)),
-        ("2024년 12월 31일 기준 매출은 25,785백만원, 1분기 제56기", ("25,785",)),
-        ("영업이익률 14.5%", ("14.5",)),
-        ("$25.8B and 25.8bn", ("25.8", "25.8")),
-        ("3M and 10K filers, Series B, 5G", ()),
-        ("Revenue was $25,785bil or 25.8x.", ("25,785", "25.8")),
-        ("In 2024, revenue was 25,785, then 1,641.", ("25,785", "1,641")),
-        ("Revenue was $99999xyz, $2024mn, $2024 million and 2024%.", ("99999",) + ("2024",) * 3),
-        ("USD25,785, 25,785USD, ₩300, 300원 and 25 usd", ("25,785", "25,785", "300", "300", "25")),
-    ],
-)
-def test_identifiers_dates_and_years_are_not_figures(text, expected):
-    """Leave years, dates and identifiers out, but keep figures glued to unknown units."""
-    assert figures(text) == expected
-
-
-# A DART-style fragment: the unit is a caption, the year sits in the column header.
-# 300,870,903 백만원 = 300.870903조원.
-DART_FRAGMENT = {
-    "caption_sources": [{"start_char": 0, "end_char": 20, "text": "(단위 : 백만원)"}],
-    "header_cells": [
-        {"row": 0, "column": 0, "text": "과목"},
-        {"row": 0, "column": 1, "text": "제56기(2024년)"},
-        {"row": 0, "column": 2, "text": "제55기(2023년)"},
-    ],
-    "cells": [
-        {"sources": [{"row": 1, "column": 0, "text": "매출액"}]},
-        {"sources": [{"row": 1, "column": 1, "text": "300,870,903"}]},
-        {"sources": [{"row": 1, "column": 2, "text": "258,935,494"}]},
-    ],
-}
-
-
-def dart_evidence(caption: str = "(단위 : 백만원)") -> EvidenceText:
-    """Read the DART-style revenue fragment under one caption linked by its source span."""
-    linked = {"start_char": 0, "end_char": 20, "text": caption}
-    fragment = {**DART_FRAGMENT, "caption_sources": [linked]}
-    return EvidenceText(
-        9, "| 과목 | 2024 | 2023 |", "연결 손익계산서", tuple(read_table_cells(fragment))
-    )
 
 
 @pytest.mark.parametrize(
@@ -333,24 +247,6 @@ def test_the_same_answer_passes_once_the_evidence_states_its_unit():
     assert check_figures(answer, [table_evidence()], [2024]).verdict == "unverified"
 
 
-def unit_fragment(*captions: dict, label: str = "Net revenue", value: str = "25,785"):
-    """Read one 2024 row whose unit can only come from the given caption entries."""
-    fragment = {
-        "header_cells": [{"column": 1, "text": "2024"}],
-        "caption_sources": list(captions),
-        "cells": [
-            {"sources": [{"row": 1, "column": 0, "text": label}]},
-            {"sources": [{"row": 1, "column": 1, "text": value}]},
-        ],
-    }
-    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
-
-
-def linked(text: str, start: int = 0) -> dict:
-    """Build one caption the chunker linked to its table with a source span."""
-    return {"start_char": start, "end_char": start + len(text), "text": text}
-
-
 @pytest.mark.parametrize(
     ("captions", "verdict"),
     [
@@ -429,33 +325,6 @@ def test_a_withheld_figure_holds_the_whole_answer_beside_a_wrong_one():
     result = check_figures(answer, [table_evidence()], [2024])
     assert [check.verdict for check in result.checks] == ["unit_unverified", "unverified"]
     assert result.verdict == "unit_unverified"
-
-
-def noted(
-    note: str,
-    label: str = "Net revenue",
-    value: str = "25,785",
-    currency: str | None = "(Currency: USD)",
-) -> EvidenceText:
-    """Read one 2024 row under a table whose own first header cell is ``note``.
-
-    A separate header cell declares the currency, so the note under test decides only
-    the scale; ``currency=None`` leaves the table without one.
-    """
-    headers = [
-        {"row": 0, "column": 0, "text": note},
-        {"row": 0, "column": 1, "text": "2024"},
-    ]
-    if currency is not None:
-        headers.append({"row": 0, "column": 2, "text": currency})
-    fragment = {
-        "header_cells": headers,
-        "cells": [
-            {"sources": [{"row": 1, "column": 0, "text": label}]},
-            {"sources": [{"row": 1, "column": 1, "text": value}]},
-        ],
-    }
-    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
 
 
 @pytest.mark.parametrize(
@@ -619,14 +488,6 @@ def test_only_an_explicit_unit_note_sets_the_table_scale():
     )
 
 
-EPS_TABLE = (
-    "<table><tr><td>(In millions of U.S. dollars, except per share data)</td>"
-    "<td>December 28, 2024</td><td>December 30, 2023</td></tr>"
-    "<tr><td>Net revenue</td><td>$ 25,785</td><td>$ 22,680</td></tr>"
-    "<tr><td>Earnings per share - diluted</td><td>$ 1.00</td><td>$ 0.53</td></tr></table>"
-)
-
-
 @pytest.mark.parametrize(
     ("answer", "verdict"),
     [
@@ -639,16 +500,6 @@ EPS_TABLE = (
 def test_per_share_rows_are_not_scaled_by_the_table_unit(answer, verdict):
     """Keep per-share rows in plain currency while other rows use the million note."""
     assert check_figures(answer, [table_evidence(EPS_TABLE)], [2024]).verdict == verdict
-
-
-ROWS_TABLE = (
-    "<table><tr><td>(In millions of U.S. dollars)</td><td>December 28, 2024</td>"
-    "<td>December 30, 2023</td></tr>"
-    "<tr><td>Net revenue</td><td>$ 25,785</td><td>$ 22,680</td></tr>"
-    "<tr><td>Gross margin</td><td>$ 25,785</td><td>$ 1,111</td></tr>"
-    "<tr><td>Sales and marketing</td><td>$ 9,999</td><td>$ 2,222</td></tr>"
-    "<tr><td>Other items</td><td>$ 777</td><td>$ 666</td></tr></table>"
-)
 
 
 @pytest.mark.parametrize(
@@ -720,15 +571,6 @@ def test_every_figure_is_associated_with_its_own_item(answer, verdicts):
     assert [check.verdict for check in result.checks] == verdicts
 
 
-# Each amount appears in two rows, under different years.
-CROSSED_TABLE = (
-    "<table><tr><td>(In millions of U.S. dollars)</td><td>December 28, 2024</td>"
-    "<td>December 30, 2023</td></tr>"
-    "<tr><td>Net revenue</td><td>$ 400</td><td>$ 300</td></tr>"
-    "<tr><td>Net income</td><td>$ 50</td><td>$ 400</td></tr></table>"
-)
-
-
 @pytest.mark.parametrize(
     ("answer", "verdict", "years"),
     [
@@ -776,47 +618,6 @@ def test_a_figure_dated_by_the_answer_must_sit_in_that_year_column():
     result = check_figures("2023 net revenue was $25,785 million.", [table_evidence()], [])
     assert result.verdict == "period_mismatch"
     assert result.checks[0].evidenced_years == (2024,)
-
-
-def test_prose_and_labels_must_name_the_same_item():
-    """Refuse a running-text figure stated for a different item than the answer names."""
-    prose = prose_evidence("Net income increased 14% compared with the prior year.")
-    assert check_figures("Revenue grew 14%.", [prose], []).verdict == "unverified"
-    labelled = EvidenceText(3, "Body text.", "Net revenue of US$25,785 million · Item 8", None)
-    assert check_figures("Net revenue was $25.8 billion.", [labelled], []).verdict == "verified"
-    assert check_figures("Net income was $25,785 million.", [labelled], []).verdict == (
-        "unverified"
-    )
-    unitless = EvidenceText(3, "Body text.", "Net revenue of 25,785 · Item 8", None)
-    assert check_figures("Net revenue was 25,785.", [unitless], []).verdict == "unit_unverified"
-
-
-@pytest.mark.parametrize(
-    ("answer", "requested"),
-    [
-        ("2024 net income was 25,785.", [2024]),
-        ("Net income was 25,785.", [2024]),
-        ("Net income was 25,785 in 2024.", []),
-    ],
-)
-def test_labels_and_running_text_cannot_confirm_a_period(answer, requested):
-    """Refuse non-cell evidence whenever a period is asked or stated, even for the same item."""
-    labelled = EvidenceText(7, "Net income was 25,785.", "Net income of 25,785 in 2023")
-    assert check_figures(answer, [labelled], requested).verdict == "unverified"
-
-
-# A hand-written fragment: one 2024 column, a caption unit note and one labelled row.
-def fragment_evidence(label: str = "Net revenue", value: str = "25,785") -> EvidenceText:
-    """Read a minimal stored fragment whose single row carries ``label`` and ``value``."""
-    fragment = {
-        "header_cells": [{"column": 1, "text": "2024"}],
-        "caption_sources": [linked("(in millions of U.S. dollars)")],
-        "cells": [
-            {"sources": [{"row": 1, "column": 0, "text": label}]},
-            {"sources": [{"row": 1, "column": 1, "text": value}]},
-        ],
-    }
-    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
 
 
 @pytest.mark.parametrize(
@@ -935,15 +736,6 @@ def test_a_valid_amount_does_not_cover_a_glued_bad_amount(answer):
     assert result.verdict == "unverified"
 
 
-def test_explicit_identifier_shapes_stay_out_of_the_check():
-    """Leave 3M, 10K, 5G, Series B, ordinals and FY/Q/date/Item references out."""
-    answer = (
-        "In the 3rd year, 3M and 10K filers with 5G and Series B, per FY2024 Q4 "
-        "Item 7 as of December 28, 2024, reported net revenue of $25,785 million."
-    )
-    assert figures(answer) == ("25,785",)
-
-
 def test_an_ambiguously_dated_figure_is_unverified():
     """Refuse a figure its own words date to two years instead of using the requested one."""
     for answer in (
@@ -974,15 +766,6 @@ def test_unverified_checks_name_the_item_they_were_read_for():
 
 
 # Currency: every monetary claim must agree with an explicit currency of its own evidence.
-
-
-def currency_table(note: str, cell: str = "25,785") -> EvidenceText:
-    """Chunk a one-row 2024 revenue table whose note and data cell carry the given text."""
-    html = (
-        f"<table><tr><td>{note}</td><td>December 28, 2024</td></tr>"
-        f"<tr><td>Net revenue</td><td>{cell}</td></tr></table>"
-    )
-    return table_evidence(html)
 
 
 @pytest.mark.parametrize(
@@ -1084,39 +867,12 @@ def test_cells_and_tables_never_lend_each_other_a_currency():
     assert revenue_only_in_rows.verdict == "unit_unverified"
 
 
-def test_prose_fallback_needs_the_same_currency():
-    """Hold or refuse running-text figures whose currency is ambiguous or different."""
-    dollars = EvidenceText(3, "Body text.", "Net revenue of $25,785 million · Item 8", None)
-    assert check_figures("Net revenue was $25.8 billion.", [dollars], []).verdict == (
-        "unit_unverified"
-    )
-    assert check_figures("Net revenue was €25.8 billion.", [dollars], []).verdict == "unverified"
-    won = EvidenceText(3, "Body text.", "Net revenue of 25,785 million won · Item 8", None)
-    assert check_figures("Net revenue was US$25,785 million.", [won], []).verdict == "unverified"
-    assert check_figures("Net revenue was ₩25,785 million.", [won], []).verdict == "verified"
-
-
 def test_the_amd_table_as_filed_is_withheld_until_its_currency_is_explicit():
     """Withhold AMD's "$"-only table; the same answer passes once the note names USD."""
     answer = "2024 net revenue was $25,785 million."
     as_filed = check_figures(answer, [table_evidence(INCOME_TABLE)], [2024])
     assert (as_filed.verdict, as_filed.checks[0].evidenced_years) == ("unit_unverified", (2024,))
     assert check_figures(answer, [table_evidence(USD_INCOME_TABLE)], [2024]).verdict == "verified"
-
-
-def note_cell(note: str, cell: str) -> EvidenceText:
-    """Read one 2024 "Net revenue" row under a header note, with the data cell as written."""
-    fragment = {
-        "header_cells": [
-            {"row": 0, "column": 0, "text": note},
-            {"row": 0, "column": 1, "text": "2024"},
-        ],
-        "cells": [
-            {"sources": [{"row": 1, "column": 0, "text": "Net revenue"}]},
-            {"sources": [{"row": 1, "column": 1, "text": cell}]},
-        ],
-    }
-    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
 
 
 @pytest.mark.parametrize(
@@ -1186,11 +942,6 @@ def test_distinct_claims_keep_their_own_currency_codes():
     assert [check.verdict for check in result.checks] == ["verified", "unit_unverified"]
 
 
-def test_real_dates_and_period_references_stay_out_of_the_check():
-    """Leave FY, quarter, Item and calendar dates out even beside currency words."""
-    assert figures("FY2024 Q4 results in USD, Item 7, as of December 28, 2024 and 2024.") == ()
-
-
 @pytest.mark.parametrize(
     ("note", "cell", "answer", "verdict"),
     [
@@ -1205,23 +956,6 @@ def test_every_currency_marker_attached_to_a_figure_is_read(note, cell, answer, 
     """Read the whole run of markers before and after a figure; disagreeing ones withhold."""
     claim = f"2024 net revenue was {answer}."
     assert check_figures(claim, [note_cell(note, cell)], [2024]).verdict == verdict
-
-
-def two_year_table(note: str = "(In millions)") -> EvidenceText:
-    """Read a 2024/2023 revenue table under one note."""
-    fragment = {
-        "header_cells": [
-            {"row": 0, "column": 0, "text": note},
-            {"row": 0, "column": 1, "text": "2024"},
-            {"row": 0, "column": 2, "text": "2023"},
-        ],
-        "cells": [
-            {"sources": [{"row": 1, "column": 0, "text": "Net revenue"}]},
-            {"sources": [{"row": 1, "column": 1, "text": "25"}]},
-            {"sources": [{"row": 1, "column": 2, "text": "22"}]},
-        ],
-    }
-    return EvidenceText(7, "", "", tuple(read_table_cells(fragment)))
 
 
 def test_a_marker_between_two_figures_certifies_neither():
@@ -1275,243 +1009,6 @@ def test_an_unsupported_cell_currency_is_never_replaced_by_the_table_currency(ce
     assert check_figures(answer, [evidence], [2024]).verdict == verdict
 
 
-def test_table_readings_expose_each_figure_cell_with_its_resolved_unit():
-    """Read the USD income table's figure cells with their coordinates, years and unit."""
-    fragment = table_fragment()
-    readings = {(cell.row, cell.column): cell for cell in read_table_cells(fragment)}
-    revenue = next(
-        cell for cell in readings.values() if cell.values == frozenset({Decimal("25785")})
-    )
-    assert revenue.years == frozenset({2024})
-    assert revenue.scale == Decimal(1_000_000)
-    assert revenue.item == "revenue"
-    assert revenue.currency == "USD"
-    assert revenue.percent is False
-    assert read_table_unit(fragment).status == "known"
-
-
-def test_table_readings_keep_an_ambiguous_dollar_unresolved():
-    """Leave the "$" family unresolved when the note states a scale but no currency."""
-    fragment = table_fragment(INCOME_TABLE)
-    currencies = {cell.currency for cell in read_table_cells(fragment) if cell.item == "revenue"}
-    assert currencies == {"$"}
-
-
-def reading(**changes) -> TableCellReading:
-    """Build one USD million revenue reading for FY2024, changed where a test says."""
-    base = TableCellReading(
-        1,
-        1,
-        frozenset({Decimal(1234)}),
-        frozenset({2024}),
-        Decimal(1_000_000),
-        "revenue",
-        False,
-        "USD",
-        False,
-        "Net revenue",
-    )
-    return replace(base, **changes)
-
-
-@pytest.mark.parametrize(
-    ("text", "changes", "status", "value"),
-    [
-        ("1,234", {}, "known", Decimal(1234)),
-        ("(1,234)", {}, "known", Decimal(-1234)),
-        ("△1,234.50", {}, "known", Decimal("-1234.50")),
-        ("▲1,234", {}, "conflicting", None),
-        ("1,234", {"scale": None}, "scale_unknown", Decimal(1234)),
-        ("1,234", {"percent": None}, "scale_unknown", Decimal(1234)),
-        ("1,234", {"currency": "$"}, "currency_unconfirmed", Decimal(1234)),
-        ("1,234", {"currency": None}, "currency_unconfirmed", Decimal(1234)),
-        ("1,234", {"currency": "!"}, "conflicting", Decimal(1234)),
-        ("1,234", {"years": frozenset()}, "period_unknown", Decimal(1234)),
-        ("1,234", {"years": frozenset({2023, 2024})}, "period_unknown", Decimal(1234)),
-        ("1,234", {"item": None}, "item_unknown", Decimal(1234)),
-        ("1,234", {"measure": "other"}, "not_monetary", Decimal(1234)),
-        ("1,234", {"scope": "axis=member"}, "scope_qualified", Decimal(1234)),
-        ("1,234", {"scope": "axis=member", "years": frozenset()}, "period_unknown", Decimal(1234)),
-        ("12.5%", {"percent": True, "scale": None, "currency": None}, "known", Decimal("12.5")),
-    ],
-)
-def test_a_cell_is_known_only_when_every_fact_is_established(text, changes, status, value):
-    """Keep sign and decimals, and name the first missing fact instead of guessing."""
-    result = interpret_table_cell(text, [reading(**changes)])
-    assert (result.status, result.value) == (status, value)
-
-
-@pytest.mark.parametrize("text", ["", "  ", "—", "-", "– –"])
-def test_a_blank_or_dash_cell_is_blank_not_zero(text):
-    """Report an empty or dash-only cell as blank with no value."""
-    result = interpret_table_cell(text, [])
-    assert (result.status, result.value) == ("blank", None)
-
-
-def test_a_cell_without_one_figure_is_not_selectable():
-    """Keep labels unselectable and refuse a cell that states two figures."""
-    assert interpret_table_cell("Net revenue", []).status == "not_numeric"
-    assert interpret_table_cell("1,234 / 5,678", [reading()]).status == "conflicting"
-
-
-@pytest.mark.parametrize(
-    ("text", "changes", "status", "reason"),
-    [
-        ("▲1,234", {"measure": "other"}, "conflicting", "sign marker is ambiguous"),
-        (
-            "1,234",
-            {"measure": "other", "scale": None},
-            "not_monetary",
-            "tagged unit is not an amount",
-        ),
-        (
-            "1,234",
-            {"measure": "other", "percent": None},
-            "not_monetary",
-            "tagged unit is not an amount",
-        ),
-        ("1,234", {"percent": None, "currency": None}, "scale_unknown", "percentage unknown"),
-        ("1,234", {"scale": None, "currency": "!"}, "scale_unknown", "no readable scale"),
-        ("1,234", {"scale": None, "years": frozenset()}, "scale_unknown", "no readable scale"),
-        ("1,234", {"currency": "!", "years": frozenset()}, "conflicting", "currencies disagree"),
-        (
-            "1,234",
-            {"currency": None, "years": frozenset()},
-            "currency_unconfirmed",
-            "no explicit currency",
-        ),
-        ("1,234", {"currency": "$", "item": None}, "currency_unconfirmed", "no explicit currency"),
-        ("1,234", {"years": frozenset(), "item": None}, "period_unknown", "no single fiscal year"),
-        ("1,234", {"years": frozenset(), "scope": "?"}, "period_unknown", "no single fiscal year"),
-        (
-            "1,234",
-            {"scope": "?", "item": None},
-            "scope_unknown",
-            "the filing declares no entity scope for it",
-        ),
-        ("1,234", {"scope": "axis=member", "item": None}, "scope_qualified", "axis=member"),
-        (
-            "12.5%",
-            {"percent": True, "scale": None, "currency": None, "years": frozenset()},
-            "period_unknown",
-            "no single fiscal year",
-        ),
-    ],
-)
-def test_a_cell_missing_two_facts_reports_the_first_in_a_fixed_order(text, changes, status, reason):
-    """Pin which status wins when two facts are missing at once."""
-    result = interpret_table_cell(text, [reading(**changes)])
-    assert (result.status, result.reason) == (status, reason)
-
-
-def fact(**changes) -> CellFact:
-    """Build one inline XBRL USD million revenue fact for FY2024, changed where asked."""
-    base = CellFact("us-gaap:Revenues", 2024, (), "iso4217:USD", None, 6, "25,785")
-    return replace(base, **changes)
-
-
-def tagged_revenue(*facts: CellFact, html: str = INCOME_TABLE) -> TableCellReading:
-    """Read the FY2024 revenue cell of a table with the given facts tagged on it."""
-    readings = read_table_cells(table_fragment(html), {(1, 1): facts})
-    return next(cell for cell in readings if (cell.row, cell.column) == (1, 1))
-
-
-def test_an_inline_xbrl_amount_fixes_currency_scale_and_year():
-    """The tag resolves the "$" the text leaves ambiguous, and the cell becomes known."""
-    cell = tagged_revenue(fact())
-    assert (cell.currency, cell.scale, cell.years, cell.percent) == (
-        "USD",
-        Decimal(1_000_000),
-        frozenset({2024}),
-        False,
-    )
-    assert (cell.basis, cell.measure, cell.scope, cell.overrides) == ("fact", "amount", None, ())
-    assert interpret_table_cell("$ 25,785", [cell]).status == "known"
-
-
-def test_a_tag_that_contradicts_the_text_overrides_it_and_says_so():
-    """A tagged year or scale wins over the header and note, and the override is kept."""
-    cell = tagged_revenue(fact(fiscal_year=2023, scale=3))
-    assert (cell.years, cell.scale, cell.overrides) == (
-        frozenset({2023}),
-        Decimal(1000),
-        ("year", "scale"),
-    )
-
-
-def test_a_per_share_tag_states_plain_currency_units():
-    """USD per share at scale 0 is plain dollars even under an "(In millions)" note."""
-    cell = tagged_revenue(fact(denominator="xbrli:shares", scale=0))
-    assert (cell.measure, cell.scale, cell.currency, cell.overrides) == (
-        "per_share",
-        Decimal(1),
-        "USD",
-        ("scale",),
-    )
-
-
-def test_tagged_values_that_are_not_amounts_keep_the_text_unit():
-    """Shares and ratios are not amounts; their text unit stays and they are not selectable."""
-    text_cell = tagged_revenue()
-    cell = tagged_revenue(fact(numerator="xbrli:shares"))
-    assert (cell.measure, cell.scale, cell.currency) == ("other", text_cell.scale, "$")
-    assert interpret_table_cell("$ 25,785", [cell]).status == "not_monetary"
-
-
-def test_a_tagged_currency_still_conflicts_with_a_different_written_one():
-    """A euro tag on a cell the note declares in U.S. dollars is a conflict, not a choice."""
-    cell = tagged_revenue(fact(numerator="iso4217:EUR"), html=USD_INCOME_TABLE)
-    assert interpret_table_cell("$ 25,785", [cell]).status == "conflicting"
-
-
-@pytest.mark.parametrize(
-    ("dimensions", "scope"),
-    [
-        ((), None),
-        (
-            (
-                (
-                    "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis",
-                    "ifrs-full:ConsolidatedMember",
-                ),
-            ),
-            None,
-        ),
-        (
-            (
-                (
-                    "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis",
-                    "ifrs-full:SeparateMember",
-                ),
-            ),
-            "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis=ifrs-full:SeparateMember",
-        ),
-        (
-            (("us-gaap:StatementBusinessSegmentsAxis", "amd:DataCenterMember"),),
-            "us-gaap:StatementBusinessSegmentsAxis=amd:DataCenterMember",
-        ),
-    ],
-)
-def test_only_the_whole_entity_is_unscoped(dimensions, scope):
-    """No dimension, or DART's consolidated statement, is the entity; anything else is a part."""
-    assert tagged_revenue(fact(dimensions=dimensions)).scope == scope
-
-
-def test_a_dart_tag_fixes_the_year_and_keeps_the_text_unit():
-    """DART tags state no unit, so the note's currency and scale stay as read."""
-    text_cell = tagged_revenue(html=USD_INCOME_TABLE)
-    cell = tagged_revenue(fact(numerator=None, scale=None, fiscal_year=2024), html=USD_INCOME_TABLE)
-    assert (cell.basis, cell.measure, cell.years) == ("fact", None, frozenset({2024}))
-    assert (cell.scale, cell.currency) == (text_cell.scale, text_cell.currency)
-
-
-def test_a_fact_applies_only_alone_and_on_the_same_number():
-    """Two tags, or a tag showing another number, leave the cell to its text reading."""
-    text_cell = tagged_revenue()
-    assert tagged_revenue(fact(), fact()) == text_cell
-    assert tagged_revenue(fact(text="22,680")) == text_cell
-
-
 def test_a_dimensioned_cell_never_confirms_the_entity_item():
     """A segment's revenue under a "Net revenue" label is not the company's revenue."""
     html = USD_INCOME_TABLE
@@ -1524,94 +1021,6 @@ def test_a_dimensioned_cell_never_confirms_the_entity_item():
     answer = "AMD's FY2024 net revenue was $25,785 million."
     assert check_figures(answer, [evidence], [2024]).verdict != "verified"
     assert check_figures(answer, [table_evidence(html)], [2024]).verdict == "verified"
-
-
-def term_years(header: str, terms: dict[str, int] | None = None) -> frozenset[int]:
-    """Read the DART revenue cell's years under one header and the defined terms."""
-    fragment = {
-        **DART_FRAGMENT,
-        "header_cells": [
-            {"row": 0, "column": 0, "text": "과목"},
-            {"row": 0, "column": 1, "text": header},
-            {"row": 0, "column": 2, "text": "전기"},
-        ],
-    }
-    terms = {"당기": 2024, "전기": 2023, "제56기": 2024} if terms is None else terms
-    cell = next(c for c in read_table_cells(fragment, None, terms) if c.column == 1)
-    return cell.years
-
-
-@pytest.mark.parametrize(
-    ("header", "years"),
-    [
-        ("당기", {2024}),
-        ("당 기", {2024}),
-        ("당기말", {2024}),
-        ("제 56 기", {2024}),
-        ("제56기말", {2024}),
-        ("전기", {2023}),
-        ("당기 금액", set()),
-        ("제57기", set()),
-        ("제56기(2024년)", {2024}),
-    ],
-)
-def test_a_header_that_is_a_defined_period_word_dates_its_column(header, years):
-    """Only a header that is the word alone names its year; a written year still wins."""
-    assert term_years(header) == years
-
-
-def test_period_words_mean_nothing_without_the_reports_definitions():
-    """Without the document's declarations 당기 and 전기 date nothing."""
-    assert term_years("당기", {}) == frozenset()
-
-
-SEPARATE = "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis=ifrs-full:SeparateMember"
-
-
-def stated_revenue(statement: TableStatement | None, *facts: CellFact) -> TableCellReading:
-    """Read the DART revenue cell of a table its report declares as ``statement``."""
-    readings = read_table_cells(DART_FRAGMENT, {(1, 1): facts} if facts else None, None, statement)
-    return next(cell for cell in readings if cell.column == 1)
-
-
-@pytest.mark.parametrize(
-    ("statement", "status"),
-    [
-        (None, "known"),
-        (TableStatement("income", "consolidated"), "known"),
-        (TableStatement("summary", "consolidated"), "known"),
-        (TableStatement("income", "separate"), "scope_qualified"),
-        (TableStatement("notes", "consolidated"), "scope_unknown"),
-        (TableStatement("equity", "consolidated"), "scope_unknown"),
-        (TableStatement(None, "consolidated"), "scope_unknown"),
-        (TableStatement("income", "conflicting"), "scope_unknown"),
-        (TableStatement(None, None), "scope_unknown"),
-    ],
-)
-def test_only_a_declared_consolidated_entity_statement_is_the_entity(statement, status):
-    """Separate statements are a scope of their own; notes, equity and silence are unknown."""
-    cell = stated_revenue(statement)
-    assert interpret_table_cell("300,870,903", [cell]).status == status
-
-
-def test_a_consolidated_tag_in_a_separate_statement_overrides_its_declaration():
-    """The tag decides the scope and the contradicted declaration is recorded."""
-    dart_fact = fact(numerator=None, scale=None, text="300,870,903")
-    cell = stated_revenue(TableStatement("income", "separate"), dart_fact)
-    assert (cell.scope, cell.overrides) == (None, ("scope",))
-    agreeing = stated_revenue(
-        TableStatement("income", "separate"),
-        replace(
-            dart_fact,
-            dimensions=(
-                (
-                    "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis",
-                    "ifrs-full:SeparateMember",
-                ),
-            ),
-        ),
-    )
-    assert (agreeing.scope, agreeing.overrides) == (SEPARATE, ())
 
 
 @pytest.mark.parametrize(
