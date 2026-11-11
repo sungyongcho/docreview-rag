@@ -229,7 +229,7 @@ def test_a_fact_applies_only_alone_and_on_the_same_number():
     """Two tags, or a tag showing another number, leave the cell to its text reading."""
     text_cell = tagged_revenue()
     assert tagged_revenue(fact(), fact()) == text_cell
-    assert tagged_revenue(fact(text="22,680")) == text_cell
+    assert tagged_revenue(fact(text="22,680")) == replace(text_cell, overrides=("number",))
 
 
 @pytest.mark.parametrize(
@@ -380,3 +380,41 @@ def test_an_unsigned_figure_under_a_loss_only_label_is_not_one_amount(
     cell = reading(row_label=label, item=item, **changes)
     assert interpret_table_cell(text, [cell]).status == status
     assert interpret_table_cell(text, [cell]).value == value
+
+
+def test_a_tag_showing_another_number_makes_the_cell_conflicting():
+    """One tag whose number differs from the text is recorded and holds the cell."""
+    cell = tagged_revenue(fact(text="22,680"))
+    assert (cell.basis, cell.overrides) == ("text", ("number",))
+    result = interpret_table_cell("$ 25,785", [cell])
+    assert (result.status, result.reason) == (
+        "conflicting",
+        "the tagged number differs from the text",
+    )
+
+
+def test_a_glued_footnote_with_its_tag_is_not_an_amount():
+    """ "25,785<sup>1</sup>" reads 25,7851: the tag of 25,785 disagrees with it."""
+    html = USD_INCOME_TABLE.replace("<td>$ 25,785</td>", "<td>$ 25,785<sup>1</sup></td>")
+    readings = read_table_cells(table_fragment(html), {(1, 1): (fact(),)})
+    cell = next(c for c in readings if (c.row, c.column) == (1, 1))
+    assert interpret_table_cell("$ 25,7851", [cell]).status == "conflicting"
+
+
+@pytest.mark.parametrize(
+    ("text", "status"),
+    [
+        ("25,7851", "conflicting"),
+        ("1,23,456", "conflicting"),
+        ("(1,2345)", "conflicting"),
+        ("4,5,28", "conflicting"),
+        ("25,785", "known"),
+        ("1,234,567.89", "known"),
+        ("(1,641)", "known"),
+        ("257851", "known"),
+        ("0.5", "known"),
+    ],
+)
+def test_a_figure_with_malformed_grouping_is_not_one_amount(text, status):
+    """Only digits grouped in threes, or not grouped at all, stand as one amount."""
+    assert interpret_table_cell(text, [reading()]).status == status

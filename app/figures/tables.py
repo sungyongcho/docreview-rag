@@ -95,6 +95,10 @@ _KOREAN_NOTE = re.compile(r"(?P<scale>(?:[십백천]?[만억조])|천)?(?P<curre
 _PER_SHARE = re.compile(r"per\s+share|주당", re.IGNORECASE)
 
 
+# One amount's digits: grouped in threes by commas, or not grouped at all. Any other
+# grouping ("25,7851" with a glued footnote, "4,5,28" note numbers) is no one amount.
+_GROUPED = re.compile(r"[(△▲-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\)?")
+
 _ENUMERATOR = re.compile(r"^\s*(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|\d+|[ivx]+|[가-하])[.)]\s*", re.IGNORECASE)
 
 
@@ -540,7 +544,8 @@ def read_table_cells(
     A source cell appears once per normalized cell it belongs to, as stored. ``facts``
     are the tagged facts of each source cell by grid coordinates; a cell read from
     exactly one fact showing the same number takes the fact's facts (see
-    :func:`_with_fact`), any other cell keeps its text reading. ``terms`` are the
+    :func:`_with_fact`), any other cell keeps its text reading; one fact showing
+    another number is recorded as a ``number`` override. ``terms`` are the
     period words the table's document defines ("당기", "제56기") and their fiscal
     years; a header that is one of them dates its columns. ``statement`` is what the
     table's filing declares about its statement, when its form presents several
@@ -599,6 +604,11 @@ def read_table_cells(
                 tagged = facts.get((row, column), ())
                 if len(tagged) == 1 and values(tagged[0].text) == cell_values:
                     reading = _with_fact(reading, tagged[0], unit.currency | own, _negative(text))
+                elif len(tagged) == 1:
+                    # The tag shows another number ("25,785" tagged, "25,7851" with a
+                    # glued footnote written): the text keeps its reading, and the
+                    # disagreement is recorded.
+                    reading = replace(reading, overrides=("number",))
                 cells.append(reading)
     return cells
 
@@ -612,6 +622,9 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     the cell unselectable with the first missing fact as its status. A tagged unit
     that is no amount (``not_monetary``) or a dimensional scope (``scope_qualified``)
     does too.
+
+    A figure whose digits are not grouped in threes, or whose one tag shows another
+    number (``number``), is not one established amount: ``conflicting``.
 
     A value's sign comes from its notation, or from its inline XBRL tag when the tag
     overrides it (``sign``). An unsigned figure whose sign no tag states, under a
@@ -631,6 +644,12 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     value = signed(spans[0])
     if value is None:
         return CellInterpretation("conflicting", "sign marker is ambiguous", None, reading)
+    if not _GROUPED.fullmatch(spans[0].text):
+        return CellInterpretation("conflicting", "malformed digit grouping", value, reading)
+    if "number" in reading.overrides:
+        return CellInterpretation(
+            "conflicting", "the tagged number differs from the text", value, reading
+        )
     if "sign" in reading.overrides:
         value = -value
     elif reading.measure is None and value > 0 and _loss_only(reading.row_label):
