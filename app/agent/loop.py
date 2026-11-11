@@ -16,7 +16,7 @@ from app.agent.final_answer import (
     validate_final_answer,
 )
 from app.agent.ledger import citation_records, ledger_failure, merge_identities
-from app.agent.provider import ProviderTurn, ToolCallingProvider
+from app.agent.provider import BudgetExhaustedError, ProviderTurn, ToolCallingProvider
 from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import (
     FINAL_ANSWER_NAME,
@@ -357,6 +357,8 @@ async def run_agent(
                 tool_specs,
                 max_output_tokens=remaining_output,
             )
+        except BudgetExhaustedError as error:
+            return finish("budget_exceeded", failure=str(error))
         except Exception as error:
             return finish(
                 "provider_error",

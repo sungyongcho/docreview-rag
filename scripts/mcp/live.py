@@ -71,6 +71,7 @@ import openai
 from pydantic import Field
 
 from app.agent.loop import build_instructions
+from app.agent.provider import BudgetExhaustedError
 from app.agent.review_middleware import (
     ReviewContext,
     ReviewGate,
@@ -122,10 +123,6 @@ CREATE_AGENT_OPTIONS = (
     "max_output_tokens",
     "reasoning_effort",
 )
-
-
-class BudgetExhaustedError(RuntimeError):
-    """A paid request would exceed its approved cap or attempt count."""
 
 
 class TokenCountError(RuntimeError):

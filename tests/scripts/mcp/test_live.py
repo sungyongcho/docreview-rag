@@ -32,6 +32,7 @@ from sqlalchemy.pool import NullPool
 from app import config
 from app.agent import stored_evidence
 from app.agent.cell_answers import StoredCell
+from app.agent.provider import BudgetExhaustedError
 from app.agent.review_middleware import ReviewContext
 from app.agent.tools import filings
 from app.agent.tools.filings import FetchedChunk, build_default_registry
@@ -47,7 +48,6 @@ from scripts.mcp import live
 from scripts.mcp.live import (
     COUNTED_FIELDS,
     GENERATION_ONLY_FIELDS,
-    BudgetExhaustedError,
     CappedEmbedding,
     ModelGate,
     ModelSettings,
@@ -1759,3 +1759,44 @@ def test_sequential_live_adapter_accounts_observed_overruns_or_unknown_requests(
     assert events[-1]["status"] == ("unknown" if lost else "observed")
     assert outcome["budget"]["accounted_usd"] == events[-1]["accounted_usd"]
     assert (Decimal(outcome["budget"]["accounted_usd"]) == Decimal("1.001")) is (not lost)
+
+
+def test_sequential_reservation_refusal_reports_budget_exceeded_before_any_request(
+    tmp_path, monkeypatch
+):
+    """The sequential adapter's reservation cap is a budget ending, not a provider failure."""
+    from app.agent import provider
+    from app.agent.tools.registry import ToolRegistry
+    from app.mcp import client
+
+    async def bridge(*args):
+        """No tools or server are needed for a pre-send budget refusal."""
+        return ToolRegistry()
+
+    async def must_not_send(self, *args, **kwargs):
+        """A refused reservation must stop before the actual model request."""
+        pytest.fail("a generation was sent after the budget refusal")
+
+    monkeypatch.setattr(config, "get_settings", keyed_settings)
+    monkeypatch.setattr(live, "read_only_engine", FakeEngine)
+    monkeypatch.setattr(client, "mcp_tool_registry", bridge)
+    monkeypatch.setattr(provider.OpenAIToolProvider, "turn", must_not_send)
+    args = parser().parse_args(
+        [
+            "r",
+            "agent",
+            "--issuer",
+            "AMD",
+            "--years",
+            "2024",
+            "--question",
+            "Q?",
+            "--model-cap",
+            "0.000000001",
+        ]
+    )
+    outcome = asyncio.run(live.run_agent_over_mcp(object(), tmp_path, args))
+    assert outcome["status"] == "budget_exceeded"
+    assert outcome["failure"] == "approved model budget exhausted"
+    assert outcome["budget"]["attempts"] == 0
+    assert outcome["budget"]["accounted_usd"] == "0"

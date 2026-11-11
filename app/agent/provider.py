@@ -16,6 +16,13 @@ from app.llm.schemas import TokenPricing, TokenUsageDetails
 from app.openai_models import ReasoningEffort, resolve_openai_model
 
 
+class BudgetExhaustedError(RuntimeError):
+    """A request was refused before sending by an application-owned budget boundary.
+
+    The message is a public budget explanation, not a raw provider error.
+    """
+
+
 class ProviderTurn(TokenUsageDetails):
     """One raw provider response: prose, requested tool calls, and usage.
 

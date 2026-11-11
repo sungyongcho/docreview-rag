@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
 from app.agent.loop import COMPACTED_OUTPUT, run_agent
-from app.agent.provider import ToolCallingProvider
+from app.agent.provider import BudgetExhaustedError, ToolCallingProvider
 from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import EvidenceExtractor, Tool, ToolRegistry
 from app.agent.types import AgentBudget, ToolCall
@@ -910,3 +910,21 @@ def test_observed_budget_failure_names_the_resource_that_exceeded_its_cap(
     )
     assert result.status == "budget_exceeded"
     assert result.failure == f"provider usage exceeded the cumulative {expected} budget"
+
+
+def test_provider_side_budget_refusal_keeps_its_reason_and_never_dispatches_tools():
+    """An application budget boundary is distinct from a failing provider request."""
+
+    class RefusedProvider(RecordingToolProvider):
+        """Provider whose application-owned pre-send boundary refuses the request."""
+
+        async def turn(self, *args, **kwargs):
+            """Refuse before a model or tool can run."""
+            raise BudgetExhaustedError("approved model budget exhausted")
+
+    result = asyncio.run(
+        run_agent("Question", registry=registry_with_search(), provider=RefusedProvider([]))
+    )
+    assert result.status == "budget_exceeded"
+    assert result.failure == "approved model budget exhausted"
+    assert result.iterations == 0 and result.steps == () and result.answer is None
