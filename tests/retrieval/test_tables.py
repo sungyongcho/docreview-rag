@@ -60,7 +60,7 @@ def test_a_stored_table_rebuilds_its_chunk_fragment_and_readings_exactly():
             ] == [
                 (1, 1, {Decimal(25785)}, {2024}, MILLION, "revenue", "USD", "Net revenue", "text"),
                 (1, 2, {Decimal(22680)}, {2023}, MILLION, "revenue", "USD", "Net revenue", "text"),
-                (2, 1, {Decimal(1641)}, {2024}, MILLION, "net income", "USD", NET_INCOME, "text"),
+                (2, 1, {Decimal(-1641)}, {2024}, MILLION, "net income", "USD", NET_INCOME, "text"),
             ]
             assert await load_table_readings(session, []) == {}
 

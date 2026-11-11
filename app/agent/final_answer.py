@@ -24,6 +24,7 @@ from app.agent.types import (
 from app.contracts.evidence import EvidenceCitation
 from app.figures.answers import (
     UNIT_UNVERIFIED_ANSWER,
+    UNIT_UNVERIFIED_RATIONALE,
     EvidenceText,
     FiguresResult,
     check_figures,
@@ -148,7 +149,7 @@ def period_mismatch_report(
 def unit_unverified_report(
     answer: AgentAnswer, figures: FiguresResult
 ) -> tuple[AgentReportAnswer, AgentUnitUnverified]:
-    """Withhold figures whose evidence unit is uncertain, keeping the answer's citations.
+    """Withhold figures whose evidence unit or direction is uncertain, keeping the citations.
 
     The report states no number: the withheld figures travel only in the typed
     ``AgentUnitUnverified`` record, so nothing unconfirmed is presented as fact.
@@ -160,10 +161,7 @@ def unit_unverified_report(
         label="UNVERIFIED",
         answer=UNIT_UNVERIFIED_ANSWER,
         citations=answer.citations,
-        rationale=(
-            "The cited table states no readable unit or explicit currency, or contradictory "
-            "ones, in its own notes, cells or a caption linked to it, or the answer states none."
-        ),
+        rationale=UNIT_UNVERIFIED_RATIONALE,
     )
     return report, held
 

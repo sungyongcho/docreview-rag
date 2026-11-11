@@ -10,6 +10,8 @@ from app.contracts.evidence import EvidenceCitation
 from app.figures.answers import (
     UNIT_UNVERIFIED_ANSWER,
     UNIT_UNVERIFIED_ANSWER_KO,
+    UNIT_UNVERIFIED_RATIONALE,
+    UNIT_UNVERIFIED_RATIONALE_KO,
     check_figures,
 )
 from app.figures.tables import TableCellReading
@@ -612,19 +614,14 @@ def report_node(state: WorkflowState) -> WorkflowState:
         )
         mismatch = state.period_mismatch
         if state.unit_unverified is not None:
-            # Withhold the figures: the answer text would assert numbers the evidence
-            # unit cannot confirm, so the report states only that they are withheld.
+            # Withhold the figures: the answer text would assert numbers whose unit or
+            # direction the evidence cannot confirm, so the report states only that.
             report = WorkflowReport(
                 label="UNVERIFIED",
                 answer=_fixed_rationale(state, UNIT_UNVERIFIED_ANSWER, UNIT_UNVERIFIED_ANSWER_KO),
                 citations=citations,
                 rationale=_fixed_rationale(
-                    state,
-                    "The cited table states no readable unit or explicit currency, or "
-                    "contradictory ones, in its own notes, cells or a caption linked to it, or "
-                    "the answer states none.",
-                    "인용한 표 자체나 셀, 표에 연결된 단위 주석에서 단위나 명시적 통화를 확인할 수 "
-                    "없거나 서로 다르며, 또는 답변에 단위나 통화가 없습니다.",
+                    state, UNIT_UNVERIFIED_RATIONALE, UNIT_UNVERIFIED_RATIONALE_KO
                 ),
                 reasons=state.reasons,
             )

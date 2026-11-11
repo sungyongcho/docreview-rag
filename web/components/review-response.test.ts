@@ -33,7 +33,7 @@ describe("terminal review message", () => {
   });
 
   it("shows the server's hold notice for withheld figures, distinct from absence", () => {
-    const notice = "The cited evidence names this item, but the unit of its figures could not be confirmed, so no figure is reported.";
+    const notice = "The cited evidence names this item, but the unit or sign of its figures could not be confirmed, so no figure is reported.";
     const message = terminalMessage(run({
       label: "UNVERIFIED",
       answer: notice,

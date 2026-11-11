@@ -116,11 +116,21 @@ class EvidenceText:
 
 # What a report says in place of an answer that ``unit_unverified`` withholds.
 UNIT_UNVERIFIED_ANSWER = (
-    "The cited evidence names this item, but the unit of its figures could not be "
+    "The cited evidence names this item, but the unit or sign of its figures could not be "
     "confirmed, so no figure is reported."
 )
 UNIT_UNVERIFIED_ANSWER_KO = (
-    "인용 근거에 해당 항목은 있지만 수치의 단위를 확인할 수 없어 수치를 보고하지 않습니다."
+    "인용 근거에 해당 항목은 있지만 수치의 단위나 부호를 확인할 수 없어 수치를 보고하지 않습니다."
+)
+# Why such an answer is withheld: the unit, the currency or the direction is not established.
+UNIT_UNVERIFIED_RATIONALE = (
+    "The cited table states no readable unit or explicit currency, or contradictory ones, in "
+    "its own notes, cells or a caption linked to it, the answer states none, or the table does "
+    "not establish whether the figure is a gain or a loss."
+)
+UNIT_UNVERIFIED_RATIONALE_KO = (
+    "인용한 표 자체나 셀, 표에 연결된 단위 주석에서 단위나 명시적 통화를 확인할 수 없거나 서로 "
+    "다르거나, 답변에 단위나 통화가 없거나, 표가 수치의 손익 방향을 확정하지 않습니다."
 )
 
 
