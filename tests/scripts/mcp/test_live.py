@@ -19,11 +19,15 @@ from langchain.mcp import MCPAdapter
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import tool
 import openai
+from pydantic import SecretStr
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
 from app.agent.review_middleware import ReviewContext
+from app.agent.tools import filings
 from app.agent.tools.filings import build_default_registry
+from app.agent.tools.registry import ToolError, execute_tool
 from app.contracts.evidence import EvidenceCitation
 from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
@@ -34,6 +38,7 @@ from scripts.mcp.live import (
     COUNTED_FIELDS,
     GENERATION_ONLY_FIELDS,
     BudgetExhaustedError,
+    CappedEmbedding,
     ModelGate,
     ModelSettings,
     Reservation,
@@ -45,7 +50,7 @@ from scripts.mcp.live import (
     review_agent,
     tool_request,
 )
-from tests.mcp.controlled_filings import fixture_hit
+from tests.mcp.controlled_filings import ControlledSession, fixture_hit
 from tests.mcp.support import logged_events, module_server
 from tests.workflow.support import USD_INCOME_TABLE, income_table_hit
 
@@ -140,6 +145,113 @@ def test_development_mode_serves_the_registry_and_releases_the_pool(monkeypatch)
     registries, engine = serve_offline(monkeypatch, include_cells=False)
     assert len(registries) == 1 and engine.disposed
     assert registries[0].get("fetch_chunk").output is None
+
+
+# The capped query embedder the server uses on the OpenAI embedding path
+def embedding_client(sent: list[dict[str, Any]]) -> openai.AsyncOpenAI:
+    """An SDK client whose embeddings endpoint is served offline and records each body."""
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        """Answer one embedding request with a unit vector and its billed tokens."""
+        sent.append(json.loads(request.content))
+        return httpx2.Response(
+            200,
+            json={
+                "object": "list",
+                "model": "text-embedding-3-large",
+                "data": [{"object": "embedding", "index": 0, "embedding": [1.0] * 384}],
+                "usage": {"prompt_tokens": 1, "total_tokens": 1},
+            },
+        )
+
+    return openai.AsyncOpenAI(
+        api_key=FAKE_KEY,
+        max_retries=0,
+        http_client=openai.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(respond)),
+    )
+
+
+def capped(budget: Reservation, sent: list[dict[str, Any]]) -> CappedEmbedding:
+    """The capped embedder over the offline endpoint."""
+    return CappedEmbedding(budget, client=embedding_client(sent), credential_slot="dev")
+
+
+def test_a_query_embedding_is_reserved_then_sent_once():
+    """An ordinary query reserves its estimate, sends one request and reports its usage."""
+    sent: list[dict[str, Any]] = []
+    budget = Reservation(Decimal("0.01"), 8)
+    provider = capped(budget, sent)
+    vector = asyncio.run(provider.embed_query("revenue"))
+    assert len(vector) == 384 and [body["input"] for body in sent] == [["revenue"]]
+    tokens = provider.count_input_tokens("revenue")
+    assert budget.attempts == 1
+    assert budget.reserved_usd == Decimal(tokens) * Decimal("0.13") / Decimal(1_000_000)
+    assert provider.usage.requests == 1
+
+
+def test_an_exhausted_embedding_budget_is_not_a_correctable_tool_error():
+    """Over the attempt count nothing is sent and the refusal is not a ToolError."""
+    sent: list[dict[str, Any]] = []
+    with pytest.raises(BudgetExhaustedError) as refused:
+        asyncio.run(capped(Reservation(Decimal("0.01"), 0), sent).embed_query("revenue"))
+    assert not isinstance(refused.value, ToolError)
+    assert sent == []
+
+
+@pytest.mark.parametrize(("attempts", "system_error"), [(8, False), (0, True)])
+def test_a_search_over_the_embedding_cap_is_a_system_failure(
+    tmp_path, monkeypatch, attempts, system_error
+):
+    """The registry reports a capped search as a system failure; an ordinary one succeeds."""
+
+    async def retrieve(session: object, query: str, **kwargs: Any) -> SimpleNamespace:
+        """Embed the query like retrieval does, then find nothing."""
+        await kwargs["provider"].embed_query(query)
+        return SimpleNamespace(hits=())
+
+    monkeypatch.setattr(filings, "retrieve", retrieve)
+    sent: list[dict[str, Any]] = []
+    registry = build_default_registry(
+        lambda: cast(AsyncSession, ControlledSession(tmp_path / "events.jsonl")),
+        embedding_provider=capped(Reservation(Decimal("0.01"), attempts), sent),
+    )
+    outcome = asyncio.run(execute_tool(registry, "search_filings", {"query": "revenue"}))
+    assert outcome.system_error is system_error
+    if system_error:
+        assert outcome.error == "BudgetExhaustedError: tool search_filings failed"
+        assert sent == []
+    else:
+        assert (outcome.error, outcome.output, len(sent)) == (None, {"hits": []}, 1)
+
+
+def test_the_openai_embedding_path_serves_a_capped_embedder(tmp_path, monkeypatch):
+    """With OpenAI embeddings the server's registry embeds through the run's capped budget."""
+    settings = SimpleNamespace(
+        environment="dev",
+        embedding_provider="openai",
+        embedding_model="text-embedding-3-large",
+        openai_api_key=SecretStr(FAKE_KEY),
+        openai_key_slot="dev",
+    )
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    providers: list[Any] = []
+
+    def registry(sessions: object, **kwargs: Any) -> object:
+        """Capture the embedding provider the server hands the registry."""
+        providers.append(kwargs["embedding_provider"])
+        return object()
+
+    async def serve_stdio(registry: object) -> None:
+        """Stand in for the stdio transport."""
+
+    monkeypatch.setattr(filings, "build_default_registry", registry)
+    monkeypatch.setattr(filings_server, "serve", serve_stdio)
+    monkeypatch.setattr(live, "read_only_engine", FakeEngine)
+    budget = Reservation(Decimal("0.01"), 8)
+    asyncio.run(live.serve(tmp_path, budget))
+    assert len(providers) == 1 and isinstance(providers[0], CappedEmbedding)
+    assert providers[0].budget is budget
+    assert journal(tmp_path / "budget.jsonl") == [("embedding", "reported")]
 
 
 def test_reservation_keeps_failed_estimates_and_blocks_over_the_cap(tmp_path):

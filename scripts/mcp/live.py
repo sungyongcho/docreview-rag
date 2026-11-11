@@ -82,6 +82,7 @@ from app.agent.types import AgentBudget
 from app.llm.schemas import TokenPricing
 from app.observability.redaction import sanitize_json
 from app.openai_models import POLICY_REVISION, OpenAIModelPolicyError, resolve_openai_model
+from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
 
 if TYPE_CHECKING:
     from mcp import Client, StdioServerParameters
@@ -820,6 +821,37 @@ async def ask_review_agent(
     )
 
 
+class CappedEmbedding(OpenAIEmbeddingProvider):
+    """Reserve each query embedding's estimated cost in ``budget`` before the request.
+
+    A refusal over the cap or the attempt count is raised as
+    :class:`BudgetExhaustedError`, never as a correctable ``ToolError``: the model
+    cannot fix it, and a failed search is not an empty search. The tool registry
+    reports it as a system failure, which the filings server sends as an
+    ``INTERNAL_ERROR`` and the agent ends on instead of retrying.
+    """
+
+    def __init__(
+        self,
+        budget: Reservation,
+        *,
+        client: openai.AsyncOpenAI,
+        model: str = "text-embedding-3-large",
+        credential_slot: str | None = None,
+    ) -> None:
+        """Keep the run's embedding budget and configure the provider on ``client``."""
+        super().__init__(model=model, client=client, credential_slot=credential_slot)
+        self.budget = budget
+
+    @override
+    async def embed_query(self, text: str) -> list[float]:
+        """Reserve the query's estimated cost, then embed it once, never retrying."""
+        price = resolve_openai_model("embedding", self.model).pricing.input_per_million_usd
+        estimated = Decimal(self.count_input_tokens(text)) * price / Decimal(1_000_000)
+        self.budget.reserve(estimated, "embedding")
+        return await super().embed_query(text)
+
+
 def read_only_engine() -> AsyncEngine:
     """Create connections restricted to bounded, read-only SQL."""
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -849,24 +881,8 @@ async def serve(run_dir: Path, embedding: Reservation, *, include_cells: bool = 
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from app.agent.tools.filings import build_default_registry
-    from app.agent.tools.registry import ToolError
     from app.config import get_settings
     from app.mcp.filings_server import serve as serve_stdio
-    from app.openai_models import resolve_openai_model
-    from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
-
-    class CappedEmbedding(OpenAIEmbeddingProvider):
-        """Reserve each query embedding's estimated cost before the request."""
-
-        async def embed_query(self, text: str) -> list[float]:
-            """Refuse over the cap as a correctable tool failure, never retry."""
-            price = resolve_openai_model("embedding", self.model).pricing.input_per_million_usd
-            estimated = Decimal(self.count_input_tokens(text)) * price / Decimal(1_000_000)
-            try:
-                embedding.reserve(estimated, "embedding")
-            except BudgetExhaustedError as error:
-                raise ToolError(str(error)) from None
-            return await super().embed_query(text)
 
     settings = get_settings()
     embedding.journal = run_dir / "budget.jsonl"
@@ -881,6 +897,7 @@ async def serve(run_dir: Path, embedding: Reservation, *, include_cells: bool = 
             api_key=settings.openai_api_key.get_secret_value(), max_retries=0, timeout=20
         ) as client:
             provider = CappedEmbedding(
+                embedding,
                 model=settings.embedding_model,
                 client=client,
                 credential_slot=settings.openai_key_slot,
