@@ -1099,10 +1099,54 @@ async def run_agent_over_mcp(
     return result.model_dump(mode="json")
 
 
+def issuer_names(issuer: str | None, corpus_dir: Path) -> tuple[str, ...]:
+    """Return the names a question may call the run's issuer, from the corpus's own data.
+
+    They are the issuer filter value, the corpus manifest's aliases for that issuer and
+    the catalog's approved spellings, the same names query scope resolution matches.
+    Nothing is read from the question. Without an issuer filter there are no names, so
+    a company name next to an item keeps qualifying it, the stricter reading.
+
+    Raises
+    ------
+    SystemExit
+        If ``corpus_dir/manifest.json`` cannot be read or does not list the issuer;
+        the run then stops before its attempt is claimed.
+    """
+    from app.ingestion.sources.catalog import catalog_aliases
+    from app.query.scope import ManifestScopeIndex
+
+    if not issuer:
+        return ()
+    path = corpus_dir / "manifest.json"
+    try:
+        index = ManifestScopeIndex.from_paths((path,))
+    except (OSError, ValueError, TypeError) as error:
+        raise SystemExit(
+            f"the corpus manifest {path} could not be read ({type(error).__name__})"
+        ) from None
+    entries = index.issuers_named([issuer])
+    if not entries:
+        raise SystemExit(f"{issuer} is not an issuer in the corpus manifest {path}")
+    names = {issuer}
+    for entry in entries:
+        names.update(entry.aliases)
+        names.update(catalog_aliases(entry.registry, entry.issuer))
+    return tuple(sorted(names))
+
+
 async def run_review_agent_over_mcp(
-    server: StdioServerParameters, run_dir: Path, args: argparse.Namespace, settings: ModelSettings
+    server: StdioServerParameters,
+    run_dir: Path,
+    args: argparse.Namespace,
+    settings: ModelSettings,
+    *,
+    names: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Ask the question through ``create_agent`` with every model turn counted and reserved.
+
+    ``names`` are the issuer's names (:func:`issuer_names`), blanked before the
+    question's items are read, so "AMD's net revenue" names revenue.
 
     A failure while starting the server, listing its tools or building the agent ends
     as ``setup_error``, its failure naming the exception type and the stage, so the
@@ -1142,7 +1186,7 @@ async def run_review_agent_over_mcp(
                 question_fiscal_years(args.question, utc_today()),
                 partial(read_cited_evidence, sessions),
                 cell_answers=True,
-                requested_items=items_named(args.question),
+                requested_items=items_named(args.question, issuers=names),
                 locale=args.locale or "en",
                 cell_reader=partial(read_selected_cells, sessions),
             )
@@ -1202,7 +1246,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     """Claim the run, start the capped server, and record one experiment result.
 
     ``MODE=prod`` is refused before any option, database or paid work, and a missing
-    OpenAI key stops an agent run before its attempt is claimed. Once the attempt is
+    OpenAI key, or for ``--via create-agent`` an unreadable corpus manifest or an
+    issuer it does not list, stops an agent run before its attempt is claimed. Once the attempt is
     claimed, every ending writes ``result.json``: the normal record; or, for an
     exception, ``status`` ``error`` (``interrupted`` for a cancellation, interrupt or
     exit) with a failure naming only the exception type and the stage it stopped in,
@@ -1221,6 +1266,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         await require_indexed(args.issuer, args.years)
     if args.command == "agent" and get_settings().openai_api_key is None:
         raise SystemExit("the agent experiment requires the MODE-selected OpenAI key slot")
+    names = issuer_names(args.issuer, get_settings().corpus_dir) if settings is not None else ()
     request = tool_request(args)
     payload: tuple[str, dict[str, Any]] | dict[str, Any]
     if request is not None:
@@ -1252,7 +1298,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         if settings is not None:
             stage = "agent run"
-            record = {"agent": await run_review_agent_over_mcp(server, run_dir, args, settings)}
+            record = {
+                "agent": await run_review_agent_over_mcp(
+                    server, run_dir, args, settings, names=names
+                )
+            }
         else:
             async with Client(
                 server, mode="2026-07-28", read_timeout_seconds=SERVER_TIMEOUT_SECONDS

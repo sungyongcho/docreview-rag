@@ -75,10 +75,16 @@ LUNA = resolve_model_settings(None, None, None, None, None)
 OTHER = resolve_model_settings("acme-responses-1", Decimal("1.5"), Decimal("6"), 1000, None)
 
 
+CORPUS_DIR = REPO_ROOT / "data/corpus"  # the repository's own manifest, read only
+
+
 def offline_settings(environment: str = "dev") -> SimpleNamespace:
     """Settings for an offline run: the named MODE, the free local embedder, no key."""
     return SimpleNamespace(
-        environment=environment, embedding_provider="deterministic", openai_api_key=None
+        environment=environment,
+        embedding_provider="deterministic",
+        openai_api_key=None,
+        corpus_dir=CORPUS_DIR,
     )
 
 
@@ -1128,7 +1134,8 @@ def test_a_model_call_outside_the_middleware_sends_nothing(tmp_path):
 
 
 # The create-agent run as the script assembles it: cell format, cell gate, cell server
-CELL_QUESTION = "What was TestCo's FY2024 revenue?"
+# AMD's manifest alias is "AMD"; without the issuer's names it qualifies "net revenue".
+CELL_QUESTION = "What was AMD's net revenue in 2024?"
 SELECTION = {
     "contract_version": "cell-v1",
     "label": "SUPPORTED",
@@ -1141,12 +1148,18 @@ SELECTION = {
 
 
 def run_cell_question(
-    tmp_path: Path, monkeypatch, replies: list[dict[str, Any]], server: Any = None
+    tmp_path: Path,
+    monkeypatch,
+    replies: list[dict[str, Any]],
+    server: Any = None,
+    question: str = CELL_QUESTION,
+    issuer: str | None = "AMD",
 ) -> SimpleNamespace:
     """Run ``run_review_agent_over_mcp`` over the cell server and the offline endpoint.
 
     Only the database is replaced: the engine is never queried and the stored-cell
     re-read returns the cell the server served. ``server`` replaces the cell server.
+    The issuer's names come from the repository manifest, as ``run`` reads them.
     """
     fake = FakeOpenAI(counts=[1000, 1200, 1400][: len(replies)], replies=replies)
     monkeypatch.setattr(
@@ -1154,6 +1167,15 @@ def run_cell_question(
         "get_settings",
         lambda: SimpleNamespace(environment="dev", openai_api_key=SecretStr(FAKE_KEY)),
     )
+    contexts: list[ReviewContext] = []
+    ask = live.ask_review_agent
+
+    async def ask_keeping_context(agent: Any, question: str, context: ReviewContext, gate: Any):
+        """Ask as the script does, keeping the review context the gate receives."""
+        contexts.append(context)
+        return await ask(agent, question, context, gate)
+
+    monkeypatch.setattr(live, "ask_review_agent", ask_keeping_context)
     monkeypatch.setattr(live, "read_only_engine", FakeEngine)
     monkeypatch.setattr(
         live, "counted_model", partial(counted_model, http_async_client=fake.client())
@@ -1175,12 +1197,16 @@ def run_cell_question(
         server = module_server(
             "tests.scripts.mcp.cell_filings", str(log), env={"PYTHONPATH": str(REPO_ROOT)}
         )
-    argv = ["r", "agent", "--issuer", "TEST", "--years", "2024", "--question", CELL_QUESTION]
+    argv = ["r", "agent", "--issuer", "AMD", "--years", "2024", "--question", question]
     args = parser().parse_args([*argv, "--via", "create-agent", "--model-attempts", "3"])
+    args.issuer = issuer
     settings = live.agent_model_settings(args)
     assert settings is not None
-    outcome = asyncio.run(live.run_review_agent_over_mcp(server, tmp_path, args, settings))
-    return SimpleNamespace(outcome=outcome, fake=fake, reads=reads, log=log)
+    names = live.issuer_names(args.issuer, CORPUS_DIR)
+    outcome = asyncio.run(
+        live.run_review_agent_over_mcp(server, tmp_path, args, settings, names=names)
+    )
+    return SimpleNamespace(outcome=outcome, fake=fake, reads=reads, log=log, contexts=contexts)
 
 
 def test_the_script_answers_a_cell_question_end_to_end(tmp_path, monkeypatch):
@@ -1204,6 +1230,7 @@ def test_the_script_answers_a_cell_question_end_to_end(tmp_path, monkeypatch):
     assert [c["chunk_id"] for c in outcome["answer"]["citations"]] == [2024]
     assert asked.reads == [("2024:r1c1",)]
     assert outcome["budget"]["attempts"] == 3
+    assert [c.requested_items for c in asked.contexts] == [frozenset({"revenue"})]
     final = next(
         t for t in asked.fake.bodies(COUNT_PATH)[0]["tools"] if t["name"] == "final_answer"
     )
@@ -1232,9 +1259,10 @@ def test_the_agent_run_starts_its_server_with_cells(tmp_path, monkeypatch):
     """run() passes --include-cells to the serve subprocess, which serves fetched cells."""
     servers: list[Any] = []
 
-    async def run_review_agent_over_mcp(server, run_dir, args, settings) -> dict[str, Any]:
-        """Capture the server the agent would start."""
+    async def run_review_agent_over_mcp(server, run_dir, args, settings, *, names) -> dict:
+        """Capture the server the agent would start and the issuer names it would use."""
         servers.append(server)
+        assert {"AMD", "ADVANCED MICRO DEVICES INC"} <= set(names)
         return {"status": "ok"}
 
     async def require_indexed(issuer, years) -> None:
@@ -1426,7 +1454,7 @@ def test_a_create_agent_run_that_raises_still_records_and_keeps_its_marker(
 ):
     """An escaped error or cancellation is recorded, re-raised, and the run ID stays used."""
 
-    async def run_review_agent_over_mcp(*_: object) -> dict[str, Any]:
+    async def run_review_agent_over_mcp(*_: object, **__: object) -> dict[str, Any]:
         raise raised
 
     monkeypatch.setattr(live, "run_review_agent_over_mcp", run_review_agent_over_mcp)
@@ -1453,4 +1481,69 @@ def test_an_agent_run_without_a_key_stops_before_claiming(tmp_path, monkeypatch)
     monkeypatch.setattr(live, "require_indexed", require_indexed)
     with pytest.raises(SystemExit, match="OpenAI key slot"):
         asyncio.run(live.run(parser().parse_args(run_claimed_args)))
+    assert not (tmp_path / "r").exists()
+
+
+# The issuer's names reach the question's item reading
+THREE_TURNS = [
+    response("call_search", "search_filings", SEARCH, (990, 40)),
+    response("call_fetch", "fetch_chunk", {"chunk_id": 2024}, (1190, 40)),
+    response("call_final", "final_answer", SELECTION, (1390, 60)),
+]
+
+
+def test_the_issuer_names_come_from_the_manifest_and_catalog():
+    """The filter value, its manifest aliases and catalog spellings; nothing without a filter."""
+    names = live.issuer_names("AMD", CORPUS_DIR)
+    assert {"AMD", "ADVANCED MICRO DEVICES INC", "Advanced Micro Devices"} <= set(names)
+    assert "NVDA" not in names
+    assert live.issuer_names(None, CORPUS_DIR) == ()
+
+
+@pytest.mark.parametrize(
+    ("question", "issuer", "items"),
+    [
+        ("What was AMD's Data Center revenue in 2024?", "AMD", frozenset()),
+        (CELL_QUESTION, None, frozenset()),
+    ],
+    ids=["qualified-item", "no-issuer-filter"],
+)
+def test_a_qualifier_or_a_missing_filter_names_no_item(
+    tmp_path, monkeypatch, question, issuer, items
+):
+    """A qualified item stays unread, and without a filter the company name qualifies it."""
+    asked = run_cell_question(tmp_path, monkeypatch, THREE_TURNS, question=question, issuer=issuer)
+    assert [c.requested_items for c in asked.contexts] == [items]
+
+
+@pytest.mark.parametrize(
+    ("write", "message"),
+    [(None, "could not be read"), ("{}", "could not be read"), ("same", "not an issuer")],
+    ids=["missing", "invalid", "unlisted-issuer"],
+)
+def test_an_unusable_manifest_stops_the_cell_run_before_claiming(
+    tmp_path, monkeypatch, write, message
+):
+    """A missing, invalid or issuer-less manifest stops the run before its attempt marker."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    if write == "same":
+        (corpus / "manifest.json").write_text((CORPUS_DIR / "manifest.json").read_text())
+    elif write is not None:
+        (corpus / "manifest.json").write_text(write)
+    monkeypatch.setattr(
+        config,
+        "get_settings",
+        lambda: SimpleNamespace(**vars(keyed_settings()) | {"corpus_dir": corpus}),
+    )
+
+    async def require_indexed(issuer, years) -> None:
+        """Stand in for the database index check."""
+
+    monkeypatch.setattr(live, "require_indexed", require_indexed)
+    issuer = "TESTCO" if write == "same" else "AMD"
+    argv = ["r", "--out", str(tmp_path), "agent", "--issuer", issuer, "--years", "2024"]
+    args = parser().parse_args([*argv, "--question", "Q?", "--via", "create-agent"])
+    with pytest.raises(SystemExit, match=message):
+        asyncio.run(live.run(args))
     assert not (tmp_path / "r").exists()
