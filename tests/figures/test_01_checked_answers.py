@@ -1028,10 +1028,19 @@ def test_a_dimensioned_cell_never_confirms_the_entity_item():
     [
         "In Note 5, net revenue was $25,785 million in 2024.",
         "Net revenue (Note 5) was $25,785 million in 2024.",
+        "Net revenue (Note 5) $25,785 million.",
+        "Net revenue (Note 5) USD 25,785 million.",
+        "Net revenue (Item 8) US$25,785 million.",
+        "Net revenue Q4 $25,785 million.",
+        "FY2024 net revenue (Note 12a): 25,785 million USD.",
+        "매출액 (주 5) US$25,785 million.",
     ],
 )
 def test_a_single_note_reference_before_a_matching_amount_stays_verified(answer):
-    """Read a one-number note reference as an identifier and check the amount after it."""
+    """Read a reference or period as an identifier and check the amount written after it.
+
+    A currency written before the amount belongs to the amount, not to the identifier.
+    """
     result = check_figures(answer, [table_evidence()], [2024])
     assert [check.figure for check in result.checks] == ["25,785"]
     assert result.verdict == "verified"

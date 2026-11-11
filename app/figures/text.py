@@ -79,27 +79,34 @@ _PERCENT = re.compile(r"[ \t]*(?:%|percent\b)", re.IGNORECASE)
 # a number with a percent sign, a scale word or a currency after it is an amount. So an
 # amount written where an identifier number would stand stays a figure. A Korean scale
 # or currency word may begin an ordinary word ("FY2024 조정", "Q4 원가"), so a Korean
-# unit is a scale word with a currency after it or at the end of its word.
+# unit is a scale word with a currency after it or at the end of its word. A currency
+# with a number after it belongs to that number ("(Note 5) $25,785 million"), not to
+# the identifier before it.
+_NEXT_NUMBER = r"[ \t]*[(△▲-]?\d"
 _UNIT_FOLLOWS = "|".join(
     (
         _PERCENT.pattern,
         r"[ \t]*" + _ENGLISH_SCALE.pattern,
         r"[ \t]*(?:[십백천]?[만억조]|천)(?:[ \t]*(?:" + KOREAN_CURRENCY + r")|(?![가-힣]))",
-        r"[ \t]*(?:" + BOUNDED_CURRENCY + ")",
-        UNKNOWN_AFTER.pattern,
+        r"[ \t]*(?:" + BOUNDED_CURRENCY + ")(?!" + _NEXT_NUMBER + ")",
+        UNKNOWN_AFTER.pattern + "(?!" + _NEXT_NUMBER + ")",
     )
 )
 _UNIT_AT = re.compile(_UNIT_FOLLOWS, re.IGNORECASE)
+_NO_UNIT = r"(?![ \t]*[)）]?(?:" + _UNIT_FOLLOWS + "))"
 _OWN_START = r"(?<![\d,.])"
-_OWN_END = r"(?!\d|[,.]\d|[ \t]*[)）]?(?:" + _UNIT_FOLLOWS + "))"
+_OWN_END = r"(?!\d|[,.]\d)" + _NO_UNIT
+# A reference number may end in one letter ("Item 7A", "Item 9B"). After two or three
+# digits a scale letter is not such a suffix, so "Note 26B" and "Note 500M" stay figures.
+_REFERENCE_NUMBER = r"(?:\d{2,3}[AC-JLN-SU-Z]?|\d[A-Z]?)(?![A-Za-z])(?:\.\d{1,3})*"
 _CALENDAR_YEAR = r"(?:19|20)\d{2}" + _OWN_END
 _ANSWER_NOT_FIGURES = re.compile(
     "|".join(
         (
             r"\b(?:FY\s?(?:\d{4}|\d{2})|[QH]\s?\d)" + _OWN_END,
-            _OWN_START + r"\d[QH]\b",
-            _OWN_START + r"\d{1,2}-[A-Z]\b",
-            _REFERENCE_WORD + r"\d{1,3}[A-Z]?(?:\.\d{1,3})*" + _OWN_END,
+            _OWN_START + r"\d[QH]\b" + _NO_UNIT,
+            _OWN_START + r"\d{1,2}-[A-Z]\b" + _NO_UNIT,
+            _REFERENCE_WORD + _REFERENCE_NUMBER + _OWN_END,
             _KOREAN_NOTE_WORD + r"\d{1,3}[A-Za-z]?" + _OWN_END + r"\s*[)）]",
             _MONTH_AND_DAY + _CALENDAR_YEAR,
             _OWN_START + r"(?:19|20)\d{2}\s?[./-]\s?\d{1,2}\s?[./-]\s?\d{1,2}" + _OWN_END,
@@ -314,8 +321,8 @@ def _unit_after(
 def figure_spans(blanked: str, *, answer: bool = False) -> list[Figure]:
     """Return each figure of an identifier-free text with its own position and unit.
 
-    ``answer`` reads the text as an answer's or a passage's prose rather than a table
-    label or cell: only the bounded identifier shapes of an answer are left out, so a
+    ``answer`` reads the text as a model's answer rather than a filing's own label, cell
+    or passage: only the bounded identifier shapes of an answer are left out, so a
     scale letter glued to a number with no currency sign ("26B") is an unreadable figure
     that fails, like "25785M", instead of an identifier that drops out.
 
@@ -345,7 +352,9 @@ def figure_spans(blanked: str, *, answer: bool = False) -> list[Figure]:
         currency = code or bool(markers) or (bool(before) and before[-1] in CURRENCY)
         glued = token + (suffix.group(0) if suffix else "")
         if prefix is None and not currency and identifier.fullmatch(glued):
-            continue
+            # In an answer an identifier with a unit after it is an amount ("5Q million").
+            if not (answer and unit_follows(blanked, suffix.end() if suffix else end)):
+                continue
         scale, readable, unit_end = _unit_after(blanked, start, end, currency)
         readable = readable and (prefix is None or code)
         sign = _PERCENT.match(blanked, unit_end) if readable else None

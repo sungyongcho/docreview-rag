@@ -110,6 +110,12 @@ def test_an_amount_is_a_claim_wherever_an_identifier_number_could_stand(lead, am
         ("매출액 (주석 300)억원", "300"),
         ("매출액 (주석 300) 억 원이다", "300"),
         ("매출액은 Note 5 조원이다.", "5"),
+        ("Net revenue was Note 26B.", "26"),
+        ("Net revenue was Note 500M.", "500"),
+        ("Net revenue was Note 500k.", "500"),
+        ("Net revenue was 5Q million.", "5"),
+        ("Net revenue was 3H billion.", "3"),
+        ("Net revenue was 10-K million.", "10"),
     ],
 )
 def test_a_short_number_with_a_unit_is_an_amount_not_an_identifier(answer, amount):
@@ -135,10 +141,15 @@ def test_a_korean_word_after_an_identifier_is_not_its_unit(answer):
     assert check_figures(answer, [EvidenceText(1, "body", "ctx")], [2024]).checks == ()
 
 
-def test_a_short_reference_number_without_a_unit_stays_a_reference():
-    """Pin the boundary: "Note 500" alone has the shape of a reference, not an amount."""
-    evidence = [EvidenceText(1, "body", "ctx")]
-    assert check_figures("Net revenue was Note 500.", evidence, [2024]).checks == ()
+@pytest.mark.parametrize(
+    "answer",
+    ["Net revenue was Note 500.", "Net revenue was Note 5B.", "Net revenue was Note 500 mil."],
+)
+def test_a_short_reference_number_without_a_known_unit_stays_a_reference(answer):
+    """Pin the boundary: a short number after a reference word, with no unit the reader
+    knows, has the shape of a reference ("Item 9B"), not of an amount.
+    """
+    assert check_figures(answer, [EvidenceText(1, "body", "ctx")], [2024]).checks == ()
 
 
 def test_cited_text_keeps_the_filing_rules_for_its_references():
@@ -167,6 +178,8 @@ def test_a_bare_scale_letter_amount_fails_instead_of_dropping_out(answer):
         "Net revenue grew in the 3rd quarter ended March 31, 2024 (2024-03-31, 3/31/2024).",
         "매출액은 제56기 3분기(2024년 9월 30일)에 증가했다 (주 29).",
         "5G revenue grew in FY24.",
+        "See Item 9B and Item 1B of the 10-K; Item 7A and Note 12a describe risk.",
+        "In 4Q and 1H, see Exhibit 10.25.",
     ],
 )
 def test_bounded_identifiers_and_dates_state_no_claim(answer):
