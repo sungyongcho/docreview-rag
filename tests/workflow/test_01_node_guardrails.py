@@ -6,7 +6,7 @@ from typing import cast
 from pydantic import ValidationError
 import pytest
 
-from app.contracts.figures import read_table_cells
+from app.figures.tables import read_table_cells
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
 from app.retrieval.types import ChunkHit
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node

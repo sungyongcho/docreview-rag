@@ -996,7 +996,7 @@ async def run_review_agent_over_mcp(
     )
     from app.agent.types import AgentBudget
     from app.config import get_settings
-    from app.contracts.figures import items_named
+    from app.figures.vocabulary import items_named
     from app.query.periods import question_fiscal_years, utc_today
 
     config = get_settings()

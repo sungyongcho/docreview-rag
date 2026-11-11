@@ -16,7 +16,6 @@ from typing import Any
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.contracts.figures import interpret_table_cell, read_table_cells, read_table_unit
 from app.db.bootstrap import bootstrap_schema
 from app.db.models import (
     SnapshotChunkTableCell,
@@ -27,6 +26,7 @@ from app.db.models import (
     SnapshotTableCellSource,
     SnapshotTableSourceCell,
 )
+from app.figures.tables import interpret_table_cell, read_table_cells, read_table_unit
 from app.ingestion.persistence import reading_columns
 from app.ingestion.table_records import resolver_identity
 from app.retrieval.tables import load_table_fragments

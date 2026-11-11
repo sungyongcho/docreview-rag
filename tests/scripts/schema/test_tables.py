@@ -7,8 +7,8 @@ import json
 import pytest
 from sqlalchemy import select, text
 
-from app.contracts.figures import read_table_cells
 from app.db.models import Chunk, SnapshotChunkTableCell, SnapshotTableSourceCell
+from app.figures.tables import read_table_cells
 from app.ingestion.persistence import persist_seed_batch
 from scripts.schema.tables import migrate_tables, snapshot_rows
 from tests.ingestion.seed.support import table_batch

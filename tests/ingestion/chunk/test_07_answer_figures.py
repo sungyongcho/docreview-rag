@@ -2,7 +2,8 @@
 
 from dataclasses import asdict
 
-from app.contracts.figures import EvidenceText, check_figures, read_table_cells
+from app.figures.answers import EvidenceText, check_figures
+from app.figures.tables import read_table_cells
 from app.ingestion.parsing.html import line_offsets, normalize, source_pos
 
 

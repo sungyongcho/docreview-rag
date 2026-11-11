@@ -31,7 +31,7 @@ from app.agent.types import (
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.figures import EvidenceText, FiguresResult, check_figures
+from app.figures.answers import EvidenceText, FiguresResult, check_figures
 from app.llm.decoding import strict_json_loads, strict_response_format, validation_errors
 
 type EvidenceReader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, EvidenceText]]]

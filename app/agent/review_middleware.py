@@ -51,7 +51,7 @@ from app.agent.tools.registry import FINAL_ANSWER_NAME, Tool, ToolRegistry, safe
 from app.agent.types import AgentAnswer, AgentReportAnswer, CellSelectionAnswer, ToolCall
 from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.figures import check_figures
+from app.figures.answers import check_figures
 from app.llm.decoding import validation_errors
 
 type EvidenceLedger = dict[int, dict[str, Any]]

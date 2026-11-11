@@ -10,10 +10,10 @@ from sqlalchemy import select
 from app.agent.cell_answers import StoredCell
 from app.agent.tools.registry import Tool, ToolError, ToolRegistry
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.figures import EvidenceText
 from app.contracts.validation import NonBlank, PositiveInt, StrictSchema
 from app.db.models import Chunk, ChunkTableCell, TableCell
 from app.db.session_factory import SessionFactory
+from app.figures.answers import EvidenceText
 from app.retrieval.embedding.provider import (
     EmbeddingIdentity,
     EmbeddingProvider,

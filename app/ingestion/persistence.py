@@ -8,7 +8,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts.figures import TableCellReading
 from app.db.models import (
     Chunk as ChunkModel,
     ChunkTableCell,
@@ -30,6 +29,7 @@ from app.db.models import (
     TableSourceCell,
     TableSourceFact,
 )
+from app.figures.tables import TableCellReading
 from app.ingestion.parsing.facts import FilingFacts
 from app.ingestion.pipeline import ChunkRecord, SeedBatch, structure_values
 from app.ingestion.progress import OperationProgress, OperationProgressCallback

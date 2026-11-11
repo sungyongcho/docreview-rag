@@ -1,0 +1,622 @@
+"""Read a table's cells: their values, unit, currency, fiscal year, scope and item.
+
+A table's unit is read from unit declarations in its own header cells or in the
+caption run the chunker linked to it with source spans, every one of them fully read.
+When the unit of the item's cells is absent, not fully readable or contradictory, no
+unit is guessed.
+
+A cell whose figure the filing tags as a fact (inline XBRL, or a DART ``ACONTEXT``)
+takes its fiscal year and scope from the tag, and an inline XBRL fact also its
+currency and scale; each fact that contradicts the text reading is recorded as an
+override. A fact scoped to a dimension (a segment, a DART separate statement) is
+not the item of the whole entity, so it never confirms a claim. Untagged cells keep
+the text rules above, with one addition: a header that is a period word its DART
+report defines by its own declarations ("당기", "제56기") names that fiscal year.
+
+A DART report presents consolidated and separate statements, so its untagged cells
+are the entity's figures only in a table it declares to be a consolidated balance
+sheet, income, comprehensive income or cash flow statement or its consolidated
+summary; a separate statement is a scope of its own and any other table's scope is
+unknown.
+"""
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
+from decimal import Decimal
+import re
+from typing import Literal
+
+from app.figures.currency import (
+    _ANY_CURRENCY,
+    _CODES,
+    _CONFLICT,
+    _FAMILIES,
+    _UNKNOWN,
+    _currencies_in,
+    _currency_of,
+    _resolve,
+)
+from app.figures.text import (
+    _KOREAN_SCALE,
+    _YEAR,
+    _blank,
+    _english_factor,
+    _figure_spans,
+    _korean_factor,
+    _signed,
+    _values,
+)
+from app.figures.vocabulary import _PHRASE_ITEMS, _SAME_ITEM_QUALIFIER, _phrase_key
+
+# Unit declarations are read with a small explicit grammar, not from any scale word in
+# the text. A parenthetical declares a unit when it is up to three words, "in" and words
+# without digits ("(In millions)", "(Dollars in thousands)", "(in widgets)"), or when it
+# opens with "Units:". Outside parentheses, a "Units:" clause anywhere and a header cell
+# that is itself one bare declaration ("In millions", "in widgets", "Dollars in
+# thousands") count too; other words ("Change in revenue") declare nothing. A declaration
+# counts only when all of it is understood; anything else in it (an unsupported
+# exception, another unit) makes it unknown.
+_PARENTHESIS = re.compile(r"[(（]([^()（）]*)[)）]")
+_DECLARATION = re.compile(
+    r"\s*(?:(?:[A-Za-z$.]+\s+){0,3}in\s+[A-Za-z$][A-Za-z$.,'\s-]*|units?\s*[:：][^\d]*)",
+    re.IGNORECASE,
+)
+_BARE_DECLARATION = re.compile(
+    r"\s*(?:(?:\$|us\$|dollars|amounts)\s+)?in\s+[A-Za-z$][A-Za-z$.,'\s-]*", re.IGNORECASE
+)
+_UNITS_CLAUSE = re.compile(r"\bunits?\s*[:：]\s*[A-Za-z$][^()\d]*", re.IGNORECASE)
+_SCALE_WORD = (
+    r"(?P<scale>thousands|millions|billions|trillions)"
+    rf"(?:\s+of\s+(?P<of>{_ANY_CURRENCY}))?"
+)
+# "In millions [of <currency>]", optionally led by a currency or "Amounts".
+_SCALE_DECLARATION = re.compile(
+    rf"\s*(?:(?P<prefix>amounts|{_ANY_CURRENCY})\s+)?in\s+{_SCALE_WORD}"
+    r"(?P<per_share>\s*,\s*except\s+(?:for\s+)?(?:share\s+and\s+)?per[\s-]share"
+    r"(?:\s+and\s+share)?(?:\s+(?:data|amounts|information|figures))?)?\s*",
+    re.IGNORECASE,
+)
+# "In <currency>" ("(In U.S. dollars)") declares a currency, and plain units only when no
+# other note of the table states a scale; "(In millions) (In U.S. dollars)" is millions.
+_PLAIN_DECLARATION = re.compile(rf"\s*in\s+(?P<currency>{_ANY_CURRENCY})\s*", re.IGNORECASE)
+# A currency-only declaration states no scale at all: "(USD)", "(Currency: KRW)",
+# "(Expressed in U.S. dollars)".
+_CURRENCY_DECLARATION = re.compile(
+    r"\s*(?:(?:currency|denomination)\s*[:：]\s*|(?:expressed|presented|reported)\s+in\s+)?"
+    rf"(?P<currency>{_ANY_CURRENCY})\s*",
+    re.IGNORECASE,
+)
+_UNITS_DECLARATION = re.compile(rf"\s*units?\s*[:：]\s*{_SCALE_WORD}\s*", re.IGNORECASE)
+# A Korean 단위 note runs to its closing parenthesis; it lists one unit or several.
+_KOREAN_UNIT_NOTE = re.compile(r"단위\s*[:：]?\s*([^)）]*)")
+# The monetary unit a Korean 단위 note may state: an optional scale and a currency.
+_KOREAN_NOTE = re.compile(r"(?P<scale>(?:[십백천]?[만억조])|천)?(?P<currency>.+)")
+# Per-share rows of a "(In millions, except per share data)" table are in plain currency.
+_PER_SHARE = re.compile(r"per\s+share|주당", re.IGNORECASE)
+
+
+_ENUMERATOR = re.compile(r"^\s*(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|\d+|[ivx]+|[가-하])[.)]\s*", re.IGNORECASE)
+
+
+@dataclass(frozen=True, slots=True)
+class TableCellReading:
+    """One original table cell holding figures: its values, years, unit and row item.
+
+    ``row`` and ``column`` are the cell's zero-based source grid coordinates. ``scale``
+    is None when the cell's unit is uncertain; ``percent`` is None when the evidence
+    cannot show whether the cell is a percentage. ``currency`` is resolved from the
+    table's notes and the markers bound to this cell's own numbers only, never from
+    other rows or tables; ``marked`` says the cell's numbers carry currency markers.
+    """
+
+    row: int
+    column: int
+    values: frozenset[Decimal]
+    years: frozenset[int]
+    scale: Decimal | None
+    item: str | None
+    percent: bool | None
+    currency: str | None = None
+    marked: bool = False
+    row_label: str | None = None
+    basis: Literal["text", "fact"] = "text"
+    overrides: tuple[str, ...] = ()
+    scope: str | None = None
+    measure: Literal["amount", "per_share", "other"] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CellFact:
+    """One fact a filing tags inside a source cell, with its context and unit joined.
+
+    ``fiscal_year`` is None when the context is not one fiscal year. ``numerator`` and
+    ``denominator`` are the inline XBRL unit's measures (``iso4217:USD``,
+    ``xbrli:shares``); DART facts state no unit, so both are None, as is ``scale``.
+    """
+
+    concept: str
+    fiscal_year: int | None
+    dimensions: tuple[tuple[str, str], ...]
+    numerator: str | None
+    denominator: str | None
+    scale: int | None
+    text: str
+
+
+CellStatus = Literal[
+    "known",
+    "blank",
+    "not_numeric",
+    "conflicting",
+    "not_monetary",
+    "scale_unknown",
+    "currency_unconfirmed",
+    "period_unknown",
+    "scope_qualified",
+    "scope_unknown",
+    "item_unknown",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class CellInterpretation:
+    """Whether one normalized table cell can stand as a single selectable amount.
+
+    ``value`` keeps the sign and every written decimal of the cell's one figure; it is
+    None unless that figure is readable. ``reading`` is the one figure-bearing source
+    cell the value comes from. ``status`` is ``known`` only when the value, its unit, its
+    currency (or percentage), one fiscal year and one item are all established; any
+    other status names the first missing fact and ``reason`` says why.
+    """
+
+    status: CellStatus
+    reason: str | None
+    value: Decimal | None
+    reading: TableCellReading | None
+
+
+def _entries(container: Mapping[str, object] | object, key: str) -> list[Mapping[str, object]]:
+    """Return the JSON objects stored in one list field of a stored fragment."""
+    value = container.get(key, ()) if isinstance(container, Mapping) else ()
+    if not isinstance(value, list | tuple):
+        return []
+    return [entry for entry in value if isinstance(entry, Mapping)]
+
+
+def _int(value: object) -> int:
+    """Read one stored integer coordinate."""
+    if not isinstance(value, int):
+        raise ValueError("table fragment coordinates must be integers")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class TableUnit:
+    """The unit a table's own notes state and how certain it is.
+
+    ``status`` is ``known`` when every readable note agrees, ``absent`` when the table
+    carries no note, ``unknown`` when a note cannot be read as a monetary scale or a
+    percentage ("(단위 : 주)"), and ``conflicting`` when notes state different scales or
+    currencies, or a percentage beside a monetary scale with nothing mapping either to
+    its rows.
+    ``scale`` is the agreed monetary scale; ``percent`` marks a percentage note;
+    ``per_share_plain`` marks an explicit per-share exception ("except per share data").
+    ``currency`` holds the currency markers every note declares, resolved per cell
+    together with the cell's own markers.
+    """
+
+    status: Literal["known", "absent", "unknown", "conflicting"]
+    scale: Decimal | None = None
+    percent: bool = False
+    per_share_plain: bool = False
+    currency: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class _Note:
+    """One unit declaration: a monetary ``scale``, a ``currency`` only, a ``percent``
+    note, or ``unknown``.
+
+    ``currency`` holds the currency markers the note itself declares ("USD", "원", or
+    the ambiguous "$"), empty when it names none ("(In millions)"); they are compared,
+    never converted. ``plain`` marks "In <currency>", which states plain units only when
+    no other note states a scale.
+    """
+
+    kind: Literal["scale", "currency", "percent", "unknown"]
+    scale: Decimal | None = None
+    per_share_plain: bool = False
+    currency: frozenset[str] = frozenset()
+    plain: bool = False
+
+
+def _linked(caption: Mapping[str, object]) -> bool:
+    """Whether a stored caption carries the source span that ties it to its table."""
+    start, end = caption.get("start_char"), caption.get("end_char")
+    return isinstance(start, int) and isinstance(end, int) and 0 <= start < end
+
+
+def _english_note(declaration: str) -> _Note:
+    """Read one English declaration, unknown unless all of it is understood."""
+    if scale := _SCALE_DECLARATION.fullmatch(declaration):
+        prefix = scale.group("prefix") or ""
+        currency = _currencies_in(" ".join((prefix, scale.group("of") or "")))
+        return _Note(
+            "scale",
+            _english_factor(scale.group("scale")),
+            scale.group("per_share") is not None,
+            currency,
+        )
+    if units := _UNITS_DECLARATION.fullmatch(declaration):
+        currency = _currencies_in(units.group("of") or "")
+        return _Note("scale", _english_factor(units.group("scale")), currency=currency)
+    if plain := _PLAIN_DECLARATION.fullmatch(declaration):
+        return _Note("currency", currency=_currencies_in(plain.group("currency")), plain=True)
+    if named := _CURRENCY_DECLARATION.fullmatch(declaration):
+        return _Note("currency", currency=_currencies_in(named.group("currency")))
+    return _Note("unknown")
+
+
+def _korean_note(content: str) -> _Note:
+    """Read one Korean 단위 note; a list of several units leaves each row's unit unknown."""
+    parts = [re.sub(r"\s+", "", part) for part in re.split(r"[,/、]", content)]
+    if len(parts) != 1:
+        return _Note("unknown")
+    if parts[0] == "%":
+        return _Note("percent")
+    korean = _KOREAN_NOTE.fullmatch(parts[0])
+    currency = _currency_of(korean.group("currency")) if korean else None
+    if korean is not None and currency is not None:
+        # A 단위 note states the unit itself, so a bare currency ("원") means plain units.
+        prefix = korean.group("scale")
+        scale = _KOREAN_SCALE.fullmatch(prefix) if prefix else None
+        factor = _korean_factor(scale) if scale is not None else Decimal(1)
+        return _Note("scale", factor, currency=frozenset({currency}))
+    return _Note("unknown")
+
+
+def _notes(text: str) -> list[_Note]:
+    """Read every unit declaration of one header cell or caption.
+
+    Parenthetical declarations are read one by one, so a recognized "(In millions)"
+    never hides "(Units: widgets)" beside it. Outside parentheses, every "Units:" clause
+    is read, and what remains counts when it is itself one bare declaration ("In
+    millions", "in widgets"); other words ("Change in revenue") declare nothing.
+    """
+    notes = [_korean_note(match.group(1)) for match in _KOREAN_UNIT_NOTE.finditer(text)]
+    english = [
+        content
+        for content in _PARENTHESIS.findall(text)
+        if "단위" not in content
+        and (_DECLARATION.fullmatch(content) or _CURRENCY_DECLARATION.fullmatch(content))
+    ]
+    outside = _PARENTHESIS.sub(" ", text)
+    english += _UNITS_CLAUSE.findall(outside)
+    rest = _UNITS_CLAUSE.sub(" ", outside)
+    if "단위" not in rest and _BARE_DECLARATION.fullmatch(rest):
+        english.append(rest)
+    return notes + [_english_note(" ".join(declaration.split())) for declaration in english]
+
+
+def read_table_unit(fragment: Mapping[str, object]) -> TableUnit:
+    """Read the unit a table's own header cells and linked captions state.
+
+    Only notes demonstrably tied to this table count: its header cells, and captions
+    the chunker attached with their source span (a caption row, a caption-only table
+    or a caption paragraph directly before it). A caption without that span, and any
+    other context, is ignored, so a stored fragment without one stays ``absent``.
+    Nothing defaults to plain units: an absent, unreadable or contradictory note
+    leaves the monetary scale unknown.
+    """
+    texts = [str(cell.get("text", "")) for cell in _entries(fragment, "header_cells")]
+    texts += [
+        str(caption.get("text", ""))
+        for caption in _entries(fragment, "caption_sources")
+        if _linked(caption)
+    ]
+    notes = [note for text in texts for note in _notes(text)]
+    if not notes:
+        return TableUnit("absent")
+    percent = any(note.kind == "percent" for note in notes)
+    if any(note.kind == "unknown" for note in notes):
+        return TableUnit("unknown", percent=percent)
+    scales = {note.scale for note in notes if note.kind == "scale" and note.scale is not None}
+    if not scales and any(note.plain for note in notes):
+        scales = {Decimal(1)}
+    currency = frozenset(marker for note in notes for marker in note.currency)
+    monetary = bool(scales or currency)
+    if len(scales) > 1 or _resolve(currency) == _CONFLICT or (percent and monetary):
+        return TableUnit("conflicting", percent=percent)
+    per_share_plain = any(note.per_share_plain for note in notes)
+    return TableUnit("known", next(iter(scales), None), percent, per_share_plain, currency)
+
+
+def _term_year(text: str, terms: Mapping[str, int]) -> int | None:
+    """Return the fiscal year a whole header names by a defined period word.
+
+    The header must be the word alone, spaces aside, optionally with ``말`` for its
+    end ("전기말", "제56기말"); a header with any other word names no term.
+    """
+    word = re.sub(r"\s+", "", text)
+    return terms.get(word.removesuffix("말")) if word else None
+
+
+def _column_years(
+    source: Mapping[str, object],
+    headers: Sequence[Mapping[str, object]],
+    caption_years: set[int],
+    terms: Mapping[str, int],
+) -> set[int]:
+    """Return the years the headers above one data cell's columns name.
+
+    A header names years by writing them or, when it writes none, by being one period
+    word its document defines (see :func:`_term_year`).
+    """
+    start = _int(source["column"])
+    end = start + _int(source.get("colspan", 1))
+    years: set[int] = set()
+    for header in headers:
+        first = _int(header["column"])
+        if first < end and start < first + _int(header.get("colspan", 1)):
+            text = str(header.get("text", ""))
+            written = {int(year) for year in _YEAR.findall(text)}
+            if not written and (term := _term_year(text, terms)) is not None:
+                written = {term}
+            years.update(written)
+    if not years and len(caption_years) == 1:
+        return set(caption_years)
+    return years
+
+
+def _row_labels(fragment: Mapping[str, object]) -> dict[int, str]:
+    """Return the leftmost non-numeric cell text of each source row (its row label)."""
+    labels: dict[int, tuple[int, str]] = {}
+    for member in _entries(fragment, "cells"):
+        for source in _entries(member, "sources"):
+            text = str(source.get("text", "")).strip()
+            if text and not _values(text):
+                row, column = _int(source["row"]), _int(source["column"])
+                if row not in labels or column < labels[row][0]:
+                    labels[row] = (column, text)
+    return {row: text for row, (_, text) in labels.items()}
+
+
+def _label_item(label: str) -> str | None:
+    """Return the item a row label names when the whole label is one accepted phrase.
+
+    Enumerators ("Ⅰ.") and the parentheticals that keep the same item ("Net income
+    (loss)", note references) are set aside. Any other parenthetical qualifies the
+    row ("Net income (attributable to noncontrolling interests)"), so the label names
+    no item. Korean labels are compared without spaces.
+    """
+    text = _SAME_ITEM_QUALIFIER.sub("", _ENUMERATOR.sub("", label))
+    if re.search(r"[()（）]", text):
+        return None
+    key = _phrase_key(text).rstrip(":").strip()
+    if not key.isascii():
+        key = key.replace(" ", "")
+    return _PHRASE_ITEMS.get(key)
+
+
+# The DART statement axis whose consolidated member is the entity as a whole.
+_ENTITY_SCOPE = (
+    (
+        "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis",
+        "ifrs-full:ConsolidatedMember",
+    ),
+)
+_ISO_CURRENCY = re.compile(r"iso4217:([A-Z]{3})")
+# The scope a separate statement reads as, the same words its DART tags state.
+_SEPARATE_SCOPE = (
+    "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis=ifrs-full:SeparateMember"
+)
+# Consolidated statements whose cells are the entity's own figures; an equity
+# statement's columns are components and notes describe parts and other entities.
+_ENTITY_STATEMENTS = frozenset(
+    {"balance_sheet", "income", "comprehensive_income", "cash_flow", "summary"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class TableStatement:
+    """What a filing declares about the statement one table belongs to.
+
+    ``kind`` is the statement (``income``, ``notes``, ``summary``...) and ``scope``
+    ``consolidated``, ``separate`` or ``conflicting``; either is None when nothing
+    declares it.
+    """
+
+    kind: str | None
+    scope: str | None
+
+
+def _statement_scope(statement: TableStatement | None) -> str | None:
+    """Return the scope an untagged cell of a table reads as under its declaration.
+
+    Without a statement (a filing whose form presents one scope) a cell is the
+    entity's. Under one, only a consolidated entity statement is; a separate one is
+    that statement's scope and anything else (notes, equity, conflicting or no
+    declaration) is unknown.
+    """
+    if statement is None:
+        return None
+    if statement.scope == "separate":
+        return _SEPARATE_SCOPE
+    if statement.scope == "consolidated" and statement.kind in _ENTITY_STATEMENTS:
+        return None
+    return _UNKNOWN
+
+
+def _scope(dimensions: tuple[tuple[str, str], ...]) -> str | None:
+    """Name the dimensional scope of a fact, or None for the entity as a whole."""
+    if not dimensions or dimensions == _ENTITY_SCOPE:
+        return None
+    return "; ".join(f"{axis}={member}" for axis, member in dimensions)
+
+
+def _with_fact(
+    reading: TableCellReading, fact: CellFact, notes: frozenset[str]
+) -> TableCellReading:
+    """Read one cell from the fact its filing tags, recording what overrides the text.
+
+    The fact's fiscal year and scope always apply; a declared statement scope that
+    the tag contradicts (a consolidated tag in a separate statement) is overridden.
+    An inline XBRL amount or per-share unit also fixes the currency (with the table's
+    notes and the cell's own markers still able to contradict it) and the scale.
+    Other units (shares, ratios) are not amounts, and DART facts state no unit, so
+    the text keeps their unit.
+    """
+    overrides: list[str] = []
+    years = frozenset() if fact.fiscal_year is None else frozenset({fact.fiscal_year})
+    if reading.years and reading.years != years:
+        overrides.append("year")
+    scope = _scope(fact.dimensions)
+    tagged_separate = _SEPARATE_SCOPE in (scope or "")
+    if reading.scope != _UNKNOWN and (reading.scope == _SEPARATE_SCOPE) != tagged_separate:
+        overrides.append("scope")
+    scale, percent, resolved = reading.scale, reading.percent, reading.currency
+    measure = None
+    currency = _ISO_CURRENCY.fullmatch(fact.numerator or "")
+    if currency is not None and fact.denominator in (None, "xbrli:shares"):
+        measure = "amount" if fact.denominator is None else "per_share"
+        code = currency.group(1) if currency.group(1) in _CODES else _UNKNOWN
+        scale = Decimal(10) ** (fact.scale or 0)
+        if reading.scale is not None and reading.scale != scale:
+            overrides.append("scale")
+        percent, resolved = False, _resolve(frozenset({code}) | notes)
+    elif fact.numerator is not None:
+        measure = "other"
+    return replace(
+        reading,
+        years=years,
+        scale=scale,
+        percent=percent,
+        currency=resolved,
+        basis="fact",
+        overrides=tuple(overrides),
+        scope=scope,
+        measure=measure,
+    )
+
+
+def read_table_cells(
+    fragment: Mapping[str, object],
+    facts: Mapping[tuple[int, int], Sequence[CellFact]] | None = None,
+    terms: Mapping[str, int] | None = None,
+    statement: TableStatement | None = None,
+) -> list[TableCellReading]:
+    """Return each figure-bearing source cell of one table fragment as it is read.
+
+    A source cell appears once per normalized cell it belongs to, as stored. ``facts``
+    are the tagged facts of each source cell by grid coordinates; a cell read from
+    exactly one fact showing the same number takes the fact's facts (see
+    :func:`_with_fact`), any other cell keeps its text reading. ``terms`` are the
+    period words the table's document defines ("당기", "제56기") and their fiscal
+    years; a header that is one of them dates its columns. ``statement`` is what the
+    table's filing declares about its statement, when its form presents several
+    entity scopes; it sets the scope of untagged cells (see :func:`_statement_scope`).
+    """
+    facts = facts or {}
+    terms = terms or {}
+    headers = _entries(fragment, "header_cells")
+    caption_years = {
+        int(year)
+        for caption in _entries(fragment, "caption_sources")
+        for year in _YEAR.findall(str(caption.get("text", "")))
+    }
+    unit = read_table_unit(fragment)
+    known = unit.status == "known"
+    labels = _row_labels(fragment)
+    cells = []
+    for member in _entries(fragment, "cells"):
+        for source in _entries(member, "sources"):
+            text = str(source.get("text", ""))
+            values = _values(text)
+            if values:
+                label = labels.get(_int(source["row"]))
+                per_share = label is not None and _PER_SHARE.search(label)
+                scale = unit.scale if known else None
+                if per_share and known:
+                    # A per-share row is in plain currency only when the note says so or
+                    # the whole table is; under a scaled note its unit is ambiguous.
+                    plain = unit.per_share_plain or unit.scale == 1
+                    scale = Decimal(1) if plain and unit.scale is not None else None
+                percent: bool | None = "%" in text or (
+                    known and unit.percent and unit.scale is None
+                )
+                if not percent and not known:
+                    # Without a readable note a bare cell may or may not be a percentage.
+                    percent = None
+                # Only markers bound to the cell's own numbers count; other words in the
+                # cell ("원가") name no denomination.
+                own = frozenset(
+                    marker for figure in _figure_spans(_blank(text)) for marker in figure.currency
+                )
+                row, column = _int(source["row"]), _int(source["column"])
+                reading = TableCellReading(
+                    row,
+                    column,
+                    frozenset(values),
+                    frozenset(_column_years(source, headers, caption_years, terms)),
+                    scale,
+                    _label_item(label) if label is not None else None,
+                    percent,
+                    _resolve(unit.currency | own),
+                    bool(own),
+                    label,
+                    scope=_statement_scope(statement),
+                )
+                tagged = facts.get((row, column), ())
+                if len(tagged) == 1 and _values(tagged[0].text) == values:
+                    reading = _with_fact(reading, tagged[0], unit.currency | own)
+                cells.append(reading)
+    return cells
+
+
+def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> CellInterpretation:
+    """Decide whether one normalized cell is a single amount with established facts.
+
+    ``text`` is the normalized cell text and ``readings`` its figure-bearing source
+    cells. A blank or dash-only cell is ``blank``, never zero. Nothing is guessed: a
+    missing scale, an ambiguous or missing currency, an unknown period or item leaves
+    the cell unselectable with the first missing fact as its status. A tagged unit
+    that is no amount (``not_monetary``) or a dimensional scope (``scope_qualified``)
+    does too.
+    """
+    stripped = text.strip()
+    if not stripped or not stripped.strip("-–—‐ "):
+        return CellInterpretation("blank", None, None, None)
+    spans = [figure for figure in _figure_spans(_blank(text)) if figure.value is not None]
+    distinct = set(readings)
+    if not spans or not distinct:
+        return CellInterpretation("not_numeric", None, None, None)
+    if len(spans) > 1 or len(distinct) > 1:
+        return CellInterpretation("conflicting", "more than one figure", None, None)
+    reading = next(iter(distinct))
+    value = _signed(spans[0])
+    if value is None:
+        return CellInterpretation("conflicting", "sign marker is ambiguous", None, reading)
+    if reading.measure == "other":
+        return CellInterpretation("not_monetary", "tagged unit is not an amount", value, reading)
+    if reading.percent is None:
+        return CellInterpretation("scale_unknown", "percentage unknown", value, reading)
+    if not reading.percent:
+        if reading.scale is None:
+            return CellInterpretation("scale_unknown", "no readable scale", value, reading)
+        if reading.currency == _CONFLICT:
+            return CellInterpretation("conflicting", "currencies disagree", value, reading)
+        if reading.currency is None or reading.currency in _FAMILIES:
+            return CellInterpretation(
+                "currency_unconfirmed", "no explicit currency", value, reading
+            )
+    if len(reading.years) != 1:
+        return CellInterpretation("period_unknown", "no single fiscal year", value, reading)
+    if reading.scope == _UNKNOWN:
+        return CellInterpretation(
+            "scope_unknown", "the filing declares no entity scope for it", value, reading
+        )
+    if reading.scope is not None:
+        return CellInterpretation("scope_qualified", reading.scope, value, reading)
+    if reading.item is None:
+        return CellInterpretation("item_unknown", "row label names no item", value, reading)
+    return CellInterpretation("known", None, value, reading)

@@ -1,0 +1,325 @@
+"""Find the figures a text states, each with the unit and currency written with it.
+
+Identifiers and calendar dates carry digits but state no figure. Note references
+("Note 5", "(주29)") are identifiers, not figures.
+"""
+
+from dataclasses import dataclass, replace
+from decimal import Decimal, InvalidOperation
+import re
+
+from app.figures.currency import (
+    _CODES,
+    _CURRENCY,
+    _CURRENCY_AFTER,
+    _CURRENCY_BEFORE,
+    _UNKNOWN,
+    _UNKNOWN_AFTER,
+    _UNKNOWN_BEFORE,
+    _currency_of,
+    _resolve,
+)
+from app.figures.vocabulary import _CHANGES, _CONNECTIVES, _FILLERS, _ITEM_WORDS
+
+# A figure: digits with optional thousands separators and decimals, optionally signed.
+# A trailing comma is punctuation, not a separator ("In 2024, revenue ...").
+_NUMBER = re.compile(r"[(△▲-]?\d(?:[\d,]*\d)?(?:\.\d+)?\)?")
+# Identifiers and calendar dates carry digits but state no figure.
+_NOT_FIGURES = re.compile(
+    r"\b(?:FY|Q|H)\s?\d+|\b\d+[QH]\b|\d+-[A-Z]\b|"
+    r"\b(?:Item|Note|Part|Exhibit|Section)s?\s+\d+[A-Z]?(?:\.\d+)*"
+    r"(?:\s*(?:,|and|&)\s*\d+[A-Z]?(?:\.\d+)*)*|"
+    # A Korean note reference: "(주29)", "(주 5, 30)", "(주석 12)".
+    r"[(（]\s*주석?\s*\d+[A-Za-z]?(?:\s*[,，、~-]\s*\d+[A-Za-z]?)*\s*[)）]|"
+    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}|"
+    r"\d{4}\s?[./-]\s?\d{1,2}\s?[./-]\s?\d{1,2}|\d{1,2}/\d{1,2}/\d{4}|"
+    r"\d{4}\s?년(?:\s?\d{1,2}\s?월)?(?:\s?\d{1,2}\s?일)?|\d{1,2}\s?월\s?\d{1,2}\s?일|"
+    r"\d\s?분기|제\s?\d+\s?기",
+    re.IGNORECASE,
+)
+_BARE_YEAR = re.compile(r"(?:19|20)\d{2}")
+_YEAR = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
+
+# Scale words written after a figure ("25.8 billion", "25.8bn").
+_ENGLISH_SCALE = re.compile(
+    r"(?:trillions?|billions?|bn|millions?|mn|thousands?)(?![A-Za-z])", re.I
+)
+_ENGLISH_EXPONENTS = {"trillion": 12, "billion": 9, "bn": 9, "million": 6, "mn": 6, "thousand": 3}
+# One scale letter glued to a currency figure ("$25.8B"); without the currency sign
+# a glued letter marks an identifier ("3M", "10K").
+_SCALE_LETTER = re.compile(r"[TBMK](?![A-Za-z])")
+_LETTER_EXPONENTS = {"T": 12, "B": 9, "M": 6, "K": 3}
+
+
+_PERCENT = re.compile(r"[ \t]*(?:%|percent\b)", re.IGNORECASE)
+
+
+# Any other three-letter token written right against an amount has the shape of an ISO
+# currency code ("BHD 2024", "25 omr"). Unless it is one of the ordinary words below, it
+# marks the amount's currency unknown, so an unlisted currency is withheld, not dropped.
+_CODE_SHAPED_BEFORE = re.compile(r"(?<![A-Za-z])([A-Za-z]{3})[ \t]*$")
+_CODE_SHAPED_AFTER = re.compile(r"[ \t]*([A-Za-z]{3})(?![A-Za-z])")
+_ORDINARY_SHORT_WORDS = frozenset(
+    {
+        *("the", "and", "for", "was", "are", "has", "had", "its", "our", "per", "net"),
+        *("not", "but", "nor", "yet", "all", "any", "one", "two", "six", "ten", "new"),
+        *("old", "due", "via", "off", "out", "own", "top", "low", "key", "end", "ago"),
+        *("few", "who", "how", "may", "can", "did", "got", "set", "sum", "ytd", "yoy"),
+        *("qoq", "est", "avg", "eps", "his", "her", "now", "use", "see"),
+        *("jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+    }
+)
+
+
+# The only digit-bearing words left out as identifiers besides _NOT_FIGURES: one or two
+# digits glued to one capital ("3M", "10K", "5G") and ordinals ("3rd").
+_IDENTIFIER = re.compile(r"\d{1,2}[A-Z]|\d+(?:st|nd|rd|th)")
+_LETTERS_BEFORE = re.compile(r"[A-Za-z]+$")
+_LETTERS_AFTER = re.compile(r"[A-Za-z]+")
+_CURRENCY_CODE = re.compile(
+    r"USD|US|KRW|EUR|JPY|GBP|CNY|CAD|AUD|HKD|TWD|SGD|CHF|RMB", re.IGNORECASE
+)
+# Korean scales compose: a 십/백/천 prefix multiplies a 만/억/조 base ("천억" = 10^3 x 10^8).
+# A bare 천 ("천원", "천US$") is a thousand.
+_KOREAN_SCALE = re.compile(r"([십백천]?)([만억조])|천")
+_KOREAN_PREFIX = {"": 1, "십": 10, "백": 100, "천": 1000}
+_KOREAN_BASE = {"만": Decimal(10) ** 4, "억": Decimal(10) ** 8, "조": Decimal(10) ** 12}
+
+
+@dataclass(frozen=True, slots=True)
+class _Figure:
+    """One figure occurrence with its position and the unit written with it.
+
+    ``value`` is None when a unit glued to the figure cannot be read, so the figure
+    is kept (and fails) instead of silently dropping out of the check. ``unit_end``
+    is where the figure's unit, currency and percent sign end, and ``unit_start`` where
+    a currency written before it begins. ``currency`` holds the currency markers
+    written with the figure ("$", "USD", "원"); with no scale word they state plain
+    currency units ("$1.00", "300원").
+    """
+
+    text: str
+    start: int
+    end: int
+    unit_end: int
+    value: Decimal | None
+    decimals: int
+    scale: Decimal | None
+    percent: bool
+    currency: frozenset[str] = frozenset()
+    unit_start: int = -1
+
+    @property
+    def stated_scale(self) -> Decimal | None:
+        """Return the unit the figure states: its scale, plain currency, or None."""
+        if self.scale is not None:
+            return self.scale
+        return Decimal(1) if self.currency else None
+
+    @property
+    def stated_currency(self) -> str | None:
+        """Return the currency the figure's own markers resolve to (see ``_resolve``)."""
+        return _resolve(self.currency)
+
+
+def _value(text: str) -> Decimal | None:
+    """Return the magnitude a figure denotes, ignoring sign, currency and separators.
+
+    Filings write losses as ``(1,234)`` or ``△1,234`` while answers write "a loss of
+    1,234", so the comparison is between magnitudes.
+    """
+    digits = re.sub(r"[^\d.]", "", text)
+    try:
+        return abs(Decimal(digits)) if digits else None
+    except InvalidOperation:
+        return None
+
+
+def _blank(text: str) -> str:
+    """Blank identifiers and dates out of a text while keeping every position."""
+    return _NOT_FIGURES.sub(lambda match: " " * len(match.group(0)), text)
+
+
+def _markers_before(text: str, start: int) -> tuple[set[str], int]:
+    """Read the whole run of currency markers written right before a figure.
+
+    Returns the markers and where the run begins. A supported "$" form with a letter
+    glued in front ("NZ$", "ZZ$") and any unsupported sign or code is ``_UNKNOWN``.
+    """
+    markers: set[str] = set()
+    position = start
+    while True:
+        if known := _CURRENCY_BEFORE.search(text, 0, position):
+            written = known.group(0).strip()
+            qualified = known.start() > 0 and text[known.start() - 1].isalpha()
+            currency = _currency_of(written)
+            markers.add(
+                _UNKNOWN if currency is None or ("$" in written and qualified) else currency
+            )
+            position = known.start()
+        elif unknown := _UNKNOWN_BEFORE.search(text, 0, position):
+            markers.add(_UNKNOWN)
+            position = unknown.start()
+        elif (shaped := _CODE_SHAPED_BEFORE.search(text, 0, position)) and _code_shaped(
+            shaped.group(1)
+        ):
+            markers.add(_UNKNOWN)
+            position = shaped.start()
+        else:
+            return markers, position
+
+
+def _markers_after(text: str, end: int) -> tuple[set[str], int]:
+    """Read the whole run of currency markers written right after a figure and its unit."""
+    markers: set[str] = set()
+    position = end
+    while True:
+        if known := _CURRENCY_AFTER.match(text, position):
+            markers.add(_currency_of(known.group(0)) or _UNKNOWN)
+            position = known.end()
+        elif unknown := _UNKNOWN_AFTER.match(text, position):
+            markers.add(_UNKNOWN)
+            position = unknown.end()
+        elif (shaped := _CODE_SHAPED_AFTER.match(text, position)) and _code_shaped(shaped.group(1)):
+            markers.add(_UNKNOWN)
+            position = shaped.end()
+        else:
+            return markers, position
+
+
+def _code_shaped(word: str) -> bool:
+    """Whether a three-letter word beside an amount may be a currency code.
+
+    Ordinary words that stand beside figures (fillers, connectives, change words, item
+    words, scale words, month abbreviations and a few other short words) are not; any
+    other three-letter word is treated as an unsupported currency, never ignored.
+    """
+    key = word.casefold()
+    ordinary = _FILLERS | _CONNECTIVES | _CHANGES | _ORDINARY_SHORT_WORDS | _ITEM_WORDS
+    return key not in ordinary and _currency_of(word) is None
+
+
+def _korean_factor(match: re.Match[str]) -> Decimal:
+    """Return the factor of one Korean scale match ("백만" = 10^6, bare "천" = 10^3)."""
+    prefix, base = match.groups()
+    if base is None:
+        return Decimal(1000)
+    return _KOREAN_PREFIX[prefix or ""] * _KOREAN_BASE[base]
+
+
+def _english_factor(word: str) -> Decimal:
+    """Return the factor of one English scale word."""
+    return Decimal(10) ** _ENGLISH_EXPONENTS[word.casefold().removesuffix("s")]
+
+
+def _unit_after(
+    text: str, start: int, end: int, currency: bool
+) -> tuple[Decimal | None, bool, int]:
+    """Return the scale written right after a figure, whether it is readable, and its end.
+
+    A glued scale word ("25.8bn") or, after a currency sign, one glued scale letter
+    ("$25.8B") is read; any other glued ASCII letter is unreadable. Otherwise the scale
+    is the English or Korean scale word starting right after the figure, if any.
+    """
+    if end < len(text) and text[end].isascii() and text[end].isalpha():
+        if word := _ENGLISH_SCALE.match(text, end):
+            return _english_factor(word.group(0)), True, word.end()
+        if currency and (letter := _SCALE_LETTER.match(text, end)):
+            return Decimal(10) ** _LETTER_EXPONENTS[letter.group(0)], True, letter.end()
+        code = _CURRENCY_AFTER.match(text, end)
+        if code is not None and _currency_of(code.group(0)) in _CODES:
+            # A glued ISO code ("25,785USD") is a currency, read after the figure.
+            return None, True, end
+        return None, False, end
+    gap = end + len(text[end:]) - len(text[end:].lstrip(" \t"))
+    if word := _ENGLISH_SCALE.match(text, gap):
+        return _english_factor(word.group(0)), True, word.end()
+    if korean := _KOREAN_SCALE.match(text, gap):
+        return _korean_factor(korean), True, korean.end()
+    return None, True, end
+
+
+def _figure_spans(blanked: str) -> list[_Figure]:
+    """Return each figure of an identifier-free text with its own position and unit.
+
+    Only the explicitly recognized identifier shapes are left out: the blanked FY/Q/H,
+    date and Item references, one or two digits glued to one capital ("3M", "10K",
+    "5G") and ordinals ("3rd"). Any other digits touching letters stay a figure: a
+    currency code prefix ("USD") is read as currency, while other glued letters
+    ("99999xyz", "25785M", "v2") make the figure unreadable, so it fails instead of
+    dropping out. A bare four-digit year is a date unless a currency, a scale, a percent
+    sign or unreadable letters make it an amount ("$2024mn", "USD 2024", "2024원",
+    "₹2024"): currency markers, supported or not, are read before that decision.
+
+    Every currency marker written with a figure, the whole run before it and after it,
+    is kept, so disagreeing markers ("USD EUR 25") resolve as a conflict. A marker run
+    that touches two figures could belong to either, so both are marked unknown.
+    """
+    found: list[_Figure] = []
+    for match in _NUMBER.finditer(blanked):
+        token = match.group(0)
+        start, end = match.span()
+        prefix = _LETTERS_BEFORE.search(blanked, 0, start)
+        suffix = _LETTERS_AFTER.match(blanked, end)
+        before = blanked[:start].rstrip()
+        code = prefix is not None and _CURRENCY_CODE.fullmatch(prefix.group(0)) is not None
+        markers, unit_start = _markers_before(blanked, start)
+        currency = code or bool(markers) or (bool(before) and before[-1] in _CURRENCY)
+        glued = token + (suffix.group(0) if suffix else "")
+        if prefix is None and not currency and _IDENTIFIER.fullmatch(glued):
+            continue
+        scale, readable, unit_end = _unit_after(blanked, start, end, currency)
+        readable = readable and (prefix is None or code)
+        sign = _PERCENT.match(blanked, unit_end) if readable else None
+        percent = sign is not None
+        if sign is not None:
+            unit_end = sign.end()
+        after, unit_end = _markers_after(blanked, unit_end)
+        markers |= after
+        amount = currency or bool(markers) or scale is not None or percent or not readable
+        if _BARE_YEAR.fullmatch(token.strip("()△▲-")) and not amount:
+            continue
+        digits = token.rstrip(")")
+        decimals = len(digits.split(".")[1]) if "." in digits else 0
+        value = _value(token) if readable else None
+        if found and found[-1].unit_end > unit_start:
+            # One marker run between two figures: neither can claim it alone.
+            markers.add(_UNKNOWN)
+            found[-1] = replace(found[-1], currency=found[-1].currency | {_UNKNOWN})
+        found.append(
+            _Figure(
+                token,
+                start,
+                end,
+                unit_end,
+                value,
+                decimals,
+                scale,
+                percent,
+                frozenset(markers),
+                unit_start,
+            )
+        )
+    return found
+
+
+def figures(text: str) -> tuple[str, ...]:
+    """Return the figures a text states, without identifiers, dates or bare years."""
+    return tuple(figure.text for figure in _figure_spans(_blank(text)))
+
+
+def _values(text: str) -> set[Decimal]:
+    """Return the magnitudes of every readable figure a text states."""
+    return {figure.value for figure in _figure_spans(_blank(text)) if figure.value is not None}
+
+
+def _signed(figure: _Figure) -> Decimal | None:
+    """Return a figure's value with the sign its notation writes; None for ``▲``.
+
+    ``(1,234)``, ``△1,234`` and ``-1,234`` are losses. ``▲`` marks a loss in some
+    Korean filings and an increase in others, so its sign is not guessed.
+    """
+    if figure.value is None or figure.text.startswith("▲"):
+        return None
+    negative = figure.text.startswith(("(", "△", "-"))
+    return -figure.value if negative else figure.value

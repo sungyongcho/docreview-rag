@@ -7,8 +7,8 @@ import json
 import pytest
 from sqlalchemy import delete, select
 
-from app.contracts.figures import read_table_cells
 from app.db.models import Chunk, ChunkTableCell
+from app.figures.tables import read_table_cells
 from app.ingestion.persistence import persist_seed_batch
 from app.retrieval.tables import load_cell_catalog, load_chunk_tables, load_table_readings
 from tests.ingestion.seed.support import table_batch, tagged_table_batch

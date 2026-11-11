@@ -7,7 +7,8 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel
 
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.figures import EvidenceText, TableCellReading, check_figures
+from app.figures.answers import EvidenceText, check_figures
+from app.figures.tables import TableCellReading
 from app.llm.schemas import (
     AnswerDecision,
     BudgetExceeded,

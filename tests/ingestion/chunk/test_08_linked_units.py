@@ -4,7 +4,8 @@ from dataclasses import asdict
 
 import pytest
 
-from app.contracts.figures import EvidenceText, check_figures, read_table_cells
+from app.figures.answers import EvidenceText, check_figures
+from app.figures.tables import read_table_cells
 from app.ingestion.chunking import Chunk, chunk_filing
 from app.ingestion.parsing.models import Block
 from tests.ingestion.chunk.support import build_filing

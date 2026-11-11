@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import pytest
 
-from app.contracts.figures import read_table_cells
+from app.figures.tables import read_table_cells
 from app.observability.persistence import report_to_records
 from app.observability.stages import record_stages, stage_metadata
 from app.observability.types import Budget, RunReport

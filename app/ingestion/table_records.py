@@ -14,7 +14,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from app.contracts.figures import (
+from app.figures.tables import (
     CellFact,
     CellInterpretation,
     TableCellReading,
@@ -41,7 +41,10 @@ def builder_identity() -> str:
 @lru_cache(maxsize=1)
 def resolver_identity() -> str:
     """Fingerprint the code that reads units, currencies, years and items from a table."""
-    return hashlib.sha256((_APP / "contracts" / "figures.py").read_bytes()).hexdigest()
+    names = ("currency.py", "vocabulary.py", "text.py", "tables.py")
+    return hashlib.sha256(
+        b"".join((_APP / "figures" / name).read_bytes() for name in names)
+    ).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

@@ -43,8 +43,9 @@ from app.agent.tools.filings import build_default_registry
 from app.agent.tools.registry import ToolRegistry
 from app.agent.types import AgentReportAnswer, AgentResult, ToolCall
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.figures import EvidenceText, read_table_cells
 from app.db.session_factory import SessionFactory
+from app.figures.answers import EvidenceText
+from app.figures.tables import read_table_cells
 from app.mcp.client import mcp_tool_registry
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
 from tests.mcp.controlled_filings import PRIVATE_DETAIL, fixture_hit

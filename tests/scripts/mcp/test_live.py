@@ -24,8 +24,9 @@ import pytest
 from app.agent.review_middleware import ReviewContext
 from app.agent.tools.filings import build_default_registry
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.figures import EvidenceText, read_table_cells
 from app.db.session_factory import SessionFactory
+from app.figures.answers import EvidenceText
+from app.figures.tables import read_table_cells
 from scripts.mcp import live
 from scripts.mcp.live import (
     COUNTED_FIELDS,

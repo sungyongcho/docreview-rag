@@ -7,7 +7,7 @@ import time
 
 from pydantic import BaseModel, JsonValue
 
-from app.contracts.figures import TableCellReading
+from app.figures.tables import TableCellReading
 from app.llm.completion import BilledAttemptAllowanceError, LLMProvider
 from app.llm.schemas import (
     AnswerDecision,

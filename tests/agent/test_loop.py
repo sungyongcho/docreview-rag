@@ -592,7 +592,8 @@ def _table_reader(as_filed=False):
 
     By default its note names U.S. dollars; ``as_filed`` keeps AMD's "$"-only table.
     """
-    from app.contracts.figures import EvidenceText, read_table_cells
+    from app.figures.answers import EvidenceText
+    from app.figures.tables import read_table_cells
     from tests.workflow.support import INCOME_TABLE, USD_INCOME_TABLE, income_table_hit
 
     table, fragment = income_table_hit(html=INCOME_TABLE if as_filed else USD_INCOME_TABLE)
@@ -679,7 +680,8 @@ def test_a_figure_without_its_item_value_is_returned_for_revision(answer_text, n
 
 def _unitless_reader(caption=None):
     """Read chunk 7 as a 2024 revenue table whose unit comes only from ``caption``."""
-    from app.contracts.figures import EvidenceText, read_table_cells
+    from app.figures.answers import EvidenceText
+    from app.figures.tables import read_table_cells
 
     captions = [{"start_char": 0, "end_char": len(caption), "text": caption}] if caption else []
     fragment = {

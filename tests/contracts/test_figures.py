@@ -5,17 +5,16 @@ from decimal import Decimal
 
 import pytest
 
-from app.contracts.figures import (
+from app.figures.answers import EvidenceText, check_figures
+from app.figures.tables import (
     CellFact,
-    EvidenceText,
     TableCellReading,
     TableStatement,
-    check_figures,
-    figures,
     interpret_table_cell,
     read_table_cells,
     read_table_unit,
 )
+from app.figures.text import figures
 from app.ingestion.chunking import Chunk, chunk_filing
 from app.ingestion.parsing.models import Block
 from tests.ingestion.chunk.support import build_filing

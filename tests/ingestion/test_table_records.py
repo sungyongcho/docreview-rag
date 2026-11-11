@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from app.contracts.figures import read_table_cells
+from app.figures.tables import read_table_cells
 from app.ingestion.chunking import CellFragment, TableFragment, chunk_filing
 from app.ingestion.parsing.facts import FilingFacts, PeriodTerm, StatementDeclaration
 from app.ingestion.parsing.models import Block

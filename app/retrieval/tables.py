@@ -11,7 +11,6 @@ from decimal import Decimal
 from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts.figures import TableCellReading
 from app.db.models import (
     Base,
     Chunk,
@@ -29,6 +28,7 @@ from app.db.models import (
     TableCellSource,
     TableSourceCell,
 )
+from app.figures.tables import TableCellReading
 
 type _GridCell = TableSourceCell | SnapshotTableSourceCell
 
