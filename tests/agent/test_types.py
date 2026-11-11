@@ -2,7 +2,7 @@
 
 import json
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 import pytest
 
 from app.agent.types import (
@@ -10,11 +10,13 @@ from app.agent.types import (
     AgentBudget,
     AgentResult,
     AgentStep,
+    CellRef,
     Observation,
     StepUsage,
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
+from app.retrieval.tables import cell_ref, cell_ref_chunk
 
 
 def usage(**changes):
@@ -152,3 +154,10 @@ def test_budget_rejects_unbounded_iterations():
         AgentBudget(max_iterations=0)
     with pytest.raises(ValidationError):
         AgentBudget(max_iterations=1_000)
+
+
+def test_a_selection_accepts_the_refs_the_catalog_builds():
+    """Accept the ref the stored-cell catalog builds and read its chunk back."""
+    ref = cell_ref(1, 0, 0)
+    assert TypeAdapter(CellRef).validate_python(ref) == ref
+    assert cell_ref_chunk(cell_ref(42, 3, 1)) == 42

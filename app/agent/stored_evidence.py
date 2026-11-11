@@ -11,7 +11,12 @@ from app.agent.cell_answers import StoredCell
 from app.db.models import Chunk, ChunkTableCell, TableCell
 from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
-from app.retrieval.tables import load_cell_catalog, load_table_readings
+from app.retrieval.tables import (
+    cell_ref,
+    cell_ref_chunk,
+    load_cell_catalog,
+    load_table_readings,
+)
 
 
 async def read_cited_evidence(
@@ -39,7 +44,7 @@ async def read_selected_cells(
     A ref whose chunk no longer stores that cell is left out, so the gate treats it as a
     changed source instead of answering from it.
     """
-    chunk_ids = sorted({int(ref.split(":", 1)[0]) for ref in refs})
+    chunk_ids = sorted({cell_ref_chunk(ref) for ref in refs})
     result: dict[str, StoredCell] = {}
     async with session_factory() as session:
         for chunk_id in chunk_ids:
@@ -47,7 +52,7 @@ async def read_selected_cells(
             if catalog["status"] != "available":
                 continue
             values = {
-                f"{chunk_id}:r{row}c{column}": value
+                cell_ref(chunk_id, row, column): value
                 for row, column, value in await session.execute(
                     select(ChunkTableCell.source_row, ChunkTableCell.column_index, TableCell.value)
                     .join(

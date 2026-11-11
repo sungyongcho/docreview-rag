@@ -15,7 +15,6 @@ though nothing were found.
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-import hashlib
 import json
 from typing import Annotated, Any, Literal, NotRequired
 
@@ -37,7 +36,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import INTERNAL_ERROR
 from pydantic import BaseModel, ValidationError
 
-from app.agent.cell_answers import StoredCell, review_cell_selection
+from app.agent.cell_answers import StoredCell, cell_digest, review_cell_selection
 from app.agent.final_answer import (
     FINAL_NOT_ALONE,
     EvidenceReader,
@@ -49,7 +48,6 @@ from app.agent.final_answer import (
 from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import FINAL_ANSWER_NAME, Tool, ToolRegistry, safe_runtime_error
 from app.agent.types import AgentReportAnswer, CellSelectionAnswer, ToolCall
-from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
 from app.llm.decoding import validation_errors
 
@@ -193,7 +191,7 @@ def cell_record(cell: dict[str, Any], catalog: dict[str, Any], chunk_id: int) ->
         "chunk_id": chunk_id,
         "stable_key": catalog["stable_key"],
         "resolver_identity": catalog["resolver_identity"],
-        "digest": hashlib.sha256(canonical_json(cell).encode()).hexdigest(),
+        "digest": cell_digest(cell),
     }
 
 

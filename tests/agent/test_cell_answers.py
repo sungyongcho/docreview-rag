@@ -9,6 +9,7 @@ import pytest
 
 from app.agent.cell_answers import StaleCellError, StoredCell, cell_digest, review_cell_selection
 from app.agent.types import CellSelectionAnswer
+from app.retrieval.tables import cell_ref_chunk
 
 SOURCE = "a" * 64
 STABLE = "k" * 64
@@ -43,7 +44,7 @@ def stored(ref: str = "2024:r1c1", value: str = "25785", **cell: Any) -> StoredC
         "complete": True,
         **cell,
     }
-    return StoredCell(ref, int(ref.split(":")[0]), record, STABLE, RESOLVER, Decimal(value))
+    return StoredCell(ref, cell_ref_chunk(ref), record, STABLE, RESOLVER, Decimal(value))
 
 
 def ledger_of(*cells: StoredCell) -> dict[str, dict[str, Any]]:

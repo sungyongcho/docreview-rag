@@ -45,6 +45,16 @@ class StoredTable:
     readings: tuple[TableCellReading, ...]
 
 
+def cell_ref(chunk_id: int, row: int, column: int) -> str:
+    """Name one cell of a stored table chunk as a selection names it ("7:r3c1")."""
+    return f"{chunk_id}:r{row}c{column}"
+
+
+def cell_ref_chunk(ref: str) -> int:
+    """Return the chunk id a cell ref names."""
+    return int(ref.split(":", 1)[0])
+
+
 def _source_json(cell: _GridCell) -> dict[str, object]:
     """Render one stored grid cell as the ``SourceCell`` JSON a fragment holds."""
     return {
@@ -267,7 +277,7 @@ async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, o
         reading = None if source is None else _reading(source)
         cells.append(
             {
-                "ref": f"{chunk_id}:r{member.source_row}c{member.column_index}",
+                "ref": cell_ref(chunk_id, member.source_row, member.column_index),
                 "row_label": None if reading is None else reading.row_label,
                 "column_header": cell.column_header,
                 "raw_text": cell.text,
