@@ -4,8 +4,4 @@
 
 [2026-09-08] [web/components/service-shell.tsx] [type: bug] At 390px viewport width, the shared topbar breadcrumb overlaps the locale controls on /docreview-rag/production-preview/?locale=ko&theme=light&view=measure&tab=presets. Observed during isolated preset browser QA; the preset list and editor controls fit within the viewport.
 
-[2026-09-08] [web/app/docs/[locale]/[slug]/page.tsx] [type: question] Isolated production builds compile and type-check but fail during static export with Next.js `Expected workStore to be initialized`, on /docs/en/indexing with Turbopack and /docs/en/documents with webpack. Diagnose the export environment before claiming a production build passes.
-
 [2026-09-09] [app/ingestion/source_publication.py:35] [type: bug] fixed_path now expects `<registry>/<issuer>/<filing_id>/<name>`, so a corpus acquired on the previous main layout (`sec/<filing_id>/primary.html`) fails resolve_primary with a plain ValueError: not ready, not redownloadable, not deletable until start-fresh. Accept the legacy path or migrate registered artifacts on upgrade. Observed in PR #206 review; no local corpus uses the old layout.
-
-[2026-09-11] [web/app/docs/[locale]/[slug]/page.tsx] [type: question] Resolved: `npm run build` completes the static export (43 pages) after the tutorial-markdown math declaration was added to the type surface.
