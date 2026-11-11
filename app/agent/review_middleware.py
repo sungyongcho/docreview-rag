@@ -84,7 +84,7 @@ class ReviewContext:
     requested_items : frozenset[str]
         Financial items the question names, read by the application from its text.
     locale : Literal["en", "ko"]
-        Language the application writes a cell-selected answer in.
+        Language the application writes its reports in, in either answer mode.
     cell_reader : CellReader | None
         App-internal reader of the selected cells as stored now; required in cell mode.
     """
@@ -496,7 +496,9 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
             except Exception as error:
                 failure = safe_runtime_error(error, "cited evidence read")
                 raise CitedEvidenceReadError(message, call, failure) from error
-            judged = judge_written_answer(answer, texts, context.requested_fiscal_years)
+            judged = judge_written_answer(
+                answer, texts, context.requested_fiscal_years, locale=context.locale
+            )
             if judged.report is None:
                 answer, problem = None, judged.problem
             else:

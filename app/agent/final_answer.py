@@ -9,7 +9,7 @@ to the model with the problem it can act on.
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 import functools
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -25,7 +25,9 @@ from app.contracts.evidence import EvidenceCitation
 from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text
 from app.figures.answers import (
     UNIT_UNVERIFIED_ANSWER,
+    UNIT_UNVERIFIED_ANSWER_KO,
     UNIT_UNVERIFIED_RATIONALE,
+    UNIT_UNVERIFIED_RATIONALE_KO,
     EvidenceText,
     FiguresResult,
     check_figures,
@@ -122,7 +124,11 @@ def figures_problem(figures: FiguresResult, requested: Sequence[int]) -> str:
 
 
 def period_mismatch_report(
-    answer: AgentAnswer, figures: FiguresResult, requested: Sequence[int]
+    answer: AgentAnswer,
+    figures: FiguresResult,
+    requested: Sequence[int],
+    *,
+    locale: Literal["en", "ko"] = "en",
 ) -> tuple[AgentReportAnswer, AgentPeriodMismatch]:
     """Report the cited figures' own period instead of the answer that misdated them."""
     mismatched = [c for c in figures.checks if c.verdict == "period_mismatch"]
@@ -136,16 +142,19 @@ def period_mismatch_report(
     report = AgentReportAnswer(
         label="PERIOD_MISMATCH",
         answer=period_mismatch_text(
-            mismatch.requested_fiscal_years, mismatch.evidenced_fiscal_years, mismatch.figures
+            mismatch.requested_fiscal_years,
+            mismatch.evidenced_fiscal_years,
+            mismatch.figures,
+            locale=locale,
         ),
         citations=answer.citations,
-        rationale=period_mismatch_rationale(),
+        rationale=period_mismatch_rationale(locale=locale),
     )
     return report, mismatch
 
 
 def unit_unverified_report(
-    answer: AgentAnswer, figures: FiguresResult
+    answer: AgentAnswer, figures: FiguresResult, *, locale: Literal["en", "ko"] = "en"
 ) -> tuple[AgentReportAnswer, AgentUnitUnverified]:
     """Withhold figures whose evidence unit or direction is uncertain, keeping the citations.
 
@@ -157,9 +166,9 @@ def unit_unverified_report(
     )
     report = AgentReportAnswer(
         label="UNVERIFIED",
-        answer=UNIT_UNVERIFIED_ANSWER,
+        answer=UNIT_UNVERIFIED_ANSWER_KO if locale == "ko" else UNIT_UNVERIFIED_ANSWER,
         citations=answer.citations,
-        rationale=UNIT_UNVERIFIED_RATIONALE,
+        rationale=UNIT_UNVERIFIED_RATIONALE_KO if locale == "ko" else UNIT_UNVERIFIED_RATIONALE,
     )
     return report, held
 
@@ -188,6 +197,8 @@ def judge_written_answer(
     answer: AgentAnswer,
     texts: Mapping[int, EvidenceText],
     requested_fiscal_years: Sequence[int],
+    *,
+    locale: Literal["en", "ko"] = "en",
 ) -> WrittenAnswerJudgement:
     """Check a ``SUPPORTED`` answer's figures against its cited evidence and judge it.
 
@@ -200,6 +211,9 @@ def judge_written_answer(
         check nothing to confirm.
     requested_fiscal_years : Sequence[int]
         Fiscal years the question asks about.
+
+    locale : Literal["en", "ko"]
+        Resolved application language; no language is inferred from the answer.
 
     Returns
     -------
@@ -216,9 +230,11 @@ def judge_written_answer(
     if figures.verdict == "unverified":
         return WrittenAnswerJudgement(None, figures_problem(figures, requested_fiscal_years))
     if figures.verdict == "unit_unverified":
-        report, held = unit_unverified_report(answer, figures)
+        report, held = unit_unverified_report(answer, figures, locale=locale)
         return WrittenAnswerJudgement(report, unit_unverified=held)
     if figures.verdict == "period_mismatch":
-        report, mismatch = period_mismatch_report(answer, figures, requested_fiscal_years)
+        report, mismatch = period_mismatch_report(
+            answer, figures, requested_fiscal_years, locale=locale
+        )
         return WrittenAnswerJudgement(report, period_mismatch=mismatch)
     return WrittenAnswerJudgement(as_report(answer))

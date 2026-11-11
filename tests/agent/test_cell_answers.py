@@ -16,6 +16,7 @@ from app.agent.cell_answers import (
     review_cell_selection,
 )
 from app.agent.types import CellSelectionAnswer
+from app.figures.answers import UNIT_UNVERIFIED_ANSWER_KO, UNIT_UNVERIFIED_RATIONALE_KO
 from app.figures.vocabulary import PHRASE_ITEMS, items_named
 from app.retrieval.tables import cell_ref_chunk
 
@@ -202,10 +203,8 @@ def test_every_korean_report_has_a_korean_rationale():
         locale="ko",
     )
     absent = review(proposal(label="NOT_IN_DOCS", reason="not_found", selections=[]), locale="ko")
-    assert unit.report is not None and unit.report.answer == unit.report.rationale == (
-        "인용한 표에 이 항목이 있지만 해당 칸의 단위나 통화를 확정하지 못해 "
-        "수치를 보고하지 않습니다."
-    )
+    assert unit.report is not None and unit.report.answer == UNIT_UNVERIFIED_ANSWER_KO
+    assert unit.report.rationale == UNIT_UNVERIFIED_RATIONALE_KO
     assert unresolved.report is not None
     assert (
         unresolved.report.answer

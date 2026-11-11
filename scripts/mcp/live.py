@@ -1081,6 +1081,7 @@ async def run_agent_over_mcp(
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.mcp.client import mcp_tool_registry
+    from app.query.language import detect_query_language
     from app.query.periods import question_fiscal_years, utc_today
 
     model_budget = Reservation(
@@ -1127,6 +1128,7 @@ async def run_agent_over_mcp(
                 ),
                 requested_fiscal_years=question_fiscal_years(args.question, utc_today()),
                 evidence_reader=partial(read_cited_evidence, sessions),
+                locale=detect_query_language(args.question),
             )
     finally:
         await engine.dispose()
@@ -1432,7 +1434,7 @@ def parser() -> argparse.ArgumentParser:
     create_only.add_argument(
         "--locale",
         choices=("en", "ko"),
-        help="language the application writes the cell-selected answer in (default en)",
+        help="language the application writes its reports in (default en)",
     )
     create_only.add_argument(
         "--reasoning-effort",

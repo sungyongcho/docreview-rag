@@ -25,6 +25,12 @@ from app.agent.types import (
 from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text
+from app.figures.answers import (
+    UNIT_UNVERIFIED_ANSWER,
+    UNIT_UNVERIFIED_ANSWER_KO,
+    UNIT_UNVERIFIED_RATIONALE,
+    UNIT_UNVERIFIED_RATIONALE_KO,
+)
 
 type Locale = Literal["en", "ko"]
 
@@ -74,16 +80,6 @@ QUESTION_ITEM_UNREAD = {
     ),
     "ko": (
         "질문이 묻는 항목을 애플리케이션이 읽지 못해 선택된 표의 칸을 질문과 맞출 수 없으므로 "
-        "수치를 보고하지 않습니다."
-    ),
-}
-UNIT_HELD = {
-    "en": (
-        "The cited table names this item, but the unit or currency of its cell could not "
-        "be confirmed, so no figure is reported."
-    ),
-    "ko": (
-        "인용한 표에 이 항목이 있지만 해당 칸의 단위나 통화를 확정하지 못해 "
         "수치를 보고하지 않습니다."
     ),
 }
@@ -391,9 +387,11 @@ def review_cell_selection(
         return CellVerdict(
             AgentReportAnswer(
                 label="UNVERIFIED",
-                answer=UNIT_HELD[locale],
+                answer=UNIT_UNVERIFIED_ANSWER_KO if locale == "ko" else UNIT_UNVERIFIED_ANSWER,
                 citations=_citations(chunk_ids, evidence),
-                rationale=UNIT_HELD[locale],
+                rationale=UNIT_UNVERIFIED_RATIONALE_KO
+                if locale == "ko"
+                else UNIT_UNVERIFIED_RATIONALE,
             ),
             unit_unverified=AgentUnitUnverified(
                 figures=tuple(cell.cell["raw_text"] for cell in held)

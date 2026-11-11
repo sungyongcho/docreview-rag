@@ -844,7 +844,7 @@ def test_a_tool_result_without_structured_content_still_reports_the_question(tmp
 
     outcome = ask_with_search(tmp_path, search_filings)
     assert (outcome["status"], outcome["answer"]) == ("tool_error", None)
-    assert outcome["failure"] == "ValueError: agent run failed"
+    assert outcome["failure"] == "ValueError: tool search_filings evidence extraction failed"
     assert outcome["budget"]["reserved_usd"] == str(LUNA.reservation(1000))
 
 
