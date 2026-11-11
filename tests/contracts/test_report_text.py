@@ -36,10 +36,10 @@ def test_locale_is_a_required_keyword(producer):
 def test_sentences_name_only_the_actual_cause_and_never_report_the_figure(locale):
     """Single and mixed causes stay distinct in both the answer and the rationale."""
     names = (
-        {"scale": "측정 척도", "currency": "통화", "direction": "손익 방향"}
+        {"scale": "단위", "currency": "통화", "direction": "손익 방향"}
         if locale == "ko"
         else {
-            "scale": "measurement scale",
+            "scale": "unit",
             "currency": "currency",
             "direction": "gain/loss direction",
         }

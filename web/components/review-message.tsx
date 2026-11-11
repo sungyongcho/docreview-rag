@@ -29,13 +29,13 @@ interface ReviewMessageProps {
 /** Display only causes established by the server; generic saved notices stay generic. */
 function withholdingLabel(causes: ChatMessage["withholdingCauses"]): string {
   const labels: Record<string, string> = {
-    scale: "Scale not confirmed",
+    scale: "Unit not confirmed",
     currency: "Currency not confirmed",
     direction: "Gain/loss direction not confirmed",
-    "scale,currency": "Scale and currency not confirmed",
-    "scale,direction": "Scale and gain/loss direction not confirmed",
+    "scale,currency": "Unit and currency not confirmed",
+    "scale,direction": "Unit and gain/loss direction not confirmed",
     "currency,direction": "Currency and gain/loss direction not confirmed",
-    "scale,currency,direction": "Scale, currency and gain/loss direction not confirmed",
+    "scale,currency,direction": "Unit, currency and gain/loss direction not confirmed",
   };
   return labels[causes?.join(",") ?? ""] ?? "Figures withheld";
 }

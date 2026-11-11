@@ -54,13 +54,13 @@ describe("terminal review message", () => {
   });
 
   it.each([
-    [["scale"], "Scale not confirmed", "측정 척도 미확인"],
+    [["scale"], "Unit not confirmed", "단위 미확인"],
     [["currency"], "Currency not confirmed", "통화 미확인"],
     [["direction"], "Gain/loss direction not confirmed", "손익 방향 미확인"],
-    [["scale", "currency"], "Scale and currency not confirmed", "측정 척도·통화 미확인"],
-    [["scale", "direction"], "Scale and gain/loss direction not confirmed", "측정 척도·손익 방향 미확인"],
+    [["scale", "currency"], "Unit and currency not confirmed", "단위·통화 미확인"],
+    [["scale", "direction"], "Unit and gain/loss direction not confirmed", "단위·손익 방향 미확인"],
     [["currency", "direction"], "Currency and gain/loss direction not confirmed", "통화·손익 방향 미확인"],
-    [["scale", "currency", "direction"], "Scale, currency and gain/loss direction not confirmed", "측정 척도·통화·손익 방향 미확인"],
+    [["scale", "currency", "direction"], "Unit, currency and gain/loss direction not confirmed", "단위·통화·손익 방향 미확인"],
   ])("keeps typed causes %j and localizes only their notice", (causes, english, korean) => {
     const message = terminalMessage(run({
       label: "UNVERIFIED", answer: "Server notice", citations: [citation], rationale: "Checked",

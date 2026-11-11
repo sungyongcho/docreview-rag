@@ -61,15 +61,18 @@ def withheld_text(
     if not ordered:
         raise ValueError("a withholding report requires a cause")
     if locale == "ko":
-        names = {"scale": "측정 척도", "currency": "통화", "direction": "손익 방향"}
+        names = {"scale": "단위", "currency": "통화", "direction": "손익 방향"}
         detail = "·".join(names[cause] for cause in ordered)
+        # The object particle follows the last listed noun.
+        particle = "을" if ordered[-1] == "direction" else "를"
         return (
-            f"인용 근거에 해당 항목은 있지만 수치의 {detail}을(를) 확인할 수 없어 "
+            f"인용 근거에 해당 항목은 있지만 수치의 {detail}{particle} 확인할 수 없어 "
             "수치를 보고하지 않습니다.",
-            f"검사에서 인용 근거로 수치를 보고하는 데 필요한 {detail}을(를) 확정하지 못했습니다.",
+            f"검사에서 인용 근거로 수치를 보고하는 데 필요한 {detail}{particle} "
+            "확정하지 못했습니다.",
         )
     names = {
-        "scale": "measurement scale",
+        "scale": "unit",
         "currency": "currency",
         "direction": "gain/loss direction",
     }
