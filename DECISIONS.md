@@ -139,3 +139,17 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: scripts/mcp/live.py refuses MODE=prod at both entry points, counts model and embedding usage observed above its reservation against the cap and refuses the next send that no longer fits, ends a search over the embedding cap as a system failure instead of a model-facing tool error, reports why a question ended without an answer, checks the key and the issuer's names before the attempt is claimed, and leaves a result file for every way a claimed run can end.
+
+### D-18 — An untagged column and a question's item are established only when every word is understood
+- status: active
+- category: interface
+- date: 2026-11-11
+- source: 2026-11-11 audit session on mcp-and-langgraph (third study preflight rehearsal on 56bfd8b8 found the earlier rules were lists of forbidden shapes that further shapes walked past; recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- decision: The table reader establishes an untagged column as a fiscal year's reported whole-entity amount only when its header, after the year or year-end date, the unit declaration and a closed vocabulary of full-fiscal-year words are taken out, leaves nothing: a remaining period word leaves the year not established (period_unknown) and any other remaining word leaves the scope not established (scope_unknown); a question's item is named only when every other word of its sentence is a filler, connective, question word, fiscal year, entity-scope word, issuer name the application passed or another item, and a period shorter than a fiscal year always qualifies the item; these allow-lists replace D-15's clauses on sub-year headers and non-amount columns and D-16's clause on qualifiers beside an item, whose lists of forbidden words they supersede.
+
+### D-19 — A figure is verified only in the direction its cell states
+- status: active
+- category: interface
+- date: 2026-11-11
+- source: 2026-11-11 audit session on mcp-and-langgraph (third study preflight rehearsal on 56bfd8b8 found the earlier rules were lists of forbidden shapes that further shapes walked past; recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- decision: The figure check compares direction as well as magnitude: a stored reading carries the sign its notation or inline XBRL tag states, a level claim states a loss when its figure is written negative or its item words are a loss phrase of the vocabulary, a claim and a cell that agree in magnitude, unit and period but not in direction are not verified, and where the cell's or the claim's direction is not established the claim is withheld; the withheld-answer sentence and its rationale, defined once beside the verdict, say that the unit or the sign could not be confirmed; this replaces D-15's "magnitudes still compare"; wordings such as "a loss of" and "적자" name no item and stay unverified, and change claims are not compared by direction.
