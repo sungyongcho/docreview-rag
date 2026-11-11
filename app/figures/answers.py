@@ -33,7 +33,15 @@ from typing import Literal
 
 from app.figures.currency import same_currency
 from app.figures.tables import TableCellReading
-from app.figures.text import BARE_YEAR, YEAR, Figure, blank_answer, figure_spans
+from app.figures.text import (
+    BARE_YEAR,
+    YEAR,
+    Figure,
+    blank,
+    blank_answer,
+    figure_spans,
+    unit_follows,
+)
 from app.figures.vocabulary import (
     ANSWER_SAME_ITEM_QUALIFIER,
     CHANGES,
@@ -41,6 +49,7 @@ from app.figures.vocabulary import (
     ENGLISH_PHRASES,
     FILLERS,
     KOREAN_PHRASES,
+    SAME_ITEM_QUALIFIER,
     TOKEN,
     phrase_key,
 )
@@ -262,8 +271,8 @@ def _is_change(head: Sequence[_Word], tail: Sequence[_Word]) -> bool:
     return not any(word.text.casefold() in _LEVEL_AFTER_CHANGE for word in after)
 
 
-def _sentence_claims(masked: str, text: str, start: int, end: int) -> list[_Claim]:
-    """Read the claims of one sentence ``[start, end)``.
+def _sentence_claims(masked: str, text: str, start: int, end: int, answer: bool) -> list[_Claim]:
+    """Read the claims of one sentence ``[start, end)``; ``answer`` as in :func:`_claims`.
 
     The words before the first figure, between figures and after the last one are
     split into each figure's head (before it) and tail (after it). A figure's item is
@@ -271,7 +280,8 @@ def _sentence_claims(masked: str, text: str, start: int, end: int) -> list[_Clai
     item of the figure before it in the same sentence. An unknown word in its head or
     tail, an item phrase in its tail, or two items in its head leave it without one.
     """
-    found = [figure for figure in figure_spans(masked[:end], answer=True) if figure.start >= start]
+    spans = figure_spans(masked[:end], answer=answer)
+    found = [figure for figure in spans if figure.start >= start]
     if not found:
         return []
     years = [
@@ -364,18 +374,32 @@ def _cited_issuer(evidence: Sequence[EvidenceText]) -> str | None:
     return next(iter(issuers)) if len(issuers) == 1 else None
 
 
-def _claims(text: str, *, issuer: str | None = None) -> list[_Claim]:
-    """Read every figure of a text as a claim, sentence by sentence."""
+def _claims(text: str, *, answer: bool = False, issuer: str | None = None) -> list[_Claim]:
+    """Read every figure of a text as a claim, sentence by sentence.
+
+    ``answer`` reads a model's answer, whose identifiers have bounded shapes so that no
+    amount drops out of the check. A cited passage or header is a filing's own text and
+    keeps the filing rules (a label may cite a list of notes), so a reference number in
+    it never becomes a fact that could confirm a claim.
+    """
     formatted = _STRONG.sub(lambda match: "  " + match[1] + "  ", text)
     subject = _issuer_subjects(formatted, issuer)
-    masked = blank_answer(
-        ANSWER_SAME_ITEM_QUALIFIER.sub(lambda match: " " * len(match.group(0)), subject)
+    qualifier, identifiers = (
+        (ANSWER_SAME_ITEM_QUALIFIER, blank_answer) if answer else (SAME_ITEM_QUALIFIER, blank)
     )
+
+    def qualified(match: re.Match[str]) -> str:
+        """Blank a same-item parenthetical unless an answer writes a unit after it."""
+        if answer and unit_follows(subject, match.end()):
+            return match.group(0)
+        return " " * len(match.group(0))
+
+    masked = identifiers(qualifier.sub(qualified, subject))
     bounds = [0, *(match.start() for match in _SENTENCE_BREAK.finditer(masked)), len(masked)]
     return [
         claim
         for first, last in zip(bounds, bounds[1:], strict=False)
-        for claim in _sentence_claims(masked, text, first, last)
+        for claim in _sentence_claims(masked, text, first, last, answer)
     ]
 
 
@@ -551,7 +575,7 @@ def check_figures(
     ]
     judged = [
         _judge(claim, cells, facts, requested)
-        for claim in _claims(answer, issuer=_cited_issuer(evidence))
+        for claim in _claims(answer, answer=True, issuer=_cited_issuer(evidence))
     ]
     anchored = any(check.verdict == "verified" and not outside for check, outside in judged)
     return FiguresResult(

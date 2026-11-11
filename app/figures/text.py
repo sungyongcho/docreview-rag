@@ -9,10 +9,12 @@ from decimal import Decimal, InvalidOperation
 import re
 
 from app.figures.currency import (
+    BOUNDED_CURRENCY,
     CODES,
     CURRENCY,
     CURRENCY_AFTER,
     CURRENCY_BEFORE,
+    KOREAN_CURRENCY,
     UNKNOWN,
     UNKNOWN_AFTER,
     UNKNOWN_BEFORE,
@@ -54,33 +56,6 @@ _NOT_FIGURES = re.compile(
     + _DATES,
     re.IGNORECASE,
 )
-# An answer is checked figure by figure, so its identifiers have bounded shapes: a
-# reference is followed by exactly its own short number, a period by its own one to four
-# digits and a date by a calendar year. No identifier number is part of a longer number
-# ("FY 99,999", "25,785.5H"). An amount written where such a number would stand
-# ("Note 5, 99,999 million", "Note 99,999", "FY 99999 million") stays a figure.
-_OWN_START = r"(?<![\d,.])"
-_OWN_END = r"(?!\d|[,.]\d)"
-_CALENDAR_YEAR = r"(?:19|20)\d{2}" + _OWN_END
-_ANSWER_NOT_FIGURES = re.compile(
-    "|".join(
-        (
-            r"\b(?:FY\s?(?:\d{4}|\d{2})|[QH]\s?\d)" + _OWN_END,
-            _OWN_START + r"\d[QH]\b",
-            _OWN_START + r"\d{1,2}-[A-Z]\b",
-            _REFERENCE_WORD + r"\d{1,3}[A-Z]?(?:\.\d{1,3})*" + _OWN_END,
-            _KOREAN_NOTE_WORD + r"\d{1,3}[A-Za-z]?\s*[)）]",
-            _MONTH_AND_DAY + _CALENDAR_YEAR,
-            _OWN_START + r"(?:19|20)\d{2}\s?[./-]\s?\d{1,2}\s?[./-]\s?\d{1,2}" + _OWN_END,
-            _OWN_START + r"\d{1,2}/\d{1,2}/" + _CALENDAR_YEAR,
-            _OWN_START + r"(?:19|20)\d{2}\s?년(?:\s?\d{1,2}\s?월)?(?:\s?\d{1,2}\s?일)?",
-            _OWN_START + r"\d{1,2}\s?월\s?\d{1,2}\s?일",
-            _OWN_START + r"\d\s?분기",
-            r"제\s?\d{1,3}\s?기",
-        )
-    ),
-    re.IGNORECASE,
-)
 BARE_YEAR = re.compile(r"(?:19|20)\d{2}")
 YEAR = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 
@@ -96,6 +71,47 @@ _LETTER_EXPONENTS = {"T": 12, "B": 9, "M": 6, "K": 3}
 
 
 _PERCENT = re.compile(r"[ \t]*(?:%|percent\b)", re.IGNORECASE)
+
+# An answer is checked figure by figure, so its identifiers have bounded shapes: a
+# reference is followed by exactly its own short number, a period by its own one to four
+# digits and a date by a calendar year. No identifier number is part of a longer number
+# ("FY 99,999", "25,785.5H") or carries a unit ("Note 500 million", "(주석 300)억원"):
+# a number with a percent sign, a scale word or a currency after it is an amount. So an
+# amount written where an identifier number would stand stays a figure. A Korean scale
+# or currency word may begin an ordinary word ("FY2024 조정", "Q4 원가"), so a Korean
+# unit is a scale word with a currency after it or at the end of its word.
+_UNIT_FOLLOWS = "|".join(
+    (
+        _PERCENT.pattern,
+        r"[ \t]*" + _ENGLISH_SCALE.pattern,
+        r"[ \t]*(?:[십백천]?[만억조]|천)(?:[ \t]*(?:" + KOREAN_CURRENCY + r")|(?![가-힣]))",
+        r"[ \t]*(?:" + BOUNDED_CURRENCY + ")",
+        UNKNOWN_AFTER.pattern,
+    )
+)
+_UNIT_AT = re.compile(_UNIT_FOLLOWS, re.IGNORECASE)
+_OWN_START = r"(?<![\d,.])"
+_OWN_END = r"(?!\d|[,.]\d|[ \t]*[)）]?(?:" + _UNIT_FOLLOWS + "))"
+_CALENDAR_YEAR = r"(?:19|20)\d{2}" + _OWN_END
+_ANSWER_NOT_FIGURES = re.compile(
+    "|".join(
+        (
+            r"\b(?:FY\s?(?:\d{4}|\d{2})|[QH]\s?\d)" + _OWN_END,
+            _OWN_START + r"\d[QH]\b",
+            _OWN_START + r"\d{1,2}-[A-Z]\b",
+            _REFERENCE_WORD + r"\d{1,3}[A-Z]?(?:\.\d{1,3})*" + _OWN_END,
+            _KOREAN_NOTE_WORD + r"\d{1,3}[A-Za-z]?" + _OWN_END + r"\s*[)）]",
+            _MONTH_AND_DAY + _CALENDAR_YEAR,
+            _OWN_START + r"(?:19|20)\d{2}\s?[./-]\s?\d{1,2}\s?[./-]\s?\d{1,2}" + _OWN_END,
+            _OWN_START + r"\d{1,2}/\d{1,2}/" + _CALENDAR_YEAR,
+            _OWN_START + r"(?:19|20)\d{2}\s?년(?:\s?\d{1,2}\s?월)?(?:\s?\d{1,2}\s?일)?",
+            _OWN_START + r"\d{1,2}\s?월\s?\d{1,2}\s?일",
+            _OWN_START + r"\d\s?분기",
+            r"제\s?\d{1,3}\s?기",
+        )
+    ),
+    re.IGNORECASE,
+)
 
 
 # Any other three-letter token written right against an amount has the shape of an ISO
@@ -191,6 +207,11 @@ def blank(text: str) -> str:
 def blank_answer(text: str) -> str:
     """Blank an answer's identifiers and dates, each of a bounded shape with its own number."""
     return _ANSWER_NOT_FIGURES.sub(lambda match: " " * len(match.group(0)), text)
+
+
+def unit_follows(text: str, position: int) -> bool:
+    """Whether a scale word, a currency or a percent sign is written from ``position``."""
+    return _UNIT_AT.match(text, position) is not None
 
 
 def _markers_before(text: str, start: int) -> tuple[set[str], int]:

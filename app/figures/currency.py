@@ -91,6 +91,15 @@ _CURRENCY_PATTERNS = tuple(
     for pattern, currency in _CURRENCY_FORMS
 )
 ANY_CURRENCY = "|".join(f"(?:{_bounded(pattern)})" for pattern, _ in _CURRENCY_FORMS)
+# The same forms by script. A Korean currency word may begin an ordinary word ("원가",
+# "불가", "엔진"), so a reader that must not take such a word for a unit asks for the
+# Korean words apart from the signs and Latin words, which carry their own boundaries.
+KOREAN_CURRENCY = "|".join(
+    f"(?:{pattern})" for pattern, _ in _CURRENCY_FORMS if "가" <= pattern[0] <= "힣"
+)
+BOUNDED_CURRENCY = "|".join(
+    f"(?:{_bounded(pattern)})" for pattern, _ in _CURRENCY_FORMS if not "가" <= pattern[0] <= "힣"
+)
 # Every currency mention of a cell or note.
 _CURRENCY_MENTION = re.compile(ANY_CURRENCY, re.IGNORECASE)
 # A currency written right after a figure (and its scale): "25 USD", "300조원", "5 dollars".

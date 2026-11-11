@@ -98,6 +98,58 @@ def test_an_amount_is_a_claim_wherever_an_identifier_number_could_stand(lead, am
 
 
 @pytest.mark.parametrize(
+    ("answer", "amount"),
+    [
+        ("Net revenue was Note 500 million.", "500"),
+        ("Net revenue was Note 500 USD.", "500"),
+        ("Net revenue was Note 5%.", "5"),
+        ("Net revenue (Note 500) million was high.", "500"),
+        ("Net revenue was Item 7 billion USD.", "7"),
+        ("Net revenue was FY 24 million.", "24"),
+        ("Net revenue was Q4 billion.", "4"),
+        ("매출액 (주석 300)억원", "300"),
+        ("매출액 (주석 300) 억 원이다", "300"),
+        ("매출액은 Note 5 조원이다.", "5"),
+    ],
+)
+def test_a_short_number_with_a_unit_is_an_amount_not_an_identifier(answer, amount):
+    """Check a number of an identifier's shape once a unit is written after it."""
+    result = check_figures(answer, [EvidenceText(1, "body", "ctx")], [2024])
+    assert amount in {check.figure for check in result.checks}
+    assert result.verdict != "verified"
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "FY2024 원가율은 상승했다.",
+        "Q4 조정 영업이익은 증가했다.",
+        "FY24 만기 도래 차입금이 있다.",
+        "Q4 불확실성이 커졌다 (주 29).",
+        "Note 5 엔진 사업부 참조.",
+        "FY2024 천천히 회복했다.",
+    ],
+)
+def test_a_korean_word_after_an_identifier_is_not_its_unit(answer):
+    """Keep an identifier when the next word only begins like a scale or a currency."""
+    assert check_figures(answer, [EvidenceText(1, "body", "ctx")], [2024]).checks == ()
+
+
+def test_a_short_reference_number_without_a_unit_stays_a_reference():
+    """Pin the boundary: "Note 500" alone has the shape of a reference, not an amount."""
+    evidence = [EvidenceText(1, "body", "ctx")]
+    assert check_figures("Net revenue was Note 500.", evidence, [2024]).checks == ()
+
+
+def test_cited_text_keeps_the_filing_rules_for_its_references():
+    """Read a passage's note list as identifiers, so no note number becomes a fact."""
+    listed = EvidenceText(3, "매출액 (주 5, 30) 300억원", "TestCo", None)
+    assert check_figures("매출액은 300억원이다.", [listed], []).verdict == "verified"
+    notes = EvidenceText(3, "Revenue (Notes 2 and 3).", "TestCo", None)
+    assert check_figures("Revenue was 3.", [notes], []).verdict == "unverified"
+
+
+@pytest.mark.parametrize(
     "answer", ["Net revenue was 26B in 2024.", "Net revenue was 99M.", "Net revenue was 3T."]
 )
 def test_a_bare_scale_letter_amount_fails_instead_of_dropping_out(answer):
