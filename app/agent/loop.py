@@ -15,6 +15,7 @@ from app.agent.final_answer import (
     judge_written_answer,
     validate_final_answer,
 )
+from app.agent.ledger import citation_records, ledger_failure, merge_identities
 from app.agent.provider import ProviderTurn, ToolCallingProvider
 from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import (
@@ -142,9 +143,6 @@ async def _dispatch(
             not isinstance(item, EvidenceCitation) for item in evidence
         ):
             raise TypeError("evidence extractor must return EvidenceCitation values")
-        evidence_ids = [item.chunk_id for item in evidence]
-        if len(evidence_ids) != len(set(evidence_ids)):
-            raise ValueError("evidence extractor returned duplicate chunk ids")
     except Exception as error:
         message = safe_runtime_error(error, f"tool {call.name} evidence extraction")
         return Observation(call_id=call.call_id, name=call.name, error=message), (), True
@@ -484,26 +482,18 @@ async def run_agent(
             if system_failed and system_failure is None:
                 system_failure = observation.error
             observations.append(observation)
-            conflict = next(
-                (
-                    citation
-                    for citation in citations
-                    if citation.chunk_id in evidence and evidence[citation.chunk_id] != citation
-                ),
-                None,
+            merged = merge_identities(
+                citation_records(evidence.values()), citation_records(citations)
             )
+            conflict = ledger_failure(merged)
             if conflict is not None:
-                observation = Observation(
-                    call_id=call.call_id,
-                    name=call.name,
-                    error=(
-                        "tool returned conflicting immutable identity for "
-                        f"chunk {conflict.chunk_id}"
-                    ),
-                )
+                system_failure = system_failure or conflict
+                observation = Observation(call_id=call.call_id, name=call.name, error=conflict)
                 observations[-1] = observation
             else:
-                evidence.update({citation.chunk_id: citation for citation in citations})
+                evidence = {
+                    key: EvidenceCitation.model_validate(record) for key, record in merged.items()
+                }
             if observation.error is not None:
                 outputs[call.call_id] = f"ERROR: {observation.error}"
             else:

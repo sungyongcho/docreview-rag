@@ -51,6 +51,7 @@ from app.agent.final_answer import (
     judge_written_answer,
     validate_final_answer,
 )
+from app.agent.ledger import citation_records, ledger_failure, merge_identities
 from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import FINAL_ANSWER_NAME, Tool, ToolRegistry, safe_runtime_error
 from app.agent.types import AgentReportAnswer, CellSelectionAnswer, ToolCall
@@ -143,54 +144,6 @@ def final_answer_format(*, cells: bool = False) -> ToolStrategy[dict[str, Any]]:
     )
 
 
-def merge_evidence(left: EvidenceLedger | None, right: EvidenceLedger | None) -> EvidenceLedger:
-    """Combine evidence ledger updates; ``None`` clears the ledger, ``{}`` keeps it.
-
-    Parameters
-    ----------
-    left : EvidenceLedger | None
-        Ledger in the current graph state, absent before the first update.
-    right : EvidenceLedger | None
-        One update: newly returned identities, or ``None`` to start a new question.
-
-    Returns
-    -------
-    EvidenceLedger
-        The updated ledger. Updates from parallel tool calls are merged one after
-        another, so each keeps the identities the others added.
-    """
-    if right is None:
-        return {}
-    return {**(left or {}), **right}
-
-
-def merge_cells(left: CellLedger | None, right: CellLedger | None) -> CellLedger:
-    """Combine cell ledger updates; ``None`` clears it and a disagreement is marked.
-
-    Parameters
-    ----------
-    left : CellLedger | None
-        Cells fetched so far in this question, absent before the first update.
-    right : CellLedger | None
-        One update: the cells one fetch returned, or ``None`` to start a new question.
-
-    Returns
-    -------
-    CellLedger
-        The merged ledger. When two updates, possibly from parallel calls in one step,
-        record different contents under one ref, the ref keeps a ``conflict`` marker that
-        :class:`StopOnSystemFailure` turns into the run's failure before the next model
-        call.
-    """
-    if right is None:
-        return {}
-    merged = dict(left or {})
-    for ref, record in right.items():
-        known = merged.get(ref)
-        merged[ref] = record if known is None or known == record else {"conflict": True}
-    return merged
-
-
 def cell_record(cell: dict[str, Any], catalog: dict[str, Any], chunk_id: int) -> dict[str, Any]:
     """Record one returned cell by the identity its content and source version fix."""
     return {
@@ -208,7 +161,10 @@ def _returned_cells(message: ToolMessage, chunk_id: int) -> CellLedger:
     catalog = structured.get("table") if isinstance(structured, dict) else None
     if not isinstance(catalog, dict) or catalog.get("status") != "available":
         return {}
-    return {cell["ref"]: cell_record(cell, catalog, chunk_id) for cell in catalog["cells"]}
+    records: CellLedger = {}
+    for cell in catalog["cells"]:
+        records = merge_identities(records, {cell["ref"]: cell_record(cell, catalog, chunk_id)})
+    return records
 
 
 def keep_first_failure(left: str | None, right: str | None) -> str | None:
@@ -242,8 +198,8 @@ class ReviewState(AgentState[Any]):
     mismatch or withholds its figures; otherwise they are ``None``.
     """
 
-    evidence: Annotated[NotRequired[EvidenceLedger], merge_evidence]
-    cells: Annotated[NotRequired[CellLedger], merge_cells]
+    evidence: Annotated[NotRequired[EvidenceLedger], merge_identities]
+    cells: Annotated[NotRequired[CellLedger], merge_identities]
     cell_checks: NotRequired[list[dict[str, Any]] | None]
     period_mismatch: NotRequired[dict[str, Any] | None]
     unit_unverified: NotRequired[dict[str, Any] | None]
@@ -308,7 +264,7 @@ def _returned_identities(tool: Tool[Any], message: ToolMessage) -> tuple[Evidenc
     Raises
     ------
     ValueError
-        If the result carries no structured content or repeats a chunk id.
+        If the result carries no structured content.
     TypeError
         If the extractor returns anything but citations.
     """
@@ -321,8 +277,6 @@ def _returned_identities(tool: Tool[Any], message: ToolMessage) -> tuple[Evidenc
     found = tool.evidence_ids(structured)
     if not isinstance(found, tuple) or any(not isinstance(c, EvidenceCitation) for c in found):
         raise TypeError("evidence extractor must return EvidenceCitation values")
-    if len({citation.chunk_id for citation in found}) != len(found):
-        raise ValueError("evidence extractor returned duplicate chunk ids")
     return found
 
 
@@ -410,10 +364,9 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         Returns
         -------
         ToolMessage | Command[Any]
-            An error result when the arguments are invalid, the fetch was not
-            retrieved in this question or a returned identity conflicts with the
-            ledger; otherwise the tool's result, wrapped in a ledger update when it
-            returned new identities.
+            An error result when the arguments are invalid or the fetch was not
+            retrieved in this question; otherwise the tool's result, wrapped in a ledger
+            update when it returned new identities.
 
         Raises
         ------
@@ -441,22 +394,21 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         result = await handler(request)
         if not isinstance(result, ToolMessage) or result.status == "error":
             return result
-        found = {c.chunk_id: c.model_dump(mode="json") for c in _returned_identities(tool, result)}
-        conflict = next((k for k, v in found.items() if k in evidence and evidence[k] != v), None)
-        if conflict is not None:
-            return _error(
-                request.tool_call,
-                f"tool returned conflicting immutable identity for chunk {conflict}",
-            )
+        try:
+            found = citation_records(_returned_identities(tool, result))
+        except (ValueError, TypeError) as error:
+            raise MCPError(
+                code=INTERNAL_ERROR,
+                message=safe_runtime_error(error, f"tool {tool.name} evidence extraction"),
+            ) from error
         cells: CellLedger = {}
         if isinstance(parameters, FetchChunkParams):
-            known: CellLedger = request.state.get("cells") or {}
             cells = _returned_cells(result, parameters.chunk_id)
-            clash = next((r for r, v in cells.items() if r in known and known[r] != v), None)
-            if clash is not None:
-                return _error(
-                    request.tool_call, f"tool returned conflicting content for cell {clash}"
-                )
+        failure = ledger_failure(merge_identities(evidence, found)) or ledger_failure(
+            merge_identities(request.state.get("cells"), cells), cells=True
+        )
+        if failure is not None:
+            raise MCPError(code=INTERNAL_ERROR, message=failure)
         if not found:
             return result
         update: dict[str, Any] = {"messages": [result], "evidence": found}
@@ -719,9 +671,9 @@ class StopOnSystemFailure(AgentMiddleware[StopState]):
         del runtime
         if state.get("failure") is not None:
             return {"jump_to": "end"}
-        clash = next(
-            (ref for ref, v in (state.get("cells") or {}).items() if v.get("conflict")), None
+        failure = ledger_failure(state.get("evidence") or {}) or ledger_failure(
+            state.get("cells") or {}, cells=True
         )
-        if clash is None:
+        if failure is None:
             return None
-        return {"failure": f"conflicting stored content for cell {clash}", "jump_to": "end"}
+        return {"failure": failure, "jump_to": "end"}

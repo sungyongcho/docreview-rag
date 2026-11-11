@@ -439,13 +439,10 @@ def test_conflicting_chunk_identity_is_rejected_and_kept_out_of_evidence():
 
     result, _ = run_loop(turns, registry=registry)
 
-    assert result.status == "ok"
-    assert "conflicting immutable identity" in (result.steps[1].observations[0].error or "")
-    # The forged identity never entered evidence, so citing it is rejected while
-    # the original identity from the first search still validates.
-    assert "identity" in (result.steps[2].observations[0].error or "")
-    assert result.answer is not None
-    assert result.answer.citations[0].citation == "NVDA FY2024 · Item 7"
+    assert result.status == "tool_error"
+    assert "conflicting immutable identity" in result.failure
+    assert len(result.steps) == 2
+    assert result.answer is None
 
 
 def test_final_answer_must_be_the_only_call_in_its_turn():
@@ -855,8 +852,10 @@ def test_empty_retrieval_does_not_enable_fetch():
 
 
 def test_malformed_retrieval_evidence_ends_the_run_before_any_fetch():
-    """Duplicate evidence identities stop the run, so no body is read afterwards."""
-    registry = registry_with_staged_hits([[citation_values(7), citation_values(7)]])
+    """Differing identities in one result stop the run before any body is read."""
+    registry = registry_with_staged_hits(
+        [[citation_values(7), citation_values(7, source_sha256="b" * 64)]]
+    )
     reads = []
     register_fetch(registry, reads)
     result, _ = run_loop(

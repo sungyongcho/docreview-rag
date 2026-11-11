@@ -24,13 +24,12 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import INTERNAL_ERROR, INVALID_PARAMS
 import pytest
 
+from app.agent.ledger import merge_identities
 from app.agent.review_middleware import (
     ReviewGate,
     StopOnSystemFailure,
     cell_record,
     keep_first_failure,
-    merge_cells,
-    merge_evidence,
     retrieval_returned,
 )
 from app.agent.tools.filings import build_default_registry
@@ -354,13 +353,13 @@ def test_a_new_question_clears_the_failure_and_runs_normally(tmp_path):
 def test_none_clears_the_ledger_and_an_empty_update_keeps_it():
     """Only None starts a new ledger; updates merge without dropping earlier identities."""
     ledger = {2023: identity(2023)}
-    assert merge_evidence(ledger, None) == {}
-    assert merge_evidence(ledger, {}) == ledger
-    assert merge_evidence(ledger, {2024: identity(2024)}) == {
+    assert merge_identities(ledger, None) == {}
+    assert merge_identities(ledger, {}) == ledger
+    assert merge_identities(ledger, {2024: identity(2024)}) == {
         2023: identity(2023),
         2024: identity(2024),
     }
-    assert merge_evidence(None, {2024: identity(2024)}) == {2024: identity(2024)}
+    assert merge_identities(None, {2024: identity(2024)}) == {2024: identity(2024)}
 
 
 def gate_call(
@@ -404,11 +403,8 @@ def fetched_result(**changes: Any) -> ToolMessage:
 def test_a_conflicting_identity_is_refused_instead_of_overwritten():
     """A result naming a known chunk with a different identity becomes an error, no update."""
     tampered = fetched_result(source_sha256="0" * 64)
-    answer, seen = gate_call("fetch_chunk", {"chunk_id": 2024}, {2024: identity(2024)}, tampered)
-    assert len(seen) == 1
-    assert isinstance(answer, ToolMessage)
-    assert (answer.status, answer.tool_call_id) == ("error", "call_1")
-    assert answer.content == "ERROR: tool returned conflicting immutable identity for chunk 2024"
+    with pytest.raises(MCPError, match="conflicting immutable identity for chunk 2024"):
+        gate_call("fetch_chunk", {"chunk_id": 2024}, {2024: identity(2024)}, tampered)
 
 
 def test_a_matching_identity_keeps_the_result_and_its_call_id():
@@ -566,15 +562,14 @@ def test_a_fetch_whose_cell_content_changed_within_the_question_is_refused():
     """Refuse a fetch that returns a known ref with different content instead of replacing it."""
     known = {"2024:r1c1": cell_record(CATALOG["cells"][0], CATALOG, 2024)}
     changed = {**CATALOG, "cells": [{**CATALOG["cells"][0], "raw_text": "$ 99,999"}]}
-    answer, _ = gate_call(
-        "fetch_chunk",
-        {"chunk_id": 2024},
-        {2024: identity(2024)},
-        fetched_result(table=changed),
-        cells=known,
-    )
-    assert isinstance(answer, ToolMessage)
-    assert answer.content == "ERROR: tool returned conflicting content for cell 2024:r1c1"
+    with pytest.raises(MCPError, match="conflicting stored content for cell 2024:r1c1"):
+        gate_call(
+            "fetch_chunk",
+            {"chunk_id": 2024},
+            {2024: identity(2024)},
+            fetched_result(table=changed),
+            cells=known,
+        )
 
 
 def test_a_chunk_without_stored_cells_adds_no_cells():
@@ -590,10 +585,10 @@ def test_a_chunk_without_stored_cells_adds_no_cells():
 def test_cell_updates_merge_and_a_disagreement_stops_before_the_next_model_call():
     """Merge parallel cell updates, mark a disagreement, and end on it with a failure."""
     first = {"2024:r1c1": {"digest": "a"}}
-    assert merge_cells(first, None) == {}
-    assert merge_cells(first, first) == first
-    assert merge_cells(None, first) == first
-    clashed = merge_cells(first, {"2024:r1c1": {"digest": "b"}})
+    assert merge_identities(first, None) == {}
+    assert merge_identities(first, first) == first
+    assert merge_identities(None, first) == first
+    clashed = merge_identities(first, {"2024:r1c1": {"digest": "b"}})
     assert clashed == {"2024:r1c1": {"conflict": True}}
     stop = StopOnSystemFailure()
     runtime = cast(Any, None)
