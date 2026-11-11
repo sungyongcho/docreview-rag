@@ -402,29 +402,40 @@ def test_a_tag_without_a_sign_overrides_a_negative_notation():
 
 
 @pytest.mark.parametrize(
-    ("label", "item", "text", "changes", "status", "value"),
+    ("label", "text", "tag", "status", "value", "values"),
     [
-        ("Net loss", "net income", "1,641", {}, "conflicting", Decimal(1641)),
-        ("Operating loss", "operating income", "1,641", {}, "conflicting", Decimal(1641)),
-        ("영업손실", "operating income", "1,234", {}, "conflicting", Decimal(1234)),
-        ("당기순손실 (주5)", "net income", "1,234", {}, "conflicting", Decimal(1234)),
-        ("Net loss", "net income", "1,641", {"basis": "fact"}, "conflicting", Decimal(1641)),
-        ("Net loss", "net income", "(1,641)", {}, "known", Decimal(-1641)),
-        ("영업손실", "operating income", "△1,234", {}, "known", Decimal(-1234)),
-        ("Net loss", "net income", "0", {}, "known", Decimal(0)),
-        ("Net loss", "net income", "1,641", {"measure": "amount"}, "known", Decimal(1641)),
-        ("Net income (loss)", "net income", "1,641", {}, "known", Decimal(1641)),
-        ("영업이익(손실)", "operating income", "1,234", {}, "known", Decimal(1234)),
-        ("Net income", "net income", "1,641", {}, "known", Decimal(1641)),
+        ("Net loss", "1,641", None, "conflicting", Decimal(1641), {1641}),
+        ("Operating loss", "1,641", None, "conflicting", Decimal(1641), {1641}),
+        ("영업손실", "1,234", None, "conflicting", Decimal(1234), {1234}),
+        ("당기순손실 (주5)", "1,234", None, "conflicting", Decimal(1234), {1234}),
+        ("Net loss", "1,641", "dart", "conflicting", Decimal(1641), {1641}),
+        ("Net loss", "(1,641)", None, "known", Decimal(-1641), {-1641}),
+        ("영업손실", "△1,234", None, "known", Decimal(-1234), {-1234}),
+        ("Net loss", "0", None, "known", Decimal(0), {0}),
+        ("Net loss", "1,641", "ixbrl", "known", Decimal(1641), {1641}),
+        ("Net income (loss)", "1,641", None, "known", Decimal(1641), {1641}),
+        ("영업이익(손실)", "1,234", None, "known", Decimal(1234), {1234}),
+        ("Net income", "1,641", None, "known", Decimal(1641), {1641}),
     ],
 )
 def test_an_unsigned_figure_under_a_loss_only_label_is_not_one_amount(
-    label, item, text, changes, status, value
+    label, text, tag, status, value, values
 ):
     """A loss phrase alone leaves an unsigned figure's sign unstated unless a tag states it."""
-    cell = reading(row_label=label, item=item, **changes)
-    assert interpret_table_cell(text, [cell]).status == status
-    assert interpret_table_cell(text, [cell]).value == value
+    html = (
+        "<table><tr><td>(In millions of U.S. dollars)</td><td>2024</td></tr>"
+        f"<tr><td>{label}</td><td>{text}</td></tr></table>"
+    )
+    magnitude = text.strip("()△")
+    facts = {
+        None: None,
+        "dart": {(1, 1): (fact(numerator=None, scale=None, text=magnitude),)},
+        "ixbrl": {(1, 1): (fact(text=magnitude, sign="+", concept="us-gaap:NetIncomeLoss"),)},
+    }[tag]
+    (cell,) = read_table_cells(table_fragment(html), facts)
+    assert cell.values == values
+    result = interpret_table_cell(text, [cell])
+    assert (result.status, result.value) == (status, value)
 
 
 def test_a_tag_showing_another_number_makes_the_cell_conflicting():

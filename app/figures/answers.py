@@ -12,7 +12,12 @@ issuer. Financial qualifiers and unknown subjects still fail closed.
 A claim is verified only by one cited table cell whose whole row label is the same
 item, whose column period is the claim's year (or, undated, a requested one) and
 whose value equals the figure once both stated units are converted. It is a period
-mismatch when that item's value sits only in another known period. Change claims
+mismatch when that item's value sits only in another known period. The claim and the
+cell must also agree in direction: a claim states a loss when its figure is written
+negative ("-1,641", "(1,641)", "△1,234") or its item by a loss phrase ("net loss",
+"영업손실"), a gain otherwise; a cell's direction is its signed value. Equal
+magnitudes in opposite directions are not a match, and a cell or claim whose
+direction is not established ("▲", "Net loss | 1,641") is withheld. Change claims
 ("grew 14%"), percentages against absolute cells, unreadable units and ambiguous
 years cannot be verified by a table. Context labels and running text cannot show a
 period, so they confirm only claims for which no period is asked or stated.
@@ -159,7 +164,8 @@ class _Word:
     """One classified word around a figure.
 
     ``kind`` is ``item`` (with ``item`` set), ``filler``, ``change`` or ``unknown``.
-    ``joins`` marks a connective: what follows it describes the next figure.
+    ``joins`` marks a connective: what follows it describes the next figure. ``loss``
+    marks an item named by one of the vocabulary's loss phrases ("net loss", "영업손실").
     """
 
     start: int
@@ -167,6 +173,7 @@ class _Word:
     kind: Literal["item", "filler", "change", "unknown"]
     item: str | None = None
     joins: bool = False
+    loss: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,7 +181,10 @@ class _Claim:
     """One figure with the item, year and kind its own words give it.
 
     ``year`` is None when the claim is undated; ``dated_ambiguously`` when its words
-    name more than one year. ``change`` marks a change claim ("grew 14%").
+    name more than one year. ``change`` marks a change claim ("grew 14%"). ``loss``
+    says the item was named by a loss phrase. ``negative`` is the direction the claim
+    states: a loss when its figure is written negative or its item by a loss phrase,
+    a gain otherwise, None when its sign marker is ambiguous ("▲").
     """
 
     figure: Figure
@@ -182,6 +192,8 @@ class _Claim:
     year: int | None
     dated_ambiguously: bool
     change: bool
+    loss: bool = False
+    negative: bool | None = False
 
 
 def _korean_word(start: int, text: str) -> _Word:
@@ -200,7 +212,7 @@ def _korean_word(start: int, text: str) -> _Word:
         if stem in KOREAN_PHRASES:
             if ending == "의":
                 return _Word(start, text, "unknown")
-            return _Word(start, text, "item", KOREAN_PHRASES[stem], joins)
+            return _Word(start, text, "item", KOREAN_PHRASES[stem], joins, "손실" in stem)
         if stem in _KOREAN_FILLERS or _KOREAN_UNIT.fullmatch(stem):
             return _Word(start, text, "filler", joins=joins)
     return _Word(start, text, "unknown")
@@ -237,8 +249,10 @@ def _words(masked: str, start: int, end: int) -> list[_Word]:
             None,
         )
         if phrase is not None:
-            words.append(_Word(at, text, "item", phrase[1]))
-            index += phrase[0]
+            length, item = phrase
+            loss = any(key in {"loss", "losses"} for key in keys[:length])
+            words.append(_Word(at, text, "item", item, loss=loss))
+            index += length
             continue
         is_korean = "가" <= text[0] <= "힣"
         words.append(_korean_word(at, text) if is_korean else _english_word(at, text))
@@ -308,16 +322,20 @@ def _sentence_claims(masked: str, text: str, start: int, end: int, answer: bool)
         head_at, head = heads[index]
         tail_end, tail = tails[index]
         items = {word.item for word in head if word.kind == "item"}
+        losses = {word.loss for word in head if word.kind == "item"}
         unreadable = any(word.kind == "unknown" for word in (*head, *tail)) or any(
             word.kind == "item" for word in tail
         )
         item: str | None
+        loss = False
         if unreadable or len(items) > 1:
             item = None
         elif items:
             item = items.pop()
+            loss = True in losses
         else:
             item = claims[-1].item if claims else None
+            loss = claims[-1].loss if claims else False
         own = {
             year
             for at, year in years
@@ -332,9 +350,34 @@ def _sentence_claims(masked: str, text: str, start: int, end: int, answer: bool)
                 next(iter(dated)) if len(dated) == 1 else None,
                 len(dated) > 1,
                 _is_change(head, tail),
+                loss,
+                _negative(masked, figure, loss),
             )
         )
     return claims
+
+
+def _negative(masked: str, figure: Figure, loss: bool) -> bool | None:
+    """Return the direction a figure's own notation and its item's words state.
+
+    A figure is written negative by a leading "-" or "△" ("-1,641", "-$1,641",
+    "△1,234") or by parentheses around its digits ("(1,641)", "$(1,641)",
+    "($1,641)"); a parenthesis that belongs to the sentence ("(25,785 million)")
+    is not a sign. "▲" marks a loss in some filings and an increase in others, so its
+    direction is None. A loss phrase ("net loss", "영업손실") states a loss too.
+    """
+    text = figure.text
+    if text.startswith("▲"):
+        return None
+    before = masked[: figure.unit_start if 0 <= figure.unit_start < figure.start else figure.start]
+    before = before.rstrip(" \t")
+    written = (
+        text.startswith(("-", "△"))
+        or (text.startswith("(") and text.endswith(")"))
+        or (before.endswith(("-", "−", "△")) and not before[:-1][-1:].isalnum())
+        or (before.endswith("(") and text.endswith(")"))
+    )
+    return written or loss
 
 
 def _issuer_subjects(text: str, issuer: str | None) -> str:
@@ -490,6 +533,16 @@ def _judge(
     """
     figure, item = claim.figure, claim.item
     shown = _written(figure)
+    negative = claim.negative
+
+    def directed(outcome: _Comparison, other: Decimal, established: bool) -> _Comparison:
+        """Hold a match whose direction is unknown; refuse one in the other direction."""
+        if outcome != "match" or claim.change:
+            return outcome
+        if not established or negative is None:
+            return "uncertain"
+        return "no" if other != 0 and (other < 0) != negative else outcome
+
     if figure.value is None or item is None or claim.dated_ambiguously:
         return FigureCheck(shown, "unverified", (), item), False
     value = figure.value
@@ -504,7 +557,19 @@ def _judge(
             cell.years,
             _best(
                 {
-                    _compare(figure, value, v, cell.scale, cell.percent, cell.currency, cell.marked)
+                    directed(
+                        _compare(
+                            figure,
+                            value,
+                            abs(v),
+                            cell.scale,
+                            cell.percent,
+                            cell.currency,
+                            cell.marked,
+                        ),
+                        v,
+                        "direction" not in cell.overrides,
+                    )
                     for v in cell.values
                 }
             ),
@@ -530,14 +595,18 @@ def _judge(
         return FigureCheck(shown, verdict, evidenced, item), False
     outcome = _best(
         {
-            _compare(
-                figure,
-                value,
-                fact.figure.value,
-                fact.figure.stated_scale,
-                fact.figure.percent,
-                fact.figure.stated_currency,
-                bool(fact.figure.currency),
+            directed(
+                _compare(
+                    figure,
+                    value,
+                    fact.figure.value,
+                    fact.figure.stated_scale,
+                    fact.figure.percent,
+                    fact.figure.stated_currency,
+                    bool(fact.figure.currency),
+                ),
+                -fact.figure.value if fact.negative else fact.figure.value,
+                fact.negative is not None,
             )
             for fact in facts
             if not wanted
@@ -562,7 +631,7 @@ def check_figures(
     """
     requested = set(requested_years)
     cells = [cell for item in evidence if item.table_cells is not None for cell in item.table_cells]
-    data_values = {value for cell in cells for value in cell.values}
+    data_values = {abs(value) for cell in cells for value in cell.values}
     facts = [
         claim
         for item in evidence

@@ -122,11 +122,20 @@ def test_without_a_requested_period_any_cited_figure_is_verified():
     assert result.verdict == "verified"
 
 
-def test_losses_match_by_magnitude():
-    """Match "a loss of 33" to a filing's parenthesized (33)."""
+@pytest.mark.parametrize(
+    ("answer", "verdict"),
+    [
+        ("The 2023 net loss was $33 million.", "verified"),
+        ("The 2023 net income was -$33 million.", "verified"),
+        ("The 2023 net income was $(33) million.", "verified"),
+        ("The 2023 net income was $33 million.", "unverified"),
+        ("The 2023 net income (loss) was $33 million.", "unverified"),
+    ],
+)
+def test_losses_match_by_magnitude_and_direction(answer, verdict):
+    """A loss phrase or a negative figure matches a filing's (33); a plain 33 does not."""
     html = USD_INCOME_TABLE.replace("854", "(33)")
-    result = check_figures("The 2023 net loss was $33 million.", [table_evidence(html)], [2023])
-    assert result.verdict == "verified"
+    assert check_figures(answer, [table_evidence(html)], [2023]).verdict == verdict
 
 
 @pytest.mark.parametrize(
@@ -749,10 +758,9 @@ def test_an_ambiguously_dated_figure_is_unverified():
 
 
 def test_net_income_and_net_loss_name_a_net_income_loss_row():
-    """Read "net income (loss)" in an answer as net income."""
-    result = check_figures(
-        "2024 net income (loss) was $25,785 million.", [fragment_evidence("Net loss")], [2024]
-    )
+    """Read "net income (loss)" in an answer as net income, compared in its direction."""
+    evidence = fragment_evidence("Net loss", "(25,785)")
+    result = check_figures("2024 net income (loss) was $(25,785) million.", [evidence], [2024])
     assert result.verdict == "verified"
 
 
@@ -1191,13 +1199,20 @@ def test_a_scale_word_against_the_cells_unit_confirms_no_claim(html, facts, answ
     assert checked(answer, evidence) == verdicts
 
 
-def test_a_loss_only_label_is_checked_by_magnitude_as_every_loss_is():
-    """Known limit: answers compare magnitudes, so "Net loss | 1,641" confirms a loss of 1,641.
-
-    The cell is held because its sign is unstated; the magnitude it shows is established.
-    """
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Net loss was $1,641 million in 2024.",
+        "Net income was $1,641 million in 2024.",
+        "Net income was -$1,641 million in 2024.",
+    ],
+)
+def test_a_cell_whose_direction_is_not_established_withholds_the_claim(answer):
+    """ "Net loss | 1,641" states no sign, so no direction of 1,641 is confirmed."""
     html = USD_INCOME_TABLE.replace("Net income", "Net loss")
-    assert checked("Net loss was $1,641 million in 2024.", table_evidence(html)) == ["verified"]
+    assert checked(answer, table_evidence(html)) == ["unit_unverified"]
+    triangle = USD_INCOME_TABLE.replace("<td>1,641</td>", "<td>▲1,641</td>")
+    assert checked(answer, table_evidence(triangle)) == ["unit_unverified"]
 
 
 @pytest.mark.parametrize(
@@ -1249,3 +1264,47 @@ def test_a_column_header_with_any_unknown_word_confirms_no_annual_amount(header)
     evidence = table_evidence(html)
     assert checked("FY2024 net revenue was $27,000 million.", evidence) == ["unverified"]
     assert checked("FY2024 net revenue was $25,785 million.", evidence) == ["verified"]
+
+
+@pytest.mark.parametrize(
+    ("answer", "gain", "loss"),
+    [
+        ("FY2024 net income was $1,641 million.", "verified", "unverified"),
+        ("FY2024 net income was -$1,641 million.", "unverified", "verified"),
+        ("FY2024 net income was $-1,641 million.", "unverified", "verified"),
+        ("FY2024 net income was $(1,641) million.", "unverified", "verified"),
+        ("FY2024 net income was ($1,641) million.", "unverified", "verified"),
+        ("FY2024 net loss was $1,641 million.", "unverified", "verified"),
+        ("FY2024 net loss was $(1,641) million.", "unverified", "verified"),
+        ("FY2024 net income was ▲$1,641 million.", "unverified", "unverified"),
+    ],
+)
+def test_a_claim_and_a_cell_must_agree_in_direction(answer, gain, loss):
+    """Equal magnitudes in opposite directions never verify; a loss phrase states a loss."""
+    loss_table = USD_INCOME_TABLE.replace("<td>1,641</td>", "<td>(1,641)</td>")
+    assert checked(answer, table_evidence()) == [gain]
+    assert checked(answer, table_evidence(loss_table)) == [loss]
+
+
+@pytest.mark.parametrize(
+    ("answer", "gain", "loss"),
+    [
+        ("2024년 영업이익은 1,234백만원이다.", "verified", "unverified"),
+        ("2024년 영업손실은 1,234백만원이다.", "unverified", "verified"),
+        ("2024년 영업이익은 △1,234백만원이다.", "unverified", "verified"),
+        ("2024년 영업이익은 -1,234백만원이다.", "unverified", "verified"),
+        ("2024년 영업이익은 1,234백만원 적자이다.", "unverified", "unverified"),
+    ],
+)
+def test_korean_losses_agree_in_direction(answer, gain, loss):
+    """영업손실 and △ state a loss; 적자 is not read, so its figure names no item."""
+    for cell, expected in (("1,234", gain), ("△1,234", loss)):
+        fragment = {
+            **DART_FRAGMENT,
+            "cells": [
+                {"sources": [{"row": 1, "column": 0, "text": "영업이익(손실)"}]},
+                {"sources": [{"row": 1, "column": 1, "text": cell}]},
+            ],
+        }
+        evidence = EvidenceText(9, "", "연결 손익계산서", tuple(read_table_cells(fragment)))
+        assert checked(answer, evidence) == [expected]

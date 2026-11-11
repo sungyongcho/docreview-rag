@@ -176,6 +176,10 @@ class TableCellReading:
     table's notes and the markers bound to this cell's own numbers only, never from
     other rows or tables; ``marked`` says the cell's numbers carry currency markers.
 
+    ``values`` carry the sign the notation or the tag establishes ("(1,641)" is
+    -1641); ``direction`` in ``overrides`` marks values whose sign is not established
+    (a ``▲`` figure, an unsigned figure under a loss-only label).
+
     A reading carries each fact its cell does not establish, so a figure check that
     compares readings and the cell's interpretation decide it the same way:
     ``values`` is empty when the figure is no one amount (digits not grouped in
@@ -867,6 +871,22 @@ def _split_percent(fragment: Mapping[str, object]) -> set[tuple[int, int]]:
     return found
 
 
+def _directed(reading: TableCellReading, notations: list[Decimal | None]) -> TableCellReading:
+    """Give a reading's values the sign its notation or its tag establishes.
+
+    A tag's ``sign`` override reverses the notation. Where neither establishes the
+    direction (a ``▲`` figure, or an unsigned figure under a loss-only label that no
+    tag signs), the values stay as written and ``direction`` is recorded.
+    """
+    if any(value is None for value in notations):
+        return replace(reading, overrides=(*reading.overrides, "direction"))
+    flip = -1 if "sign" in reading.overrides else 1
+    values = frozenset(flip * value for value in notations if value is not None)
+    if reading.measure is None and _loss_only(reading.row_label) and all(v > 0 for v in values):
+        return replace(reading, values=values, overrides=(*reading.overrides, "direction"))
+    return replace(reading, values=values)
+
+
 def _negative(text: str) -> bool | None:
     """Whether a cell's one figure is written as negative; None for none, several or ▲."""
     spans = [figure for figure in figure_spans(blank(text)) if figure.value is not None]
@@ -995,6 +1015,8 @@ def read_table_cells(
                 if written and reading.percent is False and written != {reading.scale}:
                     # A scale word the cell's unit, tagged or read, does not carry.
                     reading = replace(reading, scale=None)
+                if reading.values:
+                    reading = _directed(reading, [signed(figure) for figure in spans])
                 cells.append(reading)
     # A tag dating its column to another year than the header's text (a filer whose
     # "2023" ends in 2024) leaves the column's untagged cells without a year.
@@ -1051,7 +1073,7 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
         return CellInterpretation("conflicting", "no established figure", value, reading)
     if "sign" in reading.overrides:
         value = -value
-    elif reading.measure is None and value > 0 and _loss_only(reading.row_label):
+    if "direction" in reading.overrides:
         # Neither the notation nor a tag states the sign of a loss row's figure.
         return CellInterpretation(
             "conflicting", "an unsigned figure under a loss-only label", value, reading
