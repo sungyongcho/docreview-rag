@@ -59,6 +59,13 @@ class CorpusStatusResource(StrictSchema):
     pending_embeddings: NonNegativeInt
     bm25_ready: StrictBool
     bm25_rebuild_recorded: StrictBool | None = None
+    stale_tables: NonNegativeInt | None = Field(
+        None,
+        description=(
+            "Stored tables built or read by code other than the running code; their cells "
+            "confirm no figure until their documents are ingested again."
+        ),
+    )
     writable: StrictBool = Field(
         description=(
             "Source directory write permission, independent of database schema compatibility."

@@ -5,11 +5,15 @@ import json
 from pathlib import Path
 
 import pytest
+from sqlalchemy import update
 
 from app.config import Settings
 import app.corpus_admin.inspection as inspection
 from app.corpus_admin.service import RuntimeCorpusAdminService
+from app.db.models import ParsedTable
+from app.ingestion.persistence import persist_seed_batch
 from tests.corpus_admin.support import write_manifest
+from tests.ingestion.seed.support import table_batch
 from tests.live_postgres import isolated_session_factory
 
 
@@ -90,7 +94,7 @@ def _status_service(tmp_path, monkeypatch, *, tables=None):
     async def counts(_tables):
         """Report fixed counts and count the measurement."""
         calls["counts"] += 1
-        return 3, 30, 30, True
+        return 3, 30, 30, True, 0
 
     async def documents(_tables):
         """Fail if the status path ever loads document rows."""
@@ -185,3 +189,28 @@ def test_live_postgres_admin_status_matches_snapshot_status(tmp_path) -> None:
     snapshot, status = asyncio.run(both())
     assert status.database_connected
     assert status == snapshot.status
+
+
+@pytest.mark.live_postgres
+def test_live_postgres_status_counts_tables_built_or_read_by_other_code(tmp_path) -> None:
+    """Report no stale tables while identities match, and each one marked as older code."""
+
+    async def scenario():
+        """Store one table, read the status, mark the table stale, read it again."""
+        async with isolated_session_factory() as factory:
+            service = RuntimeCorpusAdminService(
+                settings=Settings(corpus_dir=tmp_path),
+                session_factory=factory,
+                engine=factory.kw["bind"],
+            )
+            async with factory() as session:
+                await persist_seed_batch(session, table_batch())
+            current = await service.status(max_age_s=0.0)
+            async with factory() as session:
+                await session.execute(update(ParsedTable).values(resolver_identity="0" * 64))
+                await session.commit()
+            return current, await service.status(max_age_s=0.0)
+
+    current, stale = asyncio.run(scenario())
+    assert (current.schema_status, current.stale_tables) == ("compatible", 0)
+    assert stale.stale_tables == 1

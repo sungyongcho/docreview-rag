@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ColumnElement, select
+from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -53,6 +53,17 @@ class StoredTable:
 
     fragment: dict[str, object]
     readings: tuple[TableCellReading, ...]
+
+
+def stored_table_counts() -> Select[int, int]:
+    """Count the live stored tables, and those not built and read by the running code."""
+    return select(
+        func.count(),
+        func.count().filter(
+            (ParsedTable.resolver_identity != resolver_identity())
+            | (ParsedTable.builder_identity != builder_identity())
+        ),
+    ).select_from(ParsedTable)
 
 
 def current_table(table: _Table) -> bool:

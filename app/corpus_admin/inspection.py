@@ -37,6 +37,7 @@ from app.ingestion.sources.catalog import acquired_catalog
 from app.ingestion.sources.models import Manifest
 from app.ingestion.sources.selection import acquisition_draft, catalog_inventory
 from app.retrieval.indexing.embeddings import matching_embedding
+from app.retrieval.tables import stored_table_counts
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,7 @@ class _StatusProbe:
     bm25_ready: bool
     observed_at: float
     bm25_rebuild_recorded: bool = False
+    stale_tables: int = 0
 
 
 # Manifest field names that differ from the ORM attribute: `registry` is reserved by
@@ -258,10 +260,10 @@ class CorpusInspector:
             )
         return tuple(selections)
 
-    async def _counts(self, tables: set[str]) -> tuple[int, int, int, bool]:
-        """Return corpus and index counts only when their tables exist."""
+    async def _counts(self, tables: set[str]) -> tuple[int, int, int, bool, int]:
+        """Return corpus, index and stale-table counts only when their tables exist."""
         if not {"documents", "chunks"}.issubset(tables):
-            return 0, 0, 0, False
+            return 0, 0, 0, False, 0
         async with self._service.session_factory() as session:
             documents = int(await session.scalar(select(func.count()).select_from(Document)) or 0)
             chunks = int(await session.scalar(select(func.count()).select_from(Chunk)) or 0)
@@ -282,7 +284,10 @@ class CorpusInspector:
                 bm25_ready = bool(
                     await session.scalar(select(func.count()).select_from(BM25CorpusStat))
                 )
-        return documents, chunks, embedded, bm25_ready
+            stale = 0
+            if "parsed_tables" in tables:
+                stale = int((await session.execute(stored_table_counts())).one()[1])
+        return documents, chunks, embedded, bm25_ready, stale
 
     async def _documents(self, tables: set[str]) -> tuple[tuple[Document, int], ...]:
         """Return deterministic document rows from a compatible populated schema."""
@@ -325,12 +330,12 @@ class CorpusInspector:
             if cached is not None and time.monotonic() - cached.observed_at < max_age_s:
                 return cached
             schema_status, schema_message, tables = await self.schema_state()
-            documents = chunks = embedded = 0
+            documents = chunks = embedded = stale = 0
             bm25_ready = False
             rebuild_recorded = False
             if schema_status == "compatible":
                 try:
-                    documents, chunks, embedded, bm25_ready = await self._counts(tables)
+                    documents, chunks, embedded, bm25_ready, stale = await self._counts(tables)
                     rebuild_recorded = bm25_ready or await self._bm25_rebuild_recorded(tables)
                 except Exception as error:  # noqa: BLE001 - rendered as safe unavailable state
                     schema_status = "unavailable"
@@ -345,6 +350,7 @@ class CorpusInspector:
                 bm25_ready=bm25_ready,
                 observed_at=time.monotonic(),
                 bm25_rebuild_recorded=rebuild_recorded,
+                stale_tables=stale,
             )
             self._status_cache = probe
             return probe
@@ -361,6 +367,7 @@ class CorpusInspector:
             pending_embeddings=max(probe.chunks - probe.embedded_chunks, 0),
             bm25_ready=probe.bm25_ready,
             bm25_rebuild_recorded=probe.bm25_rebuild_recorded,
+            stale_tables=probe.stale_tables,
             writable=os.access(self._service.corpus_root, os.W_OK | os.X_OK),
             provider=self._service.settings.embedding_provider,
         )

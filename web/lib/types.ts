@@ -177,6 +177,7 @@ export interface Readiness {
     pending_embeddings: number | null;
     bm25_ready: boolean | null;
     bm25_rebuild_recorded?: boolean | null;
+    stale_tables?: number | null;
     updating?: boolean;
     writable: boolean | null;
   };
@@ -240,6 +241,8 @@ export interface CorpusCounts {
   pending_embeddings: number | null;
   bm25_ready: boolean | null;
   bm25_rebuild_recorded?: boolean | null;
+  /** Stored tables built or read by code other than the running code. */
+  stale_tables?: number | null;
   writable: boolean | null;
   provider?: string | null;
   /** Present on `/ready.corpus`; a public surface withholds counts but still reports availability. */

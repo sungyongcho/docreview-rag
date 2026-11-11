@@ -1129,6 +1129,19 @@
             "title": "Schema Status",
             "type": "string"
           },
+          "stale_tables": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stored tables built or read by code other than the running code; their cells confirm no figure until their documents are ingested again.",
+            "title": "Stale Tables"
+          },
           "writable": {
             "description": "Source directory write permission, independent of database schema compatibility.",
             "title": "Writable",

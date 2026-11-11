@@ -1592,6 +1592,11 @@ export interface components {
              */
             schema_status: "compatible" | "empty" | "drifted" | "unavailable";
             /**
+             * Stale Tables
+             * @description Stored tables built or read by code other than the running code; their cells confirm no figure until their documents are ingested again.
+             */
+            stale_tables?: number | null;
+            /**
              * Writable
              * @description Source directory write permission, independent of database schema compatibility.
              */

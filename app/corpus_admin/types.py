@@ -95,6 +95,9 @@ class CorpusStatus:
     writable: bool
     provider: str
     bm25_rebuild_recorded: bool = False
+    # Stored tables built or read by code other than the running code; their cells
+    # serve no catalog and confirm no figure until their documents are ingested again.
+    stale_tables: int = 0
 
 
 @dataclass(frozen=True, slots=True)

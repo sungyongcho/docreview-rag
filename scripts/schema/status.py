@@ -1,13 +1,14 @@
 """Inspect or prepare schema objects while preserving existing database contents."""
 
-from sqlalchemy import func, inspect, select
+from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility
-from app.db.models import Base, ParsedTable
+from app.db.models import Base
 from app.db.startup import prepare as prepare_schema
 from app.ingestion.table_records import builder_identity, resolver_identity
+from app.retrieval.tables import stored_table_counts
 
 
 async def stored_tables(connection: AsyncConnection) -> dict[str, object]:
@@ -16,23 +17,12 @@ async def stored_tables(connection: AsyncConnection) -> dict[str, object]:
     A stale table serves no cell catalog and confirms no figure until its document is
     ingested again.
     """
-    resolver, builder = resolver_identity(), builder_identity()
-    total, stale = (
-        await connection.execute(
-            select(
-                func.count(),
-                func.count().filter(
-                    (ParsedTable.resolver_identity != resolver)
-                    | (ParsedTable.builder_identity != builder)
-                ),
-            ).select_from(ParsedTable)
-        )
-    ).one()
+    total, stale = (await connection.execute(stored_table_counts())).one()
     return {
         "total": total,
         "stale": stale,
-        "resolver_identity": resolver,
-        "builder_identity": builder,
+        "resolver_identity": resolver_identity(),
+        "builder_identity": builder_identity(),
     }
 
 

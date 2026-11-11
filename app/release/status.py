@@ -145,6 +145,9 @@ class CorpusReadiness(BaseModel):
     pending_embeddings: int | None = None
     bm25_ready: bool | None = None
     bm25_rebuild_recorded: bool | None = None
+    # Informational like bm25_rebuild_recorded: a stale table's cells confirm no figure,
+    # but retrieval still works, so it does not degrade availability.
+    stale_tables: int | None = None
     writable: bool | None = None
     updating: bool = False
 
@@ -326,6 +329,7 @@ def install_status_routes(
                 pending_embeddings=status.pending_embeddings,
                 bm25_ready=status.bm25_ready,
                 bm25_rebuild_recorded=status.bm25_rebuild_recorded,
+                stale_tables=status.stale_tables,
                 writable=status.writable,
                 updating=updating,
             )

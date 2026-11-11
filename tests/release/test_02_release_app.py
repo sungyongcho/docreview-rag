@@ -586,3 +586,38 @@ def test_runtime_readiness_exposes_probe_failure_without_private_details(monkeyp
     assert corpus["schema_message"] == "RuntimeError"
     assert corpus["database_connected"] is None
     assert "private dependency details" not in response.text
+
+
+def test_readiness_reports_stale_tables_without_degrading_a_ready_corpus(monkeypatch):
+    """Show the stale-table count on a ready corpus; it does not withhold readiness."""
+
+    async def status_probe(self, *, max_age_s=0.0) -> CorpusStatus:
+        """Report a fully prepared index with three tables from older code."""
+        return CorpusStatus(
+            database_connected=True,
+            schema_status="compatible",
+            schema_message="ok",
+            documents=1,
+            chunks=10,
+            embedded_chunks=10,
+            pending_embeddings=0,
+            bm25_ready=True,
+            writable=True,
+            provider="deterministic",
+            stale_tables=3,
+        )
+
+    monkeypatch.setattr(RuntimeCorpusAdminService, "status", status_probe)
+    settings = load_settings(
+        ReleaseSettings, service_mode="runtime", admin_mode="live", host="127.0.0.1", env_file=None
+    )
+    with TestClient(
+        create_release_app(
+            settings,
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+        )
+    ) as client:
+        response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json()["corpus"]["availability"] == "ready"
+    assert response.json()["corpus"]["stale_tables"] == 3
