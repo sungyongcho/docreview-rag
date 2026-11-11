@@ -5,7 +5,7 @@ canonical table rows, from the live index or from the snapshot it was retrieved 
 """
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -30,6 +30,7 @@ from app.db.models import (
     TableCellSource,
     TableSourceCell,
 )
+from app.figures.answers import EvidenceText
 from app.figures.tables import TableCellReading
 from app.ingestion.persistence import slices
 from app.ingestion.table_records import builder_identity, resolver_identity
@@ -41,9 +42,6 @@ type _Caption = TableCaption | SnapshotTableCaption
 type _Header = ChunkTableHeader | SnapshotChunkTableHeader
 type _Link = TableCellSource | SnapshotTableCellSource
 
-# The scope a stale table's withheld readings carry, so no cell of it is ever compared.
-STALE_SCOPE = "stale"
-
 
 @dataclass(frozen=True, slots=True)
 class StoredTable:
@@ -51,13 +49,10 @@ class StoredTable:
 
     ``readings`` lists, for every fragment cell in order, the readings of its
     figure-bearing source cells, exactly as ``read_table_cells`` yields them.
-    ``stale`` marks a live-index table built or read by code other than the running
-    code (see ``current_table``); a snapshot table is frozen by design and never stale.
     """
 
     fragment: dict[str, object]
     readings: tuple[TableCellReading, ...]
-    stale: bool = False
 
 
 def current_table(table: _Table) -> bool:
@@ -209,11 +204,17 @@ def assemble_tables(
 
 
 async def load_chunk_tables(
-    session: AsyncSession, chunk_ids: Iterable[int], snapshot_id: int | None = None
+    session: AsyncSession,
+    chunk_ids: Iterable[int],
+    snapshot_id: int | None = None,
+    *,
+    current_only: bool = False,
 ) -> dict[int, StoredTable]:
     """Return the stored table of each table chunk, from the index it was retrieved from.
 
-    Text chunks, and table chunks stored without their table, are left out.
+    Text chunks, and table chunks stored without their table, are left out; so is a
+    live table built or read by code other than the running code when ``current_only``
+    is set (see ``current_table``). A snapshot is frozen by design and kept whole.
     """
     ids = sorted(set(chunk_ids))
     if not ids:
@@ -292,34 +293,45 @@ async def load_chunk_tables(
         links_model.ordinal,
     )
     stored = assemble_tables(members, tables, table_captions, grid_cells, chunk_headers, cell_links)
-    if snapshot_id is not None:
+    if snapshot_id is not None or not current_only:
         return stored
     stale = {member.chunk_id for member in members if not current_table(tables[member.table_id])}
-    return {
-        chunk_id: replace(table, stale=True) if chunk_id in stale else table
-        for chunk_id, table in stored.items()
-    }
+    return {chunk_id: table for chunk_id, table in stored.items() if chunk_id not in stale}
 
 
 async def load_table_readings(
     session: AsyncSession, chunk_ids: Iterable[int], snapshot_id: int | None = None
 ) -> dict[int, tuple[TableCellReading, ...]]:
-    """Return the stored figure readings of each table chunk, for the figure check.
+    """Return the usable stored figure readings of each table chunk, for the figure check.
 
-    A stale live table's readings are withheld: each keeps its values but names no item
-    and carries ``STALE_SCOPE``, so no cell of it can confirm or withhold a claim, while
-    its values still keep the chunk body's copies of them from being read as running
-    text. A snapshot's readings are returned as frozen.
+    A table chunk is left out when its readings are not usable: stored without its
+    table, or a live table from code other than the running code. A snapshot's
+    readings are returned as frozen. See ``figure_evidence`` for what a left-out
+    table chunk gives the check.
     """
-    stored = await load_chunk_tables(session, chunk_ids, snapshot_id)
-    return {
-        chunk_id: tuple(
-            replace(reading, item=None, scope=STALE_SCOPE) for reading in table.readings
-        )
-        if table.stale
-        else table.readings
-        for chunk_id, table in stored.items()
-    }
+    stored = await load_chunk_tables(session, chunk_ids, snapshot_id, current_only=True)
+    return {chunk_id: table.readings for chunk_id, table in stored.items()}
+
+
+def figure_evidence(
+    chunk_id: int,
+    kind: str,
+    body: str,
+    context_header: str,
+    readings: Mapping[int, Sequence[TableCellReading]],
+) -> EvidenceText:
+    """Give the figure check what one cited chunk can confirm, the same on every path.
+
+    Running text gives its body. A table chunk gives its body and its usable stored
+    readings from ``load_table_readings``; one without them gives no body and no cells,
+    because its body read as running text would confirm more loosely than its table.
+    """
+    if kind != "table":
+        return EvidenceText(chunk_id, body, context_header)
+    cells = readings.get(chunk_id)
+    if cells is None:
+        return EvidenceText(chunk_id, "", context_header, ())
+    return EvidenceText(chunk_id, body, context_header, cells)
 
 
 async def load_table_fragments(

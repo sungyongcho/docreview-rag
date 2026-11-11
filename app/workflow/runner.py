@@ -292,8 +292,8 @@ async def run_workflow(
         that records a failure.
     table_loader : TableLoader | None
         Reads the stored figure readings of the graded table evidence so ``check_node``
-        can read each cited figure's column period. Without it, table evidence is read as
-        running text and cannot confirm a requested period.
+        can read each cited figure's column period. Without it, table evidence confirms
+        no figure.
 
     Returns
     -------

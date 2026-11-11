@@ -19,6 +19,7 @@ from tests.live_postgres import isolated_session
 from tests.workflow.support import ok_result, provider_budget
 
 PROSE = "Net revenue increased 14% compared with the prior year."
+PROSE_TABLE_BODY = "Revenue grew 14% in fiscal 2024."
 
 
 def _hit(chunk: Chunk) -> ChunkHit:
@@ -86,5 +87,31 @@ def test_a_stale_table_leaves_a_supported_figure_unverified(identity):
             assert any(isinstance(reason, FiguresUnverified) for reason in refused.reasons)
             prose = await _label(session, _hit(text), "Revenue grew 14%.", ())
             assert prose.label == "SUPPORTED"
+            # A body that would confirm the answer if it were read as running text.
+            await session.execute(
+                update(Chunk).where(Chunk.id == table.id).values(body=PROSE_TABLE_BODY)
+            )
+            await session.refresh(table)
+            body = await _label(session, _hit(table), "Revenue grew 14%.", ())
+            assert body.label == "NOT_IN_DOCS"
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_a_table_chunk_stored_without_its_table_confirms_no_figure():
+    """Refuse a figure whose only citation is a table chunk with no table rows."""
+
+    async def exercise() -> None:
+        """Store a table chunk without rows whose body would confirm the answer as prose."""
+        async with isolated_session() as session:
+            await persist_seed_batch(session, sample_batch())
+            await session.execute(
+                update(Chunk).where(Chunk.kind == "table").values(body=PROSE_TABLE_BODY)
+            )
+            table = (await session.scalars(select(Chunk).where(Chunk.kind == "table"))).one()
+            report = await _label(session, _hit(table), "Revenue grew 14%.", ())
+            assert report.label == "NOT_IN_DOCS"
+            assert any(isinstance(reason, FiguresUnverified) for reason in report.reasons)
 
     asyncio.run(exercise())

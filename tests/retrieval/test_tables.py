@@ -9,10 +9,12 @@ import pytest
 from sqlalchemy import delete, select, update
 
 from app.db.models import Chunk, ChunkTableCell, ParsedTable
+from app.figures.answers import EvidenceText
+from app.figures.tables import TableCellReading
 from app.ingestion.persistence import persist_seed_batch
 from app.ingestion.table_records import resolver_identity
 from app.retrieval.tables import (
-    STALE_SCOPE,
+    figure_evidence,
     load_cell_catalog,
     load_chunk_tables,
     load_table_readings,
@@ -144,7 +146,7 @@ def test_tables_load_for_more_chunk_ids_than_one_statement_can_bind():
 
 @pytest.mark.live_postgres
 @pytest.mark.parametrize("identity", ["resolver_identity", "builder_identity"])
-def test_a_table_from_other_code_has_no_catalog_and_withholds_its_readings(identity):
+def test_a_table_from_other_code_has_no_catalog_and_no_usable_readings(identity):
     """Serve catalog and readings while both stored identities are the running ones."""
 
     async def exercise() -> None:
@@ -160,10 +162,22 @@ def test_a_table_from_other_code_has_no_catalog_and_withholds_its_readings(ident
             assert {reading.item for reading in current} == {"revenue", "net income"}
             await session.execute(update(ParsedTable).values({identity: "0" * 64}))
             assert await load_cell_catalog(session, chunk_id) == {"status": "unavailable"}
-            stored = await load_chunk_tables(session, [chunk_id])
-            assert stored[chunk_id].stale is True
-            withheld = (await load_table_readings(session, [chunk_id]))[chunk_id]
-            assert [(r.item, r.scope) for r in withheld] == [(None, STALE_SCOPE)] * 3
-            assert [r.values for r in withheld] == [r.values for r in current]
+            assert set(await load_chunk_tables(session, [chunk_id])) == {chunk_id}
+            assert await load_chunk_tables(session, [chunk_id], current_only=True) == {}
+            assert await load_table_readings(session, [chunk_id]) == {}
 
     asyncio.run(exercise())
+
+
+def test_figure_evidence_gives_no_body_or_cells_for_a_table_without_usable_readings():
+    """Give prose its body and a table its readings, and a table without readings nothing."""
+    reading = TableCellReading(1, 1, frozenset({Decimal(5)}), frozenset({2024}), None, None, None)
+    assert figure_evidence(1, "text", "Revenue grew 14%.", "h", {}) == EvidenceText(
+        1, "Revenue grew 14%.", "h", None
+    )
+    assert figure_evidence(2, "table", "| a | 5 |", "h", {2: (reading,)}) == EvidenceText(
+        2, "| a | 5 |", "h", (reading,)
+    )
+    assert figure_evidence(3, "table", "Revenue grew 14%.", "h", {2: (reading,)}) == (
+        EvidenceText(3, "", "h", ())
+    )

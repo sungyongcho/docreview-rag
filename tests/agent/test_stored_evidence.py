@@ -63,3 +63,27 @@ def test_a_stale_table_confirms_no_figure_and_its_body_is_not_read_as_prose(iden
             assert check_figures("Revenue grew 14%.", [stale[text_id]], []).verdict == ("verified")
 
     asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_a_table_chunk_stored_without_its_table_is_not_read_as_prose():
+    """Give a table chunk with no table rows no body and no cells, so it confirms nothing."""
+
+    async def exercise() -> None:
+        """Store a table chunk without rows whose body would confirm the answer as prose."""
+        async with isolated_session_factory() as factory:
+            async with factory() as session:
+                await persist_seed_batch(session, sample_batch())
+                table_id = await session.scalar(select(Chunk.id).where(Chunk.kind == "table"))
+                assert table_id is not None
+                await session.execute(
+                    update(Chunk)
+                    .where(Chunk.id == table_id)
+                    .values(body="Revenue grew 14% in fiscal 2024.")
+                )
+                await session.commit()
+            evidence = (await read_cited_evidence(factory, (table_id,)))[table_id]
+            assert (evidence.body, evidence.table_cells) == ("", ())
+            assert check_figures("Revenue grew 14%.", [evidence], []).verdict == "unverified"
+
+    asyncio.run(exercise())

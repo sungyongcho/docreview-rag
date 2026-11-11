@@ -10,7 +10,6 @@ from app.contracts.evidence import EvidenceCitation
 from app.figures.answers import (
     UNIT_UNVERIFIED_ANSWER,
     UNIT_UNVERIFIED_ANSWER_KO,
-    EvidenceText,
     check_figures,
 )
 from app.figures.tables import TableCellReading
@@ -23,6 +22,7 @@ from app.llm.schemas import (
     SchemaRejected,
 )
 from app.query.language import detect_query_language
+from app.retrieval.tables import figure_evidence
 from app.retrieval.types import ChunkHit
 from app.workflow.prompts import evidence_budget_chars, evidence_chars
 from app.workflow.types import (
@@ -407,9 +407,9 @@ def check_node(
     result : ProviderResult[AnswerDecision]
         Typed answer decision or refusal.
     table_cells : Mapping[int, Sequence[TableCellReading]] | None
-        Stored figure readings of the cited table chunks, by chunk id. A table chunk
-        without a stored table is read as running text, which can only make the figure
-        check stricter.
+        Usable stored figure readings of the cited table chunks, by chunk id. A table
+        chunk without them gives the figure check no body and no cells, never its body
+        as running text, which would confirm more loosely (see ``figure_evidence``).
 
     Returns
     -------
@@ -476,7 +476,7 @@ def check_node(
         figures = check_figures(
             guarded.answer,
             [
-                EvidenceText(hit.chunk_id, hit.body, hit.context_header, readings.get(chunk_id))
+                figure_evidence(hit.chunk_id, hit.kind, hit.body, hit.context_header, readings)
                 for chunk_id in guarded.citation_chunk_ids
                 if (hit := evidence_by_id.get(chunk_id)) is not None
             ],
