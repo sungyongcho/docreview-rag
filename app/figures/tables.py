@@ -772,8 +772,8 @@ def _with_fact(
     Other units (shares, ratios) are not amounts, and DART facts state no unit, so
     the text keeps their unit.
     """
-    overrides: list[str] = []
-    if fact.sign is not None and negative is not None and (fact.sign == "-") != negative:
+    overrides: list[str] = list(reading.overrides)
+    if fact.sign is not None and (negative is None or (fact.sign == "-") != negative):
         overrides.append("sign")
     years = frozenset() if fact.fiscal_year is None else frozenset({fact.fiscal_year})
     if reading.years and reading.years != years:
@@ -806,8 +806,15 @@ def _with_fact(
         if standard.group("name") not in ITEMS[item].concepts:
             overrides.append("concept")
             item = None
+    resolved_values = reading.values
+    if fact.sign is not None and measure in {"amount", "per_share"}:
+        resolved_values = frozenset(
+            (-1 if fact.sign == "-" else 1) * abs(v) for v in reading.values
+        )
+        overrides = [override for override in overrides if override != "direction"]
     return replace(
         reading,
+        values=resolved_values,
         years=years,
         item=item,
         scale=scale,
@@ -962,6 +969,8 @@ def read_table_cells(
                     label,
                     scope=scope,
                 )
+                if reading.values:
+                    reading = _directed(reading, [signed(figure) for figure in spans])
                 tagged = facts.get((row, column), ())
                 if len(tagged) == 1 and values(tagged[0].text) == cell_values:
                     reading = _with_fact(
@@ -982,8 +991,6 @@ def read_table_cells(
                 if written and reading.percent is False and written != {reading.scale}:
                     # A scale word the cell's unit, tagged or read, does not carry.
                     reading = replace(reading, scale=None)
-                if reading.values:
-                    reading = _directed(reading, [signed(figure) for figure in spans])
                 cells.append(reading)
     # A tag dating its column to another year than the header's text (a filer whose
     # "2023" ends in 2024) leaves the column's untagged cells without a year.
@@ -1043,9 +1050,7 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     if len(spans) > 1 or len(distinct) > 1:
         return CellInterpretation("conflicting", "more than one figure", None, None)
     reading = next(iter(distinct))
-    value = signed(spans[0])
-    if value is None:
-        return CellInterpretation("conflicting", "sign marker is ambiguous", None, reading)
+    value = next(iter(reading.values)) if len(reading.values) == 1 else None
     if not _GROUPED.fullmatch(spans[0].text):
         return CellInterpretation("conflicting", "malformed digit grouping", value, reading)
     if "number" in reading.overrides:
@@ -1054,12 +1059,9 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
         )
     if not reading.values:
         return CellInterpretation("conflicting", "no established figure", value, reading)
-    if "sign" in reading.overrides:
-        value = -value
     if "direction" in reading.overrides:
-        # Neither the notation nor a tag states the sign of a loss row's figure.
         return CellInterpretation(
-            "conflicting", "an unsigned figure under a loss-only label", value, reading
+            "conflicting", "the figure's direction is not established", value, reading
         )
     if reading.measure == "other":
         return CellInterpretation("not_monetary", "tagged unit is not an amount", value, reading)

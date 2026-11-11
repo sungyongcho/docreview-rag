@@ -55,9 +55,9 @@ def test_table_readings_keep_an_ambiguous_dollar_unresolved():
     ("text", "changes", "status", "value"),
     [
         ("1,234", {}, "known", Decimal(1234)),
-        ("(1,234)", {}, "known", Decimal(-1234)),
-        ("△1,234.50", {}, "known", Decimal("-1234.50")),
-        ("▲1,234", {}, "conflicting", None),
+        ("(1,234)", {"values": frozenset({Decimal(-1234)})}, "known", Decimal(-1234)),
+        ("△1,234.50", {"values": frozenset({Decimal("-1234.50")})}, "known", Decimal("-1234.50")),
+        ("▲1,234", {"overrides": ("direction",)}, "conflicting", Decimal(1234)),
         ("1,234", {"scale": None}, "scale_unknown", Decimal(1234)),
         ("1,234", {"percent": None}, "scale_unknown", Decimal(1234)),
         ("1,234", {"currency": "$"}, "currency_unconfirmed", Decimal(1234)),
@@ -71,7 +71,12 @@ def test_table_readings_keep_an_ambiguous_dollar_unresolved():
         ("1,234", {"scope": "axis=member", "years": frozenset()}, "period_unknown", Decimal(1234)),
         (
             "12.5%",
-            {"percent": True, "scale": None, "currency": None},
+            {
+                "values": frozenset({Decimal("12.5")}),
+                "percent": True,
+                "scale": None,
+                "currency": None,
+            },
             "not_monetary",
             Decimal("12.5"),
         ),
@@ -99,7 +104,12 @@ def test_a_cell_without_one_figure_is_not_selectable():
 @pytest.mark.parametrize(
     ("text", "changes", "status", "reason"),
     [
-        ("▲1,234", {"measure": "other"}, "conflicting", "sign marker is ambiguous"),
+        (
+            "▲1,234",
+            {"measure": "other", "overrides": ("direction",)},
+            "conflicting",
+            "the figure's direction is not established",
+        ),
         (
             "1,234",
             {"measure": "other", "scale": None},

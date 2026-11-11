@@ -155,3 +155,36 @@ def test_three_readers_share_annual_versus_nonannual_periods(phrase, annual):
         [2024],
     ).verdict
     assert (verdict == "verified") is annual
+
+
+@pytest.mark.parametrize("notation", ["▲1,234", "(1,234)", "△1,234", "1,234"])
+@pytest.mark.parametrize("sign,expected", [("-", -1234), ("+", 1234)])
+def test_one_matching_monetary_tag_establishes_the_sign(notation, sign, expected):
+    """Consume a tag's resolved sign in interpretation, persistence and comparison."""
+    from decimal import Decimal
+
+    from app.db.models import TableSourceCell
+    from app.ingestion.persistence import reading_columns
+    from app.retrieval.tables import _reading
+
+    ev = fragment_evidence("Revenue", notation)
+    assert ev.table_cells is not None
+    fragment = {
+        "header_cells": [{"column": 1, "text": "2024"}],
+        "caption_sources": [linked("(In millions of U.S. dollars)")],
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": "Revenue"}]},
+            {"sources": [{"row": 1, "column": 1, "text": notation}]},
+        ],
+    }
+    (cell,) = read_table_cells(fragment, {(1, 1): (fact(text="1,234", sign=sign),)})
+    assert cell.values == {Decimal(expected)}
+    assert "direction" not in cell.overrides
+    assert interpret_table_cell(notation, [cell]).value == expected
+    source = TableSourceCell(grid_row=1, grid_column=1, **reading_columns(cell))
+    assert _reading(source) == cell
+    for claimed in (expected, -expected):
+        claim = f"FY2024 revenue was USD {claimed:,} million."
+        assert check_figures(claim, [EvidenceText(1, "", "", [cell])], [2024]).verdict == (
+            "verified" if claimed == expected else "unverified"
+        )
