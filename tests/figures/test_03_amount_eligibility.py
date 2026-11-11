@@ -252,15 +252,52 @@ def test_a_calendar_end_without_an_explicit_fy_keeps_its_literal_year():
     )
 
 
-def test_cross_calendar_explicit_fy_is_annual_but_answer_year_conflict_still_withholds():
-    """Pin the answer-reader integration needed outside this bundle's write boundary."""
+@pytest.mark.parametrize(
+    "form",
+    [
+        "FY2024 ended January 26, 2025",
+        "FY2024 (ended January 26, 2025)",
+        "FY'24, which ended on January 26, 2025,",
+    ],
+)
+def test_an_explicit_fiscal_year_owns_the_year_of_its_cross_calendar_ending(form):
+    """The end date's calendar year is not a second year of a claim its FY identifier dates."""
     from app.figures.answers import _claims
 
-    claim = "Revenue for FY2024 ended January 26, 2025 was USD 1,234 million."
+    claim = f"Revenue for {form} was USD 1,234 million."
     parsed = _claims(claim, answer=True)[0]
-    assert parsed.period == "annual" and parsed.dated_ambiguously
+    assert (parsed.period, parsed.year, parsed.dated_ambiguously) == ("annual", 2024, False)
+    assert check_figures(claim, [EvidenceText(1, "", "", [reading()])], [2024]).verdict == (
+        "verified"
+    )
+    assert check_figures(claim, [EvidenceText(1, "", "", [reading()])], [2025]).verdict == (
+        "period_mismatch"
+    )
+
+
+def test_an_ending_without_a_fiscal_year_identifier_keeps_its_calendar_year():
+    """No fiscal calendar is inferred: the written end date's year dates the claim."""
+    claim = "Revenue for the fiscal year ended January 26, 2025 was USD 1,234 million."
+    cell = reading(years=frozenset({2025}))
+    assert check_figures(claim, [EvidenceText(1, "", "", [cell])], [2025]).verdict == "verified"
     assert (
-        check_figures(claim, [EvidenceText(1, "", "", [reading()])], [2024]).verdict == "unverified"
+        check_figures(claim, [EvidenceText(1, "", "", [reading()])], [2024]).verdict
+        == "period_mismatch"
+    )
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Revenue for FY2024 ended January 26, 2025 was USD 1,234 million as of March 3, 2025.",
+        "Revenue for FY2024 ended January 26, 2025 was USD 2025 million.",
+        "Revenue for FY2024 ended January 26, 2025 was USD 1,234 million in Q4.",
+    ],
+)
+def test_a_date_period_or_amount_outside_the_owned_ending_is_still_read(claim):
+    """Only years inside the annual ending are owned; other dates, periods and amounts are not."""
+    assert check_figures(claim, [EvidenceText(1, "", "", [reading()])], [2024]).verdict == (
+        "unverified"
     )
 
 

@@ -37,7 +37,12 @@ import re
 from typing import Literal
 
 from app.figures.currency import same_currency
-from app.figures.periods import PeriodKind, classify_period, fiscal_year_spans
+from app.figures.periods import (
+    PeriodKind,
+    annual_fiscal_year_spans,
+    classify_period,
+    fiscal_year_spans,
+)
 from app.figures.tables import TableCellReading
 from app.figures.text import (
     BARE_YEAR,
@@ -303,10 +308,25 @@ def _sentence_claims(masked: str, text: str, start: int, end: int, answer: bool)
     found = [figure for figure in spans if figure.start >= start]
     if not found:
         return []
+    # An annual ending that carries an explicit fiscal-year identifier is dated by that
+    # identifier, so the calendar year of its end date ("FY2024 ended January 26, 2025")
+    # is not a second year of the claim.
+    owned = [
+        (start + first, start + last)
+        for first, last, _ in annual_fiscal_year_spans(text[start:end])
+    ]
     years = [
         (match.start(), int(match.group(0)))
         for match in YEAR.finditer(text, start, end)
         if not any(figure.unit_start <= match.start() < figure.unit_end for figure in found)
+        and not any(
+            first <= match.start() < last
+            and not any(
+                start + at <= match.start() < start + stop
+                for at, stop, _ in fiscal_year_spans(text[start:end])
+            )
+            for first, last in owned
+        )
     ]
     years.extend(
         (start + first, year)
