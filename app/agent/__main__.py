@@ -162,7 +162,8 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     """
     from app.agent.loop import run_agent
     from app.agent.provider import OpenAIToolProvider, ToolCallingProvider
-    from app.agent.tools.filings import build_default_registry, read_cited_evidence
+    from app.agent.stored_evidence import read_cited_evidence
+    from app.agent.tools.filings import build_default_registry
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.db.session import Session, engine

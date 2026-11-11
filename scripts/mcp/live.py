@@ -925,7 +925,8 @@ async def run_agent_over_mcp(
 
     from app.agent.loop import run_agent
     from app.agent.provider import OpenAIToolProvider, ProviderTurn
-    from app.agent.tools.filings import build_default_registry, read_cited_evidence
+    from app.agent.stored_evidence import read_cited_evidence
+    from app.agent.tools.filings import build_default_registry
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.mcp.client import mcp_tool_registry
@@ -989,11 +990,8 @@ async def run_review_agent_over_mcp(
     from langchain.mcp import MCPAdapter
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from app.agent.tools.filings import (
-        build_default_registry,
-        read_cited_evidence,
-        read_selected_cells,
-    )
+    from app.agent.stored_evidence import read_cited_evidence, read_selected_cells
+    from app.agent.tools.filings import build_default_registry
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.figures.vocabulary import items_named
