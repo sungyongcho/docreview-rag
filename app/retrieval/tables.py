@@ -32,6 +32,7 @@ from app.db.models import (
 )
 from app.figures.tables import TableCellReading
 from app.ingestion.persistence import slices
+from app.ingestion.table_records import resolver_identity
 
 type _GridCell = TableSourceCell | SnapshotTableSourceCell
 type _Member = ChunkTableCell | SnapshotChunkTableCell
@@ -367,7 +368,9 @@ async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, o
     """Return the selectable cells one stored chunk carries, with what makes them known.
 
     ``status`` is ``not_table`` for running text and ``unavailable`` for a table chunk
-    stored without its table; neither means the documents lack an answer. Blank and
+    stored without its table, or whose table was read by interpreter code other than
+    the running ``resolver_identity()`` (stale until the document is ingested again);
+    neither means the documents lack an answer. Blank and
     non-numeric cells are left out; every other cell is listed with its own status, so a
     cell whose unit, currency, period or item is unknown is visible but not certified.
     """
@@ -386,6 +389,8 @@ async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, o
     table_id = members[0].table_id
     table = await session.get(ParsedTable, table_id)
     assert table is not None
+    if table.resolver_identity != resolver_identity():
+        return {"status": "unavailable"}
     normalized = {
         (cell.source_row, cell.column_index): cell
         for cell in await session.scalars(select(TableCell).where(TableCell.table_id == table_id))

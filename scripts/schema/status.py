@@ -1,12 +1,30 @@
 """Inspect or prepare schema objects while preserving existing database contents."""
 
-from sqlalchemy import inspect
+from sqlalchemy import func, inspect, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility
-from app.db.models import Base
+from app.db.models import Base, ParsedTable
 from app.db.startup import prepare as prepare_schema
+from app.ingestion.table_records import resolver_identity
+
+
+async def stored_tables(connection: AsyncConnection) -> dict[str, object]:
+    """Count the stored tables and those read by interpreter code other than the running one.
+
+    A stale table serves no cell catalog until its document is ingested again.
+    """
+    current = resolver_identity()
+    total, stale = (
+        await connection.execute(
+            select(
+                func.count(),
+                func.count().filter(ParsedTable.resolver_identity != current),
+            ).select_from(ParsedTable)
+        )
+    ).one()
+    return {"total": total, "stale": stale, "resolver_identity": current}
 
 
 async def schema_status(url: str, *, prepare: bool = False) -> dict[str, object]:
@@ -20,9 +38,16 @@ async def schema_status(url: str, *, prepare: bool = False) -> dict[str, object]
                 tables = set(
                     await connection.run_sync(lambda sync: inspect(sync).get_table_names())
                 )
-            missing = sorted(set(Base.metadata.tables) - tables)
-            status = "empty" if not tables else "incomplete" if missing else "compatible"
-            return {"schema_status": status, "created": created, "missing_tables": missing}
+                missing = sorted(set(Base.metadata.tables) - tables)
+                status = "empty" if not tables else "incomplete" if missing else "compatible"
+                result: dict[str, object] = {
+                    "schema_status": status,
+                    "created": created,
+                    "missing_tables": missing,
+                }
+                if status == "compatible":
+                    result["stored_tables"] = await stored_tables(connection)
+            return result
         finally:
             await engine.dispose()
     except (SchemaDriftError, ValueError) as error:

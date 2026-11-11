@@ -5,11 +5,12 @@ from dataclasses import asdict
 import json
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
-from app.db.models import Chunk, ChunkTableCell
+from app.db.models import Chunk, ChunkTableCell, ParsedTable
 from app.figures.tables import read_table_cells
 from app.ingestion.persistence import persist_seed_batch
+from app.ingestion.table_records import resolver_identity
 from app.retrieval.tables import load_cell_catalog, load_chunk_tables, load_table_readings
 from tests.ingestion.seed.support import table_batch, tagged_table_batch
 from tests.live_postgres import isolated_session
@@ -112,5 +113,25 @@ def test_tables_load_for_more_chunk_ids_than_one_statement_can_bind():
             ids = [chunk_id, *range(10_000_000, 10_040_000)]
             assert set(await load_chunk_tables(session, ids)) == {chunk_id}
             assert await load_chunk_tables(session, ids, snapshot_id=1) == {}
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_a_table_read_by_other_interpreter_code_has_no_available_catalog():
+    """Serve the catalog while the stored resolver identity is the running one, not after."""
+
+    async def exercise() -> None:
+        """Store the table, then mark it as read by an older interpreter."""
+        async with isolated_session() as session:
+            await persist_seed_batch(session, table_batch())
+            chunk_id = await session.scalar(select(Chunk.id).where(Chunk.kind == "table"))
+            assert chunk_id is not None
+            catalog = await load_cell_catalog(session, chunk_id)
+            assert catalog["status"] == "available"
+            assert catalog["resolver_identity"] == resolver_identity()
+            await session.execute(update(ParsedTable).values(resolver_identity="0" * 64))
+            assert await load_cell_catalog(session, chunk_id) == {"status": "unavailable"}
+            assert set(await load_chunk_tables(session, [chunk_id])) == {chunk_id}
 
     asyncio.run(exercise())
