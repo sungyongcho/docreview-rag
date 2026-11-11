@@ -221,6 +221,68 @@ def test_an_unconfirmed_currency_withholds_every_amount():
     assert result.unit_unverified.figures == ("$ 25785",)
 
 
+HELD = {"currency": "$", "status": "currency_unconfirmed"}
+
+
+@pytest.mark.parametrize(
+    ("cell", "claim", "items", "expected"),
+    [
+        (
+            {"item": "total assets", "fiscal_years": [2019], "status": "scale_unknown"},
+            ("net income", 2031),
+            {"revenue"},
+            "cell 2024:r1c1 is total assets, not net income",
+        ),
+        (
+            {"item": None, "fiscal_years": [], **HELD},
+            ("revenue", 2024),
+            {"revenue"},
+            "cell 2024:r1c1 has no established item, so it cannot be revenue; select another "
+            "cell or report cannot_resolve for its chunk",
+        ),
+        (
+            {"fiscal_years": [], **HELD},
+            ("revenue", 2024),
+            {"revenue"},
+            "cell 2024:r1c1 has no single fiscal year, so it cannot be fiscal 2024; select "
+            "another cell or report cannot_resolve for its chunk",
+        ),
+        ({**HELD}, ("revenue", 2023), {"revenue"}, "cell 2024:r1c1 is fiscal 2024, not 2023"),
+        (
+            {"item": "net income", **HELD},
+            ("net income", 2024),
+            {"revenue"},
+            "cell 2024:r1c1 is net income; the question asks for revenue",
+        ),
+    ],
+)
+def test_a_held_cell_is_checked_against_its_claim_and_the_question_first(
+    cell, claim, items, expected
+):
+    """Return a held cell that is not what was claimed or asked, as for a known cell."""
+    result = review(proposal(("2024:r1c1", *claim)), stored(**cell), items=frozenset(items))
+    assert result.report is None and result.problem == expected
+    assert result.unit_unverified is None
+
+
+def test_a_held_cell_that_matches_is_withheld_even_for_another_period():
+    """Withhold a matching held cell, and let the hold outrank a period mismatch."""
+    for years in ((2024,), (2023,)):
+        result = review(proposal(("2024:r1c1", "revenue", 2024)), stored(**HELD), years=years)
+        assert result.report is not None and result.report.label == "UNVERIFIED"
+        assert result.unit_unverified is not None and result.period_mismatch is None
+    known, held = stored(), stored("2024:r1c2", item="net income", **HELD)
+    both = review(
+        proposal(("2024:r1c1", "revenue", 2024), ("2024:r1c2", "net income", 2024)),
+        known,
+        held,
+        items=frozenset({"revenue", "net income"}),
+    )
+    assert both.report is not None and both.report.label == "UNVERIFIED"
+    assert both.unit_unverified is not None and both.unit_unverified.figures == ("$ 25785",)
+    assert [check["decision"] for check in both.checks] == ["held", "held"]
+
+
 def test_a_cell_not_fetched_in_this_question_is_refused():
     """Knowing a ref is not enough: the cell must have been fetched in this question."""
     result = review(proposal(("2024:r1c1", "revenue", 2024)), stored(), fetched=())

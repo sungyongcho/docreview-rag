@@ -202,6 +202,18 @@ def test_an_unconfirmed_currency_is_withheld_without_the_amount():
     assert state["unit_unverified"] == {"figures": ["$ 25,785"]}
 
 
+def test_a_held_cell_claimed_as_another_item_is_returned_before_it_is_withheld():
+    """Tell the model a held cell is not its claim, then withhold the corrected selection."""
+    dollar = {**REVENUE, "currency": "$", "status": "currency_unconfirmed"}
+    state, model = ask([selection(item="net income"), selection()], cell=dollar)
+    errors = [
+        m.content for m in state["messages"] if isinstance(m, ToolMessage) and m.status == "error"
+    ]
+    assert errors == ["ERROR: cell 2024:r1c1 is revenue, not net income"]
+    assert len(model.requests) == 4
+    assert state["structured_response"].label == "UNVERIFIED"
+
+
 def test_a_cell_changed_after_its_fetch_ends_the_run_without_another_request():
     """Stop as a failure instead of answering from a cell whose content changed."""
     changed = {**REVENUE, "raw_text": "$ 99,999"}

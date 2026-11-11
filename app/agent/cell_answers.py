@@ -19,6 +19,7 @@ from app.agent.types import (
     AgentPeriodMismatch,
     AgentReportAnswer,
     AgentUnitUnverified,
+    CellSelection,
     CellSelectionAnswer,
 )
 from app.canonical_json import canonical_json
@@ -213,6 +214,38 @@ def _combination_problem(proposal: CellSelectionAnswer) -> str | None:
     return f"label {proposal.label} cannot have reason {proposal.reason}"
 
 
+def _cell_problem(selection: CellSelection, cell: StoredCell) -> str | None:
+    """Return why one selected cell cannot stand for its claim, or None when it can.
+
+    A known cell and a cell held only for its unit or currency are both checked
+    against the claimed item and fiscal year; a cell with no item or no single year
+    matches no claim. Any other status is not one established amount.
+    """
+    status, item, years = cell.cell["status"], cell.cell["item"], cell.cell["fiscal_years"]
+    if status != "known" and status not in UNIT_HOLDS:
+        return (
+            f"cell {cell.ref} is {status}; it is not one established amount, "
+            "so report cannot_resolve for its chunk instead"
+        )
+    if item is None:
+        return (
+            f"cell {cell.ref} has no established item, so it cannot be "
+            f"{selection.claimed_item}; select another cell or report cannot_resolve for its "
+            "chunk"
+        )
+    if selection.claimed_item != item:
+        return f"cell {cell.ref} is {item}, not {selection.claimed_item}"
+    if len(years) != 1:
+        return (
+            f"cell {cell.ref} has no single fiscal year, so it cannot be fiscal "
+            f"{selection.claimed_fiscal_year}; select another cell or report cannot_resolve "
+            "for its chunk"
+        )
+    if selection.claimed_fiscal_year != years[0]:
+        return f"cell {cell.ref} is fiscal {years[0]}, not {selection.claimed_fiscal_year}"
+    return None
+
+
 def review_cell_selection(
     proposal: CellSelectionAnswer,
     *,
@@ -298,36 +331,10 @@ def review_cell_selection(
             raise StaleCellError(f"stored cell {ref} changed after it was fetched")
         cells.append(cell)
     chunk_ids = [cell.chunk_id for cell in cells]
-    held = [cell for cell in cells if cell.cell["status"] in UNIT_HOLDS]
-    if held:
-        return CellVerdict(
-            AgentReportAnswer(
-                label="UNVERIFIED",
-                answer=UNIT_HELD[locale],
-                citations=_citations(chunk_ids, evidence),
-                rationale=UNIT_HELD[locale],
-            ),
-            unit_unverified=AgentUnitUnverified(
-                figures=tuple(cell.cell["raw_text"] for cell in held)
-            ),
-            checks=tuple(_check(cell, "held") for cell in cells),
-        )
     for selection, cell in zip(proposal.selections, cells, strict=True):
-        status = cell.cell["status"]
-        if status != "known":
-            return CellVerdict(
-                problem=f"cell {cell.ref} is {status}; it is not one established amount, "
-                "so report cannot_resolve for its chunk instead"
-            )
-        if selection.claimed_item != cell.cell["item"]:
-            return CellVerdict(
-                problem=f"cell {cell.ref} is {cell.cell['item']}, not {selection.claimed_item}"
-            )
-        (year,) = cell.cell["fiscal_years"]
-        if selection.claimed_fiscal_year != year:
-            return CellVerdict(
-                problem=f"cell {cell.ref} is fiscal {year}, not {selection.claimed_fiscal_year}"
-            )
+        problem = _cell_problem(selection, cell)
+        if problem is not None:
+            return CellVerdict(problem=problem)
     if not requested_items:
         return CellVerdict(
             AgentReportAnswer(
@@ -343,6 +350,22 @@ def review_cell_selection(
         asked = ", ".join(sorted(requested_items))
         return CellVerdict(
             problem=f"cell {off_item.ref} is {off_item.cell['item']}; the question asks for {asked}"
+        )
+    # A unit hold withholds the whole answer, but only once the held cell is what the
+    # model claimed and what the question asks for; it outranks a period mismatch.
+    held = [cell for cell in cells if cell.cell["status"] in UNIT_HOLDS]
+    if held:
+        return CellVerdict(
+            AgentReportAnswer(
+                label="UNVERIFIED",
+                answer=UNIT_HELD[locale],
+                citations=_citations(chunk_ids, evidence),
+                rationale=UNIT_HELD[locale],
+            ),
+            unit_unverified=AgentUnitUnverified(
+                figures=tuple(cell.cell["raw_text"] for cell in held)
+            ),
+            checks=tuple(_check(cell, "held") for cell in cells),
         )
     years = {cell.cell["fiscal_years"][0] for cell in cells}
     requested = set(requested_years)
