@@ -224,7 +224,7 @@ def keep_first_failure(left: str | None, right: str | None) -> str | None:
     """
     if right is None:
         return None
-    return left or right
+    return right if left is None else left
 
 
 class ReviewState(AgentState[Any]):
@@ -673,19 +673,21 @@ class StopOnSystemFailure(AgentMiddleware[StopState]):
             if error.code != INTERNAL_ERROR:
                 raise
             call = request.tool_call
+            # A failure is recorded even without a message; the state never holds "".
+            failure = error.message or "filings tool reported an internal error"
             message = ToolMessage(
-                content=f"ERROR: {error.message}",
+                content=f"ERROR: {failure}",
                 tool_call_id=call["id"],
                 name=call["name"],
                 status="error",
             )
-            return Command(update={"messages": [message], "failure": error.message})
+            return Command(update={"messages": [message], "failure": failure})
 
     @hook_config(can_jump_to=["end"])
     def before_model(self, state: StopState, runtime: Runtime[None]) -> dict[str, Any] | None:
         """End the run before the next model call once a system failure was recorded."""
         del runtime
-        if state.get("failure"):
+        if state.get("failure") is not None:
             return {"jump_to": "end"}
         clash = next(
             (ref for ref, v in (state.get("cells") or {}).items() if v.get("conflict")), None

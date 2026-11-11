@@ -511,6 +511,21 @@ def test_none_clears_the_failure_and_the_first_recorded_failure_stays():
     assert keep_first_failure("first", None) is None
     assert keep_first_failure(None, "first") == "first"
     assert keep_first_failure("first", "second") == "first"
+    assert keep_first_failure("", "second") == ""
+
+
+def test_a_failure_without_a_message_still_ends_the_run():
+    """Record a message-less INTERNAL_ERROR as a failure, and stop on any recorded failure."""
+    answer = stop_call(MCPError(code=INTERNAL_ERROR, message=""))
+    assert isinstance(answer, Command) and isinstance(answer.update, dict)
+    assert answer.update["failure"] == "filings tool reported an internal error"
+    assert answer.update["messages"][0].content == (
+        "ERROR: filings tool reported an internal error"
+    )
+    stop = StopOnSystemFailure()
+    assert stop.before_model(cast(Any, {"messages": [], "failure": ""}), cast(Any, None)) == {
+        "jump_to": "end"
+    }
 
 
 CATALOG = {
