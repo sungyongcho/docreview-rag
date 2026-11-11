@@ -12,7 +12,7 @@ from typing import Literal
 
 from app.figures.currency import CURRENCY
 from app.figures.items import ITEMS
-from app.figures.periods import MONTH_NAMES, classify_period, normalize_fiscal_years
+from app.figures.periods import blank_annual_periods, classify_period, normalize_fiscal_years
 
 # Words of an answer: English words (with "&", apostrophes and hyphens inside), Korean
 # words, digit runs, and single other characters.
@@ -147,10 +147,9 @@ _QUESTION_PASS_KO |= {"싶어요", "싶습니다", "싶어", "알고"}
 # ("알려줘", "찾아주세요", "되나요", "기록한", "궁금합니다").
 _QUESTION_WORDS_KO = ("얼마", "무엇", "몇", "어떻게", "알려", "찾아", "보여", "말해")
 _QUESTION_WORDS_KO += ("되나", "되었", "됩니", "됐", "돼", "기록", "궁금")
-# Rewritten before words are read: the fiscal-year-end form of an annual question
-# ("for the year ended Dec. 28, 2024", which names the year whatever the month), an
-# annual filing ("10-K", "20-F"), and "according to" / "want to know". No other date
-# form is rewritten, so a month or a date anywhere else qualifies the item.
+# Shared annual forms are consumed before question words are read; the shared
+# classifier still rejects any unconsumed date or short period. Question-specific
+# rewrites below own annual filings ("10-K", "20-F") and request constructions.
 # Source prepositions are accepted only with a complete annual filing phrase.
 # Comparative "from ... to ..." never becomes a globally allowed connective.
 _ANNUAL_SOURCE = re.compile(
@@ -160,15 +159,6 @@ _ANNUAL_SOURCE = re.compile(
     re.I,
 )
 _QUESTION_REWRITES = (
-    (
-        re.compile(
-            r"(?<![\w-])(?:fiscal\s+)?year\s+end(?:ed|ing)\s+(?:on\s+)?"
-            + MONTH_NAMES
-            + r"\.?\s+\d{1,2},?\s+((?:19|20)\d{2})(?!\w)",
-            re.IGNORECASE,
-        ),
-        r" fiscal year \1 ",
-    ),
     (re.compile(r"(?<![\w-])(?:10-?K|20-?F)(?![\w-])", re.IGNORECASE), " annual filing "),
     (re.compile(r"(?<!\w)annual\s+report(?!\w)", re.IGNORECASE), " annual filing "),
     (re.compile(r"(?<!\w)according\s+to(?!\w)", re.IGNORECASE), " according "),
@@ -302,6 +292,7 @@ def _question_words(
     if pattern is not None:
         text = pattern.sub(" ", text)
     text = _ANNUAL_SOURCE.sub(" annual filing ", normalize_fiscal_years(text))
+    text = blank_annual_periods(text)
     for rewrite, replacement in _QUESTION_REWRITES:
         text = rewrite.sub(replacement, text)
     matches = list(TOKEN.finditer(SAME_ITEM_QUALIFIER.sub(" ", text)))

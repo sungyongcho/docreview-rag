@@ -306,7 +306,6 @@ def test_a_real_question_with_a_qualifier_still_names_no_item(question, issuers)
         "What was AMD's December quarter revenue?",
         "What was AMD's revenue for the quarter ended December 28, 2024?",
         "What was AMD's revenue for the six months ended June 29, 2024?",
-        "What was AMD's revenue for the 52 weeks ended December 28, 2024?",
         "What was AMD's revenue for the half year ended June 29, 2024?",
         "What were AMD's total assets as of December 31, 2024?",
         "What was AMD's revenue as of the end of 2024?",
@@ -328,6 +327,7 @@ def test_a_month_or_a_date_qualifies_the_item(question):
 @pytest.mark.parametrize(
     "question",
     [
+        "What was AMD's revenue for the 52 weeks ended December 28, 2024?",
         "What was AMD's revenue for the year ended December 28, 2024?",
         "What was AMD's revenue for fiscal year ended Dec. 28, 2024?",
         "What was AMD's revenue for the fiscal year ending December 28, 2024?",

@@ -919,3 +919,59 @@ def test_a_closing_label_establishes_the_role_without_a_literal_header_date():
         {(1, 1): (fact(text="1,234", fiscal_year=2025, instant=date(2024, 12, 28)),)},
     )
     assert next(c for c in cells if c.row == 2).years == frozenset()
+
+
+@pytest.mark.parametrize(
+    "header,years",
+    [
+        ("FY2024 (ended December 28, 2024)", {2024}),
+        ("FY2024 ended January 26, 2025", {2024}),
+        ("FY24 (ending 2025-01-26)", {2024}),
+        ("fiscal year ending January 26, 2025", {2025}),
+        ("FY2024, which ended on December 28, 2024", {2024}),
+        ("52-week period ended 2024-12-28", {2024}),
+        ("53-week fiscal year ended 12/28/2024", {2024}),
+        ("12-month period ended 12/28/2024", {2024}),
+        ("annual period 2024", {2024}),
+        ("2024년 12월 28일로 종료된 회계연도", {2024}),
+        ("2024년 12월 28일 종료 사업연도", {2024}),
+        ("2024년 1월 1일부터 2024년 12월 31일까지", {2024}),
+        ("제56기 누계(2024.01.01~2024.12.31)", {2024}),
+        ("2024년 12월 28일로 종료된 3개월", set()),
+        ("2024년 12월 28일로 종료된 분기", set()),
+        ("2024년 12월 28일로 종료된 반기", set()),
+        ("2024년 1월 1일부터 2024년 6월 30일까지", set()),
+        ("2024.01.01~2024.12.16", set()),
+        ("2024.01.01~2025.01.01", set()),
+        ("51-week period 2024", set()),
+        ("54-week fiscal year 2024", set()),
+        ("May 2024", set()),
+        ("May 31, 2024", {2024}),
+        ("for the period 2024", set()),
+        ("prior year period 2024", set()),
+        ("분기배당 2024", set()),
+        ("분기ㆍ중간배당 2024", set()),
+    ],
+)
+def test_shared_annual_forms_preserve_the_closed_header_reading(header, years):
+    """Annual forms establish a column; short periods and months never borrow a year."""
+    fragment = {
+        "header_cells": [{"column": 1, "text": header}],
+        "caption_sources": [linked("(In millions of U.S. dollars)")],
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": "Revenue"}]},
+            {"sources": [{"row": 1, "column": 1, "text": "1,234"}]},
+        ],
+    }
+    (cell,) = read_table_cells(fragment)
+    assert cell.years == years
+    if years:
+        assert cell.scope is None
+
+
+@pytest.mark.parametrize("word", ["may", "march", "dec", "sept", "jun"])
+def test_bare_month_homonyms_remain_unknown_header_scope(word):
+    """Ordinary words do not become annual headers when their false period flag clears."""
+    from app.figures.tables import _header_reading
+
+    assert _header_reading([word]) == (False, True)

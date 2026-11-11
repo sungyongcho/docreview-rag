@@ -43,7 +43,13 @@ from app.figures.currency import (
     resolve,
 )
 from app.figures.items import ITEMS
-from app.figures.periods import PERIOD_WORDS, classify_period, normalize_fiscal_years
+from app.figures.periods import (
+    PERIOD_WORDS,
+    annual_fiscal_year_spans,
+    classify_period,
+    header_period_residue,
+    normalize_fiscal_years,
+)
 from app.figures.text import (
     KOREAN_SCALE,
     YEAR,
@@ -126,17 +132,12 @@ _HEADER_DATES = re.compile(
     re.IGNORECASE,
 )
 _ANNUAL_WORDS = re.compile(
-    r"\b(?:twelve|12)[\s-]+months?\b|\b(?:52|53|fifty[\s-]two|fifty[\s-]three)[\s-]+weeks?\b"
-    r"|\b(?:fiscal|years?|ended|ending|end|as|of|at|on|and|consolidated|reported|gaap)\b"
+    r"\b(?:fiscal|years?|ended|ending|end|as|of|at|on|and|consolidated|reported|gaap)\b"
     r"|제\s*\d+\s*기|회계\s*연도|사업\s*연도|전\s*전\s*기|당\s*기|전\s*기|기\s*말|현\s*재|연\s*결|말",
     re.IGNORECASE,
 )
 # Characters that carry no meaning of their own in a header, and DART's line break.
 _HEADER_PUNCTUATION = re.compile(r"(?:&cr;?|[\s,.:;()（）\[\]&~–—-])+")
-# A declared duration ("2024.01.01~2024.12.31"): a full year of one, with "누계"
-# (cumulative) beside it, names the fiscal year; a shorter one is a period of its own.
-_DATE = r"((?:19|20)\d{2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})"
-_RANGE = re.compile(_DATE + r"\s*[~–-]\s*" + _DATE)
 # A word naming a period of its own, which leaves the fiscal year not established
 # ("Three Months Ended", "13 Weeks", "H1", "YTD", "Interim", "4분기", "누적", "기초"),
 # including a month left without its day ("December 2024", "2023년 8월").
@@ -509,16 +510,6 @@ def _headers_over(
     ]
 
 
-def _annual_range(match: re.Match[str]) -> bool:
-    """Whether a declared duration ("2024.01.01~2024.12.31") is one full year."""
-    try:
-        start = date(*(int(match.group(i)) for i in (1, 2, 3)))
-        end = date(*(int(match.group(i)) for i in (4, 5, 6)))
-    except ValueError:
-        return False
-    return 350 <= (end - start).days <= 380
-
-
 def _header_residue(text: str) -> str:
     """Return what one header says beyond years, dates, units and full-year words.
 
@@ -540,13 +531,20 @@ def _header_residue(text: str) -> str:
     words = _UNITS_CLAUSE.sub(" ", words)
     if _BARE_DECLARATION.fullmatch(words):
         return ""
-    ranges = list(_RANGE.finditer(words))
-    words = _RANGE.sub(" ", words)
-    if ranges and not all(_annual_range(match) for match in ranges):
-        words += " 기간"
-    elif ranges:
-        # A full year's cumulative figures ("제77기 누계(2024.01.01~2024.12.31)").
-        words = words.replace("누계", " ")
+    words = header_period_residue(words)
+    # Preserve contextual period words before bare identifiers remove their date
+    # neighbours ("May 2024" must not turn into an unexplained bare "May"). A
+    # complete header-end date remains the header's own identifier grammar.
+    dates = list(_HEADER_DATES.finditer(words))
+    periods = [
+        match
+        for match in PERIOD_WORDS.finditer(words)
+        if not any(d.start() <= match.start() and match.end() <= d.end() for d in dates)
+    ]
+    for match in reversed(periods):
+        words = words[: match.start()] + " " * len(match.group()) + words[match.end() :]
+    if periods:
+        words += " period "
     words = _ANNUAL_WORDS.sub(" ", _HEADER_DATES.sub(" ", words))
     return _HEADER_PUNCTUATION.sub(" ", words).strip()
 
@@ -588,7 +586,14 @@ def _column_years(
         return set()
     named: list[set[int]] = []
     for text in over:
-        written = {int(year) for year in YEAR.findall(normalize_fiscal_years(text))}
+        normalized = normalize_fiscal_years(text)
+        annual = annual_fiscal_year_spans(normalized)
+        written = {
+            int(match.group())
+            for match in YEAR.finditer(normalized)
+            if not any(start <= match.start() < end for start, end, _ in annual)
+        }
+        written.update(year for _, _, year in annual)
         if not written and (term := _term_year(text, terms)) is not None:
             written = {term}
         if written:

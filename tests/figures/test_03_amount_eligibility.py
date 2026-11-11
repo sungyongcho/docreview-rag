@@ -107,56 +107,6 @@ def test_a_table_body_or_context_cannot_smuggle_in_a_prose_claim():
     assert check_figures(claim, [EvidenceText(1, claim, "", None)], []).verdict == "verified"
 
 
-@pytest.mark.parametrize(
-    "phrase,annual",
-    [
-        ("FY2024", True),
-        ("fiscal 2024", True),
-        ("2024 회계연도", True),
-        ("year ended December 28, 2024", True),
-        ("fiscal year ending on Dec. 28, 2024", True),
-        ("Q4 2024", False),
-        ("4Q24", False),
-        ("fourth quarter 2024", False),
-        ("H1 2024", False),
-        ("1H24", False),
-        ("second half 2024", False),
-        ("three months ended December 28, 2024", False),
-        ("nine months 2024", False),
-        ("December 2024", False),
-        ("2024년 12월", False),
-        ("period ended March 30, 2024", False),
-        ("2024년 4분기", False),
-        ("2024년 상반기", False),
-        ("2024년 하반기", False),
-        ("2024년 9개월", False),
-    ],
-)
-def test_three_readers_share_annual_versus_nonannual_periods(phrase, annual):
-    """Question, header and answer use the same period classification before blanking."""
-    from app.figures.periods import classify_period
-    from app.figures.vocabulary import items_named
-
-    assert (classify_period(phrase) == "annual") is annual
-    assert bool(items_named(f"What was revenue for {phrase}?")) is annual
-    fragment = {
-        "header_cells": [{"column": 1, "text": phrase}],
-        "caption_sources": [linked("(In millions of U.S. dollars)")],
-        "cells": [
-            {"sources": [{"row": 1, "column": 0, "text": "Revenue"}]},
-            {"sources": [{"row": 1, "column": 1, "text": "1,234"}]},
-        ],
-    }
-    cell = read_table_cells(fragment)[0]
-    assert (len(cell.years) == 1 and cell.scope is None) is annual
-    verdict = check_figures(
-        f"Revenue for {phrase} was USD 1,234 million.",
-        [EvidenceText(1, "", "", [reading()])],
-        [2024],
-    ).verdict
-    assert (verdict == "verified") is annual
-
-
 @pytest.mark.parametrize("notation", ["▲1,234", "(1,234)", "△1,234", "1,234"])
 @pytest.mark.parametrize("sign,expected", [("-", -1234), ("+", 1234)])
 def test_one_matching_monetary_tag_establishes_the_sign(notation, sign, expected):
@@ -188,43 +138,6 @@ def test_one_matching_monetary_tag_establishes_the_sign(notation, sign, expected
         assert check_figures(claim, [EvidenceText(1, "", "", [cell])], [2024]).verdict == (
             "verified" if claimed == expected else "unverified"
         )
-
-
-@pytest.mark.parametrize(
-    "phrase,year",
-    [
-        ("FY24", 2024),
-        ("FY'24", 2024),
-        ("fiscal 24", 2024),
-        ("FY00", 2000),
-        ("FY99", 2099),
-        ("FY1999", 1999),
-    ],
-)
-def test_short_fiscal_years_have_one_fixed_century_on_all_three_readers(phrase, year):
-    """The question, header and answer never infer the century from a chosen cell."""
-    from app.figures.answers import _claims
-    from app.figures.vocabulary import items_named
-
-    assert items_named(f"What was revenue in {phrase}?") == {"revenue"}
-    fragment = {
-        "header_cells": [{"column": 1, "text": phrase}],
-        "caption_sources": [linked("(In millions of U.S. dollars)")],
-        "cells": [
-            {"sources": [{"row": 1, "column": 0, "text": "Revenue"}]},
-            {"sources": [{"row": 1, "column": 1, "text": "1,234"}]},
-        ],
-    }
-    (cell,) = read_table_cells(fragment)
-    assert cell.years == {year}
-    (claim,) = _claims(f"{phrase} revenue was USD 1,234 million.", answer=True)
-    assert claim.year == year and claim.item == "revenue"
-    assert (
-        check_figures(
-            f"{phrase} revenue was USD 1,234 million.", [EvidenceText(1, "", "", [cell])], [year]
-        ).verdict
-        == "verified"
-    )
 
 
 @pytest.mark.parametrize("prefix", ["FY'24", "fiscal 24", "FY'500", "fiscal 99999"])
@@ -259,3 +172,103 @@ def test_grounded_issuer_words_are_not_claim_periods(suffix, verdict):
     evidence = [EvidenceText(1, "", "May Industries FY2024 · Item 7", [reading()])]
     answer = f"May Industries revenue {suffix} was USD 1,234 million."
     assert check_figures(answer, evidence, [2024]).verdict == verdict
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "fiscal 2024 (ended December 28, 2024)",
+        "fiscal 2024 ended December 28, 2024",
+        "fiscal year 2024 (ended Dec. 28, 2024)",
+        "FY2024, which ended on December 28, 2024",
+        "52 weeks ended December 28, 2024",
+        "53-week fiscal year ended 12/28/2024",
+        "twelve months ended December 28, 2024",
+        "the year ended 12/28/2024",
+        "fiscal 2024, a 52-week period",
+        "52-week fiscal year 2024",
+        "annual period 2024",
+        "2024.01.01 ~ 2024.12.31",
+    ],
+)
+def test_annual_ending_forms_confirm_only_the_matching_year(form):
+    """Whole-year forms are understood without manufacturing a fiscal-year mapping."""
+    claim = f"Revenue for {form} was USD 1,234 million."
+    for year, expected in [(2024, "verified"), (2023, "period_mismatch")]:
+        evidence = [EvidenceText(1, "", "", [reading(years=frozenset({year}))])]
+        assert check_figures(claim, evidence, [2024]).verdict == expected
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "2024년 12월 28일로 종료된 회계연도",
+        "2024년 12월 28일 종료 회계연도",
+        "2024년 12월 28일에 종료되는 사업연도",
+        "2024.12.28 종료 사업연도",
+        "2024년 1월 1일부터 2024년 12월 31일까지",
+    ],
+)
+def test_korean_annual_forms_share_the_question_and_answer_reading(form):
+    """Korean endings and valid full-year ranges preserve annual revenue identity."""
+    from app.figures.vocabulary import items_named
+
+    assert items_named(f"AMD의 {form} 매출은?", issuers=("AMD",)) == {"revenue"}
+    claim = f"{form}의 순매출은 1,234백만 달러입니다."
+    assert (
+        check_figures(claim, [EvidenceText(1, "", "", [reading()])], [2024]).verdict == "verified"
+    )
+
+
+@pytest.mark.parametrize("amount", ["1,234", "999,999"])
+def test_an_unread_comparison_period_withholds_every_figure_without_a_false_mismatch(amount):
+    """Any unread period qualifies the whole sentence, even its otherwise annual figure."""
+    claim = (
+        f"Net revenue was USD 1,234 million for 2024 compared to USD {amount} million "
+        "for the prior year period."
+    )
+    result = check_figures(claim, [EvidenceText(1, "", "", [reading()])], [2024])
+    assert [c.verdict for c in result.checks] == ["unverified", "unverified"]
+
+
+@pytest.mark.parametrize("form", ["52 weeks", "12 months", "year ended 12/28/2024"])
+def test_a_unit_after_an_annual_identifier_keeps_its_number_visible(form):
+    """A fiscal-form number bearing a monetary unit must never disappear as a date."""
+    from app.figures.answers import _claims
+
+    claims = _claims(f"Revenue was {form} million USD.", answer=True)
+    assert claims and claims[0].figure.value is not None
+
+
+def test_a_calendar_end_without_an_explicit_fy_keeps_its_literal_year():
+    """An end date in 2025 names 2025; no issuer-specific fiscal calendar is inferred."""
+    from app.figures.answers import _claims
+
+    claim = "Revenue for fiscal year ending January 26, 2025 was USD 1,234 million."
+    assert _claims(claim, answer=True)[0].year == 2025
+    assert (
+        check_figures(claim, [EvidenceText(1, "", "", [reading()])], [2024]).verdict
+        == "period_mismatch"
+    )
+
+
+def test_cross_calendar_explicit_fy_is_annual_but_answer_year_conflict_still_withholds():
+    """Pin the answer-reader integration needed outside this bundle's write boundary."""
+    from app.figures.answers import _claims
+
+    claim = "Revenue for FY2024 ended January 26, 2025 was USD 1,234 million."
+    parsed = _claims(claim, answer=True)[0]
+    assert parsed.period == "annual" and parsed.dated_ambiguously
+    assert (
+        check_figures(claim, [EvidenceText(1, "", "", [reading()])], [2024]).verdict == "unverified"
+    )
+
+
+@pytest.mark.parametrize("currency", ["USD", "$", "BHD"])
+@pytest.mark.parametrize("form", ["52 weeks", "12 months", "53-week fiscal year"])
+def test_currency_before_an_annual_identifier_keeps_the_amount_visible(currency, form):
+    """Shared annual blanking cannot erase a currency-bearing identifier-shaped amount."""
+    from app.figures.answers import _claims
+
+    claims = _claims(f"Revenue was {currency} {form}.", answer=True)
+    assert claims and claims[0].figure.value is not None

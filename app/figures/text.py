@@ -21,6 +21,7 @@ from app.figures.currency import (
     currency_of,
     resolve,
 )
+from app.figures.periods import annual_period_spans
 from app.figures.vocabulary import CHANGES, CONNECTIVES, FILLERS, ITEM_WORDS
 
 # A figure: digits with optional thousands separators and decimals, optionally signed.
@@ -215,6 +216,15 @@ def blank(text: str) -> str:
 
 def blank_answer(text: str) -> str:
     """Blank an answer's identifiers and dates, each of a bounded shape with its own number."""
+    # Annual durations/ending clauses are identifiers too. Never erase an amount
+    # whose unit is written where one of the form's identifier numbers would stand.
+    for start, end in reversed(annual_period_spans(text)):
+        if unit_follows(text, end) or any(
+            unit_follows(text, n.end()) or bool(_markers_before(text, n.start())[0])
+            for n in re.compile(r"\d+(?:[.,]\d+)*").finditer(text, start, end)
+        ):
+            continue
+        text = text[:start] + " " * (end - start) + text[end:]
     return _ANSWER_NOT_FIGURES.sub(lambda match: " " * len(match.group(0)), text)
 
 
