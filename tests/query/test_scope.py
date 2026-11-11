@@ -1,12 +1,13 @@
 """Manifest alias and query-scope regression tests."""
 
 from datetime import date
+from pathlib import Path
 from typing import Literal
 
 import pytest
 
 from app.ingestion.sources.models import DartMetadata, DocumentReference, SecMetadata
-from app.query.scope import ManifestScopeIndex, QueryScopeError, resolve_query_scope
+from app.query.scope import ManifestScopeIndex, QueryScopeError, issuer_names, resolve_query_scope
 from app.retrieval.types import RetrievalFilters
 
 
@@ -233,3 +234,33 @@ def test_alias_removal_uses_matching_unicode_spans(query, expected, issuer):
     assert {match.issuer for match in scope_index.match(query)} == {issuer}
     assert scope_index.without_aliases(query) == expected
     assert scope_index.match(scope_index.without_aliases(query)) == ()
+
+
+def test_issuer_names_come_from_manifest_and_catalog_only():
+    """Enumerate approved names for one issuer without borrowing another issuer's aliases."""
+    corpus = Path(__file__).resolve().parents[2] / "data/corpus"
+    names = issuer_names("AMD", corpus)
+    assert names == (
+        "ADVANCED MICRO DEVICES INC",
+        "AMD",
+        "Advanced Micro Devices",
+        "암드",
+        "에이엠디",
+    )
+    assert "NVDA" not in names
+    assert issuer_names(None, corpus / "does-not-exist") == ()
+    assert issuer_names("", corpus / "does-not-exist") == ()
+    with pytest.raises(QueryScopeError) as caught:
+        issuer_names("Advanced Micro Devices", corpus)
+    assert caught.value.code == "unknown_issuer"
+
+
+@pytest.mark.parametrize("contents", [None, "{}", "not-json", "[]"])
+def test_issuer_names_raise_domain_errors_for_unreadable_manifests(tmp_path, contents):
+    """Manifest failures raise a query-domain error rather than exiting the process."""
+    if contents is not None:
+        (tmp_path / "manifest.json").write_text(contents)
+    with pytest.raises(QueryScopeError) as caught:
+        issuer_names("AMD", tmp_path)
+    assert caught.value.code == "manifest_unavailable"
+    assert "could not be read" in caught.value.message

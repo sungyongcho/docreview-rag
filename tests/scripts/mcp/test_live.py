@@ -42,6 +42,7 @@ from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.mcp import filings_server
+from app.query.scope import issuer_names
 from scripts.mcp import live
 from scripts.mcp.live import (
     COUNTED_FIELDS,
@@ -1207,7 +1208,7 @@ def run_cell_question(
     args.issuer = issuer
     settings = live.agent_model_settings(args)
     assert settings is not None
-    names = live.issuer_names(args.issuer, CORPUS_DIR)
+    names = issuer_names(args.issuer, CORPUS_DIR)
     outcome = asyncio.run(
         live.run_review_agent_over_mcp(server, tmp_path, args, settings, names=names)
     )
@@ -1495,14 +1496,6 @@ THREE_TURNS = [
     response("call_fetch", "fetch_chunk", {"chunk_id": 2024}, (1190, 40)),
     response("call_final", "final_answer", SELECTION, (1390, 60)),
 ]
-
-
-def test_the_issuer_names_come_from_the_manifest_and_catalog():
-    """The filter value, its manifest aliases and catalog spellings; nothing without a filter."""
-    names = live.issuer_names("AMD", CORPUS_DIR)
-    assert {"AMD", "ADVANCED MICRO DEVICES INC", "Advanced Micro Devices"} <= set(names)
-    assert "NVDA" not in names
-    assert live.issuer_names(None, CORPUS_DIR) == ()
 
 
 @pytest.mark.parametrize(

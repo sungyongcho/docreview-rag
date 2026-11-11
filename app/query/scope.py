@@ -271,6 +271,39 @@ class ManifestScopeIndex:
         return query
 
 
+def issuer_names(issuer: str | None, corpus_dir: Path) -> tuple[str, ...]:
+    """Return canonical, manifest and approved catalog names for one selected issuer.
+
+    No issuer selection returns no names without reading the corpus. A name in a
+    question is never used to invent an issuer or an alias.
+
+    Raises
+    ------
+    QueryScopeError
+        If the manifest is unreadable/invalid or does not list the canonical issuer.
+    """
+    if not issuer:
+        return ()
+    path = corpus_dir / "manifest.json"
+    try:
+        index = ManifestScopeIndex.from_paths((path,))
+    except (OSError, ValueError, TypeError) as error:
+        raise QueryScopeError(
+            "manifest_unavailable",
+            f"the corpus manifest {path} could not be read ({type(error).__name__})",
+        ) from None
+    entries = index.issuers_named([issuer])
+    if not entries:
+        raise QueryScopeError(
+            "unknown_issuer", f"{issuer} is not an issuer in the corpus manifest {path}"
+        )
+    names = {issuer}
+    for entry in entries:
+        names.update(entry.aliases)
+        names.update(catalog_aliases(entry.registry, entry.issuer))
+    return tuple(sorted(names))
+
+
 def resolve_query_scope(
     query: str,
     index: ManifestScopeIndex,

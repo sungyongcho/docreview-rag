@@ -82,6 +82,7 @@ from app.agent.types import AgentBudget
 from app.llm.schemas import TokenPricing
 from app.observability.redaction import sanitize_json
 from app.openai_models import POLICY_REVISION, OpenAIModelPolicyError, resolve_openai_model
+from app.query.scope import QueryScopeError, issuer_names
 from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
 
 if TYPE_CHECKING:
@@ -1135,42 +1136,6 @@ async def run_agent_over_mcp(
     return result.model_dump(mode="json")
 
 
-def issuer_names(issuer: str | None, corpus_dir: Path) -> tuple[str, ...]:
-    """Return the names a question may call the run's issuer, from the corpus's own data.
-
-    They are the issuer filter value, the corpus manifest's aliases for that issuer and
-    the catalog's approved spellings, the same names query scope resolution matches.
-    Nothing is read from the question. Without an issuer filter there are no names, so
-    a company name next to an item keeps qualifying it, the stricter reading.
-
-    Raises
-    ------
-    SystemExit
-        If ``corpus_dir/manifest.json`` cannot be read or does not list the issuer;
-        the run then stops before its attempt is claimed.
-    """
-    from app.ingestion.sources.catalog import catalog_aliases
-    from app.query.scope import ManifestScopeIndex
-
-    if not issuer:
-        return ()
-    path = corpus_dir / "manifest.json"
-    try:
-        index = ManifestScopeIndex.from_paths((path,))
-    except (OSError, ValueError, TypeError) as error:
-        raise SystemExit(
-            f"the corpus manifest {path} could not be read ({type(error).__name__})"
-        ) from None
-    entries = index.issuers_named([issuer])
-    if not entries:
-        raise SystemExit(f"{issuer} is not an issuer in the corpus manifest {path}")
-    names = {issuer}
-    for entry in entries:
-        names.update(entry.aliases)
-        names.update(catalog_aliases(entry.registry, entry.issuer))
-    return tuple(sorted(names))
-
-
 async def run_review_agent_over_mcp(
     server: StdioServerParameters,
     run_dir: Path,
@@ -1305,7 +1270,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         await require_indexed(args.issuer, args.years, current_tables=True)
     if args.command == "agent" and get_settings().openai_api_key is None:
         raise SystemExit("the agent experiment requires the MODE-selected OpenAI key slot")
-    names = issuer_names(args.issuer, get_settings().corpus_dir) if settings is not None else ()
+    try:
+        names = issuer_names(args.issuer, get_settings().corpus_dir) if settings is not None else ()
+    except QueryScopeError as error:
+        raise SystemExit(error.message) from None
     request = tool_request(args)
     payload: tuple[str, dict[str, Any]] | dict[str, Any]
     if request is not None:
