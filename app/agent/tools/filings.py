@@ -158,8 +158,9 @@ class CatalogUnit(StrictSchema):
 class CellCatalog(StrictSchema):
     """The stored cells of a fetched chunk, or why it has none.
 
-    ``not_table`` is running text and ``unavailable`` a table chunk stored without its
-    table; neither is a finding that the documents lack an answer.
+    ``not_table`` is running text; ``unavailable`` is a table chunk stored without its
+    table or by code other than the running code. Neither means the documents lack an
+    answer.
     """
 
     status: Literal["available", "not_table", "unavailable"]

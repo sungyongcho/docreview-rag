@@ -5,7 +5,7 @@ canonical table rows, from the live index or from the snapshot it was retrieved 
 """
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any
 
@@ -32,7 +32,7 @@ from app.db.models import (
 )
 from app.figures.tables import TableCellReading
 from app.ingestion.persistence import slices
-from app.ingestion.table_records import resolver_identity
+from app.ingestion.table_records import builder_identity, resolver_identity
 
 type _GridCell = TableSourceCell | SnapshotTableSourceCell
 type _Member = ChunkTableCell | SnapshotChunkTableCell
@@ -41,6 +41,9 @@ type _Caption = TableCaption | SnapshotTableCaption
 type _Header = ChunkTableHeader | SnapshotChunkTableHeader
 type _Link = TableCellSource | SnapshotTableCellSource
 
+# The scope a stale table's withheld readings carry, so no cell of it is ever compared.
+STALE_SCOPE = "stale"
+
 
 @dataclass(frozen=True, slots=True)
 class StoredTable:
@@ -48,10 +51,21 @@ class StoredTable:
 
     ``readings`` lists, for every fragment cell in order, the readings of its
     figure-bearing source cells, exactly as ``read_table_cells`` yields them.
+    ``stale`` marks a live-index table built or read by code other than the running
+    code (see ``current_table``); a snapshot table is frozen by design and never stale.
     """
 
     fragment: dict[str, object]
     readings: tuple[TableCellReading, ...]
+    stale: bool = False
+
+
+def current_table(table: _Table) -> bool:
+    """Whether a stored table was built and read by the running builder and interpreter."""
+    return (table.builder_identity, table.resolver_identity) == (
+        builder_identity(),
+        resolver_identity(),
+    )
 
 
 def cell_ref(chunk_id: int, row: int, column: int) -> str:
@@ -277,15 +291,35 @@ async def load_chunk_tables(
         links_model.column_index,
         links_model.ordinal,
     )
-    return assemble_tables(members, tables, table_captions, grid_cells, chunk_headers, cell_links)
+    stored = assemble_tables(members, tables, table_captions, grid_cells, chunk_headers, cell_links)
+    if snapshot_id is not None:
+        return stored
+    stale = {member.chunk_id for member in members if not current_table(tables[member.table_id])}
+    return {
+        chunk_id: replace(table, stale=True) if chunk_id in stale else table
+        for chunk_id, table in stored.items()
+    }
 
 
 async def load_table_readings(
     session: AsyncSession, chunk_ids: Iterable[int], snapshot_id: int | None = None
 ) -> dict[int, tuple[TableCellReading, ...]]:
-    """Return the stored figure readings of each table chunk, for the figure check."""
+    """Return the stored figure readings of each table chunk, for the figure check.
+
+    A stale live table's readings are withheld: each keeps its values but names no item
+    and carries ``STALE_SCOPE``, so no cell of it can confirm or withhold a claim, while
+    its values still keep the chunk body's copies of them from being read as running
+    text. A snapshot's readings are returned as frozen.
+    """
     stored = await load_chunk_tables(session, chunk_ids, snapshot_id)
-    return {chunk_id: table.readings for chunk_id, table in stored.items()}
+    return {
+        chunk_id: tuple(
+            replace(reading, item=None, scope=STALE_SCOPE) for reading in table.readings
+        )
+        if table.stale
+        else table.readings
+        for chunk_id, table in stored.items()
+    }
 
 
 async def load_table_fragments(
@@ -368,8 +402,8 @@ async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, o
     """Return the selectable cells one stored chunk carries, with what makes them known.
 
     ``status`` is ``not_table`` for running text and ``unavailable`` for a table chunk
-    stored without its table, or whose table was read by interpreter code other than
-    the running ``resolver_identity()`` (stale until the document is ingested again);
+    stored without its table, or whose table was built or read by code other than the
+    running code (stale until the document is ingested again; see ``current_table``);
     neither means the documents lack an answer. Blank and
     non-numeric cells are left out; every other cell is listed with its own status, so a
     cell whose unit, currency, period or item is unknown is visible but not certified.
@@ -389,7 +423,7 @@ async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, o
     table_id = members[0].table_id
     table = await session.get(ParsedTable, table_id)
     assert table is not None
-    if table.resolver_identity != resolver_identity():
+    if not current_table(table):
         return {"status": "unavailable"}
     normalized = {
         (cell.source_row, cell.column_index): cell

@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 
 from app.db.models import Chunk, SnapshotChunkTableCell, SnapshotTableSourceCell
 from app.ingestion.persistence import persist_seed_batch
+from app.retrieval.tables import load_table_readings
 from scripts.schema.tables import comparable, migrate_tables, snapshot_rows
 from tests.ingestion.seed.support import table_batch, tagged_table_batch
 from tests.live_postgres import isolated_session
@@ -168,5 +169,9 @@ def test_snapshots_stored_before_and_after_cell_spans_both_rebuild_exactly():
                 "2": {"chunks": 1, "frozen_now": True, "mismatches": []},
             }
             assert (report["status"], report["live_mismatches"]) == ("migrated", [])
+            chunk_id = await session.scalar(select(Chunk.id).where(Chunk.kind == "table"))
+            assert chunk_id is not None
+            frozen = await load_table_readings(session, [chunk_id], snapshot_id=1)
+            assert {reading.item for reading in frozen[chunk_id]} == {"revenue", "net income"}
 
     asyncio.run(exercise())

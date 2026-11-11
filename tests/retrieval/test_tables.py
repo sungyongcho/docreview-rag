@@ -11,7 +11,12 @@ from sqlalchemy import delete, select, update
 from app.db.models import Chunk, ChunkTableCell, ParsedTable
 from app.ingestion.persistence import persist_seed_batch
 from app.ingestion.table_records import resolver_identity
-from app.retrieval.tables import load_cell_catalog, load_chunk_tables, load_table_readings
+from app.retrieval.tables import (
+    STALE_SCOPE,
+    load_cell_catalog,
+    load_chunk_tables,
+    load_table_readings,
+)
 from tests.ingestion.seed.support import table_batch, tagged_table_batch
 from tests.live_postgres import isolated_session
 
@@ -138,11 +143,12 @@ def test_tables_load_for_more_chunk_ids_than_one_statement_can_bind():
 
 
 @pytest.mark.live_postgres
-def test_a_table_read_by_other_interpreter_code_has_no_available_catalog():
-    """Serve the catalog while the stored resolver identity is the running one, not after."""
+@pytest.mark.parametrize("identity", ["resolver_identity", "builder_identity"])
+def test_a_table_from_other_code_has_no_catalog_and_withholds_its_readings(identity):
+    """Serve catalog and readings while both stored identities are the running ones."""
 
     async def exercise() -> None:
-        """Store the table, then mark it as read by an older interpreter."""
+        """Store the table, then mark it as built or read by older code."""
         async with isolated_session() as session:
             await persist_seed_batch(session, table_batch())
             chunk_id = await session.scalar(select(Chunk.id).where(Chunk.kind == "table"))
@@ -150,8 +156,14 @@ def test_a_table_read_by_other_interpreter_code_has_no_available_catalog():
             catalog = await load_cell_catalog(session, chunk_id)
             assert catalog["status"] == "available"
             assert catalog["resolver_identity"] == resolver_identity()
-            await session.execute(update(ParsedTable).values(resolver_identity="0" * 64))
+            current = (await load_table_readings(session, [chunk_id]))[chunk_id]
+            assert {reading.item for reading in current} == {"revenue", "net income"}
+            await session.execute(update(ParsedTable).values({identity: "0" * 64}))
             assert await load_cell_catalog(session, chunk_id) == {"status": "unavailable"}
-            assert set(await load_chunk_tables(session, [chunk_id])) == {chunk_id}
+            stored = await load_chunk_tables(session, [chunk_id])
+            assert stored[chunk_id].stale is True
+            withheld = (await load_table_readings(session, [chunk_id]))[chunk_id]
+            assert [(r.item, r.scope) for r in withheld] == [(None, STALE_SCOPE)] * 3
+            assert [r.values for r in withheld] == [r.values for r in current]
 
     asyncio.run(exercise())

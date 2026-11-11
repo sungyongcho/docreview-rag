@@ -15,25 +15,35 @@ from app.retrieval.tables import (
     cell_ref,
     cell_ref_chunk,
     load_cell_catalog,
-    load_table_readings,
+    load_chunk_tables,
 )
 
 
 async def read_cited_evidence(
     session_factory: SessionFactory, chunk_ids: tuple[int, ...]
 ) -> dict[int, EvidenceText]:
-    """Read cited chunks' text and stored table readings for the answer figure check."""
+    """Read cited chunks' text and stored table readings for the answer figure check.
+
+    A table chunk whose stored table is stale (built or read by code other than the
+    running code) is cited with no body and no cells, so nothing in it can confirm a
+    figure: its body is never read as running text in place of its table.
+    """
     async with session_factory() as session:
         rows = (
             await session.execute(
                 select(Chunk.id, Chunk.body, Chunk.context_header).where(Chunk.id.in_(chunk_ids))
             )
         ).all()
-        readings = await load_table_readings(session, chunk_ids)
-    return {
-        chunk_id: EvidenceText(chunk_id, body, context_header, readings.get(chunk_id))
-        for chunk_id, body, context_header in rows
-    }
+        tables = await load_chunk_tables(session, chunk_ids)
+    evidence: dict[int, EvidenceText] = {}
+    for chunk_id, body, context_header in rows:
+        table = tables.get(chunk_id)
+        if table is not None and table.stale:
+            evidence[chunk_id] = EvidenceText(chunk_id, "", context_header, ())
+        else:
+            readings = None if table is None else table.readings
+            evidence[chunk_id] = EvidenceText(chunk_id, body, context_header, readings)
+    return evidence
 
 
 async def read_selected_cells(

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.models import ParsedTable
 from app.ingestion.persistence import persist_seed_batch
-from app.ingestion.table_records import resolver_identity
+from app.ingestion.table_records import builder_identity, resolver_identity
 from scripts.schema.status import schema_status
 from tests.ingestion.seed.support import table_batch, tagged_table_batch
 from tests.live_postgres import disposable_database_url
@@ -55,14 +55,14 @@ def test_schema_preparation_preserves_incompatible_database():
 
 
 @pytest.mark.live_postgres
-def test_schema_check_counts_tables_read_by_other_interpreter_code():
-    """Report every stored table, and as stale only those read by other interpreter code."""
+def test_schema_check_counts_tables_built_or_read_by_other_code():
+    """Report every stored table, and as stale those built or read by other code."""
     admin_url = disposable_database_url()
     database = "schema_stale_" + uuid4().hex
     url = admin_url.rsplit("/", 1)[0] + "/" + database
 
     async def scenario():
-        """Store two documents' tables, then mark one as read by an older interpreter."""
+        """Store two tables, then mark one as read and one as built by older code."""
         admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
         async with admin.connect() as connection:
             await connection.execute(text(f'CREATE DATABASE "{database}"'))
@@ -71,6 +71,7 @@ def test_schema_check_counts_tables_read_by_other_interpreter_code():
                 "total": 0,
                 "stale": 0,
                 "resolver_identity": resolver_identity(),
+                "builder_identity": builder_identity(),
             }
             engine = create_async_engine(url)
             try:
@@ -84,16 +85,21 @@ def test_schema_check_counts_tables_read_by_other_interpreter_code():
                     "total": 2,
                     "stale": 0,
                     "resolver_identity": resolver_identity(),
+                    "builder_identity": builder_identity(),
                 }
-                async with engine.begin() as connection:
-                    await connection.execute(
-                        update(ParsedTable)
-                        .where(ParsedTable.doc_id == "AMD-FY2023")
-                        .values(resolver_identity="0" * 64)
-                    )
-                stale = (await schema_status(url))["stored_tables"]
-                assert isinstance(stale, dict)
-                assert (stale["total"], stale["stale"]) == (2, 1)
+                for doc_id, identity, expected in (
+                    ("AMD-FY2023", "resolver_identity", 1),
+                    ("NVDA-FY2024", "builder_identity", 2),
+                ):
+                    async with engine.begin() as connection:
+                        await connection.execute(
+                            update(ParsedTable)
+                            .where(ParsedTable.doc_id == doc_id)
+                            .values({identity: "0" * 64})
+                        )
+                    stale = (await schema_status(url))["stored_tables"]
+                    assert isinstance(stale, dict)
+                    assert (stale["total"], stale["stale"]) == (2, expected)
             finally:
                 await engine.dispose()
         finally:

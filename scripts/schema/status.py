@@ -7,24 +7,33 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility
 from app.db.models import Base, ParsedTable
 from app.db.startup import prepare as prepare_schema
-from app.ingestion.table_records import resolver_identity
+from app.ingestion.table_records import builder_identity, resolver_identity
 
 
 async def stored_tables(connection: AsyncConnection) -> dict[str, object]:
-    """Count the stored tables and those read by interpreter code other than the running one.
+    """Count the stored tables and those built or read by code other than the running code.
 
-    A stale table serves no cell catalog until its document is ingested again.
+    A stale table serves no cell catalog and confirms no figure until its document is
+    ingested again.
     """
-    current = resolver_identity()
+    resolver, builder = resolver_identity(), builder_identity()
     total, stale = (
         await connection.execute(
             select(
                 func.count(),
-                func.count().filter(ParsedTable.resolver_identity != current),
+                func.count().filter(
+                    (ParsedTable.resolver_identity != resolver)
+                    | (ParsedTable.builder_identity != builder)
+                ),
             ).select_from(ParsedTable)
         )
     ).one()
-    return {"total": total, "stale": stale, "resolver_identity": current}
+    return {
+        "total": total,
+        "stale": stale,
+        "resolver_identity": resolver,
+        "builder_identity": builder,
+    }
 
 
 async def schema_status(url: str, *, prepare: bool = False) -> dict[str, object]:
