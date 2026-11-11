@@ -25,16 +25,36 @@ from app.figures.vocabulary import CHANGES, CONNECTIVES, FILLERS, ITEM_WORDS
 # A trailing comma is punctuation, not a separator ("In 2024, revenue ...").
 _NUMBER = re.compile(r"[(△▲-]?\d(?:[\d,]*\d)?(?:\.\d+)?\)?")
 # Identifiers and calendar dates carry digits but state no figure.
-_NOT_FIGURES = re.compile(
-    r"\b(?:FY|Q|H)\s?\d+|\b\d+[QH]\b|\d+-[A-Z]\b|"
-    r"\b(?:Item|Note|Part|Exhibit|Section)s?\s+\d+[A-Z]?(?:\.\d+)*"
-    r"(?:\s*(?:,|and|&)\s*\d+[A-Z]?(?:\.\d+)*)*|"
-    # A Korean note reference: "(주29)", "(주 5, 30)", "(주석 12)".
-    r"[(（]\s*주석?\s*\d+[A-Za-z]?(?:\s*[,，、~-]\s*\d+[A-Za-z]?)*\s*[)）]|"
+_PERIODS_AND_CODES = r"\b(?:FY|Q|H)\s?\d+|\b\d+[QH]\b|\d+-[A-Z]\b|"
+_REFERENCE = r"\b(?:Item|Note|Part|Exhibit|Section)s?\s+\d+[A-Z]?(?:\.\d+)*"
+_REFERENCE_LIST = r"(?:\s*(?:,|and|&)\s*\d+[A-Z]?(?:\.\d+)*)*"
+# A Korean note reference: "(주29)", "(주 5, 30)", "(주석 12)".
+_KOREAN_NOTE = r"[(（]\s*주석?\s*\d+[A-Za-z]?"
+_KOREAN_NOTE_LIST = r"(?:\s*[,，、~-]\s*\d+[A-Za-z]?)*"
+_KOREAN_NOTE_END = r"\s*[)）]|"
+_DATES = (
     r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}|"
     r"\d{4}\s?[./-]\s?\d{1,2}\s?[./-]\s?\d{1,2}|\d{1,2}/\d{1,2}/\d{4}|"
     r"\d{4}\s?년(?:\s?\d{1,2}\s?월)?(?:\s?\d{1,2}\s?일)?|\d{1,2}\s?월\s?\d{1,2}\s?일|"
-    r"\d\s?분기|제\s?\d+\s?기",
+    r"\d\s?분기|제\s?\d+\s?기"
+)
+# A label may cite a list of notes ("Notes 2 and 3", "(주 5, 30)"): every number of the
+# list is an identifier.
+_NOT_FIGURES = re.compile(
+    _PERIODS_AND_CODES
+    + _REFERENCE
+    + _REFERENCE_LIST
+    + "|"
+    + _KOREAN_NOTE
+    + _KOREAN_NOTE_LIST
+    + _KOREAN_NOTE_END
+    + _DATES,
+    re.IGNORECASE,
+)
+# In an answer a reference is followed by exactly its own number, so a figure written
+# after it ("Note 5, 99,999 million") stays a figure and is checked.
+_ANSWER_NOT_FIGURES = re.compile(
+    _PERIODS_AND_CODES + _REFERENCE + "|" + _KOREAN_NOTE + _KOREAN_NOTE_END + _DATES,
     re.IGNORECASE,
 )
 BARE_YEAR = re.compile(r"(?:19|20)\d{2}")
@@ -136,8 +156,13 @@ def _value(text: str) -> Decimal | None:
 
 
 def blank(text: str) -> str:
-    """Blank identifiers and dates out of a text while keeping every position."""
+    """Blank identifiers and dates out of a label or cell text while keeping every position."""
     return _NOT_FIGURES.sub(lambda match: " " * len(match.group(0)), text)
+
+
+def blank_answer(text: str) -> str:
+    """Blank an answer's identifiers and dates, each reference with only its own number."""
+    return _ANSWER_NOT_FIGURES.sub(lambda match: " " * len(match.group(0)), text)
 
 
 def _markers_before(text: str, start: int) -> tuple[set[str], int]:

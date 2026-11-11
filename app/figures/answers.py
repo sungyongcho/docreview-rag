@@ -33,14 +33,14 @@ from typing import Literal
 
 from app.figures.currency import same_currency
 from app.figures.tables import TableCellReading
-from app.figures.text import BARE_YEAR, YEAR, Figure, blank, figure_spans
+from app.figures.text import BARE_YEAR, YEAR, Figure, blank_answer, figure_spans
 from app.figures.vocabulary import (
+    ANSWER_SAME_ITEM_QUALIFIER,
     CHANGES,
     CONNECTIVES,
     ENGLISH_PHRASES,
     FILLERS,
     KOREAN_PHRASES,
-    SAME_ITEM_QUALIFIER,
     TOKEN,
     phrase_key,
 )
@@ -329,7 +329,7 @@ def _issuer_subjects(text: str, issuer: str | None) -> str:
     pattern = re.compile(rf"(?<!\w){re.escape(issuer)}(?![\w'’])")
     masked = text
     for match in pattern.finditer(text):
-        before = blank(masked[: match.start()])
+        before = blank_answer(masked[: match.start()])
         start = max((end.end() for end in _SENTENCE_BREAK.finditer(before)), default=0)
         if all(
             word.kind == "filler" and not _POSSESSIVE.fullmatch(word.text)
@@ -358,7 +358,9 @@ def _claims(text: str, *, issuer: str | None = None) -> list[_Claim]:
     """Read every figure of a text as a claim, sentence by sentence."""
     formatted = _STRONG.sub(lambda match: "  " + match[1] + "  ", text)
     subject = _issuer_subjects(formatted, issuer)
-    masked = blank(SAME_ITEM_QUALIFIER.sub(lambda match: " " * len(match.group(0)), subject))
+    masked = blank_answer(
+        ANSWER_SAME_ITEM_QUALIFIER.sub(lambda match: " " * len(match.group(0)), subject)
+    )
     bounds = [0, *(match.start() for match in _SENTENCE_BREAK.finditer(masked)), len(masked)]
     return [
         claim

@@ -50,3 +50,18 @@ def test_prose_fallback_needs_the_same_currency():
     won = EvidenceText(3, "Body text.", "Net revenue of 25,785 million won · Item 8", None)
     assert check_figures("Net revenue was US$25,785 million.", [won], []).verdict == "unverified"
     assert check_figures("Net revenue was ₩25,785 million.", [won], []).verdict == "verified"
+
+
+@pytest.mark.parametrize(
+    ("answer", "amount"),
+    [
+        ("As disclosed in Note 5, 99,999 million USD of revenue was recorded.", "99,999"),
+        ("Revenue in Notes 2 and 99,999 million USD.", "99,999"),
+        ("매출액 (주 5, 99999)백만원", "99999"),
+    ],
+)
+def test_an_amount_after_a_note_reference_is_still_a_claim(answer, amount):
+    """Check an amount written right after a note reference instead of dropping it."""
+    result = check_figures(answer, [EvidenceText(1, "body", "ctx")], [2024])
+    assert amount in {check.figure.strip("()") for check in result.checks}
+    assert result.verdict != "verified"
