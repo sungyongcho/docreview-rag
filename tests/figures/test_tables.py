@@ -601,3 +601,21 @@ def test_an_undefined_prior_period_word_does_not_take_the_caption_year():
         cell.column: cell.years for cell in read_table_cells(fragment, None, {"당기": 2024})
     }
     assert readings == {1: {2024}, 2: frozenset()}
+
+
+def test_a_tagged_year_override_leaves_its_columns_untagged_cells_undated():
+    """A filer naming its year after another calendar year dates only its tagged cells."""
+    fragment = table_fragment(USD_INCOME_TABLE)
+    shifted = {
+        (cell.row, cell.column): cell
+        for cell in read_table_cells(fragment, {(1, 1): (fact(fiscal_year=2025),)})
+    }
+    assert (shifted[(1, 1)].years, shifted[(1, 1)].overrides) == ({2025}, ("year",))
+    assert shifted[(2, 1)].years == frozenset()
+    assert interpret_table_cell("1,641", [shifted[(2, 1)]]).status == "period_unknown"
+    assert shifted[(2, 2)].years == {2023}
+    agreeing = {
+        (cell.row, cell.column): cell for cell in read_table_cells(fragment, {(1, 1): (fact(),)})
+    }
+    assert agreeing[(2, 1)].years == {2024}
+    assert interpret_table_cell("1,641", [agreeing[(2, 1)]]).status == "known"

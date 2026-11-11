@@ -682,7 +682,8 @@ def read_table_cells(
     are the tagged facts of each source cell by grid coordinates; a cell read from
     exactly one fact showing the same number takes the fact's facts (see
     :func:`_with_fact`), any other cell keeps its text reading; one fact showing
-    another number is recorded as a ``number`` override. ``terms`` are the
+    another number is recorded as a ``number`` override. When a tag overrides the year
+    its column's header names, the column's untagged cells name no year. ``terms`` are the
     period words the table's document defines ("당기", "제56기") and their fiscal
     years; a header that is one of them dates its columns. ``statement`` is what the
     table's filing declares about its statement, when its form presents several
@@ -769,7 +770,15 @@ def read_table_cells(
                     # disagreement is recorded.
                     reading = replace(reading, overrides=("number",))
                 cells.append(reading)
-    return cells
+    # A tag dating its column to another year than the header's text (a filer whose
+    # "2023" ends in 2024) leaves the column's untagged cells without a year.
+    shifted = {cell.column for cell in cells if "year" in cell.overrides}
+    return [
+        replace(cell, years=frozenset())
+        if cell.basis == "text" and cell.column in shifted
+        else cell
+        for cell in cells
+    ]
 
 
 def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> CellInterpretation:
