@@ -230,9 +230,10 @@ TAGGED_TABLE_HTML = (
 )
 
 
-def tagged_table_batch(doc_id: str = "NVDA-FY2024") -> seed.SeedBatch:
-    """Build the tagged table's batch with its cells' source spans, as the parser does."""
-    html = TAGGED_TABLE_HTML
+def tagged_table_batch(
+    doc_id: str = "NVDA-FY2024", html: str = TAGGED_TABLE_HTML
+) -> seed.SeedBatch:
+    """Build a tagged table's batch with its cells' source spans, as the parser does."""
     start = html.index("<table>")
     starts = [match.start() for match in re.finditer(r"<td\b", html)]
     spans = tuple(zip(starts, [*starts[1:], len(html)], strict=True))

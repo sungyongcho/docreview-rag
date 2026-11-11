@@ -362,6 +362,22 @@ def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
     }
 
 
+def _declared_facts(rows: list[dict[str, Any]], facts: FilingFacts) -> list[dict[str, Any]]:
+    """Keep the fact rows whose references the filing declares, as the reading joined them.
+
+    The reading joined an undeclared unit as no unit, so the row keeps no unit either.
+    A row needs its context, so a fact naming an undeclared context is left out; its
+    cell's reading, read with no year and an opaque scope, is stored all the same.
+    """
+    contexts = {context.context_id for context in facts.contexts}
+    units = {unit.unit_id for unit in facts.units}
+    return [
+        {**row, "unit_id": row["unit_id"] if row["unit_id"] in units else None}
+        for row in rows
+        if row["context_id"] in contexts
+    ]
+
+
 def _slices(rows: list[dict[str, Any]], size: int = 1000) -> Iterable[list[dict[str, Any]]]:
     """Split insert rows so one statement stays under PostgreSQL's bind-parameter limit."""
     for start in range(0, len(rows), size):
@@ -370,10 +386,9 @@ def _slices(rows: list[dict[str, Any]], size: int = 1000) -> Iterable[list[dict[
 
 async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
     """Replace every stored table of the batch's documents and link it to its chunks."""
+    facts = {filing.source.document.document_id: filing.facts for filing in batch.filings}
     records = table_records(
-        batch.chunks,
-        {record.doc_id: record.structure_id for record in batch.chunks},
-        {filing.source.document.document_id: filing.facts for filing in batch.filings},
+        batch.chunks, {record.doc_id: record.structure_id for record in batch.chunks}, facts
     )
     doc_ids = [document.document_id for document in batch.documents]
     await session.execute(delete(ParsedTable).where(ParsedTable.doc_id.in_(doc_ids)))
@@ -382,6 +397,8 @@ async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
     rows: dict[type, list[dict[str, Any]]] = {}
     for record in records:
         for model, values in table_rows(record).items():
+            if model is TableSourceFact:
+                values = _declared_facts(values, facts.get(record.doc_id, FilingFacts()))
             rows.setdefault(model, []).extend(values)
     for model in (
         ParsedTable,
