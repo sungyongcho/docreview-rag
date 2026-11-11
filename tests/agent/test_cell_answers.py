@@ -9,7 +9,6 @@ from pydantic import ValidationError
 import pytest
 
 from app.agent.cell_answers import (
-    _ITEM_LABELS_KO,
     StaleCellError,
     StoredCell,
     cell_digest,
@@ -17,6 +16,7 @@ from app.agent.cell_answers import (
 )
 from app.agent.types import CellSelectionAnswer
 from app.figures.answers import UNIT_UNVERIFIED_ANSWER_KO, UNIT_UNVERIFIED_RATIONALE_KO
+from app.figures.items import ITEMS
 from app.figures.vocabulary import PHRASE_ITEMS, items_named
 from app.retrieval.tables import cell_ref_chunk
 
@@ -123,7 +123,7 @@ def test_sign_and_written_decimals_survive_assembly():
         proposal(("2024:r1c1", "net income", 2024)), loss, items=frozenset({"net income"})
     )
     assert result.report is not None
-    assert result.report.answer == "FY2024 Net income (loss): -1,641.50 million USD."
+    assert result.report.answer == "FY2024 Net income: -1,641.50 million USD."
 
 
 def test_a_wrong_row_or_year_claim_is_returned_for_correction():
@@ -546,4 +546,4 @@ def test_the_schema_has_no_place_for_an_amount_or_a_loose_value(change):
 
 def test_every_item_has_a_korean_label():
     """Name in Korean exactly the items the figure vocabulary recognizes."""
-    assert set(_ITEM_LABELS_KO) == set(PHRASE_ITEMS.values())
+    assert set(ITEMS) == set(PHRASE_ITEMS.values())

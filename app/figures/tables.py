@@ -42,6 +42,7 @@ from app.figures.currency import (
     currency_of,
     resolve,
 )
+from app.figures.items import ITEMS
 from app.figures.text import (
     KOREAN_SCALE,
     YEAR,
@@ -653,89 +654,6 @@ def _loss_only(label: str | None) -> bool:
 # ("dart_OperatingIncomeLoss") cannot be judged from a list, so their rows keep the
 # label's item.
 _STANDARD_CONCEPT = re.compile(r"(?:us-gaap|ifrs-full)[:_](?P<name>\w+)")
-# The standard concepts that report each item a row label names (see PHRASE_ITEMS).
-# A tagged cell whose standard concept is not listed for its label's item (a cash-flow
-# change, a pro forma figure) is not established as that item.
-_ITEM_CONCEPTS: dict[str, frozenset[str]] = {
-    "revenue": frozenset(
-        {
-            "Revenues",
-            "Revenue",
-            "RevenueFromContractWithCustomerExcludingAssessedTax",
-            "RevenueFromContractWithCustomerIncludingAssessedTax",
-            "SalesRevenueNet",
-            "RevenueFromContractsWithCustomers",
-        }
-    ),
-    "cost of revenue": frozenset(
-        {
-            "CostOfRevenue",
-            "CostOfGoodsAndServicesSold",
-            "CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization",
-            "CostOfGoodsSold",
-            "CostOfSales",
-        }
-    ),
-    "gross profit": frozenset({"GrossProfit"}),
-    "operating income": frozenset({"OperatingIncomeLoss", "ProfitLossFromOperatingActivities"}),
-    "net income": frozenset({"NetIncomeLoss", "ProfitLoss"}),
-    "earnings per share": frozenset(
-        {
-            "EarningsPerShareBasic",
-            "EarningsPerShareDiluted",
-            "EarningsPerShareBasicAndDiluted",
-            "BasicEarningsLossPerShare",
-            "DilutedEarningsLossPerShare",
-            "BasicAndDilutedEarningsLossPerShare",
-        }
-    ),
-    "basic earnings per share": frozenset(
-        {
-            "EarningsPerShareBasic",
-            "EarningsPerShareBasicAndDiluted",
-            "BasicEarningsLossPerShare",
-            "BasicAndDilutedEarningsLossPerShare",
-        }
-    ),
-    "diluted earnings per share": frozenset(
-        {
-            "EarningsPerShareDiluted",
-            "EarningsPerShareBasicAndDiluted",
-            "DilutedEarningsLossPerShare",
-            "BasicAndDilutedEarningsLossPerShare",
-        }
-    ),
-    "research and development": frozenset(
-        {
-            "ResearchAndDevelopmentExpense",
-            "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost",
-        }
-    ),
-    "sales and marketing": frozenset({"SellingAndMarketingExpense"}),
-    "selling, general and administrative": frozenset({"SellingGeneralAndAdministrativeExpense"}),
-    "income tax": frozenset({"IncomeTaxExpenseBenefit", "IncomeTaxExpenseContinuingOperations"}),
-    "accounts receivable": frozenset(
-        {
-            "AccountsReceivableNetCurrent",
-            "AccountsReceivableNet",
-            "CurrentTradeReceivables",
-            "TradeReceivables",
-        }
-    ),
-    "total assets": frozenset({"Assets"}),
-    "total liabilities": frozenset({"Liabilities"}),
-    "total equity": frozenset(
-        {
-            "StockholdersEquity",
-            "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
-            "Equity",
-        }
-    ),
-    "cash and cash equivalents": frozenset(
-        {"CashAndCashEquivalentsAtCarryingValue", "CashAndCashEquivalents"}
-    ),
-}
-
 # The DART statement axis whose consolidated member is the entity as a whole.
 _ENTITY_SCOPE = (
     (
@@ -846,7 +764,7 @@ def _with_fact(
     item = reading.item
     standard = _STANDARD_CONCEPT.fullmatch(fact.concept)
     if item is not None and standard is not None:
-        if standard.group("name") not in _ITEM_CONCEPTS.get(item, frozenset()):
+        if standard.group("name") not in ITEMS[item].concepts:
             overrides.append("concept")
             item = None
     return replace(

@@ -5,8 +5,8 @@ from decimal import Decimal
 
 import pytest
 
+from app.figures.items import ITEMS
 from app.figures.tables import (
-    _ITEM_CONCEPTS,
     TableStatement,
     interpret_table_cell,
     read_table_cells,
@@ -703,7 +703,7 @@ def test_a_standard_concept_must_be_one_accepted_for_the_labels_item(
 
 def test_every_item_a_label_can_name_has_accepted_concepts():
     """The accepted-concept table covers exactly the items row labels name."""
-    assert set(_ITEM_CONCEPTS) == set(PHRASE_ITEMS.values())
+    assert set(ITEMS) == set(PHRASE_ITEMS.values())
 
 
 ROLLFORWARD_TABLE = one_column(

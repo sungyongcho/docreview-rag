@@ -84,7 +84,7 @@ _KOREAN_ENDINGS = (
 )
 _KOREAN_JOINS = frozenset({"이며", "이고", "였고", "였으며", "으며", "고", "며"})
 _KOREAN_FILLERS = frozenset({"", "연결", "기준", "약", "총", "전년", "전년도", "동기", "대비"})
-_KOREAN_FILLERS |= {"기록", "수준", "규모", "각각"}
+_KOREAN_FILLERS |= {"기록", "수준", "규모", "각각", "회계연도"}
 _KOREAN_UNIT = re.compile(r"(?:[십백천]?[만억조]|천)?(?:원|달러|불)?")
 _KOREAN_CHANGES = ("증가", "감소", "성장", "상승", "하락", "늘어", "줄어", "증대")
 

@@ -31,31 +31,13 @@ from app.figures.answers import (
     UNIT_UNVERIFIED_RATIONALE,
     UNIT_UNVERIFIED_RATIONALE_KO,
 )
+from app.figures.items import ITEMS
 
 type Locale = Literal["en", "ko"]
 
 # Statuses whose missing unit or currency withholds the whole answer.
 UNIT_HOLDS = frozenset({"scale_unknown", "currency_unconfirmed"})
 
-_ITEM_LABELS_KO = {
-    "revenue": "매출",
-    "cost of revenue": "매출원가",
-    "gross profit": "매출총이익",
-    "operating income": "영업이익",
-    "net income": "순이익",
-    "earnings per share": "주당이익",
-    "basic earnings per share": "기본주당이익",
-    "diluted earnings per share": "희석주당이익",
-    "research and development": "연구개발비",
-    "sales and marketing": "판매 및 마케팅비",
-    "selling, general and administrative": "판매비와관리비",
-    "income tax": "법인세",
-    "accounts receivable": "매출채권",
-    "total assets": "자산총계",
-    "total liabilities": "부채총계",
-    "total equity": "자본총계",
-    "cash and cash equivalents": "현금및현금성자산",
-}
 _SCALES_EN = {0: "", 3: "thousand", 6: "million", 9: "billion", 12: "trillion"}
 _SCALES_KO = {0: "", 3: "천", 4: "만", 6: "백만", 8: "억", 9: "십억", 12: "조"}
 
@@ -151,9 +133,10 @@ def _amount(cell: StoredCell, locale: Locale) -> str:
 def _line(cell: StoredCell, locale: Locale) -> str:
     """State one selected cell as one sentence of the answer."""
     (year,) = cell.cell["fiscal_years"]
-    label = cell.cell["row_label"] or cell.cell["item"]
+    definition = ITEMS[cell.cell["item"]]
+    label = definition.label_en
     if locale == "ko":
-        label = _ITEM_LABELS_KO.get(cell.cell["item"], label)
+        label = definition.label_ko
         return f"{year} 회계연도 {label}: {_amount(cell, locale)}."
     return f"FY{year} {label}: {_amount(cell, locale)}."
 

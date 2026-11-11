@@ -11,108 +11,7 @@ import re
 from typing import Literal
 
 from app.figures.currency import CURRENCY
-
-# The financial items a claim may name, each by the explicit phrases accepted for it.
-# A phrase names its item only as a whole: qualifiers around it ("operating revenue",
-# "adjusted net income", "조정매출액") are unknown words, never stripped. Distinct items
-# are never treated as equivalent.
-_ITEM_PHRASES: dict[str, tuple[str, ...]] = {
-    "revenue": (
-        "revenue",
-        "revenues",
-        "net revenue",
-        "net revenues",
-        "total revenue",
-        "total revenues",
-        "total net revenue",
-        "net sales",
-        "sales",
-        "매출액",
-        "매출",
-        "영업수익",
-    ),
-    "cost of revenue": (
-        "cost of revenue",
-        "cost of revenues",
-        "cost of sales",
-        "cost of goods sold",
-        "매출원가",
-    ),
-    "gross profit": ("gross profit", "gross margin", "매출총이익"),
-    "operating income": (
-        "operating income",
-        "operating profit",
-        "operating loss",
-        "income from operations",
-        "loss from operations",
-        "영업이익",
-        "영업손실",
-    ),
-    "net income": (
-        "net income",
-        "net earnings",
-        "net profit",
-        "net loss",
-        "당기순이익",
-        "순이익",
-        "당기순손실",
-        "순손실",
-    ),
-    "earnings per share": ("earnings per share", "eps", "net income per share", "주당순이익"),
-    "basic earnings per share": (
-        "basic earnings per share",
-        "basic eps",
-        "basic net income per share",
-        "earnings per share - basic",
-        "net income per share - basic",
-        "기본주당순이익",
-    ),
-    "diluted earnings per share": (
-        "diluted earnings per share",
-        "diluted eps",
-        "diluted net income per share",
-        "earnings per share - diluted",
-        "net income per share - diluted",
-        "희석주당순이익",
-    ),
-    "research and development": (
-        "research and development",
-        "research and development expense",
-        "research and development expenses",
-        "r&d",
-        "연구개발비",
-    ),
-    "sales and marketing": (
-        "sales and marketing",
-        "sales and marketing expense",
-        "sales and marketing expenses",
-        "selling and marketing",
-    ),
-    "selling, general and administrative": (
-        "selling, general and administrative",
-        "selling, general and administrative expense",
-        "selling, general and administrative expenses",
-        "sg&a",
-        "판매비와관리비",
-        "판관비",
-    ),
-    "income tax": (
-        "income tax expense",
-        "income taxes",
-        "provision for income taxes",
-        "법인세비용",
-    ),
-    "accounts receivable": ("accounts receivable", "trade receivables", "매출채권"),
-    "total assets": ("total assets", "자산총계"),
-    "total liabilities": ("total liabilities", "부채총계"),
-    "total equity": (
-        "total equity",
-        "total stockholders' equity",
-        "total shareholders' equity",
-        "자본총계",
-    ),
-    "cash and cash equivalents": ("cash and cash equivalents", "현금및현금성자산"),
-}
+from app.figures.items import ITEMS
 
 # Words of an answer: English words (with "&", apostrophes and hyphens inside), Korean
 # words, digit runs, and single other characters.
@@ -172,7 +71,7 @@ def phrase_key(text: str) -> str:
 
 
 PHRASE_ITEMS = {
-    phrase_key(phrase): item for item, phrases in _ITEM_PHRASES.items() for phrase in phrases
+    phrase_key(phrase): item for item, definition in ITEMS.items() for phrase in definition.phrases
 }
 # English phrases as word sequences, longest first; Korean phrases as whole stems.
 ENGLISH_PHRASES = sorted(
@@ -269,25 +168,6 @@ _QUESTION_REWRITES = (
     (re.compile(r"(?<!\w)according\s+to(?!\w)", re.IGNORECASE), " according "),
     (re.compile(r"(?<!\w)(?:want|like|need)\s+to\s+(?:know|see)(?!\w)", re.IGNORECASE), " know "),
 )
-# Words a question may name an item by beyond the answers' phrases: "net revenue" is
-# revenue there, so "순매출" is too; "R&D" is research and development.
-_QUESTION_SYNONYMS = {
-    "순매출": "revenue",
-    "순매출액": "revenue",
-    "r&d expense": "research and development",
-    "r&d expenses": "research and development",
-}
-_QUESTION_ENGLISH = sorted(
-    [
-        *ENGLISH_PHRASES,
-        *((tuple(TOKEN.findall(p)), item) for p, item in _QUESTION_SYNONYMS.items() if p.isascii()),
-    ],
-    key=lambda entry: len(entry[0]),
-    reverse=True,
-)
-_QUESTION_KOREAN = KOREAN_PHRASES | {
-    p: item for p, item in _QUESTION_SYNONYMS.items() if not p.isascii()
-}
 # Scope words that may be written glued to a Korean item ("연결매출액", "총매출액").
 _SCOPE_PREFIXES_KO = ("연결", "전체", "총")
 # Periods shorter than a fiscal year. Stored cells carry a fiscal year only, so such a
@@ -311,7 +191,7 @@ _QUESTION_ENDINGS_KO = (
 )
 # Words an issuer name made only of would blank out of the vocabulary itself.
 _VOCABULARY_WORDS = FILLERS | CONNECTIVES | ITEM_WORDS | _QUESTION_ENDS | _QUESTION_PASS
-_VOCABULARY_WORDS |= _UNIT_WORDS | _UNIT_WORDS_KO | _QUESTION_PASS_KO | set(_QUESTION_KOREAN)
+_VOCABULARY_WORDS |= _UNIT_WORDS | _UNIT_WORDS_KO | _QUESTION_PASS_KO | set(KOREAN_PHRASES)
 
 # ``unit`` is a currency or scale word: the unit of the answer after an item phrase
 # ("revenue in USD millions", "몇 백만원인가"), a qualifier before one ("USD revenue").
@@ -336,8 +216,8 @@ def _korean_question_word(word: str) -> tuple[_QuestionKind, str | None]:
             if ending and not body.endswith(ending):
                 continue
             stem = body[: len(body) - len(ending)]
-            if stem in _QUESTION_KOREAN:
-                return ("unknown", None) if ending == "의" else ("item", _QUESTION_KOREAN[stem])
+            if stem in KOREAN_PHRASES:
+                return ("unknown", None) if ending == "의" else ("item", KOREAN_PHRASES[stem])
             if not prefix and stem in _QUESTION_PASS_KO:
                 return "pass", None
             if not prefix and stem in _UNIT_WORDS_KO:
@@ -389,7 +269,7 @@ def _issuer_names(issuers: Collection[str]) -> re.Pattern[str] | None:
     for issuer in issuers:
         name = " ".join(issuer.split())
         words = TOKEN.findall(phrase_key(name))
-        if not words or phrase_key(name) in PHRASE_ITEMS or name in _QUESTION_SYNONYMS:
+        if not words or phrase_key(name) in PHRASE_ITEMS:
             continue
         if all(word in _VOCABULARY_WORDS for word in words):
             continue
@@ -422,7 +302,7 @@ def _question_words(
     words = [phrase_key(word) for word in written]
     kinds: list[_QuestionKind] = ["unknown"] * len(words)
     spans: list[tuple[int, int, str]] = []
-    for phrase, item in _QUESTION_ENGLISH:
+    for phrase, item in ENGLISH_PHRASES:
         size = len(phrase)
         for start in range(len(words) - size + 1):
             if (
@@ -449,7 +329,7 @@ def _question_words(
 
 
 def items_named(text: str, *, issuers: Collection[str] = ()) -> frozenset[str]:
-    """Return the financial items a question names, read with the answers' vocabulary.
+    """Return the financial items a question names using the closed question vocabulary.
 
     Rule: an item phrase names its item only when every other word of its sentence
     is a filler, connective, question word, fiscal year, entity-scope word, issuer

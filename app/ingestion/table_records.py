@@ -43,6 +43,7 @@ def builder_identity() -> str:
 # their years and scopes.
 RESOLVER_FILES = (
     "figures/currency.py",
+    "figures/items.py",
     "figures/vocabulary.py",
     "figures/text.py",
     "figures/tables.py",

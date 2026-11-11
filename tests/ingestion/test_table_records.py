@@ -326,6 +326,7 @@ def test_the_resolver_identity_covers_the_fact_reader(tmp_path, monkeypatch):
     """Readings change with the figure rules and with facts.py, so both are hashed."""
     assert RESOLVER_FILES == (
         "figures/currency.py",
+        "figures/items.py",
         "figures/vocabulary.py",
         "figures/text.py",
         "figures/tables.py",
