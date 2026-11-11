@@ -295,7 +295,7 @@ setup/VM/image/backend 단계와 `deploy/gcp/print_origin.sh`를 사용합니다
 | Oracle A1 | 2 OCPU·12 GB 공유 인스턴스에서 minimax와 DocReview 포트를 분리 | 계정에 할당된 Always Free 범위를 목표로 하되 실제 컴퓨트·저장소·네트워크 자격 확인 |
 | Firebase Hosting | 기존 정적 내보내기 사이트 | 설정된 요금제의 제공량 이내 유지 |
 | Cloudflare Worker | DocReview 전용 라우터 | 설정된 요금제의 제공량 이내 유지 |
-| OpenAI | `DOCREVIEW_PUBLIC_DAILY_COST_USD`(배포 compose 파일에서 `0.30`)로 UTC 하루 단위 상한 | ≤ $0.30/day |
+| OpenAI | `DOCREVIEW_PUBLIC_DAILY_COST_USD`로 UTC 하루 단위 상한([개요](overview.md) 참고) | 설정 가능 |
 
 공유 호스트에서 minimax도 실행되므로 두 서비스에 필요한 자원을 남겨 두세요.
 A1 내부의 앱 빌드는 운영 트래픽과 일시적으로 자원을 경쟁할 수 있습니다. 이 목표

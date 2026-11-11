@@ -314,7 +314,7 @@ static prefix.
 | Oracle A1 | Shared 2 OCPU / 12 GB instance; minimax and DocReview keep separate ports | Target the account's allocated Always Free resources; verify actual compute, storage, and network entitlement |
 | Firebase Hosting | Existing static-export site | Stay within the configured plan's allowance |
 | Cloudflare Worker | Dedicated DocReview router | Stay within the configured plan's allowance |
-| OpenAI | Capped per UTC day by `DOCREVIEW_PUBLIC_DAILY_COST_USD` (`0.30` in the deployment compose file) | ≤ $0.30/day |
+| OpenAI | Capped per UTC day by `DOCREVIEW_PUBLIC_DAILY_COST_USD` (see [Overview](overview.md)) | Configurable |
 
 The shared host also runs minimax, so leave resources for both services. Building
 the application on the A1 instance can temporarily compete with live traffic.
