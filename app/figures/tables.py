@@ -149,6 +149,14 @@ class TableCellReading:
     cannot show whether the cell is a percentage. ``currency`` is resolved from the
     table's notes and the markers bound to this cell's own numbers only, never from
     other rows or tables; ``marked`` says the cell's numbers carry currency markers.
+
+    A reading carries each fact its cell does not establish, so a figure check that
+    compares readings and the cell's interpretation decide it the same way:
+    ``values`` is empty when the figure is no one amount (digits not grouped in
+    threes, or its one tag showing another number), ``scale`` is None when a scale
+    word in the cell contradicts its unit, and ``percent`` is None for a figure whose
+    normalized cell carries a lone "%" cell or whose amount tag contradicts a written
+    percentage.
     """
 
     row: int
@@ -656,7 +664,9 @@ def _with_fact(
         scale = Decimal(10) ** (fact.scale or 0)
         if reading.scale is not None and reading.scale != scale:
             overrides.append("scale")
-        percent, resolved = False, resolve(frozenset({code}) | notes)
+        # An amount tag on a figure the text writes as a percentage cannot show which.
+        percent = None if reading.percent else False
+        resolved = resolve(frozenset({code}) | notes)
     elif fact.numerator is not None:
         measure = "other"
     return replace(
@@ -670,6 +680,24 @@ def _with_fact(
         scope=scope,
         measure=measure,
     )
+
+
+def _split_percent(fragment: Mapping[str, object]) -> set[tuple[int, int]]:
+    """Return the figure source cells whose normalized cell carries a lone "%" cell.
+
+    NVDA writes a margin as "72.7 | %": the percent sign stands in a source cell of
+    its own beside the figure.
+    """
+    found: set[tuple[int, int]] = set()
+    for member in _entries(fragment, "cells"):
+        sources = _entries(member, "sources")
+        if any(str(source.get("text", "")).strip() == "%" for source in sources):
+            found.update(
+                (_int(source["row"]), _int(source["column"]))
+                for source in sources
+                if values(str(source.get("text", "")))
+            )
+    return found
 
 
 def _negative(text: str) -> bool | None:
@@ -711,12 +739,17 @@ def read_table_cells(
     labels = _row_labels(fragment)
     under_part, label_columns = _row_structure(fragment)
     dated_by_caption = _caption_dates(fragment, headers, terms)
+    split_percent = _split_percent(fragment)
     cells = []
     for member in _entries(fragment, "cells"):
         for source in _entries(member, "sources"):
             text = str(source.get("text", ""))
             cell_values = values(text)
             if cell_values:
+                spans = [f for f in figure_spans(blank(text)) if f.value is not None]
+                # Digits not grouped in threes ("25,7851" with a glued footnote) state
+                # no one amount, so the reading holds no value to compare.
+                established = all(_GROUPED.fullmatch(f.text) for f in spans)
                 label = labels.get(_int(source["row"]))
                 per_share = label is not None and _PER_SHARE.search(label)
                 scale = unit.scale if known else None
@@ -732,19 +765,21 @@ def read_table_cells(
                     # A scale word in the cell ("25.8 billion", "300조") states its unit
                     # under a table in plain currency units; beside a table scale it
                     # contradicts the table, so no unit is taken.
-                    scale = written.pop() if unit.scale == 1 and len(written) == 1 else None
+                    scale = next(iter(written)) if unit.scale == 1 and len(written) == 1 else None
+                row, column = _int(source["row"]), _int(source["column"])
                 percent: bool | None = "%" in text or (
                     known and unit.percent and unit.scale is None
                 )
-                if not percent and not known:
-                    # Without a readable note a bare cell may or may not be a percentage.
+                if not percent and (not known or (row, column) in split_percent):
+                    # Without a readable note a bare cell may or may not be a percentage,
+                    # and a percent sign in a cell of its own beside the figure ("72.7 |
+                    # %") does not show that the figure itself is the row's percentage.
                     percent = None
                 # Only markers bound to the cell's own numbers count; other words in the
                 # cell ("원가") name no denomination.
                 own = frozenset(
                     marker for figure in figure_spans(blank(text)) for marker in figure.currency
                 )
-                row, column = _int(source["row"]), _int(source["column"])
                 over = _headers_over(source, headers)
                 scope = _statement_scope(statement)
                 second_label = any(col < column for col in label_columns.get(row, [])[1:])
@@ -756,7 +791,7 @@ def read_table_cells(
                 reading = TableCellReading(
                     row,
                     column,
-                    frozenset(cell_values),
+                    frozenset(cell_values) if established else frozenset(),
                     frozenset(
                         _column_years(
                             over, caption_years if column == dated_by_caption else None, terms
@@ -781,9 +816,15 @@ def read_table_cells(
                     )
                 elif len(tagged) == 1:
                     # The tag shows another number ("25,785" tagged, "25,7851" with a
-                    # glued footnote written): the text keeps its reading, and the
-                    # disagreement is recorded.
-                    reading = replace(reading, overrides=("number",))
+                    # glued footnote written): neither is established, so the reading
+                    # holds no value and the disagreement is recorded.
+                    reading = replace(reading, values=frozenset(), overrides=("number",))
+                if (row, column) in split_percent and reading.percent is False:
+                    # An amount tag does not settle a percent sign written beside it.
+                    reading = replace(reading, percent=None)
+                if written and reading.percent is False and written != {reading.scale}:
+                    # A scale word the cell's unit, tagged or read, does not carry.
+                    reading = replace(reading, scale=None)
                 cells.append(reading)
     # A tag dating its column to another year than the header's text (a filer whose
     # "2023" ends in 2024) leaves the column's untagged cells without a year.
@@ -836,6 +877,8 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
         return CellInterpretation(
             "conflicting", "the tagged number differs from the text", value, reading
         )
+    if not reading.values:
+        return CellInterpretation("conflicting", "no established figure", value, reading)
     if "sign" in reading.overrides:
         value = -value
     elif reading.measure is None and value > 0 and _loss_only(reading.row_label):

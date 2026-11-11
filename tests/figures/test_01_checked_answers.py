@@ -13,6 +13,7 @@ from tests.figures.support import (
     EPS_TABLE,
     INCOME_TABLE,
     ROWS_TABLE,
+    SPLIT_PERCENT_TABLE,
     USD_INCOME_TABLE,
     currency_table,
     dart_evidence,
@@ -24,6 +25,7 @@ from tests.figures.support import (
     table_chunk,
     table_evidence,
     table_fragment,
+    tagged_evidence,
     two_year_table,
     unit_fragment,
 )
@@ -1092,3 +1094,107 @@ def test_every_identifier_shape_states_no_figure_and_stays_a_row_label(label, it
     readings = read_table_cells(fragment)
     assert figures(label) == ()
     assert [(cell.column, cell.row_label, cell.item) for cell in readings] == [(1, label, item)]
+
+
+def checked(answer: str, evidence: EvidenceText, years: tuple[int, ...] = (2024,)) -> list[str]:
+    """Return the verdict of each figure the answer states against one evidence chunk."""
+    return [check.verdict for check in check_figures(answer, [evidence], list(years)).checks]
+
+
+GLUED_FOOTNOTE_TABLE = USD_INCOME_TABLE.replace(
+    "<td>$ 25,785</td>", "<td>$ 25,785<sup>1</sup></td>"
+)
+
+
+@pytest.mark.parametrize(
+    ("answer", "verdicts"),
+    [
+        ("Gross margin was $72.7 million in 2024.", ["unit_unverified"]),
+        ("Gross margin was 72.7 million U.S. dollars in 2024.", ["unit_unverified"]),
+        ("Gross margin was 72.7% in 2024.", ["unit_unverified"]),
+        ("Net revenue was $25,785 million in 2024.", ["verified"]),
+    ],
+)
+def test_a_figure_beside_a_lone_percent_cell_confirms_no_claim(answer, verdicts):
+    """NVDA's "72.7 | %" margin is withheld, never confirmed as an amount."""
+    assert checked(answer, table_evidence(SPLIT_PERCENT_TABLE)) == verdicts
+
+
+@pytest.mark.parametrize(
+    ("answer", "years", "verdicts"),
+    [
+        ("Net revenue was $257,851 million in 2024.", (2024,), ["unverified"]),
+        ("Net revenue was $25,785 million in 2024.", (2024,), ["unverified"]),
+        ("Net revenue was $257,851 million.", (), ["unverified"]),
+        ("Net income was $1,641 million in 2024.", (2024,), ["verified"]),
+    ],
+)
+def test_a_figure_with_malformed_grouping_confirms_no_claim(answer, years, verdicts):
+    """A glued footnote's "25,7851" states no amount, so nothing is verified against it."""
+    assert checked(answer, table_evidence(GLUED_FOOTNOTE_TABLE), years) == verdicts
+
+
+@pytest.mark.parametrize(
+    ("answer", "verdicts"),
+    [
+        ("Net revenue was $25,785 million in 2024.", ["unverified"]),
+        ("Net revenue was $99,999 million in 2024.", ["unverified"]),
+        ("Net income was $1,641 million in 2024.", ["verified"]),
+    ],
+)
+def test_a_cell_whose_tag_shows_another_number_confirms_no_claim(answer, verdicts):
+    """Text and tag dispute the number, so neither reading verifies a claim."""
+    evidence = tagged_evidence(USD_INCOME_TABLE, {(1, 1): (fact(text="99,999"),)})
+    assert checked(answer, evidence) == verdicts
+
+
+@pytest.mark.parametrize(
+    ("html", "facts", "answer", "verdicts"),
+    [
+        (
+            "<table><tr><td>(In millions of U.S. dollars)</td><td>2024</td></tr>"
+            "<tr><td>Net revenue</td><td>25.8 billion</td></tr>"
+            "<tr><td>Net income</td><td>1,641</td></tr></table>",
+            None,
+            "Net revenue was $25.8 million in 2024.",
+            ["unit_unverified"],
+        ),
+        (
+            "<table><tr><td>(In U.S. dollars)</td><td>2024</td></tr>"
+            "<tr><td>Net revenue</td><td>25.8 billion</td></tr>"
+            "<tr><td>Net income</td><td>1,641</td></tr></table>",
+            {(1, 1): (fact(text="25.8", scale=6),)},
+            "Net revenue was $25.8 million in 2024.",
+            ["unit_unverified"],
+        ),
+        (
+            "<table><tr><td>(In U.S. dollars)</td><td>2024</td></tr>"
+            "<tr><td>Net revenue</td><td>25.8 billion</td></tr>"
+            "<tr><td>Net income</td><td>1,641</td></tr></table>",
+            None,
+            "Net revenue was $25.8 billion in 2024.",
+            ["verified"],
+        ),
+        (
+            "<table><tr><td>(In millions of U.S. dollars)</td><td>2024</td></tr>"
+            "<tr><td>Net revenue</td><td>25.8 billion</td></tr>"
+            "<tr><td>Net income</td><td>1,641</td></tr></table>",
+            None,
+            "Net income was $1,641 million in 2024.",
+            ["verified"],
+        ),
+    ],
+)
+def test_a_scale_word_against_the_cells_unit_confirms_no_claim(html, facts, answer, verdicts):
+    """A billion written beside a millions unit, tagged or not, leaves the unit unknown."""
+    evidence = table_evidence(html) if facts is None else tagged_evidence(html, facts)
+    assert checked(answer, evidence) == verdicts
+
+
+def test_a_loss_only_label_is_checked_by_magnitude_as_every_loss_is():
+    """Known limit: answers compare magnitudes, so "Net loss | 1,641" confirms a loss of 1,641.
+
+    The cell is held because its sign is unstated; the magnitude it shows is established.
+    """
+    html = USD_INCOME_TABLE.replace("Net income", "Net loss")
+    assert checked("Net loss was $1,641 million in 2024.", table_evidence(html)) == ["verified"]

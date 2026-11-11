@@ -15,6 +15,7 @@ from tests.figures.support import (
     DART_FRAGMENT,
     INCOME_TABLE,
     SEPARATE,
+    SPLIT_PERCENT_TABLE,
     USD_INCOME_TABLE,
     fact,
     linked,
@@ -231,7 +232,9 @@ def test_a_fact_applies_only_alone_and_on_the_same_number():
     """Two tags, or a tag showing another number, leave the cell to its text reading."""
     text_cell = tagged_revenue()
     assert tagged_revenue(fact(), fact()) == text_cell
-    assert tagged_revenue(fact(text="22,680")) == replace(text_cell, overrides=("number",))
+    assert tagged_revenue(fact(text="22,680")) == replace(
+        text_cell, values=frozenset(), overrides=("number",)
+    )
 
 
 @pytest.mark.parametrize(
@@ -324,23 +327,29 @@ def test_a_dart_tag_without_a_statement_axis_keeps_the_declared_scope(statement,
     assert interpret_table_cell("300,870,903", [cell]).status == status
 
 
-# NVDA's layout: the percent sign of a margin sits in a source cell of its own.
-SPLIT_PERCENT_TABLE = (
-    '<table><tr><td>(In millions of U.S. dollars)</td><td colspan="2">2024</td></tr>'
-    "<tr><td>Net revenue</td><td>25,785</td><td></td></tr>"
-    "<tr><td>Gross margin</td><td>72.7</td><td>%</td></tr></table>"
-)
-
-
 def test_a_percent_sign_in_its_own_cell_is_never_an_amount():
-    """The margin's "%" cell makes "72.7 %" a percentage its reading does not carry."""
+    """The margin's lone "%" cell leaves its figure's percentage unknown and the cell held."""
     readings = {(c.row, c.column): c for c in read_table_cells(table_fragment(SPLIT_PERCENT_TABLE))}
+    assert readings[(2, 1)].percent is None
     margin = interpret_table_cell("72.7 %", [readings[(2, 1)]])
     assert (margin.status, margin.reason) == (
         "conflicting",
         "a percent sign outside the figure's own cell",
     )
+    assert readings[(1, 1)].percent is False
     assert interpret_table_cell("25,785", [readings[(1, 1)]]).status == "known"
+
+
+def test_an_amount_tag_on_a_written_percentage_cannot_show_which():
+    """A USD tag on "72.7 | %" leaves the percentage unknown and the cell held."""
+    readings = {
+        (c.row, c.column): c
+        for c in read_table_cells(
+            table_fragment(SPLIT_PERCENT_TABLE), {(2, 1): (fact(text="72.7"),)}
+        )
+    }
+    assert readings[(2, 1)].percent is None
+    assert interpret_table_cell("72.7 %", [readings[(2, 1)]]).status == "conflicting"
 
 
 @pytest.mark.parametrize(

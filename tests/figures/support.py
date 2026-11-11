@@ -21,6 +21,14 @@ INCOME_TABLE = (
 USD_INCOME_TABLE = INCOME_TABLE.replace("(In millions)", "(In millions of U.S. dollars)")
 
 
+# NVDA's layout: the percent sign of a margin sits in a source cell of its own.
+SPLIT_PERCENT_TABLE = (
+    '<table><tr><td>(In millions of U.S. dollars)</td><td colspan="2">2024</td></tr>'
+    "<tr><td>Net revenue</td><td>25,785</td><td></td></tr>"
+    "<tr><td>Gross margin</td><td>72.7</td><td>%</td></tr></table>"
+)
+
+
 def table_chunk(html: str = USD_INCOME_TABLE) -> Chunk:
     """Chunk one table through the real chunker."""
     block = Block("table", "", html=html, source_pos=0, end_pos=len(html))
@@ -255,3 +263,11 @@ def stated_revenue(statement: TableStatement | None, *facts: CellFact) -> TableC
     """Read the DART revenue cell of a table its report declares as ``statement``."""
     readings = read_table_cells(DART_FRAGMENT, {(1, 1): facts} if facts else None, None, statement)
     return next(cell for cell in readings if cell.column == 1)
+
+
+def tagged_evidence(html: str, facts: dict) -> EvidenceText:
+    """Read one chunked table as cited evidence with the given facts tagged on its cells."""
+    chunk = table_chunk(html)
+    return EvidenceText(
+        1, chunk.body, chunk.context_header, tuple(read_table_cells(table_fragment(html), facts))
+    )
