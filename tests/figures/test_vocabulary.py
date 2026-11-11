@@ -293,3 +293,106 @@ def test_a_question_asking_to_be_told_or_shown_in_a_unit_names_its_item(
 def test_a_real_question_with_a_qualifier_still_names_no_item(question, issuers):
     """Keep comparison, growth, ratio, segment, guidance and unit-first questions unread."""
     assert items_named(question, issuers=issuers) == frozenset()
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What was AMD's revenue in December 2024?",
+        "What was AMD's revenue in May 2024?",
+        "What was AMD's revenue for the period ended March 30, 2024?",
+        "What was AMD's revenue in Dec. 2024?",
+        "What was AMD's revenue in 12/2024?",
+        "What was AMD's revenue in 2024-12?",
+        "What was AMD's December quarter revenue?",
+        "What was AMD's revenue for the quarter ended December 28, 2024?",
+        "What was AMD's revenue for the six months ended June 29, 2024?",
+        "What was AMD's revenue for the 52 weeks ended December 28, 2024?",
+        "What was AMD's revenue for the half year ended June 29, 2024?",
+        "What were AMD's total assets as of December 31, 2024?",
+        "What was AMD's revenue as of the end of 2024?",
+        "What was AMD's revenue for the year ended June 2024?",
+        "What was AMD's revenue in the same period of 2024?",
+        "삼성전자의 2024년 5월 매출액은?",
+        "삼성전자의 2024년 6월말 매출액은?",
+        "삼성전자의 2024년 12월 매출액은?",
+        "삼성전자의 2024년 연말 매출액은?",
+        "삼성전자의 2024년 말 매출액은?",
+        "삼성전자의 2024년 결산 매출액은?",
+    ],
+)
+def test_a_month_or_a_date_qualifies_the_item(question):
+    """Read a month, a date or "period" as narrower than a fiscal year, in either language."""
+    assert items_named(question, issuers=(*AMD, "삼성전자")) == frozenset()
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What was AMD's revenue for the year ended December 28, 2024?",
+        "What was AMD's revenue for fiscal year ended Dec. 28, 2024?",
+        "What was AMD's revenue for the fiscal year ending December 28, 2024?",
+        "What was revenue for the fiscal year ended December 31, 2024?",
+    ],
+)
+def test_the_fiscal_year_end_form_keeps_an_annual_question_plain(question):
+    """Accept a date only inside "(fiscal) year ended <date>", which names a whole year."""
+    assert items_named(question, issuers=AMD) == {"revenue"}
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What was AMD's revenue compared with 2023?",
+        "What was AMD's revenue versus 2023?",
+        "What was AMD's revenue vs 2023?",
+        "Was AMD's 2024 revenue higher than 2023?",
+        "What was AMD's revenue from 2023 to 2024?",
+        "What was AMD's revenue, while Xilinx revenue rose?",
+        "삼성전자의 2023년부터 2024년까지 매출액은?",
+        "삼성전자의 2024년 매출액은 2023년보다 얼마나 늘었나요?",
+    ],
+)
+def test_a_comparison_word_qualifies_the_item(question):
+    """Read comparison and contrast words as asking for a change, not one figure."""
+    assert items_named(question, issuers=(*AMD, "삼성전자")) == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("Can you tell me AMD's 2024 revenue?", {"revenue"}),
+        ("How much revenue did AMD generate in 2024?", {"revenue"}),
+        ("How much revenue did AMD generate in 2024 according to its 10-K?", {"revenue"}),
+        ("What did AMD's 10-K report as revenue for 2024?", {"revenue"}),
+        ("What revenue did AMD earn in fiscal 2024?", {"revenue"}),
+        ("I would like to know AMD's net income for fiscal 2024.", {"net income"}),
+        ("What was AMD's revenue on a consolidated basis in 2024?", {"revenue"}),
+        ("What was AMD's revenue in 2023 and 2024?", {"revenue"}),
+        ("AMD의 2024년 매출은 얼마나 되나요?", {"revenue"}),
+        ("AMD의 2024년 매출은 어떻게 되나요?", {"revenue"}),
+        ("AMD의 2024년 사업보고서상 매출액은?", {"revenue"}),
+        ("AMD가 2024년에 기록한 매출액은 얼마인가요?", {"revenue"}),
+        ("AMD의 2024년 매출액을 알고 싶어요.", {"revenue"}),
+        ("AMD의 2024년 사업보고서 기준 매출액이 궁금합니다.", {"revenue"}),
+    ],
+)
+def test_an_ordinary_request_form_names_its_item(question, expected):
+    """Read modal, politeness, reporting and annual-filing words as plain."""
+    assert items_named(question, issuers=AMD) == expected
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What was AMD's revenue according to its 10-Q?",
+        "What was AMD's revenue in its 10-Q for 2024?",
+        "What was AMD's revenue in fiscal 2024 Q4 according to the 10-K?",
+        "May I know AMD's 2024 revenue?",
+        "AMD의 2024년 분기보고서 매출액은?",
+        "AMD의 2024년 반기보고서상 매출액은?",
+    ],
+)
+def test_a_quarterly_source_or_an_ambiguous_word_still_qualifies(question):
+    """Never read a quarterly filing, or "May", as an annual request."""
+    assert items_named(question, issuers=AMD) == frozenset()

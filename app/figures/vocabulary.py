@@ -190,24 +190,39 @@ ITEM_WORDS = frozenset(word for words, _ in ENGLISH_PHRASES for word in words)
 
 
 # How a question's words are read around its item phrases (see :func:`items_named`).
-# Words that leave an item plain: fillers without "%", "percent" and "us" ("US
-# revenue" is a segment), connectives, question words, a fiscal year in any form
-# ("2024", "FY2024", "fiscal 2024", "2024년", "annual", "연간"), the question's own company ("the
-# company's", "당사의") and words that only restate the entity scope ("consolidated",
-# "total", "연결 기준", "전체", "총"). "별도", "segment" and "부문" narrow the scope, so
-# they are not among them.
-#
+# The question side owns its vocabulary; it inherits nothing from the answers'
+# FILLERS and CONNECTIVES, which were written to read stated figures. Words that leave
+# an item plain: articles, auxiliaries and prepositions; verbs that only report or
+# earn a figure; question, modal and politeness words; words that ask to be told,
+# shown, found or cited; a fiscal year in any form ("2024", "FY2024", "fiscal 2024",
+# "2024년", "annual", "연간", "for the year ended December 28, 2024"); an annual filing
+# as the source ("10-K", "annual report", "사업보고서"); the question's own company
+# ("the company's", "당사의"); words that only restate the entity scope
+# ("consolidated", "total", "연결 기준", "전체", "총"); and "and" between items or
+# years. Left out, so they qualify the item: comparison and contrast words
+# ("compared", "versus", "than", "from ... to", "부터", "까지"), growth, ratio and
+# percentage words, segment, product, geography and basis words ("별도", "segment",
+# "부문", "US"), month names, dates, "period", and periods shorter than a year.
 # The words were taken from every question the project holds (golden sets, tests,
-# lessons): those that only ask to be told, shown, found or cited, or name the unit
-# of the answer, cannot change which figure is asked. Comparison, growth, ratio,
-# segment, product, geography, basis and sub-annual words were left out.
+# lessons).
 _UNIT_WORDS = frozenset(
     {"usd", "krw", "won", "dollar", "dollars", "jpy", "cny", "rmb", "eur", "gbp", "cad"}
     | {"aud", "hkd", "twd", "sgd", "chf", "million", "millions", "billion", "billions"}
     | {"thousand", "thousands", "trillion", "trillions", "bn", "mn", *CURRENCY}
 )
 _UNIT_WORDS_KO = frozenset({"원", "천원", "만원", "백만원", "억원", "조원", "달러", "백만달러"})
-_QUESTION_PASS = (FILLERS - {"%", "percent", "us"} - _UNIT_WORDS) | CONNECTIVES
+_QUESTION_PASS = frozenset(
+    {"a", "an", "the", "its", "their", "was", "were", "is", "are", "be", "been", "of"}
+    | {"at", "in", "for", "during", "on", "by", "as", "or", "and", "with", "according"}
+    | {"totaled", "totalled", "totaling", "reached", "amounted", "came", "stood"}
+    | {"reported", "recorded", "generate", "generated", "earn", "earned", "posted"}
+    | {"approximately", "about", "around", "roughly", "nearly"}
+    | {"fiscal", "year", "years", "prior", "previous", "last", "annual", "full-year"}
+    | {"filing", "filings", "form", "basis"}
+    | {",", ":", "(", ")", "-", "–", "—", "·", ".", "'", '"', "&"}
+)
+# Modal and politeness words ("Can you tell me", "I would like to know").
+_QUESTION_PASS |= {"can", "could", "would", "will", "you", "i", "we", "know", "like", "see"}
 _QUESTION_PASS |= {"fy", "company's", "companies'", "consolidated", "total"}
 _QUESTION_PASS |= {"what", "what's", "which", "how", "much", "did", "does", "do", "please"}
 _QUESTION_PASS |= {"tell", "show", "give", "me", "report", "annual", "full-year"}
@@ -215,9 +230,45 @@ _QUESTION_PASS |= {"find", "cite", "citing", "citation", "citations", "evidence"
 _QUESTION_PASS |= {"source", "sources", "provide", "along"}
 _QUESTION_PASS_KO = frozenset({"년", "년도", "회계연도", "사업연도", "각각", "회사의", "당사의"})
 _QUESTION_PASS_KO |= {"연결", "기준", "연결기준", "전체", "총", "연간"}
-_QUESTION_PASS_KO |= {"근거", "출처", "인용", "함께", "주세요", "줘"}
-# Words that ask how much, or ask to be told, found or shown ("알려줘", "찾아주세요").
+_QUESTION_PASS_KO |= {
+    "근거",
+    "출처",
+    "인용",
+    "함께",
+    "주세요",
+    "줘",
+    "사업보고서",
+    "사업보고서상",
+    "공시",
+}
+_QUESTION_PASS_KO |= {"싶어요", "싶습니다", "싶어", "알고"}
+# Words that ask how much, ask to be told, found or shown, or only report a figure
+# ("알려줘", "찾아주세요", "되나요", "기록한", "궁금합니다").
 _QUESTION_WORDS_KO = ("얼마", "무엇", "몇", "어떻게", "알려", "찾아", "보여", "말해")
+_QUESTION_WORDS_KO += ("되나", "되었", "됩니", "됐", "돼", "기록", "궁금")
+# Rewritten before words are read: the fiscal-year-end form of an annual question
+# ("for the year ended Dec. 28, 2024", which names the year whatever the month), an
+# annual filing ("10-K", "20-F"), and "according to" / "want to know". No other date
+# form is rewritten, so a month or a date anywhere else qualifies the item.
+_MONTH_NAMES = (
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?"
+    r"|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+)
+_QUESTION_REWRITES = (
+    (
+        re.compile(
+            r"(?<![\w-])(?:fiscal\s+)?year\s+end(?:ed|ing)\s+(?:on\s+)?"
+            + _MONTH_NAMES
+            + r"\.?\s+\d{1,2},?\s+((?:19|20)\d{2})(?!\w)",
+            re.IGNORECASE,
+        ),
+        r" fiscal year \1 ",
+    ),
+    (re.compile(r"(?<![\w-])(?:10-?K|20-?F)(?![\w-])", re.IGNORECASE), " annual filing "),
+    (re.compile(r"(?<!\w)annual\s+report(?!\w)", re.IGNORECASE), " annual filing "),
+    (re.compile(r"(?<!\w)according\s+to(?!\w)", re.IGNORECASE), " according "),
+    (re.compile(r"(?<!\w)(?:want|like|need)\s+to\s+(?:know|see)(?!\w)", re.IGNORECASE), " know "),
+)
 # Words a question may name an item by beyond the answers' phrases: "net revenue" is
 # revenue there, so "순매출" is too; "R&D" is research and development.
 _QUESTION_SYNONYMS = {
@@ -250,18 +301,12 @@ _SUB_ANNUAL_KO = ("분기", "반기")
 # Only these end a sentence of a question; "." does not ("U.S.", "Inc.").
 _QUESTION_ENDS = frozenset({"?", "!", "？", "！"})
 _QUESTION_YEAR = re.compile(r"(?:19|20)\d{2}")
-# A day of the month after its month ("December 31, 2024") is passed over.
-_QUESTION_DAY = re.compile(r"\d{1,2}")
-_MONTHS = frozenset(
-    {"january", "february", "march", "april", "may", "june", "july", "august"}
-    | {"september", "october", "november", "december"}
-)
 # Korean particles and copulas a question word may carry ("매출액은", "million인가");
 # "의" makes an item word a modifier.
 _QUESTION_ENDINGS_KO = (
     *("이었습니까", "였습니까", "이었나요", "입니까", "입니다", "였나요", "인가요"),
     *("이었나", "일까요", "이에요", "으로는", "에서는", "인가", "인지", "였나", "일까"),
-    *("예요", "으로", "에서", "까지", "부터", "이며", "이고"),
+    *("예요", "으로", "에서", "이며", "이고"),
     *("은", "는", "이", "가", "을", "를", "의", "에", "도", "와", "과", "로", "만", "고", "며"),
 )
 # Words an issuer name made only of would blank out of the vocabulary itself.
@@ -370,6 +415,8 @@ def _question_words(
     pattern = _issuer_names(issuers)
     if pattern is not None:
         text = pattern.sub(" ", text)
+    for rewrite, replacement in _QUESTION_REWRITES:
+        text = rewrite.sub(replacement, text)
     matches = list(TOKEN.finditer(SAME_ITEM_QUALIFIER.sub(" ", text)))
     written = [match.group(0) for match in matches]
     words = [phrase_key(word) for word in written]
@@ -395,8 +442,6 @@ def _question_words(
             kind, item = _korean_question_word(word)
             if item is not None:
                 spans.append((index, index + 1, item))
-        elif _QUESTION_DAY.fullmatch(word) and index and words[index - 1] in _MONTHS:
-            kind = "pass"
         else:
             kind = _question_word(written[index])
         kinds[index] = kind

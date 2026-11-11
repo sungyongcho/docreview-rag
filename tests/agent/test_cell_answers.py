@@ -480,15 +480,35 @@ def test_a_question_without_a_recognized_item_is_withheld():
     assert "25,785" not in result.report.answer + korean.report.answer
 
 
-def test_a_quarterly_question_is_never_answered_from_the_annual_cell():
-    """Withhold, never support, the FY2024 annual cell for a Q4 2024 question."""
-    asked = items_named("What was AMD's Q4 2024 revenue?", issuers=("AMD",))
-    annual = items_named("What was AMD's 2024 revenue?", issuers=("AMD",))
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What was AMD's Q4 2024 revenue?",
+        "What was AMD's revenue in December 2024?",
+        "What was AMD's revenue for the period ended March 30, 2024?",
+    ],
+)
+def test_a_shorter_period_question_is_never_answered_from_the_annual_cell(question):
+    """Withhold, never support, the FY2024 annual cell for a quarter, month or period."""
+    asked = items_named(question, issuers=("AMD",))
     choice = proposal(("2024:r1c1", "revenue", 2024))
-    quarter = review(choice, stored(), items=asked)
-    assert quarter.report is not None and quarter.report.label == "UNVERIFIED"
-    assert "25,785" not in quarter.report.answer
-    whole = review(choice, stored(), items=annual)
+    shorter = review(choice, stored(), items=asked)
+    assert shorter.report is not None and shorter.report.label == "UNVERIFIED"
+    assert "25,785" not in shorter.report.answer
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What was AMD's 2024 revenue?",
+        "What was AMD's revenue for the year ended December 28, 2024?",
+        "How much revenue did AMD generate in 2024 according to its 10-K?",
+    ],
+)
+def test_an_annual_question_is_still_answered_from_the_annual_cell(question):
+    """Support the FY2024 annual cell for an annual question in its real forms."""
+    asked = items_named(question, issuers=("AMD",))
+    whole = review(proposal(("2024:r1c1", "revenue", 2024)), stored(), items=asked)
     assert whole.report is not None and whole.report.label == "SUPPORTED"
 
 
