@@ -188,3 +188,49 @@ def test_one_matching_monetary_tag_establishes_the_sign(notation, sign, expected
         assert check_figures(claim, [EvidenceText(1, "", "", [cell])], [2024]).verdict == (
             "verified" if claimed == expected else "unverified"
         )
+
+
+@pytest.mark.parametrize(
+    "phrase,year",
+    [
+        ("FY24", 2024),
+        ("FY'24", 2024),
+        ("fiscal 24", 2024),
+        ("FY00", 2000),
+        ("FY99", 2099),
+        ("FY1999", 1999),
+    ],
+)
+def test_short_fiscal_years_have_one_fixed_century_on_all_three_readers(phrase, year):
+    """The question, header and answer never infer the century from a chosen cell."""
+    from app.figures.answers import _claims
+    from app.figures.vocabulary import items_named
+
+    assert items_named(f"What was revenue in {phrase}?") == {"revenue"}
+    fragment = {
+        "header_cells": [{"column": 1, "text": phrase}],
+        "caption_sources": [linked("(In millions of U.S. dollars)")],
+        "cells": [
+            {"sources": [{"row": 1, "column": 0, "text": "Revenue"}]},
+            {"sources": [{"row": 1, "column": 1, "text": "1,234"}]},
+        ],
+    }
+    (cell,) = read_table_cells(fragment)
+    assert cell.years == {year}
+    (claim,) = _claims(f"{phrase} revenue was USD 1,234 million.", answer=True)
+    assert claim.year == year and claim.item == "revenue"
+    assert (
+        check_figures(
+            f"{phrase} revenue was USD 1,234 million.", [EvidenceText(1, "", "", [cell])], [year]
+        ).verdict
+        == "verified"
+    )
+
+
+@pytest.mark.parametrize("prefix", ["FY'24", "fiscal 24", "FY'500", "fiscal 99999"])
+def test_an_identifier_shaped_amount_with_a_unit_does_not_disappear(prefix):
+    """Even new fiscal spellings keep a unit-bearing amount in the figure check."""
+    from app.figures.answers import _claims
+
+    claims = _claims(f"Revenue was {prefix} million USD.", answer=True)
+    assert claims and claims[0].figure.value is not None

@@ -37,7 +37,7 @@ import re
 from typing import Literal
 
 from app.figures.currency import same_currency
-from app.figures.periods import PeriodKind, classify_period
+from app.figures.periods import PeriodKind, classify_period, fiscal_year_spans
 from app.figures.tables import TableCellReading
 from app.figures.text import (
     BARE_YEAR,
@@ -315,6 +315,13 @@ def _sentence_claims(masked: str, text: str, start: int, end: int, answer: bool)
         for match in YEAR.finditer(text, start, end)
         if not any(figure.unit_start <= match.start() < figure.unit_end for figure in found)
     ]
+    years.extend(
+        (start + first, year)
+        for first, last, year in fiscal_year_spans(text[start:end])
+        if not any(
+            figure.unit_start < start + last and start + first < figure.unit_end for figure in found
+        )
+    )
     heads: list[tuple[int, list[_Word]]] = []
     tails: list[tuple[int, list[_Word]]] = []
     head_start = start

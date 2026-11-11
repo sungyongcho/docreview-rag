@@ -111,7 +111,6 @@ def test_a_named_issuer_does_not_qualify_the_item(question, issuers, expected):
         ("What was AMD's revenue in the December 2024 quarter?", AMD),
         ("What was AMD's fourth-quarter 2024 revenue?", AMD),
         ("What was AMD's revenue in 2H 2024?", AMD),
-        ("What was AMD's revenue in FY24?", AMD),
         ("What is AMD's revenue guidance for 2025?", AMD),
         ("What was AMD's GAAP revenue in 2024?", AMD),
         ("What was AMD's revenue in 2024 in the US?", AMD),
@@ -396,3 +395,49 @@ def test_an_ordinary_request_form_names_its_item(question, expected):
 def test_a_quarterly_source_or_an_ambiguous_word_still_qualifies(question):
     """Never read a quarterly filing, or "May", as an annual request."""
     assert items_named(question, issuers=AMD) == frozenset()
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What was revenue in 2024 from the annual report?",
+        "What was revenue in 2024 per the annual report?",
+        "What was revenue in 2024 in the company's annual filing?",
+        "What was revenue according to the company's 10-K in 2024?",
+        "How much revenue did it generate in 2024?",
+        "How much revenue did the company earn in 2024?",
+        "What is the amount of revenue in 2024?",
+        "What was total revenue for the full fiscal year 2024?",
+        "What revenue did the company make in 2024?",
+        "What revenue did the company have in 2024?",
+        "What revenue did the company report in 2024?",
+        "FY24 revenue?",
+        "FY'24 revenue?",
+        "fiscal 24 revenue?",
+    ],
+)
+def test_ordinary_annual_requests_and_bounded_source_constructions_are_read(question):
+    """Read source and request wording while preserving the complete-sentence rule."""
+    assert items_named(question) == {"revenue"}
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Revenue from 2023 to 2024?",
+        "Revenue per employee in 2024?",
+        "Revenue from the Data Center in 2024?",
+        "Revenue from the annual report versus 2023?",
+        "Revenue per the annual report on an adjusted basis in FY24?",
+        "Revenue in December FY24?",
+        "Revenue in Q4 FY24?",
+        "Revenue in 1H24?",
+        "Revenue as of June 30, 2024?",
+        "2024년 말 매출액은 얼마인가요?",
+        "Revenue under IFRS in FY24?",
+        "Revenue in the full quarter of FY24?",
+    ],
+)
+def test_annual_source_words_never_unlock_comparisons_or_qualified_periods(question):
+    """Source prepositions cannot globally erase comparison, basis or scope words."""
+    assert not items_named(question)

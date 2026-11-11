@@ -48,6 +48,7 @@ def classify_period(text: str) -> PeriodKind:
     Only an explicit fiscal-year-end form can consume a prose date. Header readers
     separately retain their existing grammar for bare column-end date identifiers.
     """
+    text = normalize_fiscal_years(text)
     annual = ANNUAL_END.search(text) is not None or _FULL_DURATION.search(text) is not None
     rest = ANNUAL_END.sub(" ", text)
     if _FULL_DURATION.search(rest):
@@ -64,3 +65,29 @@ def classify_period(text: str) -> PeriodKind:
     if PERIOD_WORDS.search(rest):
         return "subannual"
     return "annual" if annual or _YEAR.search(rest) else "none"
+
+
+_FISCAL_YEAR = re.compile(
+    r"(?<![\w-])(?:fy\s*['’]?\s*|fiscal\s+(?:year\s+)?)"
+    r"(?P<year>(?:19|20)\d{2}|\d{2})(?!\w|[,.]\d)",
+    re.I,
+)
+
+
+def fiscal_year_spans(text: str) -> list[tuple[int, int, int]]:
+    """Read explicit FY/fiscal identifiers; two-digit years always mean 2000–2099.
+
+    The century is fixed, never inferred from the clock or a nearby cell. Callers
+    retain their own identifier-versus-amount grammar before consuming these spans.
+    """
+    return [
+        (m.start(), m.end(), int(m["year"]) + (2000 if len(m["year"]) == 2 else 0))
+        for m in _FISCAL_YEAR.finditer(text)
+    ]
+
+
+def normalize_fiscal_years(text: str) -> str:
+    """Expand only explicit fiscal-year identifiers, preserving ordinary short numbers."""
+    for start, end, year in reversed(fiscal_year_spans(text)):
+        text = text[:start] + f"FY{year}" + text[end:]
+    return text

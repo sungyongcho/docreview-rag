@@ -27,7 +27,9 @@ from app.figures.vocabulary import CHANGES, CONNECTIVES, FILLERS, ITEM_WORDS
 # A trailing comma is punctuation, not a separator ("In 2024, revenue ...").
 _NUMBER = re.compile(r"[(△▲-]?\d(?:[\d,]*\d)?(?:\.\d+)?\)?")
 # Identifiers and calendar dates carry digits but state no figure.
-_PERIODS_AND_CODES = r"\b(?:FY|Q|H)\s?\d+|\b\d+[QH]\b|\d+-[A-Z]\b|"
+_PERIODS_AND_CODES = (
+    r"\b(?:FY\s?['’]?\s?|fiscal\s+(?:year\s+)?|[QH]\s?)\d+|\b\d+[QH]\b|\d+-[A-Z]\b|"
+)
 _REFERENCE_WORD = r"\b(?:Item|Note|Part|Exhibit|Section)s?\s+"
 _REFERENCE = _REFERENCE_WORD + r"\d+[A-Z]?(?:\.\d+)*"
 _REFERENCE_LIST = r"(?:\s*(?:,|and|&)\s*\d+[A-Z]?(?:\.\d+)*)*"
@@ -103,7 +105,7 @@ _CALENDAR_YEAR = r"(?:19|20)\d{2}" + _OWN_END
 _ANSWER_NOT_FIGURES = re.compile(
     "|".join(
         (
-            r"\b(?:FY\s?(?:\d{4}|\d{2})|[QH]\s?\d)" + _OWN_END,
+            r"\b(?:(?:FY\s?['’]?\s?|fiscal\s+(?:year\s+)?)(?:\d{4}|\d{2})|[QH]\s?\d)" + _OWN_END,
             _OWN_START + r"\d[QH]\b" + _NO_UNIT,
             _OWN_START + r"\d{1,2}-[A-Z]\b" + _NO_UNIT,
             _REFERENCE_WORD + _REFERENCE_NUMBER + _OWN_END,

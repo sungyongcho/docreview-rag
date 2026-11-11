@@ -218,3 +218,19 @@ def test_only_whole_memberships_can_certify_the_source_amount(start, end, eligib
     ).verdict
     assert verdict == ("verified" if eligible else "unverified")
     assert _fragment_cell_spans(stored.fragment) == (((100, 120),) if eligible else None)
+
+
+@pytest.mark.parametrize("start,end,eligible", [(0, 14, True), (0, 7, False), (8, 14, False)])
+def test_a_joined_label_and_value_must_both_be_in_the_membership(start, end, eligible):
+    """Neither a label-only nor a value-only slice certifies the whole normalized cell."""
+    membership = member(0, 1, 1, end=end)
+    membership.text_start = start
+    stored = assemble_tables(
+        [membership],
+        {TABLE: ParsedTable(table_id=TABLE, header_rows=[])},
+        [],
+        [grid(1, 0, "Revenue"), grid(1, 1, "25,785", revenue(1, "25785"))],
+        [],
+        [link(1, 1, 0, 1, 0), link(1, 1, 1, 1, 1)],
+    )[7]
+    assert stored.readings[0].evidence_eligible is eligible

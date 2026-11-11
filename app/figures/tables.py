@@ -43,7 +43,7 @@ from app.figures.currency import (
     resolve,
 )
 from app.figures.items import ITEMS
-from app.figures.periods import PERIOD_WORDS, classify_period
+from app.figures.periods import PERIOD_WORDS, classify_period, normalize_fiscal_years
 from app.figures.text import (
     KOREAN_SCALE,
     YEAR,
@@ -518,6 +518,7 @@ def _header_residue(text: str) -> str:
     per share amounts") are set aside first; an empty residue means the header is
     wholly understood.
     """
+    text = normalize_fiscal_years(text)
     words = _KOREAN_UNIT_NOTE.sub(" ", text)
     words = _PARENTHESIS.sub(
         lambda match: (
@@ -579,7 +580,7 @@ def _column_years(
         return set()
     named: list[set[int]] = []
     for text in over:
-        written = {int(year) for year in YEAR.findall(text)}
+        written = {int(year) for year in YEAR.findall(normalize_fiscal_years(text))}
         if not written and (term := _term_year(text, terms)) is not None:
             written = {term}
         if written:

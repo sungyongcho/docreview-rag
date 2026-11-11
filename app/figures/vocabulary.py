@@ -12,7 +12,7 @@ from typing import Literal
 
 from app.figures.currency import CURRENCY
 from app.figures.items import ITEMS
-from app.figures.periods import MONTH_NAMES, classify_period
+from app.figures.periods import MONTH_NAMES, classify_period, normalize_fiscal_years
 
 # Words of an answer: English words (with "&", apostrophes and hyphens inside), Korean
 # words, digit runs, and single other characters.
@@ -128,6 +128,7 @@ _QUESTION_PASS |= {"what", "what's", "which", "how", "much", "did", "does", "do"
 _QUESTION_PASS |= {"tell", "show", "give", "me", "report", "annual", "full-year"}
 _QUESTION_PASS |= {"find", "cite", "citing", "citation", "citations", "evidence"}
 _QUESTION_PASS |= {"source", "sources", "provide", "along"}
+_QUESTION_PASS |= {"it", "company", "amount", "full", "make", "made", "have", "has", "had"}
 _QUESTION_PASS_KO = frozenset({"년", "년도", "회계연도", "사업연도", "각각", "회사의", "당사의"})
 _QUESTION_PASS_KO |= {"연결", "기준", "연결기준", "전체", "총", "연간"}
 _QUESTION_PASS_KO |= {
@@ -150,6 +151,14 @@ _QUESTION_WORDS_KO += ("되나", "되었", "됩니", "됐", "돼", "기록", "�
 # ("for the year ended Dec. 28, 2024", which names the year whatever the month), an
 # annual filing ("10-K", "20-F"), and "according to" / "want to know". No other date
 # form is rewritten, so a month or a date anywhere else qualifies the item.
+# Source prepositions are accepted only with a complete annual filing phrase.
+# Comparative "from ... to ..." never becomes a globally allowed connective.
+_ANNUAL_SOURCE = re.compile(
+    r"(?<![\w-])(?:from|per|in|according\s+to)\s+"
+    r"(?:(?:the|its|their)\s+)?(?:company['’]s\s+)?"
+    r"(?:(?:annual\s+(?:report|filing))|(?:form\s+)?(?:10-?K|20-?F)|사업보고서)(?![\w-])",
+    re.I,
+)
 _QUESTION_REWRITES = (
     (
         re.compile(
@@ -292,6 +301,7 @@ def _question_words(
     pattern = _issuer_names(issuers)
     if pattern is not None:
         text = pattern.sub(" ", text)
+    text = _ANNUAL_SOURCE.sub(" annual filing ", normalize_fiscal_years(text))
     for rewrite, replacement in _QUESTION_REWRITES:
         text = rewrite.sub(replacement, text)
     matches = list(TOKEN.finditer(SAME_ITEM_QUALIFIER.sub(" ", text)))
@@ -361,7 +371,8 @@ def items_named(text: str, *, issuers: Collection[str] = ()) -> frozenset[str]:
     for sentence in re.split(r"[?!？！]", text):
         _, kinds, spans = _question_words(sentence, issuers)
         if spans and (
-            not _plain_sentences(kinds) or classify_period(sentence) in {"subannual", "date"}
+            not _plain_sentences(kinds)
+            or classify_period(normalize_fiscal_years(sentence)) in {"subannual", "date"}
         ):
             return frozenset()
         named.update(item for _, _, item in spans)
