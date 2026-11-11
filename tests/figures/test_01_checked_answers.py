@@ -1211,3 +1211,41 @@ def test_a_tag_of_another_concept_confirms_no_claim_for_the_labels_item(concept,
     """A pro forma revenue tag under "Net revenue" is not the entity's revenue."""
     evidence = tagged_evidence(USD_INCOME_TABLE, {(1, 1): (fact(concept=concept),)})
     assert checked("Net revenue was $25,785 million in 2024.", evidence) == verdicts
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "Twelve Weeks Ended December 28, 2024",
+        "12 Weeks 2024",
+        "16 Weeks Ended December 28, 2024",
+        "H1 2024",
+        "Half Year Ended June 30, 2024",
+        "Half-year 2024",
+        "YTD 2024",
+        "Year-to-date December 28, 2024",
+        "Interim period ended June 30, 2024",
+        "Pro-forma 2024",
+        "Proforma 2024",
+        "Constant currency 2024",
+        "Excluding Xilinx 2024",
+        "Organic 2024",
+        "Guidance 2024",
+        "Outlook 2024",
+        "Budget 2024",
+        "Growth 2024",
+        "Difference 2024",
+        "2024 계획",
+        "2024 목표",
+    ],
+)
+def test_a_column_header_with_any_unknown_word_confirms_no_annual_amount(header):
+    """Only a header wholly read as a full fiscal year dates and scopes untagged cells."""
+    html = (
+        "<table><tr><td>(In millions of U.S. dollars)</td><td>December 28, 2024</td>"
+        f"<td>{header}</td></tr>"
+        "<tr><td>Net revenue</td><td>25,785</td><td>27,000</td></tr></table>"
+    )
+    evidence = table_evidence(html)
+    assert checked("FY2024 net revenue was $27,000 million.", evidence) == ["unverified"]
+    assert checked("FY2024 net revenue was $25,785 million.", evidence) == ["verified"]

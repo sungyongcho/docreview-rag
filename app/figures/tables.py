@@ -13,6 +13,10 @@ override. A fact scoped to a dimension (a segment, a DART separate statement) is
 not the item of the whole entity, so it never confirms a claim. Untagged cells keep
 the text rules above, with one addition: a header that is a period word its DART
 report defines by its own declarations ("당기", "제56기") names that fiscal year.
+An untagged cell is the fiscal year's reported amount of the whole entity only when
+every header above it is wholly understood as a year, a date, a unit declaration or
+a word saying "a full fiscal year, as reported"; any other word leaves its period or
+its scope not established.
 
 A DART report presents consolidated and separate statements, so its untagged cells
 are the entity's figures only in a table it declares to be a consolidated balance
@@ -23,6 +27,7 @@ unknown.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import date
 from decimal import Decimal
 import re
 from typing import Literal
@@ -100,22 +105,43 @@ _PER_SHARE = re.compile(r"per\s+share|주당", re.IGNORECASE)
 # grouping ("25,7851" with a glued footnote, "4,5,28" note numbers) is no one amount.
 _GROUPED = re.compile(r"[(△▲-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\)?")
 
-# A column header naming a period shorter than a fiscal year ("Three Months Ended",
-# "13 Weeks Ended", "Fourth Quarter", "Q4", "4분기", "3개월"); twelve months, 52 or 53
-# weeks and a year-end date name the fiscal year.
-_SHORT_PERIOD = re.compile(
-    r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|[1-9]|1[01])[\s-]+months?\b"
-    r"|\b(?:13|26|39|thirteen|twenty[\s-]six|thirty[\s-]nine)[\s-]+weeks?\b"
-    r"|\bquarter(?:s|ly)?\b|\bQ[1-4]\b|\b[1-4]Q(?:\d{2})?\b|\b(?:first|second)\s+half\b"
-    r"|분기|반기|(?<!\d)(?:[1-9]|1[01])\s*개월",
+# An untagged column header establishes "this fiscal year's reported amount of the
+# whole entity" only when all of it is understood: its years and dates, its unit
+# declarations and the closed vocabulary below, which says "a full fiscal year, as
+# reported" ("Year Ended December 28, 2024", "Fiscal 2024", "52 Weeks Ended", "제56기",
+# "당기말", "2024년 12월말"). Any other word is not understood (see _header_residue).
+_HEADER_DATES = re.compile(
+    r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?\s+\d{1,2}(?!\d)"
+    r"(?:\s*,?\s*(?:19|20)\d{2}(?!\d))?"
+    r"|(?<!\d)\d{1,2}/\d{1,2}/(?:19|20)\d{2}(?!\d)"
+    r"|(?<!\d)(?:19|20)\d{2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{1,2}(?!\d)"
+    r"|(?<!\d)(?:19|20)\d{2}\s*년\s*\d{1,2}\s*월\s*(?:\d{1,2}\s*일|말)"
+    r"|(?<!\d)(?:19|20)\d{2}\s*년(?!\s*\d{1,2}\s*월)"
+    r"|(?<!\d)\d{1,2}\s*월\s*(?:\d{1,2}\s*일|말)"
+    r"|\bfy\s?(?:(?:19|20)\d{2}|\d{2})\b"
+    r"|(?<!\d)(?:19|20)\d{2}(?!\d)",
     re.IGNORECASE,
 )
-# A column header naming figures other than the item's reported amount: adjustments,
-# adjusted and non-GAAP measures, changes and percentages ("Adjustments", "Non-GAAP",
-# "% Change", "증감").
-_NOT_AMOUNT = re.compile(
-    r"\b(?:adjust(?:ments?|ed)|non-gaap|changes?|variances?|increases?|decreases?"
-    r"|pro\s+forma|eliminations?)\b|%|\bpercent(?:age)?\b|증감|증가|감소|변동|조정",
+_ANNUAL_WORDS = re.compile(
+    r"\b(?:twelve|12)[\s-]+months?\b|\b(?:52|53|fifty[\s-]two|fifty[\s-]three)[\s-]+weeks?\b"
+    r"|\b(?:fiscal|years?|ended|ending|end|as|of|at|and|consolidated|reported|gaap)\b"
+    r"|제\s*\d+\s*기|회계\s*연도|사업\s*연도|전\s*전\s*기|당\s*기|전\s*기|기\s*말|현\s*재|연\s*결|말",
+    re.IGNORECASE,
+)
+# Characters that carry no meaning of their own in a header, and DART's line break.
+_HEADER_PUNCTUATION = re.compile(r"(?:&cr;?|[\s,.:;()（）\[\]&~–—-])+")
+# A declared duration ("2024.01.01~2024.12.31"): a full year of one, with "누계"
+# (cumulative) beside it, names the fiscal year; a shorter one is a period of its own.
+_DATE = r"((?:19|20)\d{2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})"
+_RANGE = re.compile(_DATE + r"\s*[~–-]\s*" + _DATE)
+# A word naming a period of its own, which leaves the fiscal year not established
+# ("Three Months Ended", "13 Weeks", "H1", "YTD", "Interim", "4분기", "누적", "기초"),
+# including a month left without its day ("December 2024", "2023년 8월").
+_PERIOD_WORDS = re.compile(
+    r"\b(?:months?|weeks?|quarter(?:s|ly)?|q[1-4]|[1-4]q(?:\d{2})?|h[12]|half(?:[\s-]year)?"
+    r"|ytd|year[\s-]to[\s-]date|to[\s-]date|interim|periods?|semi[\s-]?annual)\b"
+    r"|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b"
+    r"|분\s*기|반\s*기|개월|누적|누계|기\s*초|기간|(?<!\d)\d{1,2}\s*월",
     re.IGNORECASE,
 )
 # A label-only row naming a part of the entity ("Data Center segment:", "DS 부문").
@@ -408,18 +434,78 @@ def _headers_over(
     ]
 
 
+def _annual_range(match: re.Match[str]) -> bool:
+    """Whether a declared duration ("2024.01.01~2024.12.31") is one full year."""
+    try:
+        start = date(*(int(match.group(i)) for i in (1, 2, 3)))
+        end = date(*(int(match.group(i)) for i in (4, 5, 6)))
+    except ValueError:
+        return False
+    return 350 <= (end - start).days <= 380
+
+
+def _header_residue(text: str) -> str:
+    """Return what one header says beyond years, dates, units and full-year words.
+
+    Unit declarations ("(In millions)", "(단위 : 백만원)", a bare "In millions except
+    per share amounts") are set aside first; an empty residue means the header is
+    wholly understood.
+    """
+    words = _KOREAN_UNIT_NOTE.sub(" ", text)
+    words = _PARENTHESIS.sub(
+        lambda match: (
+            " "
+            if _DECLARATION.fullmatch(match.group(1))
+            or _CURRENCY_DECLARATION.fullmatch(match.group(1))
+            else match.group(0)
+        ),
+        words,
+    )
+    words = _UNITS_CLAUSE.sub(" ", words)
+    if _BARE_DECLARATION.fullmatch(words):
+        return ""
+    ranges = list(_RANGE.finditer(words))
+    words = _RANGE.sub(" ", words)
+    if ranges and not all(_annual_range(match) for match in ranges):
+        words += " 기간"
+    elif ranges:
+        # A full year's cumulative figures ("제77기 누계(2024.01.01~2024.12.31)").
+        words = words.replace("누계", " ")
+    words = _ANNUAL_WORDS.sub(" ", _HEADER_DATES.sub(" ", words))
+    return _HEADER_PUNCTUATION.sub(" ", words).strip()
+
+
+def _header_reading(over: Sequence[str]) -> tuple[bool, bool]:
+    """Return whether the headers above a cell leave its period, or its scope, unread.
+
+    A residue word naming a period ("Three Months", "H1", "YTD", "분기") means the
+    fiscal year is not established; any other residue word ("Adjustments",
+    "Guidance", "계획") means the column is not shown to be the entity's reported
+    amount.
+    """
+    period = scope = False
+    for text in over:
+        residue = _header_residue(text)
+        if not residue:
+            continue
+        rest = _PERIOD_WORDS.sub(" ", residue)
+        period = period or rest != residue
+        scope = scope or bool(_HEADER_PUNCTUATION.sub(" ", rest).strip())
+    return period, scope
+
+
 def _column_years(
     over: Sequence[str], caption_years: set[int] | None, terms: Mapping[str, int]
 ) -> set[int]:
     """Return the years the headers above one data cell's columns name.
 
     A header names years by writing them or, when it writes none, by being one period
-    word its document defines (see :func:`_term_year`). A header naming a period
-    shorter than a fiscal year ("Three Months Ended December 28, 2024") names none.
+    word its document defines (see :func:`_term_year`). A header with a word naming a
+    period of its own ("Three Months Ended December 28, 2024") names none.
     ``caption_years`` are the caption's years when they may date this column (see
     :func:`_caption_dates`); the column takes them only when they are one year.
     """
-    if any(_SHORT_PERIOD.search(text) for text in over):
+    if _header_reading(over)[0]:
         return set()
     years: set[int] = set()
     for text in over:
@@ -459,23 +545,6 @@ def _caption_dates(
             ):
                 columns.add(_int(source["column"]))
     return next(iter(columns)) if len(columns) == 1 else None
-
-
-def _not_amount(over: Sequence[str]) -> bool:
-    """Whether a header above a cell names figures other than the reported amount.
-
-    Unit declarations ("(In millions, except for percentages)", "(단위 : %)") are set
-    aside first, so only the header's own words count.
-    """
-    for text in over:
-        words = _KOREAN_UNIT_NOTE.sub(" ", text)
-        words = _PARENTHESIS.sub(
-            lambda match: " " if _DECLARATION.fullmatch(match.group(1)) else match.group(0),
-            words,
-        )
-        if _NOT_AMOUNT.search(words):
-            return True
-    return False
 
 
 def _worded(text: str) -> bool:
@@ -881,10 +950,13 @@ def read_table_cells(
                 over = _headers_over(source, headers)
                 scope = _statement_scope(statement)
                 second_label = any(col < column for col in label_columns.get(row, [])[1:])
-                if scope is None and (row in under_part or second_label or _not_amount(over)):
+                if scope is None and (
+                    row in under_part or second_label or _header_reading(over)[1]
+                ):
                     # A part's row, a row with a second label ("Revenue | Data Center")
-                    # and a column of adjustments or changes are not shown to be the
-                    # whole entity's reported amount.
+                    # and a column whose header says more than a full fiscal year
+                    # ("Adjustments", "Guidance") are not shown to be the whole
+                    # entity's reported amount.
                     scope = UNKNOWN
                 reading = TableCellReading(
                     row,
