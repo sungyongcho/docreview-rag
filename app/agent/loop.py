@@ -1,13 +1,22 @@
 """Hand-rolled Thought → Tool → Observation loop with fail-closed budgets."""
 
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from decimal import Decimal
-import functools
 import time
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
+from app.agent.final_answer import (
+    FINAL_NOT_ALONE,
+    EvidenceReader,
+    as_report,
+    figures_problem,
+    final_answer_spec,
+    period_mismatch_report,
+    unit_unverified_report,
+    validate_final_answer,
+)
 from app.agent.provider import ProviderTurn, ToolCallingProvider
 from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import (
@@ -15,6 +24,7 @@ from app.agent.tools.registry import (
     ToolError,
     ToolRegistry,
     execute_tool,
+    parse_arguments,
     safe_runtime_error,
 )
 from app.agent.types import (
@@ -31,10 +41,7 @@ from app.agent.types import (
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
-from app.figures.answers import EvidenceText, FiguresResult, check_figures
-from app.llm.decoding import strict_json_loads, strict_response_format, validation_errors
-
-type EvidenceReader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, EvidenceText]]]
+from app.figures.answers import check_figures
 
 # The Responses API rejects max_output_tokens below 16, so a smaller remaining
 # allowance can only buy a failed request: the run is out of budget, and saying
@@ -85,36 +92,6 @@ def build_instructions(registry: ToolRegistry) -> str:
     )
 
 
-@functools.cache
-def final_answer_spec() -> dict[str, Any]:
-    """Return the strict function spec for the loop-owned final_answer tool.
-
-    The spec is a pure function of :class:`AgentAnswer`, so it is generated once
-    per process instead of once per run.
-    """
-    payload = strict_response_format(AgentAnswer)
-    return {
-        "type": "function",
-        "name": FINAL_ANSWER_NAME,
-        "description": "Finish the run with a structured, citation-checked answer.",
-        "parameters": payload["schema"],
-        "strict": True,
-    }
-
-
-def _parse_arguments(arguments_json: str) -> dict[str, Any]:
-    """Parse tool arguments as a strict JSON object with no duplicate or non-finite values."""
-    try:
-        value = strict_json_loads(arguments_json)
-    except RecursionError:
-        # json.loads recurses; without this a pathologically nested argument
-        # string would escape the ValueError handlers and crash the run.
-        raise ValueError("tool arguments nest too deeply") from None
-    if not isinstance(value, dict):
-        raise ValueError("tool arguments must be a JSON object")
-    return value
-
-
 async def _dispatch(
     call: ToolCall,
     registry: ToolRegistry,
@@ -150,7 +127,7 @@ async def _dispatch(
     except ValueError as error:
         return Observation(call_id=call.call_id, name=call.name, error=str(error)), (), False
     try:
-        arguments = _parse_arguments(call.arguments_json)
+        arguments = parse_arguments(call.arguments_json)
     except ValueError as error:
         message = f"invalid arguments for {call.name}: {error}"
         return Observation(call_id=call.call_id, name=call.name, error=message), (), False
@@ -179,127 +156,6 @@ async def _dispatch(
         evidence,
         False,
     )
-
-
-def _final_answer(
-    call: ToolCall,
-    evidence: Mapping[int, EvidenceCitation],
-) -> tuple[AgentAnswer | None, str]:
-    """Validate one final answer against every immutable identity the run observed.
-
-    Parameters
-    ----------
-    call : ToolCall
-        The loop-owned ``final_answer`` call.
-    evidence : Mapping[int, EvidenceCitation]
-        Complete source identities returned by successful tool observations.
-
-    Returns
-    -------
-    tuple[AgentAnswer | None, str]
-        Accepted answer and an empty problem, or no answer and a rejection whose
-        field-level detail the model can act on. The detail is rendered from the
-        model's own arguments, so passing it back leaks nothing.
-    """
-    try:
-        answer = AgentAnswer.model_validate(_parse_arguments(call.arguments_json), strict=False)
-    except ValidationError as error:
-        details = "; ".join(validation_errors(error))
-        return None, f"invalid final_answer: {details}"
-    except ValueError as error:
-        return None, f"invalid final_answer: {error}"
-    missing = tuple(
-        citation.chunk_id for citation in answer.citations if citation.chunk_id not in evidence
-    )
-    if missing:
-        cited = ", ".join(str(chunk_id) for chunk_id in missing)
-        return None, (
-            f"final_answer cites chunk ids no tool returned in this run: {cited}. "
-            "Cite only retrieved evidence or answer NOT_IN_DOCS."
-        )
-    mismatched = tuple(
-        citation.chunk_id
-        for citation in answer.citations
-        if evidence[citation.chunk_id] != citation
-    )
-    if mismatched:
-        cited = ", ".join(str(chunk_id) for chunk_id in mismatched)
-        return None, f"final_answer citation identity does not match retrieved evidence: {cited}."
-    return answer, ""
-
-
-def _figures_problem(figures: FiguresResult, requested: Sequence[int]) -> str:
-    """Tell the model which figures its cited evidence could not confirm, and for which item."""
-    unverified = ", ".join(
-        f"{c.figure} ({c.item or 'no recognized item'})"
-        for c in figures.checks
-        if c.verdict == "unverified"
-    )
-    period = ", ".join(str(year) for year in requested) or "any period"
-    return (
-        f"final_answer states figures its cited evidence does not confirm for {period}: "
-        f"{unverified}. Name each figure's financial item in its own clause (for example "
-        "revenue or net income) and state the value of that item's row in a cited table "
-        "cell of the requested period, with its unit and the currency the evidence states. "
-        "A scale may be converted (25,785 million as 25.8 billion) and rounded to its last "
-        "digit when at least three significant digits remain; a currency is never "
-        "converted, and computed values are not confirmed. Otherwise answer NOT_IN_DOCS."
-    )
-
-
-def _mismatch_answer(
-    answer: AgentAnswer, figures: FiguresResult, requested: Sequence[int]
-) -> tuple[AgentReportAnswer, AgentPeriodMismatch]:
-    """Report the cited figures' own period instead of the answer that misdated them."""
-    mismatched = [c for c in figures.checks if c.verdict == "period_mismatch"]
-    mismatch = AgentPeriodMismatch(
-        requested_fiscal_years=tuple(requested),
-        evidenced_fiscal_years=tuple(
-            sorted({year for check in mismatched for year in check.evidenced_years})
-        ),
-        figures=tuple(check.figure for check in mismatched),
-    )
-    requested_text = ", ".join(str(year) for year in mismatch.requested_fiscal_years)
-    evidenced_text = ", ".join(str(year) for year in mismatch.evidenced_fiscal_years)
-    report = AgentReportAnswer(
-        label="PERIOD_MISMATCH",
-        answer=(
-            f"The cited evidence does not report this for {requested_text}. "
-            f"The figures {', '.join(mismatch.figures)} are for {evidenced_text}."
-        ),
-        citations=answer.citations,
-        rationale="The cited figures belong to a different period than the question asks about.",
-    )
-    return report, mismatch
-
-
-UNIT_UNVERIFIED_ANSWER = (
-    "The cited evidence names this item, but the unit of its figures could not be "
-    "confirmed, so no figure is reported."
-)
-
-
-def _unit_unverified_answer(
-    answer: AgentAnswer, figures: FiguresResult
-) -> tuple[AgentReportAnswer, AgentUnitUnverified]:
-    """Withhold figures whose evidence unit is uncertain, keeping the answer's citations.
-
-    The report states no number: the withheld figures travel only in the typed
-    ``AgentUnitUnverified`` record, so nothing unconfirmed is presented as fact.
-    """
-    held = AgentUnitUnverified(
-        figures=tuple(c.figure for c in figures.checks if c.verdict == "unit_unverified")
-    )
-    report = AgentReportAnswer(
-        label="UNVERIFIED",
-        answer=UNIT_UNVERIFIED_ANSWER,
-        citations=answer.citations,
-        rationale=(
-            "The cited table states no readable unit or explicit currency, or contradictory "
-            "ones, in its own notes, cells or a caption linked to it, or the answer states none."
-        ),
-    )
-    return report, held
 
 
 def _compact_exchanges(
@@ -420,9 +276,7 @@ async def run_agent(
     ) -> AgentResult:
         """Build the terminal result, letting the model reject impossible success states."""
         report = (
-            answer
-            if answer is None or isinstance(answer, AgentReportAnswer)
-            else AgentReportAnswer.model_validate(answer.model_dump())
+            answer if answer is None or isinstance(answer, AgentReportAnswer) else as_report(answer)
         )
         return AgentResult.model_validate(
             {
@@ -562,7 +416,7 @@ async def run_agent(
         final_calls = tuple(call for call in turn.tool_calls if call.name == FINAL_ANSWER_NAME)
         final_call = final_calls[0] if len(final_calls) == 1 else None
         if final_calls and len(turn.tool_calls) != 1:
-            problem = "final_answer must be the only tool call in its provider turn"
+            problem = FINAL_NOT_ALONE
             rejections = tuple(
                 Observation(call_id=call.call_id, name=call.name, error=problem)
                 for call in turn.tool_calls
@@ -576,7 +430,7 @@ async def run_agent(
             mark_exchange()
             continue
         if final_call is not None:
-            answer, problem = _final_answer(final_call, evidence)
+            answer, problem = validate_final_answer(final_call, evidence)
             if answer is not None and answer.label == "SUPPORTED":
                 cited = tuple(citation.chunk_id for citation in answer.citations)
                 try:
@@ -592,14 +446,16 @@ async def run_agent(
                     requested_fiscal_years,
                 )
                 if figures.verdict == "unverified":
-                    answer, problem = None, _figures_problem(figures, requested_fiscal_years)
+                    answer, problem = None, figures_problem(figures, requested_fiscal_years)
                 elif figures.verdict == "unit_unverified":
                     record_step(turn, (), usage)
-                    report, held = _unit_unverified_answer(answer, figures)
+                    report, held = unit_unverified_report(answer, figures)
                     return finish("ok", answer=report, unit_unverified=held)
                 elif figures.verdict == "period_mismatch":
                     record_step(turn, (), usage)
-                    report, mismatch = _mismatch_answer(answer, figures, requested_fiscal_years)
+                    report, mismatch = period_mismatch_report(
+                        answer, figures, requested_fiscal_years
+                    )
                     return finish("ok", answer=report, period_mismatch=mismatch)
             if answer is not None:
                 record_step(turn, (), usage)

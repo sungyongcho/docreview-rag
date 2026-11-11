@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.contracts.evidence import EvidenceCitation
-from app.llm.decoding import strict_response_format, validation_errors
+from app.llm.decoding import strict_json_loads, strict_response_format, validation_errors
 
 TOOL_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -54,6 +54,19 @@ def safe_runtime_error(error: Exception, action: str) -> str:
     exception details cannot reach the model.
     """
     return f"{type(error).__name__}: {action} failed"
+
+
+def parse_arguments(arguments_json: str) -> dict[str, Any]:
+    """Parse tool arguments as a strict JSON object with no duplicate or non-finite values."""
+    try:
+        value = strict_json_loads(arguments_json)
+    except RecursionError:
+        # json.loads recurses; without this a pathologically nested argument
+        # string would escape the ValueError handlers and crash the run.
+        raise ValueError("tool arguments nest too deeply") from None
+    if not isinstance(value, dict):
+        raise ValueError("tool arguments must be a JSON object")
+    return value
 
 
 @dataclass(frozen=True, slots=True)

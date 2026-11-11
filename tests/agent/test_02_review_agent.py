@@ -30,9 +30,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from mcp import Client
 import pytest
 
-from app.agent.loop import UNIT_UNVERIFIED_ANSWER, run_agent
+from app.agent.final_answer import FINAL_NOT_ALONE, UNIT_UNVERIFIED_ANSWER
+from app.agent.loop import run_agent
 from app.agent.review_middleware import (
-    FINAL_NOT_ALONE,
     CitedEvidenceReadError,
     ReviewContext,
     ReviewGate,

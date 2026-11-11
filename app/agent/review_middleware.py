@@ -38,17 +38,19 @@ from mcp.types import INTERNAL_ERROR
 from pydantic import BaseModel, ValidationError
 
 from app.agent.cell_answers import StoredCell, review_cell_selection
-from app.agent.loop import (
+from app.agent.final_answer import (
+    FINAL_NOT_ALONE,
     EvidenceReader,
-    _figures_problem,
-    _final_answer,
-    _mismatch_answer,
-    _unit_unverified_answer,
+    as_report,
+    figures_problem,
     final_answer_spec,
+    period_mismatch_report,
+    unit_unverified_report,
+    validate_final_answer,
 )
 from app.agent.tools.filings import FetchChunkParams
 from app.agent.tools.registry import FINAL_ANSWER_NAME, Tool, ToolRegistry, safe_runtime_error
-from app.agent.types import AgentAnswer, AgentReportAnswer, CellSelectionAnswer, ToolCall
+from app.agent.types import AgentReportAnswer, CellSelectionAnswer, ToolCall
 from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
 from app.figures.answers import check_figures
@@ -59,10 +61,6 @@ type CellLedger = dict[str, dict[str, Any]]
 type ToolHandler = Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]]
 type ModelHandler = Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]]
 type ModelResult = ModelResponse[Any] | AIMessage | ExtendedModelResponse[Any]
-
-# The rejection run_agent sends for a turn that pairs final_answer with other calls.
-FINAL_NOT_ALONE = "final_answer must be the only tool call in its provider turn"
-
 
 type CellReader = Callable[[tuple[str, ...]], Awaitable[Mapping[str, StoredCell]]]
 
@@ -268,11 +266,6 @@ def _rejected(message: AIMessage, calls: Sequence[MessageToolCall], text: str) -
     return ModelResponse(
         result=[message, *(_error(call, text) for call in calls)], structured_response=None
     )
-
-
-def _report(answer: AgentAnswer) -> AgentReportAnswer:
-    """Widen an accepted model answer to the report type, as ``run_agent`` does."""
-    return AgentReportAnswer.model_validate(answer.model_dump())
 
 
 def _accepted(
@@ -518,7 +511,7 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
             name=FINAL_ANSWER_NAME,
             arguments_json=json.dumps(call["args"]),
         )
-        answer, problem = _final_answer(proposed, evidence)
+        answer, problem = validate_final_answer(proposed, evidence)
         if answer is not None and answer.label == "SUPPORTED":
             cited = tuple(citation.chunk_id for citation in answer.citations)
             reader = context.evidence_reader
@@ -535,20 +528,22 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
                 context.requested_fiscal_years,
             )
             if figures.verdict == "unverified":
-                answer, problem = None, _figures_problem(figures, context.requested_fiscal_years)
+                answer, problem = None, figures_problem(figures, context.requested_fiscal_years)
             elif figures.verdict == "unit_unverified":
-                report, held = _unit_unverified_answer(answer, figures)
+                report, held = unit_unverified_report(answer, figures)
                 return _accepted(
                     message, call, report, unit_unverified=held.model_dump(mode="json")
                 )
             elif figures.verdict == "period_mismatch":
-                report, mismatch = _mismatch_answer(answer, figures, context.requested_fiscal_years)
+                report, mismatch = period_mismatch_report(
+                    answer, figures, context.requested_fiscal_years
+                )
                 return _accepted(
                     message, call, report, period_mismatch=mismatch.model_dump(mode="json")
                 )
         if answer is None:
             return _rejected(message, [call], problem)
-        return _accepted(message, call, _report(answer))
+        return _accepted(message, call, as_report(answer))
 
     async def _review_cells(
         self,
