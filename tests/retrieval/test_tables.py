@@ -2,18 +2,21 @@
 
 import asyncio
 from dataclasses import asdict
+from decimal import Decimal
 import json
 
 import pytest
 from sqlalchemy import delete, select, update
 
 from app.db.models import Chunk, ChunkTableCell, ParsedTable
-from app.figures.tables import read_table_cells
 from app.ingestion.persistence import persist_seed_batch
 from app.ingestion.table_records import resolver_identity
 from app.retrieval.tables import load_cell_catalog, load_chunk_tables, load_table_readings
 from tests.ingestion.seed.support import table_batch, tagged_table_batch
 from tests.live_postgres import isolated_session
+
+MILLION = Decimal(1_000_000)
+NET_INCOME = "Net income (loss)"
 
 
 @pytest.mark.live_postgres
@@ -34,7 +37,24 @@ def test_a_stored_table_rebuilds_its_chunk_fragment_and_readings_exactly():
             stored = await load_chunk_tables(session, [chunk_id, *([text_id] if text_id else [])])
             assert set(stored) == {chunk_id}
             assert stored[chunk_id].fragment == expected
-            assert stored[chunk_id].readings == tuple(read_table_cells(expected))
+            assert [
+                (
+                    reading.row,
+                    reading.column,
+                    reading.values,
+                    reading.years,
+                    reading.scale,
+                    reading.item,
+                    reading.currency,
+                    reading.row_label,
+                    reading.basis,
+                )
+                for reading in stored[chunk_id].readings
+            ] == [
+                (1, 1, {Decimal(25785)}, {2024}, MILLION, "revenue", "USD", "Net revenue", "text"),
+                (1, 2, {Decimal(22680)}, {2023}, MILLION, "revenue", "USD", "Net revenue", "text"),
+                (2, 1, {Decimal(1641)}, {2024}, MILLION, "net income", "USD", NET_INCOME, "text"),
+            ]
             assert await load_table_readings(session, []) == {}
 
     asyncio.run(exercise())

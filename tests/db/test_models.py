@@ -1,6 +1,7 @@
 """Database enforcement of filing identity, source provenance, and evaluation records."""
 
 import asyncio
+from datetime import date
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +21,8 @@ from app.db.models import (
     ChunkTableCell,
     Document,
     EvalResult,
+    FilingFactContext,
+    FilingPeriodTerm,
     LexemeStat,
     ParsedStructure,
     ParsedTable,
@@ -239,6 +242,83 @@ def test_source_facts_reject_bad_spans_and_unknown_contexts():
                 with pytest.raises(IntegrityError):
                     async with session.begin_nested():
                         await session.execute(update(TableSourceFact).values(**values))
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_table_and_period_rows_reject_what_their_constraints_name():
+    """Reject statement values, period shapes, and duplicate spans and cells by name."""
+
+    async def exercise():
+        """Seed the tagged table, then try each invalid row inside a savepoint."""
+        async with isolated_session() as session:
+            await persist_seed_batch(session, tagged_table_batch())
+            table = (await session.scalars(select(ParsedTable))).one()
+            member = (await session.scalars(select(ChunkTableCell).limit(1))).one()
+            term = {
+                "structure_id": table.structure_id,
+                "term": "당기",
+                "fiscal_year": 2024,
+                "period_start": date(2023, 1, 30),
+                "period_end": date(2024, 1, 28),
+                "start_char": 0,
+                "end_char": 2,
+            }
+            copied = {
+                column.key: getattr(table, column.key) for column in ParsedTable.__table__.columns
+            }
+            cases = (
+                (
+                    update(ParsedTable).values(statement_kind="ledger"),
+                    "ck_parsed_tables_statement_kind",
+                ),
+                (
+                    update(ParsedTable).values(statement_scope="global"),
+                    "ck_parsed_tables_statement_scope",
+                ),
+                (
+                    update(FilingFactContext)
+                    .where(FilingFactContext.context_id == "fy24")
+                    .values(instant=date(2024, 1, 28)),
+                    "ck_filing_fact_contexts_period",
+                ),
+                (
+                    insert(FilingPeriodTerm).values(term | {"period_end": date(2023, 1, 30)}),
+                    "ck_filing_period_terms_period",
+                ),
+                (
+                    insert(FilingPeriodTerm).values(term | {"end_char": 0}),
+                    "ck_filing_period_terms_span",
+                ),
+                (
+                    insert(ParsedTable).values(copied | {"table_id": "f" * 64}),
+                    "uq_parsed_tables_span",
+                ),
+                (
+                    insert(ChunkTableCell).values(
+                        chunk_id=member.chunk_id,
+                        ordinal=10_000,
+                        table_id=member.table_id,
+                        source_row=member.source_row,
+                        column_index=member.column_index,
+                        text_start=0,
+                        text_end=1,
+                    ),
+                    "uq_chunk_table_cells_cell",
+                ),
+            )
+            for statement, name in cases:
+                with pytest.raises(IntegrityError, match=name):
+                    async with session.begin_nested():
+                        await session.execute(statement)
+            async with session.begin_nested():
+                await session.execute(insert(FilingPeriodTerm).values(term))
+                await session.execute(
+                    update(ParsedTable).values(
+                        statement_kind="income", statement_scope="consolidated"
+                    )
+                )
 
     asyncio.run(exercise())
 
