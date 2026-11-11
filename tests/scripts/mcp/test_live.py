@@ -778,6 +778,51 @@ def test_the_usd_cap_is_checked_after_the_count_and_blocks_the_next_turn(tmp_pat
     assert journal(tmp_path / "budget.jsonl")[-1] == ("model", "blocked")
 
 
+def overrun(n: int, input_tokens: int) -> dict[str, Any]:
+    """An uncited final answer whose reported input far exceeds the counted 1,000 tokens."""
+    return response(f"call_{n}", "final_answer", FINAL, (input_tokens, 10))
+
+
+def test_observed_usage_past_the_cap_is_spent_and_stops_the_next_turn(tmp_path):
+    """$0.100012 observed against $0.0051652 reserved under $0.09: no further count or send."""
+    fake = FakeOpenAI(counts=[1000, 1000], replies=[overrun(1, 500_000), uncited(2)])
+    outcome, budget = ask_offline(tmp_path, fake, attempts=2)
+    assert (outcome["status"], outcome["failure"]) == (
+        "budget_exceeded",
+        "observed model usage passed the approved cap",
+    )
+    assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH]
+    # 500,000 input at $0.20/M plus 10 output at $1.20/M; reserved 1,000 at $0.25/M + 4,096 out.
+    assert budget.reserved_usd == Decimal("0.100012")
+    event = outcome["budget"]["observed"][0]
+    assert Decimal(event["overrun_usd"]) == Decimal("0.100012") - LUNA.reservation(1000)
+    assert outcome["budget"]["over_cap"] is True
+    assert journal(tmp_path / "budget.jsonl")[-1] == ("model", "blocked")
+
+
+def test_an_observed_excess_shrinks_the_room_for_later_turns(tmp_path):
+    """After an excess, the next turn is counted, no longer fits under the cap, and is not sent."""
+    fake = FakeOpenAI(counts=[1000, 1000], replies=[overrun(1, 30_000), absent_response()])
+    cap = LUNA.reservation(1000) * 2
+    outcome, budget = ask_offline(tmp_path, fake, cap=str(cap))
+    assert outcome["status"] == "budget_exceeded"
+    assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH, COUNT_PATH]
+    assert budget.reserved_usd == Decimal("0.006012")
+    assert outcome["budget"]["over_cap"] is False
+
+
+def test_an_excess_that_still_fits_lets_the_question_finish(tmp_path):
+    """The excess is added to the reservations and the next turn still runs to its answer."""
+    fake = FakeOpenAI(counts=[1000, 1000], replies=[overrun(1, 30_000), absent_response()])
+    outcome, budget = ask_offline(tmp_path, fake)
+    assert outcome["status"] == "ok"
+    assert budget.reserved_usd == Decimal("0.006012") + LUNA.reservation(1000)
+    assert [e.get("overrun_usd") for e in outcome["budget"]["observed"]] == [
+        str(Decimal("0.006012") - LUNA.reservation(1000)),
+        None,
+    ]
+
+
 def test_used_attempts_block_the_next_turn_before_its_count(tmp_path):
     """The attempt limit is shared by all turns of the question and stops even counting."""
     fake = FakeOpenAI(counts=[1000], replies=[uncited(1), uncited(2)])

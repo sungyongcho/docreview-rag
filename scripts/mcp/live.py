@@ -374,6 +374,10 @@ class ModelGate:
     the turn's estimate in ``budget``, which raises over the cap. Observed usage is
     recorded beside the reservation, never in place of it, and a reserved turn whose
     response never arrived stays reserved and is journaled as unknown.
+
+    Observed usage that costs more than the turn reserved is spent all the same, so the
+    excess is added to ``budget`` as well: later reservations must fit beside it, and a
+    question already past its cap opens no further turn, not even a count.
     """
 
     budget: Reservation
@@ -384,13 +388,19 @@ class ModelGate:
     turn_open: bool = False
     turn_reserved: bool = False
     turn_observed: bool = False
+    # USD accounted for the current turn: its reservation, raised by any observed excess.
+    turn_accounted_usd: Decimal = Decimal("0")
 
     def open_turn(self) -> None:
-        """Permit one generation, unless every approved attempt is used."""
+        """Permit one generation, unless every approved attempt or the cap is used."""
         if self.budget.attempts >= self.budget.max_attempts:
             self.budget.write("model", {"status": "blocked", "reason": "attempts"})
             raise BudgetExhaustedError("approved model budget exhausted")
+        if self.budget.reserved_usd > self.budget.cap_usd:
+            self.budget.write("model", {"status": "blocked", "reason": "observed_over_cap"})
+            raise BudgetExhaustedError("observed model usage passed the approved cap")
         self.turn_open, self.turn_reserved, self.turn_observed = True, False, False
+        self.turn_accounted_usd = Decimal("0")
 
     async def admit(self, payload: dict[str, Any], client: openai.AsyncOpenAI) -> None:
         """Count the exact request input, then reserve the turn, before generating.
@@ -429,12 +439,18 @@ class ModelGate:
                 },
             )
             raise BudgetExhaustedError("approved model input tokens exhausted")
-        self.budget.reserve(self.settings.reservation(tokens), "model")
+        estimated = self.settings.reservation(tokens)
+        self.budget.reserve(estimated, "model")
         self.counted_input_tokens += tokens
         self.turn_reserved = True
+        self.turn_accounted_usd = estimated
 
     def observe(self, message: BaseMessage) -> None:
-        """Record reported usage or unavailable accounting, keeping the reservation intact."""
+        """Record reported usage or unavailable accounting, keeping the reservation intact.
+
+        An observed cost above what the turn has accounted for is added to ``budget`` and
+        recorded as ``overrun_usd``; a cheaper one refunds nothing.
+        """
         self.turn_observed = True
         usage = getattr(message, "usage_metadata", None)
         event: dict[str, Any] = {
@@ -453,6 +469,12 @@ class ModelGate:
             counters = (input_tokens, output_tokens, cached, cache_write, reasoning)
             valid_counts = all(type(value) is int and value >= 0 for value in counters)
             if valid_counts and cached + cache_write <= input_tokens and reasoning <= output_tokens:
+                observed_usd = self.settings.pricing.estimate(
+                    input_tokens,
+                    output_tokens,
+                    cached_input_tokens=cached,
+                    cache_write_input_tokens=cache_write,
+                )
                 event = {
                     "status": "observed",
                     "response_id": message.response_metadata.get("id"),
@@ -461,15 +483,13 @@ class ModelGate:
                     "cache_write_input_tokens": cache_write,
                     "output_tokens": output_tokens,
                     "reasoning_tokens": reasoning,
-                    "observed_usd": str(
-                        self.settings.pricing.estimate(
-                            input_tokens,
-                            output_tokens,
-                            cached_input_tokens=cached,
-                            cache_write_input_tokens=cache_write,
-                        )
-                    ),
+                    "observed_usd": str(observed_usd),
                 }
+                excess = observed_usd - self.turn_accounted_usd
+                if excess > 0:
+                    self.budget.reserved_usd += excess
+                    self.turn_accounted_usd = observed_usd
+                    event["overrun_usd"] = str(excess)
             else:
                 event["reason"] = "invalid"
         self.observed.append(event)
@@ -494,6 +514,7 @@ class ModelGate:
             "model": self.settings.record(),
             "budget": {
                 "reserved_usd": str(self.budget.reserved_usd),
+                "over_cap": self.budget.reserved_usd > self.budget.cap_usd,
                 "attempts": self.budget.attempts,
                 "counted_input_tokens": self.counted_input_tokens,
                 "observed": list(self.observed),
