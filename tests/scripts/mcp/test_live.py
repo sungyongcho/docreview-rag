@@ -24,7 +24,10 @@ import mcp
 import openai
 from pydantic import SecretStr
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app import config
 from app.agent import stored_evidence
@@ -34,6 +37,7 @@ from app.agent.tools import filings
 from app.agent.tools.filings import FetchedChunk, build_default_registry
 from app.agent.tools.registry import ToolError, execute_tool
 from app.contracts.evidence import EvidenceCitation
+from app.db.models import Chunk, ParsedTable
 from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
@@ -62,6 +66,7 @@ from tests.scripts.mcp.cell_filings import (
     REVENUE_CELL,
     STABLE_KEY,
 )
+from tests.scripts.mcp.live_database import EMBEDDING_MODEL, seeded_database
 from tests.workflow.support import USD_INCOME_TABLE, income_table_hit
 
 AGENT_ARGV = ["r", "agent", "--issuer", "AMD", "--years", "2023", "2024", "--question", "Q?"]
@@ -130,7 +135,7 @@ def test_production_mode_refuses_the_experiment_before_any_work(tmp_path, monkey
     """MODE=prod exits with code 2 before options, the index check or the run marker."""
     monkeypatch.setattr(config, "get_settings", lambda: offline_settings("prod"))
 
-    async def require_indexed(issuer, years):
+    async def require_indexed(issuer, years, **_):
         raise AssertionError("production mode must stop before the database")
 
     monkeypatch.setattr(live, "require_indexed", require_indexed)
@@ -390,7 +395,7 @@ def test_agent_checks_the_index_before_claiming_the_run(tmp_path, monkeypatch):
     """An unindexed issuer stops the agent before its attempt marker or any paid call."""
     checked = []
 
-    async def require_indexed(issuer, years):
+    async def require_indexed(issuer, years, **_):
         checked.append((issuer, years))
         raise SystemExit("not indexed")
 
@@ -486,7 +491,7 @@ def test_model_options_fail_before_any_database_or_api_work(
     """Options run_agent would ignore, or an unpriceable model, stop before the index check."""
     checked = []
 
-    async def require_indexed(issuer, years):
+    async def require_indexed(issuer, years, **_):
         checked.append((issuer, years))
         raise AssertionError("invalid model settings must stop before the index check")
 
@@ -1265,7 +1270,7 @@ def test_the_agent_run_starts_its_server_with_cells(tmp_path, monkeypatch):
         assert {"AMD", "ADVANCED MICRO DEVICES INC"} <= set(names)
         return {"status": "ok"}
 
-    async def require_indexed(issuer, years) -> None:
+    async def require_indexed(issuer, years, **_) -> None:
         """Stand in for the database index check."""
 
     monkeypatch.setattr(config, "get_settings", keyed_settings)
@@ -1363,7 +1368,7 @@ SEARCH_ARGV = ["r", "search", "--issuer", "AMD", "--year", "2024", "--query", "r
 def run_claimed(tmp_path: Path, monkeypatch, argv: list[str], **client: Any) -> Path:
     """Run ``run`` offline with a fake MCP client; return its run directory."""
 
-    async def require_indexed(issuer, years) -> None:
+    async def require_indexed(issuer, years, **_) -> None:
         """Stand in for the database index check."""
 
     monkeypatch.setattr(config, "get_settings", keyed_settings)
@@ -1475,7 +1480,7 @@ def test_an_agent_run_without_a_key_stops_before_claiming(tmp_path, monkeypatch)
     """A missing key slot is found before the attempt marker, so the run ID stays free."""
     run_claimed_args = ["r", "--out", str(tmp_path), *AGENT_ARGV[1:]]
 
-    async def require_indexed(issuer, years) -> None:
+    async def require_indexed(issuer, years, **_) -> None:
         """Stand in for the database index check."""
 
     monkeypatch.setattr(live, "require_indexed", require_indexed)
@@ -1537,7 +1542,7 @@ def test_an_unusable_manifest_stops_the_cell_run_before_claiming(
         lambda: SimpleNamespace(**vars(keyed_settings()) | {"corpus_dir": corpus}),
     )
 
-    async def require_indexed(issuer, years) -> None:
+    async def require_indexed(issuer, years, **_) -> None:
         """Stand in for the database index check."""
 
     monkeypatch.setattr(live, "require_indexed", require_indexed)
@@ -1547,3 +1552,125 @@ def test_an_unusable_manifest_stops_the_cell_run_before_claiming(
     with pytest.raises(SystemExit, match=message):
         asyncio.run(live.run(args))
     assert not (tmp_path / "r").exists()
+
+
+@pytest.mark.parametrize(
+    ("argv", "current_tables"),
+    [
+        (SEARCH_ARGV, False),
+        (["r", "compare", "--issuer", "AMD", "--years", "2023", "2024", "--query", "q"], False),
+        (AGENT_ARGV, True),
+        ([*AGENT_ARGV, "--via", "create-agent"], True),
+    ],
+    ids=["search", "compare", "run-agent", "create-agent"],
+)
+def test_only_agent_runs_require_current_stored_tables(tmp_path, monkeypatch, argv, current_tables):
+    """Both agent paths judge figures from stored tables; single tool calls do not."""
+    checked: list[bool] = []
+
+    async def require_indexed(issuer, years, *, current_tables=False) -> None:
+        checked.append(current_tables)
+        raise SystemExit("checked")
+
+    monkeypatch.setattr(config, "get_settings", keyed_settings)
+    monkeypatch.setattr(live, "require_indexed", require_indexed)
+    with pytest.raises(SystemExit, match="checked"):
+        asyncio.run(live.run(parser().parse_args([argv[0], "--out", str(tmp_path), *argv[1:]])))
+    assert checked == [current_tables]
+
+
+# The read-only database boundary, on a disposable PostgreSQL database
+def use_database(monkeypatch, url: str) -> None:
+    """Point the scripts' settings at ``url`` without reading any environment file."""
+    settings = SimpleNamespace(**vars(keyed_settings()) | {"database_url": url})
+    settings.embedding_model = EMBEDDING_MODEL
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+
+
+async def write(url: str, statement: Any) -> None:
+    """Run one write with a writable engine, as ingestion would."""
+    engine = create_async_engine(url, poolclass=NullPool)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(statement)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.live_postgres
+def test_the_read_only_engine_reads_but_refuses_writes(monkeypatch):
+    """A SELECT succeeds; creating a table fails as a read-only transaction."""
+
+    async def scenario() -> None:
+        """Read, then try to write, through the script's engine."""
+        async with seeded_database(["AMD-FY2024"]) as url:
+            use_database(monkeypatch, url)
+            engine = live.read_only_engine()
+            try:
+                async with engine.connect() as connection:
+                    assert await connection.scalar(text("SELECT count(*) FROM chunks")) > 0
+                async with engine.connect() as connection:
+                    with pytest.raises(DBAPIError, match="read-only transaction"):
+                        await connection.execute(text("CREATE TABLE written (i int)"))
+            finally:
+                await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.live_postgres
+def test_require_indexed_checks_embeddings_and_current_tables(monkeypatch):
+    """An embedded current year passes; a locally embedded or stale one stops the run."""
+
+    async def scenario() -> None:
+        """Check both years, then mark 2024's table as read by older code."""
+        filings = ["AMD-FY2023", "AMD-FY2024"]
+        async with seeded_database(filings, ["AMD-FY2024"], local=["AMD-FY2023"]) as url:
+            use_database(monkeypatch, url)
+            await live.require_indexed("AMD", [2024])
+            await live.require_indexed("AMD", [2024], current_tables=True)
+            with pytest.raises(SystemExit, match=r"no matching indexed chunks for \[2023\]"):
+                await live.require_indexed("AMD", [2023, 2024])
+            await write(
+                url,
+                update(ParsedTable)
+                .where(ParsedTable.doc_id == "AMD-FY2024")
+                .values(resolver_identity="0" * 64),
+            )
+            await live.require_indexed("AMD", [2024])
+            with pytest.raises(SystemExit, match=r"\[2024\] built or read by other code"):
+                await live.require_indexed("AMD", [2024], current_tables=True)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.live_postgres
+def test_fetch_matches_database_compares_the_whole_stored_row(monkeypatch):
+    """The stored row as served matches; one changed field does not."""
+
+    async def scenario() -> None:
+        """Compare the stored row, then a changed copy of it."""
+        async with seeded_database(["AMD-FY2024"]) as url:
+            use_database(monkeypatch, url)
+            engine = create_async_engine(url, poolclass=NullPool)
+            try:
+                async with engine.connect() as connection:
+                    chunk = (
+                        await connection.execute(select(Chunk).order_by(Chunk.id).limit(1))
+                    ).one()
+            finally:
+                await engine.dispose()
+            payload = {
+                "chunk_id": chunk.id,
+                "doc_id": chunk.doc_id,
+                "citation": chunk.citation,
+                "start_char": chunk.start_char,
+                "end_char": chunk.end_char,
+                "source_sha256": chunk.source_sha256,
+                "context_header": chunk.context_header,
+                "body": chunk.body,
+            }
+            assert await live.fetch_matches_database(payload) is True
+            assert await live.fetch_matches_database(payload | {"body": "changed"}) is False
+
+    asyncio.run(scenario())

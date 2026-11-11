@@ -979,11 +979,23 @@ async def serve(run_dir: Path, embedding: Reservation, *, include_cells: bool = 
         await engine.dispose()
 
 
-async def require_indexed(issuer: str, years: Sequence[int]) -> None:
-    """Stop before any paid call unless every year has chunks embedded by this model."""
-    from sqlalchemy import text
+async def require_indexed(
+    issuer: str, years: Sequence[int], *, current_tables: bool = False
+) -> None:
+    """Stop before any paid call unless every year has chunks embedded by this model.
+
+    With ``current_tables``, also stop when any stored table of those filings was built
+    or read by code other than the running code (``current_table``): such a table serves
+    no cell catalog and confirms no figure, so an agent run could only end unverified
+    until the filings are ingested again.
+    """
+    from sqlalchemy import select, text
+    from sqlalchemy.dialects.postgresql import distinct_on
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.config import get_settings
+    from app.db.models import Document, ParsedTable
+    from app.retrieval.tables import current_table
 
     engine = read_only_engine()
     try:
@@ -1001,11 +1013,33 @@ async def require_indexed(issuer: str, years: Sequence[int]) -> None:
                 {"issuer": issuer, "years": list(years), "model": get_settings().embedding_model},
             )
             indexed = {year for year, count in rows.all() if count}
+        stale: set[int] = set()
+        if current_tables:
+            async with AsyncSession(engine) as session:
+                # One table per distinct identity pair and year is enough to judge it.
+                tables = await session.execute(
+                    select(Document.fiscal_year, ParsedTable)
+                    .join(Document, Document.doc_id == ParsedTable.doc_id)
+                    .where(Document.issuer == issuer, Document.fiscal_year.in_(list(years)))
+                    .ext(
+                        distinct_on(
+                            Document.fiscal_year,
+                            ParsedTable.builder_identity,
+                            ParsedTable.resolver_identity,
+                        )
+                    )
+                )
+                stale = {year for year, table in tables if not current_table(table)}
     finally:
         await engine.dispose()
     if indexed != set(years):
         missing = sorted(set(years) - indexed)
         raise SystemExit(f"{issuer} has no matching indexed chunks for {missing}")
+    if stale:
+        raise SystemExit(
+            f"{issuer} has stored tables for {sorted(stale)} built or read by other code; "
+            "rebuild the index (ingest those filings again) before an agent run"
+        )
 
 
 async def fetch_matches_database(payload: dict[str, Any]) -> bool:
@@ -1262,8 +1296,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     run_dir = args.out / args.run_id
     if args.command == "search":
         await require_indexed(args.issuer, [args.year])
-    elif args.command in {"compare", "agent"}:
+    elif args.command == "compare":
         await require_indexed(args.issuer, args.years)
+    elif args.command == "agent":
+        # Both agent paths judge figures from stored tables; stale ones confirm nothing.
+        await require_indexed(args.issuer, args.years, current_tables=True)
     if args.command == "agent" and get_settings().openai_api_key is None:
         raise SystemExit("the agent experiment requires the MODE-selected OpenAI key slot")
     names = issuer_names(args.issuer, get_settings().corpus_dir) if settings is not None else ()
