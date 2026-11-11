@@ -51,9 +51,14 @@ _ITEM_LABELS_KO = {
 _SCALES_EN = {0: "", 3: "thousand", 6: "million", 9: "billion", 12: "trillion"}
 _SCALES_KO = {0: "", 3: "천", 4: "만", 6: "백만", 8: "억", 9: "십억", 12: "조"}
 
-NOT_FOUND_RATIONALE = (
-    "The fetched evidence was searched and no table cell answering the question was found."
-)
+# Each report's answer and rationale are written in the report's language.
+NOT_FOUND = {
+    "en": (
+        "The evidence retrieved in this question was searched and no table cell answering "
+        "the question was found."
+    ),
+    "ko": "이 질문에서 검색한 근거에서 질문에 답하는 표의 칸을 찾지 못했습니다.",
+}
 CANNOT_RESOLVE = {
     "en": (
         "The cited evidence relates to the question, but no single table cell could be "
@@ -83,6 +88,10 @@ UNIT_HELD = {
         "인용한 표에 이 항목이 있지만 해당 칸의 단위나 통화를 확정하지 못해 "
         "수치를 보고하지 않습니다."
     ),
+}
+PERIOD_MISMATCH = {
+    "en": "The selected cells belong to a different period than the question asks about.",
+    "ko": "선택된 칸은 질문이 묻는 기간과 다른 기간의 값입니다.",
 }
 ASSEMBLED = {
     "en": (
@@ -246,7 +255,7 @@ def review_cell_selection(
                 label="NOT_IN_DOCS",
                 answer="NOT_IN_DOCS",
                 citations=(),
-                rationale=NOT_FOUND_RATIONALE,
+                rationale=NOT_FOUND[locale],
             )
         )
     if proposal.reason == "cannot_resolve":
@@ -260,7 +269,7 @@ def review_cell_selection(
                 label="UNVERIFIED",
                 answer=CANNOT_RESOLVE[locale],
                 citations=_citations(proposal.unresolved_chunk_ids, evidence),
-                rationale=CANNOT_RESOLVE["en"],
+                rationale=CANNOT_RESOLVE[locale],
             )
         )
 
@@ -291,7 +300,7 @@ def review_cell_selection(
                 label="UNVERIFIED",
                 answer=UNIT_HELD[locale],
                 citations=_citations(chunk_ids, evidence),
-                rationale=UNIT_HELD["en"],
+                rationale=UNIT_HELD[locale],
             ),
             unit_unverified=AgentUnitUnverified(
                 figures=tuple(cell.cell["raw_text"] for cell in held)
@@ -340,24 +349,18 @@ def review_cell_selection(
         )
         asked = ", ".join(str(year) for year in mismatch.requested_fiscal_years)
         found = ", ".join(str(year) for year in mismatch.evidenced_fiscal_years)
+        # Only the selection was checked, not whether the evidence reports the
+        # asked period elsewhere, so the sentence speaks about the selection alone.
         if locale == "ko":
-            answer = (
-                f"인용한 근거는 {asked} 회계연도 값을 보고하지 않습니다. "
-                f"선택된 값은 {found} 회계연도입니다."
-            )
+            answer = f"선택된 표의 칸은 {asked} 회계연도가 아니라 {found} 회계연도의 값입니다."
         else:
-            answer = (
-                f"The cited evidence does not report this for {asked}. "
-                f"The selected values are for {found}."
-            )
+            answer = f"The selected table cells are for fiscal {found}, not fiscal {asked}."
         return CellVerdict(
             AgentReportAnswer(
                 label="PERIOD_MISMATCH",
                 answer=answer,
                 citations=_citations(chunk_ids, evidence),
-                rationale=(
-                    "The selected cells belong to a different period than the question asks about."
-                ),
+                rationale=PERIOD_MISMATCH[locale],
             ),
             period_mismatch=mismatch,
             checks=tuple(_check(cell, "other period") for cell in cells),

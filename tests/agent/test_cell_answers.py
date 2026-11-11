@@ -150,7 +150,54 @@ def test_another_known_period_is_a_period_mismatch_not_an_answer():
     assert result.report is not None and result.report.label == "PERIOD_MISMATCH"
     assert result.period_mismatch is not None
     assert result.period_mismatch.evidenced_fiscal_years == (2023,)
-    assert "22,680" not in result.report.answer
+    assert "25,785" not in result.report.answer
+    assert "25785" not in result.report.answer
+
+
+def test_a_period_mismatch_states_only_what_the_selection_shows_in_each_language():
+    """Say the selected cells are for another year; never that the evidence lacks the asked one."""
+    choice = proposal(("2024:r1c2", "revenue", 2023))
+    cell = stored("2024:r1c2", fiscal_years=[2023])
+    english, korean = review(choice, cell), review(choice, cell, locale="ko")
+    assert english.report is not None and korean.report is not None
+    assert english.report.answer == "The selected table cells are for fiscal 2023, not fiscal 2024."
+    assert (
+        korean.report.answer == "선택된 표의 칸은 2024 회계연도가 아니라 2023 회계연도의 값입니다."
+    )
+    assert english.report.rationale == (
+        "The selected cells belong to a different period than the question asks about."
+    )
+    assert korean.report.rationale == "선택된 칸은 질문이 묻는 기간과 다른 기간의 값입니다."
+
+
+def test_every_korean_report_has_a_korean_rationale():
+    """Write the rationale in the report's language, as the assembled answer already was."""
+    unit = review(
+        proposal(("2024:r1c1", "revenue", 2024)),
+        stored(currency="$", status="currency_unconfirmed"),
+        locale="ko",
+    )
+    unresolved = review(
+        proposal(reason="cannot_resolve", selections=[], unresolved_chunk_ids=[2024]),
+        locale="ko",
+    )
+    absent = review(proposal(label="NOT_IN_DOCS", reason="not_found", selections=[]), locale="ko")
+    assert unit.report is not None and unit.report.answer == unit.report.rationale == (
+        "인용한 표에 이 항목이 있지만 해당 칸의 단위나 통화를 확정하지 못해 "
+        "수치를 보고하지 않습니다."
+    )
+    assert unresolved.report is not None
+    assert (
+        unresolved.report.answer
+        == unresolved.report.rationale
+        == (
+            "인용한 근거는 질문과 관련 있지만 답이 되는 표의 칸 하나를 확정하지 못해 "
+            "수치를 보고하지 않습니다."
+        )
+    )
+    assert absent.report is not None and absent.report.rationale == (
+        "이 질문에서 검색한 근거에서 질문에 답하는 표의 칸을 찾지 못했습니다."
+    )
 
 
 def test_an_unconfirmed_currency_withholds_every_amount():
