@@ -106,5 +106,5 @@ and evaluation runs happen in the local operator environment.
 
 - [User guides](docs/TUTORIAL.md) — paired English/Korean tutorials
 - [Compose operations](deploy/docker-compose.md), [Oracle deployment](deploy/oracle/README.md), [DocReview Worker](deploy/cloudflare/README.md), and [alternate GCP deployment](deploy/gcp/)
-- [Refactor report, September 2026](docs/refactor-2026-09.md) — what was removed and why, the module map, and how one question flows from the API to the answer ([evidence appendix](docs/refactor-2026-09-evidence.md))
+- [Refactor report, September 2026](docs/refactor-2026-09.md) — a September 2026 record of what was removed and why, the module map, and how one question flowed from the API to the answer ([evidence appendix](docs/refactor-2026-09-evidence.md))
 - [Archived README](docs/README_archive.md) — the full pre-rename operator manual
