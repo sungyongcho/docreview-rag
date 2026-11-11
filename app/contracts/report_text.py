@@ -24,7 +24,7 @@ def period_mismatch_text(
     amounts = ", ".join(figures)
     if locale == "ko":
         return (
-            f"답변에 적힌 {amounts}은(는) 요청한 {asked} 회계연도가 아니라 "
+            f"답변에 적힌 수치({amounts})는 요청한 {asked} 회계연도가 아니라 "
             f"{found} 회계연도의 값으로 확인됐습니다."
         )
     return (

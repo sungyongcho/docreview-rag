@@ -54,3 +54,11 @@ def test_sentences_name_only_the_actual_cause_and_never_report_the_figure(locale
     ) == withheld_text(("scale", "currency", "direction"), locale=locale)
     with pytest.raises(ValueError):
         withheld_text((), locale=locale)
+
+
+def test_a_korean_mismatch_sentence_reads_the_same_after_any_figure():
+    """The particle follows a fixed noun, so no figure ending needs a guessed particle."""
+    for figures in (["USD 25,785 million"], ["22,680", "1,641백만원"]):
+        text = period_mismatch_text([2024], [2023], figures, locale="ko")
+        assert f"수치({', '.join(figures)})는 요청한 2024 회계연도가 아니라 2023 회계연도" in text
+        assert "(는)" not in text and "(를)" not in text
