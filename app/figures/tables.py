@@ -132,6 +132,8 @@ class CellFact:
     ``fiscal_year`` is None when the context is not one fiscal year. ``numerator`` and
     ``denominator`` are the inline XBRL unit's measures (``iso4217:USD``,
     ``xbrli:shares``); DART facts state no unit, so both are None, as is ``scale``.
+    ``sign`` is ``-`` when an inline XBRL tag negates its displayed number and ``+``
+    when it states no sign; DART tags state none, so their ``sign`` is None.
     """
 
     concept: str
@@ -141,6 +143,7 @@ class CellFact:
     denominator: str | None
     scale: int | None
     text: str
+    sign: Literal["-", "+"] | None = None
 
 
 CellStatus = Literal[
@@ -381,21 +384,36 @@ def _row_labels(fragment: Mapping[str, object]) -> dict[int, str]:
     return {row: text for row, (_, text) in labels.items()}
 
 
-def _label_item(label: str) -> str | None:
-    """Return the item a row label names when the whole label is one accepted phrase.
+def _label_key(label: str) -> str | None:
+    """Return the phrase a row label is looked up by, or None when it is qualified.
 
     Enumerators ("Ⅰ.") and the parentheticals that keep the same item ("Net income
     (loss)", note references) are set aside. Any other parenthetical qualifies the
     row ("Net income (attributable to noncontrolling interests)"), so the label names
-    no item. Korean labels are compared without spaces.
+    no phrase. Korean labels are compared without spaces.
     """
     text = SAME_ITEM_QUALIFIER.sub("", _ENUMERATOR.sub("", label))
     if re.search(r"[()（）]", text):
         return None
     key = phrase_key(text).rstrip(":").strip()
-    if not key.isascii():
-        key = key.replace(" ", "")
-    return PHRASE_ITEMS.get(key)
+    return key if key.isascii() else key.replace(" ", "")
+
+
+def _label_item(label: str) -> str | None:
+    """Return the item a row label names when the whole label is one accepted phrase."""
+    key = _label_key(label)
+    return None if key is None else PHRASE_ITEMS.get(key)
+
+
+def _loss_only(label: str | None) -> bool:
+    """Whether a row label names its item by a loss phrase alone ("Net loss", "영업손실").
+
+    Such a label says the row is a loss, so an unsigned figure under it could be the
+    loss itself or the item's (negative) amount. A label naming both ("Net income
+    (loss)", "영업이익(손실)") reads as the item.
+    """
+    key = None if label is None else _label_key(label)
+    return key is not None and key in PHRASE_ITEMS and ("loss" in key or "손실" in key)
 
 
 # The DART statement axis whose consolidated member is the entity as a whole.
@@ -455,18 +473,23 @@ def _scope(dimensions: tuple[tuple[str, str], ...]) -> str | None:
 
 
 def _with_fact(
-    reading: TableCellReading, fact: CellFact, notes: frozenset[str]
+    reading: TableCellReading, fact: CellFact, notes: frozenset[str], negative: bool | None
 ) -> TableCellReading:
     """Read one cell from the fact its filing tags, recording what overrides the text.
 
     The fact's fiscal year and scope always apply; a declared statement scope that
     the tag contradicts (a consolidated tag in a separate statement) is overridden.
+    An inline XBRL tag's sign is the value's sign: when it differs from the sign the
+    cell's notation writes (``negative``), ``sign`` is recorded and the interpretation
+    applies the tag's.
     An inline XBRL amount or per-share unit also fixes the currency (with the table's
     notes and the cell's own markers still able to contradict it) and the scale.
     Other units (shares, ratios) are not amounts, and DART facts state no unit, so
     the text keeps their unit.
     """
     overrides: list[str] = []
+    if fact.sign is not None and negative is not None and (fact.sign == "-") != negative:
+        overrides.append("sign")
     years = frozenset() if fact.fiscal_year is None else frozenset({fact.fiscal_year})
     if reading.years and reading.years != years:
         overrides.append("year")
@@ -497,6 +520,13 @@ def _with_fact(
         scope=scope,
         measure=measure,
     )
+
+
+def _negative(text: str) -> bool | None:
+    """Whether a cell's one figure is written as negative; None for none, several or ▲."""
+    spans = [figure for figure in figure_spans(blank(text)) if figure.value is not None]
+    value = signed(spans[0]) if len(spans) == 1 else None
+    return None if value is None else value < 0
 
 
 def read_table_cells(
@@ -568,7 +598,7 @@ def read_table_cells(
                 )
                 tagged = facts.get((row, column), ())
                 if len(tagged) == 1 and values(tagged[0].text) == cell_values:
-                    reading = _with_fact(reading, tagged[0], unit.currency | own)
+                    reading = _with_fact(reading, tagged[0], unit.currency | own, _negative(text))
                 cells.append(reading)
     return cells
 
@@ -582,6 +612,11 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     the cell unselectable with the first missing fact as its status. A tagged unit
     that is no amount (``not_monetary``) or a dimensional scope (``scope_qualified``)
     does too.
+
+    A value's sign comes from its notation, or from its inline XBRL tag when the tag
+    overrides it (``sign``). An unsigned figure whose sign no tag states, under a
+    label that names its item by a loss phrase alone ("Net loss | 1,641"), could be
+    the loss or the item's amount, so it is ``conflicting``.
     """
     stripped = text.strip()
     if not stripped or not stripped.strip("-–—‐ "):
@@ -596,6 +631,13 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
     value = signed(spans[0])
     if value is None:
         return CellInterpretation("conflicting", "sign marker is ambiguous", None, reading)
+    if "sign" in reading.overrides:
+        value = -value
+    elif reading.measure is None and value > 0 and _loss_only(reading.row_label):
+        # Neither the notation nor a tag states the sign of a loss row's figure.
+        return CellInterpretation(
+            "conflicting", "an unsigned figure under a loss-only label", value, reading
+        )
     if reading.measure == "other":
         return CellInterpretation("not_monetary", "tagged unit is not an amount", value, reading)
     if spans[0].percent and reading.percent is not True:

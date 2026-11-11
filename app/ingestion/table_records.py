@@ -175,7 +175,8 @@ def _joined(fact: SourceFact, facts: FilingFacts) -> CellFact:
     """Join one tagged fact with the context and unit its filing declares for it.
 
     A fact naming a context the filing does not declare keeps no fiscal year and an
-    opaque scope, so it can neither date nor stand for the whole entity.
+    opaque scope, so it can neither date nor stand for the whole entity. An inline
+    XBRL fact's sign is ``-`` or ``+`` (no sign attribute); a DART tag states none.
     """
     context = next((c for c in facts.contexts if c.context_id == fact.context_id), None)
     unit = next((u for u in facts.units if u.unit_id == fact.unit_id), None)
@@ -187,6 +188,7 @@ def _joined(fact: SourceFact, facts: FilingFacts) -> CellFact:
         None if unit is None else unit.denominator,
         fact.scale,
         fact.text,
+        ("-" if fact.sign == "-" else "+") if facts.source == "ixbrl" else None,
     )
 
 

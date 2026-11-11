@@ -327,3 +327,56 @@ def test_a_percent_sign_in_its_own_cell_is_never_an_amount():
 def test_a_percentage_is_known_only_when_its_reading_is_one(text, changes, status):
     """A normalized percentage stays known only on a reading that is a percentage."""
     assert interpret_table_cell(text, [reading(**changes)]).status == status
+
+
+@pytest.mark.parametrize(
+    ("changes", "text", "overrides", "value"),
+    [
+        ({"sign": "-"}, "$ 25,785", ("sign",), Decimal(-25785)),
+        ({"sign": "+"}, "$ 25,785", (), Decimal(25785)),
+        ({"sign": None}, "$ 25,785", (), Decimal(25785)),
+    ],
+)
+def test_an_inline_xbrl_sign_is_the_values_sign(changes, text, overrides, value):
+    """A negating tag on an unsigned figure flips the value and records the override."""
+    cell = tagged_revenue(fact(**changes))
+    assert cell.overrides == overrides
+    assert interpret_table_cell(text, [cell]).value == value
+
+
+def test_a_tag_without_a_sign_overrides_a_negative_notation():
+    """ "(1,641)" tagged with no sign attribute is the positive value the tag states."""
+    html = INCOME_TABLE.replace("<td>1,641</td>", "<td>(1,641)</td>")
+    readings = read_table_cells(table_fragment(html), {(2, 1): (fact(text="1,641", sign="+"),)})
+    cell = next(c for c in readings if (c.row, c.column) == (2, 1))
+    assert cell.overrides == ("sign",)
+    assert interpret_table_cell("(1,641)", [cell]).value == Decimal(1641)
+    agreeing = read_table_cells(table_fragment(html), {(2, 1): (fact(text="1,641", sign="-"),)})
+    cell = next(c for c in agreeing if (c.row, c.column) == (2, 1))
+    assert (cell.overrides, interpret_table_cell("(1,641)", [cell]).value) == ((), Decimal(-1641))
+
+
+@pytest.mark.parametrize(
+    ("label", "item", "text", "changes", "status", "value"),
+    [
+        ("Net loss", "net income", "1,641", {}, "conflicting", Decimal(1641)),
+        ("Operating loss", "operating income", "1,641", {}, "conflicting", Decimal(1641)),
+        ("영업손실", "operating income", "1,234", {}, "conflicting", Decimal(1234)),
+        ("당기순손실 (주5)", "net income", "1,234", {}, "conflicting", Decimal(1234)),
+        ("Net loss", "net income", "1,641", {"basis": "fact"}, "conflicting", Decimal(1641)),
+        ("Net loss", "net income", "(1,641)", {}, "known", Decimal(-1641)),
+        ("영업손실", "operating income", "△1,234", {}, "known", Decimal(-1234)),
+        ("Net loss", "net income", "0", {}, "known", Decimal(0)),
+        ("Net loss", "net income", "1,641", {"measure": "amount"}, "known", Decimal(1641)),
+        ("Net income (loss)", "net income", "1,641", {}, "known", Decimal(1641)),
+        ("영업이익(손실)", "operating income", "1,234", {}, "known", Decimal(1234)),
+        ("Net income", "net income", "1,641", {}, "known", Decimal(1641)),
+    ],
+)
+def test_an_unsigned_figure_under_a_loss_only_label_is_not_one_amount(
+    label, item, text, changes, status, value
+):
+    """A loss phrase alone leaves an unsigned figure's sign unstated unless a tag states it."""
+    cell = reading(row_label=label, item=item, **changes)
+    assert interpret_table_cell(text, [cell]).status == status
+    assert interpret_table_cell(text, [cell]).value == value

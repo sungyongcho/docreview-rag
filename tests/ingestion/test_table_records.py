@@ -9,12 +9,22 @@ import pytest
 
 from app.figures.tables import read_table_cells
 from app.ingestion.chunking import CellFragment, TableFragment, chunk_filing
-from app.ingestion.parsing.facts import FilingFacts, PeriodTerm, StatementDeclaration
+from app.ingestion.parsing.facts import (
+    FilingFacts,
+    PeriodTerm,
+    SourceFact,
+    StatementDeclaration,
+)
 from app.ingestion.parsing.models import Block
-from app.ingestion.table_records import builder_identity, resolver_identity, table_records
+from app.ingestion.table_records import (
+    _joined,
+    builder_identity,
+    resolver_identity,
+    table_records,
+)
 from app.ingestion.tokens import InputBudget
 from tests.ingestion.chunk.support import build_filing
-from tests.ingestion.seed.support import table_batch, tagged_table_batch
+from tests.ingestion.seed.support import TAGGED_TABLE_HTML, table_batch, tagged_table_batch
 
 USD_TABLE = (
     "<table><tr><td>(In millions of U.S. dollars)</td><td>December 28, 2024</td>"
@@ -274,3 +284,36 @@ def test_code_identities_are_sha256_hex_digests():
     """Fingerprint the builder and resolver code as 64 lowercase hex characters."""
     for identity in (builder_identity(), resolver_identity()):
         assert re.fullmatch(r"[0-9a-f]{64}", identity)
+
+
+def test_an_inline_xbrl_sign_reaches_the_cells_value():
+    """A negating tag on an unsigned figure makes the stored value negative, recorded."""
+    html = TAGGED_TABLE_HTML.replace(
+        'contextRef="fy24" unitRef="usd" scale="6"',
+        'contextRef="fy24" unitRef="usd" scale="6" sign="-"',
+    )
+    batch = tagged_table_batch(html=html)
+    (filing,) = batch.filings
+    (record,) = table_records(
+        batch.chunks,
+        {chunk.doc_id: chunk.structure_id for chunk in batch.chunks},
+        {filing.source.document.document_id: filing.facts},
+    )
+    cells = {(cell.row, cell.column): cell.interpretation for cell in record.cells}
+    negated, plain = cells[(1, 1)], cells[(1, 2)]
+    assert negated.reading is not None and plain.reading is not None
+    assert (negated.status, negated.value, negated.reading.overrides) == (
+        "known",
+        Decimal(-60922),
+        ("sign",),
+    )
+    assert (plain.value, plain.reading.overrides) == (Decimal(26974), ())
+
+
+def test_only_an_inline_xbrl_tag_states_a_sign():
+    """An unsigned inline XBRL tag is positive; a DART tag states no sign at all."""
+    fact = SourceFact(0, 1, "x", "CFY2024dFY", None, None, None, None, "1,234")
+    assert _joined(fact, FilingFacts("dart", facts=(fact,))).sign is None
+    assert _joined(fact, FilingFacts("ixbrl", facts=(fact,))).sign == "+"
+    negated = replace(fact, sign="-")
+    assert _joined(negated, FilingFacts("ixbrl", facts=(negated,))).sign == "-"
