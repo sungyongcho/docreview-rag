@@ -395,7 +395,11 @@ async def run_agent(
             record_step(turn, (), usage)
             return finish(
                 "budget_exceeded",
-                failure="provider usage exceeded the cumulative token budget",
+                failure=(
+                    "provider usage exceeded the cumulative cost budget"
+                    if total_cost > limits.max_total_cost_usd
+                    else "provider usage exceeded the cumulative token budget"
+                ),
             )
         if turn.incomplete:
             record_step(turn, (), usage)

@@ -237,7 +237,7 @@ def test_a_query_embedding_is_reserved_then_sent_once():
     assert len(vector) == 384 and [body["input"] for body in sent] == [["revenue"]]
     tokens = provider.count_input_tokens("revenue")
     assert budget.attempts == 1
-    assert budget.reserved_usd == Decimal(tokens) * Decimal("0.13") / Decimal(1_000_000)
+    assert budget.accounted_usd == Decimal(tokens) * Decimal("0.13") / Decimal(1_000_000)
     assert provider.usage.requests == 1
 
 
@@ -245,14 +245,14 @@ def test_billed_embedding_usage_past_the_cap_blocks_the_next_query():
     """100,000 billed tokens ($0.013) under a $0.01 cap: the next query is never sent."""
     budget, sent, refused = embed_twice("0.01", (100_000,))
     assert refused is not None and len(sent) == 1
-    assert budget.reserved_usd == Decimal("0.013")
+    assert budget.accounted_usd == Decimal("0.013")
 
 
 def test_a_billed_excess_leaves_less_room_for_the_next_query():
     """Without the $0.0065 excess the second query would fit; with it, it is refused unsent."""
     budget, sent, refused = embed_twice(str(Decimal("0.0065") + EMBEDDING_TOKEN_USD / 2), (50_000,))
     assert refused is not None and len(sent) == 1
-    assert budget.reserved_usd == Decimal("0.0065")
+    assert budget.accounted_usd == Decimal("0.0065")
 
 
 def test_a_billed_excess_that_still_fits_lets_the_next_query_run():
@@ -260,7 +260,7 @@ def test_a_billed_excess_that_still_fits_lets_the_next_query_run():
     budget, sent, refused = embed_twice("0.01", (50_000,))
     assert refused is None and len(sent) == 2
     tokens = capped(Reservation(Decimal(1), 1), []).count_input_tokens("revenue 2024")
-    assert budget.reserved_usd == Decimal("0.0065") + tokens * EMBEDDING_TOKEN_USD
+    assert budget.accounted_usd == Decimal("0.0065") + tokens * EMBEDDING_TOKEN_USD
 
 
 def test_an_exhausted_embedding_budget_is_not_a_correctable_tool_error():
@@ -339,7 +339,7 @@ def test_reservation_keeps_failed_estimates_and_blocks_over_the_cap(tmp_path):
     budget.reserve(Decimal("0.006"), "embedding")
     with pytest.raises(BudgetExhaustedError):
         budget.reserve(Decimal("0.005"), "embedding")
-    assert budget.reserved_usd == Decimal("0.006")
+    assert budget.accounted_usd == Decimal("0.006")
     events = [json.loads(line) for line in journal.read_text().splitlines()]
     assert [event["status"] for event in events] == ["reserved", "blocked"]
 
@@ -735,8 +735,8 @@ def test_reservations_and_observed_usage_are_recorded_apart(asked):
     """Reserved USD comes from the counts and output ceiling; usage is what the replies said."""
     settings, budget = asked.settings, asked.outcome["budget"]
     expected = settings.reservation(1200) + settings.reservation(1500)
-    assert (budget["reserved_usd"], budget["attempts"]) == (str(expected), 2)
-    assert budget["counted_input_tokens"] == 2700
+    assert (budget["accounted_usd"], budget["attempts"]) == (str(expected), 2)
+    assert budget["admitted_input_tokens"] == 2700
     observed = [
         (o["response_id"], o["input_tokens"], o["output_tokens"]) for o in budget["observed"]
     ]
@@ -846,7 +846,7 @@ def test_a_tool_result_without_structured_content_still_reports_the_question(tmp
     outcome = ask_with_search(tmp_path, search_filings)
     assert (outcome["status"], outcome["answer"]) == ("tool_error", None)
     assert outcome["failure"] == "ValueError: tool search_filings evidence extraction failed"
-    assert outcome["budget"]["reserved_usd"] == str(LUNA.reservation(1000))
+    assert outcome["budget"]["accounted_usd"] == str(LUNA.reservation(1000))
 
 
 def test_trace_excludes_model_reasoning_and_redacts_credentials(tmp_path):
@@ -953,7 +953,7 @@ def test_a_turn_without_an_answer_reports_why(tmp_path, reply, status, failure):
     outcome, budget = ask_offline(tmp_path, fake)
     assert (outcome["status"], outcome["answer"], outcome["failure"]) == (status, None, failure)
     assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH]
-    assert budget.reserved_usd == LUNA.reservation(1000)
+    assert budget.accounted_usd == LUNA.reservation(1000)
 
 
 def test_observed_cost_includes_cache_writes_without_refunding_the_reservation(tmp_path):
@@ -969,7 +969,7 @@ def test_observed_cost_includes_cache_writes_without_refunding_the_reservation(t
     ) == (1000, 100, 400)
     # 500 regular + 100 cached + 400 cache-write input tokens, plus 10 output tokens.
     assert Decimal(event["observed_usd"]) == Decimal("0.000214")
-    assert budget.reserved_usd == Decimal("0.0051652")
+    assert budget.accounted_usd == Decimal("0.0051652")
     assert (
         json.loads((tmp_path / "budget.jsonl").read_text().splitlines()[-1])["observed_usd"]
         == (event["observed_usd"])
@@ -994,7 +994,7 @@ def test_unavailable_usage_is_not_reported_as_zero_or_a_lost_response(tmp_path, 
     assert event["observed_usd"] is None
     assert event["response_id"] == "resp_call_absent"
     assert event["reason"] == ("invalid" if usage_kind == "invalid-details" else "missing")
-    assert budget.reserved_usd == Decimal("0.0051652")
+    assert budget.accounted_usd == Decimal("0.0051652")
     assert journal(tmp_path / "budget.jsonl") == [
         ("count", "counted"),
         ("model", "reserved"),
@@ -1008,7 +1008,7 @@ def test_zero_model_cap_is_valid_but_never_admits_a_generation(tmp_path):
     assert live.agent_model_settings(args) is not None
     fake = FakeOpenAI(counts=[1000])
     outcome, budget = ask_offline(tmp_path, fake, cap="0")
-    assert (outcome["status"], budget.attempts, budget.reserved_usd) == (
+    assert (outcome["status"], budget.attempts, budget.accounted_usd) == (
         "budget_exceeded",
         0,
         Decimal("0"),
@@ -1032,7 +1032,7 @@ def test_a_failed_count_sends_no_generation(tmp_path, failure):
     assert (outcome["status"], outcome["answer"]) == ("count_error", None)
     assert outcome["failure"].endswith("input token count failed")
     assert [path for path, _ in fake.requests] == [COUNT_PATH]
-    assert (budget.reserved_usd, budget.attempts) == (Decimal("0"), 0)
+    assert (budget.accounted_usd, budget.attempts) == (Decimal("0"), 0)
     assert journal(tmp_path / "budget.jsonl") == [("count", "failed")]
 
 
@@ -1043,7 +1043,7 @@ def test_the_usd_cap_is_checked_after_the_count_and_blocks_the_next_turn(tmp_pat
     outcome, budget = ask_offline(tmp_path, fake, cap=str(cap))
     assert (outcome["status"], outcome["answer"]) == ("budget_exceeded", None)
     assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH, COUNT_PATH]
-    assert (budget.reserved_usd, budget.attempts) == (LUNA.reservation(1000), 1)
+    assert (budget.accounted_usd, budget.attempts) == (LUNA.reservation(1000), 1)
     assert journal(tmp_path / "budget.jsonl")[-1] == ("model", "blocked")
 
 
@@ -1062,7 +1062,7 @@ def test_observed_usage_past_the_cap_is_spent_and_stops_the_next_turn(tmp_path):
     )
     assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH]
     # 500,000 input at $0.20/M plus 10 output at $1.20/M; reserved 1,000 at $0.25/M + 4,096 out.
-    assert budget.reserved_usd == Decimal("0.100012")
+    assert budget.accounted_usd == Decimal("0.100012")
     event = outcome["budget"]["observed"][0]
     assert Decimal(event["overrun_usd"]) == Decimal("0.100012") - LUNA.reservation(1000)
     assert outcome["budget"]["over_cap"] is True
@@ -1076,7 +1076,7 @@ def test_an_observed_excess_shrinks_the_room_for_later_turns(tmp_path):
     outcome, budget = ask_offline(tmp_path, fake, cap=str(cap))
     assert outcome["status"] == "budget_exceeded"
     assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH, COUNT_PATH]
-    assert budget.reserved_usd == Decimal("0.006012")
+    assert budget.accounted_usd == Decimal("0.006012")
     assert outcome["budget"]["over_cap"] is False
 
 
@@ -1085,7 +1085,7 @@ def test_an_excess_that_still_fits_lets_the_question_finish(tmp_path):
     fake = FakeOpenAI(counts=[1000, 1000], replies=[overrun(1, 30_000), absent_response()])
     outcome, budget = ask_offline(tmp_path, fake)
     assert outcome["status"] == "ok"
-    assert budget.reserved_usd == Decimal("0.006012") + LUNA.reservation(1000)
+    assert budget.accounted_usd == Decimal("0.006012") + LUNA.reservation(1000)
     assert [e.get("overrun_usd") for e in outcome["budget"]["observed"]] == [
         str(Decimal("0.006012") - LUNA.reservation(1000)),
         None,
@@ -1106,7 +1106,7 @@ def test_the_question_input_threshold_spans_turns(tmp_path):
     fake = FakeOpenAI(counts=[1000, 600], replies=[uncited(1), uncited(2)])
     outcome, budget = ask_offline(tmp_path, fake, max_input=1500)
     assert outcome["status"] == "budget_exceeded"
-    assert outcome["budget"]["counted_input_tokens"] == 1000
+    assert outcome["budget"]["admitted_input_tokens"] == 1000
     assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH, COUNT_PATH]
     assert budget.attempts == 1
 
@@ -1121,7 +1121,7 @@ def test_a_lost_response_keeps_its_reservation_and_reports_no_answer(tmp_path):
     outcome, budget = ask_offline(tmp_path, fake)
     assert (outcome["status"], outcome["answer"]) == ("provider_error", None)
     assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH]
-    assert (budget.reserved_usd, budget.attempts) == (LUNA.reservation(1000), 1)
+    assert (budget.accounted_usd, budget.attempts) == (LUNA.reservation(1000), 1)
     assert journal(tmp_path / "budget.jsonl") == [
         ("count", "counted"),
         ("model", "reserved"),
@@ -1667,3 +1667,95 @@ def test_fetch_matches_database_compares_the_whole_stored_row(monkeypatch):
             assert await live.fetch_matches_database(payload | {"body": "changed"}) is False
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "observed,expected", [("0.0005", "0.001"), ("0.001", "0.001"), ("0.003", "0.003")]
+)
+def test_accounted_budget_reports_each_requests_maximum_not_its_reservation(
+    tmp_path, observed, expected
+):
+    """Keep cheaper usage reserved and raise every accounted total on an overrun."""
+    budget = Reservation(Decimal("100"), 3, journal=tmp_path / "budget.jsonl")
+    budget.reserve(Decimal("0.001"), "model")
+    excess = budget.account_observed(Decimal("0.001"), Decimal(observed))
+    budget.write("model", {"status": "observed", "observed_usd": observed})
+    assert budget.accounted_usd == Decimal(expected)
+    assert excess == max(Decimal("0"), Decimal(observed) - Decimal("0.001"))
+    gate = ModelGate(budget, LUNA, 10000)
+    output = gate.outcome("ok")["budget"]
+    assert output["accounted_usd"] == expected
+    assert "reserved_usd" not in output
+    events = [json.loads(line) for line in (tmp_path / "budget.jsonl").read_text().splitlines()]
+    assert events[-1]["accounted_usd"] == expected
+    assert all("reserved_usd" not in event for event in events)
+
+
+def test_a_refused_token_count_is_a_projection_not_admitted_input(tmp_path):
+    """The result counts admitted input, while the blocked event names its prospective total."""
+    fake = FakeOpenAI(counts=[1000, 600], replies=[uncited(1), uncited(2)])
+    outcome, budget = ask_offline(tmp_path, fake, max_input=1500)
+    assert outcome["budget"]["admitted_input_tokens"] == 1000
+    events = [json.loads(line) for line in (tmp_path / "budget.jsonl").read_text().splitlines()]
+    assert events[-1]["next_admitted_input_tokens"] == 1600
+    assert "admitted_input_tokens" not in events[-1]
+    assert budget.attempts == 1
+
+
+@pytest.mark.parametrize("lost", [False, True])
+def test_sequential_live_adapter_accounts_observed_overruns_or_unknown_requests(
+    tmp_path, monkeypatch, lost
+):
+    """The sequential adapter keeps the same per-request max rule, including a lost response."""
+    from app.agent import loop, provider
+    from app.agent.tools.registry import ToolRegistry
+    from app.llm.schemas import TokenPricing
+    from app.mcp import client
+
+    async def bridge(*args):
+        """No server or tools are needed to inspect the capped provider."""
+        return ToolRegistry()
+
+    async def observed_turn(self, *args, **kwargs):
+        """Return overestimated usage or lose the response before usage is known."""
+        if lost:
+            raise RuntimeError("lost response")
+        return provider.ProviderTurn(
+            output_text="", tool_calls=(), input_tokens=1_000_000, output_tokens=1000
+        )
+
+    async def run_agent(question, *, provider, **kwargs):
+        """Run precisely the script's nested capped model without a paid request."""
+        provider.pricing = TokenPricing(
+            input_per_million_usd=Decimal("1"), output_per_million_usd=Decimal("1")
+        )
+        try:
+            await provider.turn("Question", [], [], max_output_tokens=1000)
+        except RuntimeError:
+            assert lost
+        return SimpleNamespace(model_dump=lambda **_: {"status": "tool_error" if lost else "ok"})
+
+    monkeypatch.setattr(config, "get_settings", keyed_settings)
+    monkeypatch.setattr(live, "read_only_engine", FakeEngine)
+    monkeypatch.setattr(client, "mcp_tool_registry", bridge)
+    monkeypatch.setattr(provider.OpenAIToolProvider, "turn", observed_turn)
+    monkeypatch.setattr(loop, "run_agent", run_agent)
+    args = parser().parse_args(
+        [
+            "r",
+            "agent",
+            "--issuer",
+            "AMD",
+            "--years",
+            "2024",
+            "--question",
+            "Q?",
+            "--model-cap",
+            "100",
+        ]
+    )
+    outcome = asyncio.run(live.run_agent_over_mcp(object(), tmp_path, args))
+    events = [json.loads(line) for line in (tmp_path / "budget.jsonl").read_text().splitlines()]
+    assert events[-1]["status"] == ("unknown" if lost else "observed")
+    assert outcome["budget"]["accounted_usd"] == events[-1]["accounted_usd"]
+    assert (Decimal(outcome["budget"]["accounted_usd"]) == Decimal("1.001")) is (not lost)

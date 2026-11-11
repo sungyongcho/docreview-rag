@@ -197,7 +197,7 @@ def test_a_reservation_blocks_requests_before_they_are_sent():
     calls.append(len(model.requests))
 
     assert calls == [1, 1, 2, 2]
-    assert (budget.reserved_usd, budget.attempts) == (Decimal("0.04"), 2)
+    assert (budget.accounted_usd, budget.attempts) == (Decimal("0.04"), 2)
 
 
 def test_usage_metadata_arrives_only_with_the_reply():

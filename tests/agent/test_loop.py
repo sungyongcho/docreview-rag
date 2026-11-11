@@ -887,3 +887,26 @@ def test_invalid_fetch_arguments_keep_existing_validation_errors(invalid_id):
     assert error is not None
     assert "invalid arguments" in error
     assert reads == []
+
+
+@pytest.mark.parametrize(
+    "input_tokens,cost_cap,expected", [(10, "0.000001", "cost"), (100_000, "100", "token")]
+)
+def test_observed_budget_failure_names_the_resource_that_exceeded_its_cap(
+    input_tokens, cost_cap, expected
+):
+    """A monetary overrun is never described as a token-count overrun."""
+    provider = RecordingToolProvider([turn(input_tokens=input_tokens)])
+    provider.pricing = TokenPricing(
+        input_per_million_usd=Decimal("1"), output_per_million_usd=Decimal("0")
+    )
+    result = asyncio.run(
+        run_agent(
+            "Question",
+            registry=registry_with_search(),
+            provider=provider,
+            budget=AgentBudget(max_total_cost_usd=Decimal(cost_cap)),
+        )
+    )
+    assert result.status == "budget_exceeded"
+    assert result.failure == f"provider usage exceeded the cumulative {expected} budget"
