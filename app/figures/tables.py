@@ -27,7 +27,7 @@ unknown.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import re
 from typing import Literal
@@ -271,7 +271,9 @@ class CellFact:
     ``denominator`` are the inline XBRL unit's measures (``iso4217:USD``,
     ``xbrli:shares``); DART facts state no unit, so both are None, as is ``scale``.
     ``sign`` is ``-`` when an inline XBRL tag negates its displayed number and ``+``
-    when it states no sign; DART tags state none, so their ``sign`` is None.
+    when it states no sign; DART tags state none, so their ``sign`` is None. Context
+    dates are joined transiently from existing records to distinguish opening
+    instants from annual ending periods; no new persistence columns are required.
     """
 
     concept: str
@@ -282,6 +284,9 @@ class CellFact:
     scale: int | None
     text: str
     sign: Literal["-", "+"] | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    instant: date | None = None
 
 
 CellStatus = Literal[
@@ -917,6 +922,42 @@ def _negative(text: str) -> bool | None:
     return None if value is None else value < 0
 
 
+def _shifted_columns(
+    cells: Sequence[TableCellReading], facts: Mapping[tuple[int, int], Sequence[CellFact]]
+) -> set[int]:
+    """Undate siblings only for an established fiscal-period-end mapping conflict.
+
+    An instant at a duration's opening boundary has a different role from the
+    column's annual end; its prior-year mapping cannot undate the closing balance.
+    Facts without context dates establish no role and no column-wide conflict.
+    """
+    matched = {
+        (cell.row, cell.column): facts[(cell.row, cell.column)][0]
+        for cell in cells
+        if cell.basis == "fact" and len(facts.get((cell.row, cell.column), ())) == 1
+    }
+    shifted: set[int] = set()
+    for cell in cells:
+        if "year" not in cell.overrides or (fact := matched.get((cell.row, cell.column))) is None:
+            continue
+        starts = {
+            other.period_start
+            for (_, col), other in matched.items()
+            if col == cell.column
+            and other.period_start is not None
+            and other.period_end is not None
+        }
+        instant = fact.instant
+        opening = instant is not None and any(
+            instant in {start, start - timedelta(days=1)} for start in starts
+        )
+        if opening:
+            continue
+        if instant is not None or (fact.period_start is not None and fact.period_end is not None):
+            shifted.add(cell.column)
+    return shifted
+
+
 def read_table_cells(
     fragment: Mapping[str, object],
     facts: Mapping[tuple[int, int], Sequence[CellFact]] | None = None,
@@ -930,7 +971,9 @@ def read_table_cells(
     exactly one fact showing the same number takes the fact's facts (see
     :func:`_with_fact`), any other cell keeps its text reading; one fact showing
     another number is recorded as a ``number`` override. When a tag overrides the year
-    its column's header names, the column's untagged cells name no year. ``terms`` are the
+    its column's header names for the same annual ending role, the column's
+    untagged cells name no year; a duration's opening instant does not move its end.
+    ``terms`` are the
     period words the table's document defines ("당기", "제56기") and their fiscal
     years; a header that is one of them dates its columns. ``statement`` is what the
     table's filing declares about its statement, when its form presents several
@@ -1068,7 +1111,7 @@ def read_table_cells(
         else cell
         for cell in cells
     ]
-    shifted = {cell.column for cell in cells if "year" in cell.overrides}
+    shifted = _shifted_columns(cells, facts)
     return [
         replace(cell, years=frozenset())
         if cell.basis == "text" and cell.column in shifted

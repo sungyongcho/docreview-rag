@@ -346,3 +346,19 @@ def test_the_resolver_identity_covers_the_fact_reader(tmp_path, monkeypatch):
         assert resolver_identity() != copied
     finally:
         resolver_identity.cache_clear()
+
+
+def test_joined_facts_keep_existing_context_period_dates():
+    """Pass stored context dates into the transient reading contract without new columns."""
+    from datetime import date
+
+    from app.ingestion.parsing.facts import FactContext
+
+    source = SourceFact(0, 1, "x", "ctx", None, None, None, None, "1,234")
+    context = FactContext("ctx", date(2023, 12, 31), date(2024, 12, 28), None, 2024, ())
+    joined = _joined(source, FilingFacts("ixbrl", contexts=(context,), facts=(source,)))
+    assert (joined.period_start, joined.period_end, joined.instant) == (
+        context.period_start,
+        context.period_end,
+        None,
+    )

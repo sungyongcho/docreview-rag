@@ -1,6 +1,7 @@
 """Table cells read as values, units, currencies, years, scopes and items."""
 
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -677,7 +678,18 @@ def test_a_tagged_year_override_leaves_its_columns_untagged_cells_undated():
     fragment = table_fragment(USD_INCOME_TABLE)
     shifted = {
         (cell.row, cell.column): cell
-        for cell in read_table_cells(fragment, {(1, 1): (fact(fiscal_year=2025),)})
+        for cell in read_table_cells(
+            fragment,
+            {
+                (1, 1): (
+                    fact(
+                        fiscal_year=2025,
+                        period_start=date(2024, 12, 29),
+                        period_end=date(2025, 12, 27),
+                    ),
+                )
+            },
+        )
     }
     assert (shifted[(1, 1)].years, shifted[(1, 1)].overrides) == ({2025}, ("year",))
     assert shifted[(2, 1)].years == frozenset()
@@ -729,25 +741,28 @@ ROLLFORWARD_TABLE = one_column(
 )
 
 
-def test_a_rollforward_column_undates_its_untagged_closing_balance():
-    """Known limit (CL-8): a tagged opening balance's prior-year instant undates the column.
-
-    Its year override is legitimate, yet the rule cannot tell it from a fiscal year
-    named after another calendar year, so the untagged closing balance names no year.
-    """
+def test_a_rollforward_opening_instant_preserves_the_untagged_closing_year():
+    """An opening instant and a duration's closing year have different period roles."""
     readings = {
         (cell.row, cell.column): cell
         for cell in read_table_cells(
             table_fragment(ROLLFORWARD_TABLE),
             {
-                (1, 1): (fact(text="2,124", fiscal_year=2023),),
-                (2, 1): (fact(text="9", fiscal_year=2024),),
+                (1, 1): (fact(text="2,124", fiscal_year=2023, instant=date(2023, 12, 30)),),
+                (2, 1): (
+                    fact(
+                        text="9",
+                        fiscal_year=2024,
+                        period_start=date(2023, 12, 31),
+                        period_end=date(2024, 12, 28),
+                    ),
+                ),
             },
         )
     }
     assert readings[(1, 1)].overrides == ("year",)
     assert readings[(2, 1)].years == {2024}
-    assert readings[(3, 1)].years == frozenset()
+    assert readings[(3, 1)].years == {2024}
 
 
 def test_a_parent_heading_must_be_understood_even_without_a_part_word():
@@ -811,3 +826,26 @@ def test_understood_statement_sections_keep_ordinary_amounts(heading):
     """Whole item phrases and recognized statement sections do not qualify the rows."""
     html = one_column("2024", (heading, ""), ("Revenue", "1,234"))
     assert statuses(html) == {(2, 1): "known"}
+
+
+@pytest.mark.parametrize("opening", [date(2023, 12, 30), date(2023, 12, 31)])
+def test_both_opening_boundary_conventions_preserve_the_closing_year(opening):
+    """A beginning instant at or just before the duration start does not move its end."""
+    cells = read_table_cells(
+        table_fragment(ROLLFORWARD_TABLE),
+        {
+            (1, 1): (fact(text="2,124", fiscal_year=2023, instant=opening),),
+            (2, 1): (
+                fact(text="9", period_start=date(2023, 12, 31), period_end=date(2024, 12, 28)),
+            ),
+        },
+    )
+    assert next(c for c in cells if c.row == 3).years == {2024}
+
+
+def test_a_closing_instant_that_moves_the_year_still_undates_siblings():
+    """Retain mapping protection for a tagged closing instant with a different year."""
+    cells = read_table_cells(
+        table_fragment(), {(1, 1): (fact(fiscal_year=2025, instant=date(2024, 12, 28)),)}
+    )
+    assert next(c for c in cells if (c.row, c.column) == (2, 1)).years == frozenset()

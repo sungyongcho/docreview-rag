@@ -206,6 +206,9 @@ def _joined(fact: SourceFact, facts: FilingFacts) -> CellFact:
         fact.scale,
         fact.text,
         ("-" if fact.sign == "-" else "+") if facts.source == "ixbrl" else None,
+        None if context is None else context.period_start,
+        None if context is None else context.period_end,
+        None if context is None else context.instant,
     )
 
 
