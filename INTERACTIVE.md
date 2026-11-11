@@ -1,5 +1,3 @@
-
-<!-- ops:project:INTERACTIVE.md:v1 -->
 # INTERACTIVE — user-directed implementation and delivery
 
 INTERACTIVE is a peer role to WORKER and MAINTAINER, selected by an explicit user
@@ -25,7 +23,7 @@ scope. Runtime/tool approvals remain effective.
 Before editing, inspect current assignments, related PRs and target paths. Record exact
 file/behavior ownership in the session issue and tell overlapping workers what changed.
 Unrelated workers continue. If an overlapping writer is active, pause only the overlap,
-preserve both checkpoints and use the guarded OPS handoff under the user's succession
+preserve both checkpoints and record the handoff under the user's succession
 grant. Never claim a writer stopped merely because a label or old message says so.
 Recheck ownership before subsequent writes. Late conflict reports reopen this check.
 
@@ -58,10 +56,9 @@ Editing or failed verification stays OCCUPIED. Completion requires scoped code r
 relevant passing tests and recorded user-request evidence. User visual confirmation and
 automated checks are separate evidence; neither invents independent review.
 
-Use `opsctl interactive ready --file REQUEST.json`, then `merge` and `sync` with the
-same request. The request pins repository, PR, session task, scope, exact head/base,
-changed files, local checkout, verification, requirement decisions and explicit user
-authority. An INTERACTIVE completion uses `Self-review: LGTM` with session disclosure.
+Before merging, record in the PR the session task, scope, exact head/base, changed
+files, verification, requirement decisions and explicit user authority. Merge with a
+head-pinned squash, then fast-forward the named local main. An INTERACTIVE completion uses `Self-review: LGTM` with session disclosure.
 No separate reviewer task is required. MERGE_READY is the verified destination of a
 completed change group, never the status of every keystroke.
 
@@ -72,4 +69,3 @@ local main. Never stash/reset or replace dirty/divergent main. Recheck the visib
 and tell affected workers the new base; do not update their checkouts for them.
 
 Session records and grants are audit evidence, not cryptographic proof of user input.
-<!-- /ops:project:INTERACTIVE.md -->

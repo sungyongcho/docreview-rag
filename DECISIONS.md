@@ -1,5 +1,3 @@
-
-<!-- ops:project:DECISIONS.md:v1 -->
 # Decision and requirement ledger
 
 Canonical record of this project's agreed decisions and requirements. Sessions
@@ -7,10 +5,8 @@ consult this file at session start or intake and on any requirement change; a
 conflict between new instructions and an `active` entry is surfaced to the user
 before proceeding, and the resolution is recorded here.
 
-`opsctl project check` verifies the managed block fingerprint recorded in
-`.ops/project.json` and validates every entry's structure. Entries are appended
-under `## Entries` and never deleted; a superseded entry keeps its original text
-and gains `superseded-by` pointing at the replacing id.
+Entries are appended under `## Entries` and never deleted; a superseded entry keeps
+its original text and gains `superseded-by` pointing at the replacing id.
 
 ## Entries
 
@@ -24,7 +20,6 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - `decision`: the agreed text on one line (required)
 - `superseded-by`: `D-<id>` of the replacing entry (required when `superseded`)
 - `note`: optional one-line clarification
-<!-- /ops:project:DECISIONS.md -->
 
 ### D-1 — Repository renamed to docreview-rag
 - status: active
@@ -81,3 +76,10 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-10-26
 - source: mcp-and-langgraph Day 5A follow-up (learning branch session decision, design 2026-10-26-cell-fact-tags)
 - decision: Parsing keeps SEC inline XBRL facts and DART ACODE/ACONTEXT tags, and the period terms a DART filing declares, as relational records; a tagged cell's currency, scale, fiscal year and dimensional scope come from its tag and override the text reading with the override recorded, dimensional values are not selectable, items still come only from row labels, untagged cells keep the text rules with no general currency or period assumption, and published evaluation snapshots keep their stored readings; this is an exception to D-3's schema-freeze clause for this change only, and chunk stable_key, chunk ids and embeddings keep their current inputs.
+
+### D-9 — OPS orchestration is removed from this project
+- status: active
+- category: workflow
+- date: 2026-11-11
+- source: user instruction in the 2026-11-11 maintenance session
+- decision: Project rules no longer use the sungyongcho-ops account, opsctl and the other ops commands, OPS-managed rule blocks and their .ops/project.json fingerprints, or the DEV/OPS purpose labels; commits, pushes, PRs, status labels and work-state records use the personal identity through plain gh, and the OPS-record clause of D-1 no longer applies.

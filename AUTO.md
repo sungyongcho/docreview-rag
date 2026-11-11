@@ -1,5 +1,3 @@
-
-<!-- ops:project:AUTO.md:v1 -->
 # AUTO — unsupervised session continuation
 
 AUTO is a mode layered on the session's existing role (WORKER or INTERACTIVE),
@@ -26,8 +24,8 @@ becomes a recorded blocker, not a workaround.
 ## Records — no new tracking files
 
 - Keep the session issue's work-state marker current; post one comment per milestone
-  or blocker, not per step. The dashboard renders these, so a returning user sees
-  state at a glance without a chat transcript.
+  or blocker, not per step, so a returning user sees state at a glance without a
+  chat transcript.
 - A multi-track effort may keep one `plan.md` in the driving repository, updated in
   place: completed items marked, new blockers appended at the bottom.
 - Never create `auto-plan.md` or other one-off tracking files; existing records
@@ -43,4 +41,3 @@ When self-judgeable work is exhausted or everything remaining is blocked:
    user action that unblocks it (links where useful).
 3. Update the work-state marker (`REVIEW_READY`, `BLOCKED` or the fitting state).
 4. End the turn — no waiting loops, no half-finished silent state.
-<!-- /ops:project:AUTO.md -->
