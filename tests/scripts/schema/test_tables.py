@@ -51,7 +51,7 @@ def test_a_snapshot_fragment_becomes_one_frozen_table_with_the_same_readings():
     assert readings == {
         (1, 1): ("revenue", [2024], [Decimal("25785")], "USD"),
         (1, 2): ("revenue", [2023], [Decimal("22680")], "USD"),
-        (2, 1): ("net income", [2024], [Decimal("1641")], "USD"),
+        (2, 1): ("net income", [2024], [Decimal("-1641")], "USD"),
     }
     assert [row["ordinal"] for row in rows[SnapshotChunkTableCell]] == list(range(6))
 
