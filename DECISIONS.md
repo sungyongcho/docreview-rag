@@ -83,3 +83,10 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: user instruction in the 2026-11-11 maintenance session
 - decision: Project rules no longer use the sungyongcho-ops account, opsctl and the other ops commands, OPS-managed rule blocks and their .ops/project.json fingerprints, or the DEV/OPS purpose labels; commits, pushes, PRs, status labels and work-state records use the personal identity through plain gh, and the OPS-record clause of D-1 no longer applies.
+
+### D-10 — Untagged DART cells take statement scope from the report's own declarations
+- status: active
+- category: interface
+- date: 2026-10-26
+- source: commit 25a16a19 on mcp-and-langgraph (user instruction recorded in the 2026-10-26 fact-tag log; entry added by the 2026-11-11 audit)
+- decision: For DART tables without fact tags, parsing reads the statement kind, scope and basis that the report itself declares (section codes, table-group classes and summary headings) into parsed_tables.statement_kind, statement_scope and statement_basis; cells of a declared consolidated statement are entity-wide, cells of a separate statement are scope_qualified, and cells of notes, equity-change statements and undeclared tables are scope_unknown; this narrows D-8's "untagged cells keep the text rules" for scope only and is an exception to D-3's schema-freeze clause for this change only.
