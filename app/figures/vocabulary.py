@@ -6,7 +6,7 @@ without an item, so wording the checker does not understand fails closed instead
 borrowing an item named elsewhere.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 import re
 from typing import Literal
 
@@ -191,9 +191,16 @@ ITEM_WORDS = frozenset(word for words, _ in ENGLISH_PHRASES for word in words)
 
 # How a question's words stand around its item phrases (see :func:`items_named`).
 # Words a walk from an item phrase passes over: fillers without "%", "percent" and
-# "us" ("US revenue" is a segment), connectives, "FY" and Korean year words.
-_QUESTION_PASS = (FILLERS - {"%", "percent", "us"}) | CONNECTIVES | {"fy"}
-_QUESTION_PASS_KO = frozenset({"년", "년도", "회계연도", "사업연도", "각각"})
+# "us" ("US revenue" is a segment), connectives, "FY", Korean year words, the
+# question's own company ("the company's", "당사의") and words that only restate the
+# entity scope ("consolidated", "total", "연결 기준", "전체", "총"). "별도", "segment"
+# and "부문" are not among them: they narrow the scope, so they qualify the item.
+_QUESTION_PASS = (FILLERS - {"%", "percent", "us"}) | CONNECTIVES
+_QUESTION_PASS |= {"fy", "company's", "companies'", "consolidated", "total"}
+_QUESTION_PASS_KO = frozenset({"년", "년도", "회계연도", "사업연도", "각각", "회사의", "당사의"})
+_QUESTION_PASS_KO |= {"연결", "기준", "연결기준", "전체", "총"}
+# Scope words that may be written glued to a Korean item ("연결매출액", "총매출액").
+_SCOPE_PREFIXES_KO = ("연결", "전체", "총")
 # Words that end such a walk because what lies beyond them no longer qualifies the item.
 _QUESTION_STOPS = frozenset({"what", "which", "how", "much", "did", "does", "do", "?", "!"})
 _QUESTION_STOPS |= {"tell", "show", "give", "me", "？"}
@@ -210,28 +217,31 @@ _QUESTION_ENDINGS_KO = (
     *("으로는", "에서는", "으로", "에서", "까지", "부터", "이며", "이고"),
     *("은", "는", "이", "가", "을", "를", "의", "에", "도", "와", "과", "로", "만", "고", "며"),
 )
-# A possessive names the issuer only when capitalized ("AMD's") or as "company's";
-# "the segment's revenue" is a qualified item.
-_POSSESSIVE = re.compile(r"[A-Z].*(?:['’]s|s['’])")
-_GENERIC_POSSESSIVES = frozenset({"company's", "companies'"})
+# Words an issuer name made only of would blank out of the vocabulary itself.
+_VOCABULARY_WORDS = FILLERS | CONNECTIVES | ITEM_WORDS | _QUESTION_STOPS | _QUESTION_PASS
 
-type _QuestionKind = Literal["item", "pass", "stop", "possessive", "unknown"]
+type _QuestionKind = Literal["item", "pass", "stop", "unknown"]
 
 
 def _korean_question_word(word: str) -> tuple[_QuestionKind, str | None]:
-    """Classify one Korean question word, reading at most one particle off its end."""
+    """Classify one Korean question word, reading at most one particle off its end.
+
+    A scope word written glued to the front of an item ("연결매출액") keeps the item.
+    """
     if word.startswith(_QUESTION_STOPS_KO):
         return "stop", None
-    for ending in ("", *_QUESTION_ENDINGS_KO):
-        if ending and not word.endswith(ending):
+    for prefix in ("", *_SCOPE_PREFIXES_KO):
+        if prefix and not word.startswith(prefix):
             continue
-        stem = word[: len(word) - len(ending)]
-        if stem in KOREAN_PHRASES:
-            return ("unknown", None) if ending == "의" else ("item", KOREAN_PHRASES[stem])
-        if stem in _QUESTION_PASS_KO:
-            return "pass", None
-    if word.endswith("의") and len(word) > 1:
-        return "possessive", None
+        body = word[len(prefix) :]
+        for ending in ("", *_QUESTION_ENDINGS_KO):
+            if ending and not body.endswith(ending):
+                continue
+            stem = body[: len(body) - len(ending)]
+            if stem in KOREAN_PHRASES:
+                return ("unknown", None) if ending == "의" else ("item", KOREAN_PHRASES[stem])
+            if not prefix and stem in _QUESTION_PASS_KO:
+                return "pass", None
     return "unknown", None
 
 
@@ -242,32 +252,48 @@ def _question_word(word: str) -> _QuestionKind:
         return "stop"
     if key in _QUESTION_PASS:
         return "pass"
-    if _POSSESSIVE.fullmatch(word) or key in _GENERIC_POSSESSIVES:
-        return "possessive"
     return "unknown"
 
 
 def _plain_side(kinds: Sequence[_QuestionKind], start: int, step: int) -> bool:
     """Whether the words from ``start`` outward, by ``step``, leave an item phrase plain.
 
-    The walk passes fillers and connectives and succeeds at the text's edge, a stop
-    word, a year or another item phrase. Before the phrase a possessive ("AMD's",
-    "삼성전자의") also ends it, unless an unknown word precedes it ("Data Center's");
-    after the phrase a possessive or any unknown word qualifies the item.
+    The walk passes fillers, connectives and scope words and succeeds at the text's
+    edge, a stop word, a year or another item phrase; any unknown word on the way,
+    including a company name the caller did not pass, qualifies the item.
     """
     index = start
-    while 0 <= index < len(kinds):
-        kind = kinds[index]
-        if kind == "pass":
-            index += step
+    while 0 <= index < len(kinds) and kinds[index] == "pass":
+        index += step
+    return not 0 <= index < len(kinds) or kinds[index] in {"item", "stop"}
+
+
+def _issuer_names(issuers: Collection[str]) -> re.Pattern[str] | None:
+    """Match the question's issuer names as whole names, with a possessive or particle.
+
+    A name made only of vocabulary words ("Revenue", "US", "Total") or naming an item
+    is ignored, so an issuer can never blank an item or unlock a qualifier; nor can a
+    word inside a longer name ("Data" leaves "Center" in "Data Center revenue").
+    """
+    names: set[str] = set()
+    for issuer in issuers:
+        name = " ".join(issuer.split())
+        words = TOKEN.findall(phrase_key(name))
+        if not words or phrase_key(name) in PHRASE_ITEMS:
             continue
-        if kind == "possessive":
-            return step < 0 and (index == 0 or kinds[index - 1] in {"pass", "stop", "item"})
-        return kind in {"item", "stop"}
-    return True
+        if all(word in _VOCABULARY_WORDS or word in KOREAN_PHRASES for word in words):
+            continue
+        names.add(name)
+    if not names:
+        return None
+    spelled = "|".join(
+        re.escape(name).replace(r"\ ", r"\s+") for name in sorted(names, key=len, reverse=True)
+    )
+    particles = "|".join(sorted(_QUESTION_ENDINGS_KO, key=len, reverse=True))
+    return re.compile(rf"(?<!\w)(?:{spelled})(?:['’]s|['’]|{particles})?(?!\w)", re.IGNORECASE)
 
 
-def items_named(text: str) -> frozenset[str]:
+def items_named(text: str, *, issuers: Collection[str] = ()) -> frozenset[str]:
     """Return the financial items a question names, read with the answers' vocabulary.
 
     English phrases match whole words, longest first; a Korean word names an item when
@@ -278,7 +304,20 @@ def items_named(text: str) -> frozenset[str]:
     never answer a qualified question. A "(loss)" or note reference keeps the item, as
     in a row label. A question naming no listed phrase names no item: nothing is
     inferred from other words.
+
+    Parameters
+    ----------
+    text : str
+        The question.
+    issuers : Collection[str]
+        Names and aliases of the companies the question is about. Each is blanked as
+        a whole name, case-insensitively, with its possessive ("AMD's", "Devices'")
+        or Korean particle ("삼성전자의"), before items are read. No other company
+        name is guessed, so without them a company name next to an item qualifies it.
     """
+    pattern = _issuer_names(issuers)
+    if pattern is not None:
+        text = pattern.sub(" ", text)
     written = TOKEN.findall(SAME_ITEM_QUALIFIER.sub(" ", text))
     words = [phrase_key(word) for word in written]
     kinds: list[_QuestionKind] = ["unknown"] * len(words)
