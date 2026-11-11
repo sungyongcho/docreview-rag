@@ -245,3 +245,17 @@ def test_a_period_stated_without_a_year_number_cannot_borrow_running_text(period
         == "unverified"
     )
     assert check_figures("Revenue was USD 1,234 million.", evidence, []).verdict == "verified"
+
+
+@pytest.mark.parametrize(
+    "suffix,verdict", [("in FY2024", "verified"), ("in May 2024", "unverified")]
+)
+def test_grounded_issuer_words_are_not_claim_periods(suffix, verdict):
+    """A month in the grounded issuer name is identity; a separately stated month is period."""
+    from app.figures.vocabulary import items_named
+
+    question = f"What was May Industries revenue {suffix}?"
+    assert bool(items_named(question, issuers=("May Industries",))) is (verdict == "verified")
+    evidence = [EvidenceText(1, "", "May Industries FY2024 · Item 7", [reading()])]
+    answer = f"May Industries revenue {suffix} was USD 1,234 million."
+    assert check_figures(answer, evidence, [2024]).verdict == verdict

@@ -462,7 +462,7 @@ def _claims(text: str, *, answer: bool = False, issuer: str | None = None) -> li
     return [
         claim
         for first, last in zip(bounds, bounds[1:], strict=False)
-        for claim in _sentence_claims(masked, text, first, last, answer)
+        for claim in _sentence_claims(masked, subject, first, last, answer)
     ]
 
 

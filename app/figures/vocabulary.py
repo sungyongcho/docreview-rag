@@ -368,11 +368,15 @@ def items_named(text: str, *, issuers: Collection[str] = ()) -> frozenset[str]:
         name is guessed, so without them a company name next to an item qualifies it.
     """
     named: set[str] = set()
+    issuer_pattern = _issuer_names(issuers)
     for sentence in re.split(r"[?!？！]", text):
         _, kinds, spans = _question_words(sentence, issuers)
         if spans and (
             not _plain_sentences(kinds)
-            or classify_period(normalize_fiscal_years(sentence)) in {"subannual", "date"}
+            or classify_period(
+                issuer_pattern.sub(" ", sentence) if issuer_pattern is not None else sentence
+            )
+            in {"subannual", "date"}
         ):
             return frozenset()
         named.update(item for _, _, item in spans)
