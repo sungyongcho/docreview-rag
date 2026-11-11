@@ -190,7 +190,19 @@ def test_a_missing_requested_combination_is_returned_for_correction():
 def test_a_question_without_a_recognized_item_is_withheld():
     """Withhold rather than guess which row the question meant."""
     result = review(proposal(("2024:r1c1", "revenue", 2024)), stored(), items=frozenset())
+    korean = review(
+        proposal(("2024:r1c1", "revenue", 2024)), stored(), items=frozenset(), locale="ko"
+    )
     assert result.report is not None and result.report.label == "UNVERIFIED"
+    assert result.report.answer == (
+        "The application could not read which item the question asks for, so the selected "
+        "table cells could not be matched to it and no figure is reported."
+    )
+    assert korean.report is not None and korean.report.answer == (
+        "질문이 묻는 항목을 애플리케이션이 읽지 못해 선택된 표의 칸을 질문과 맞출 수 없으므로 "
+        "수치를 보고하지 않습니다."
+    )
+    assert "25,785" not in result.report.answer + korean.report.answer
 
 
 def test_cannot_resolve_and_not_found_are_distinct_reports():

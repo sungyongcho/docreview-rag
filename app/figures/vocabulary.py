@@ -6,7 +6,9 @@ without an item, so wording the checker does not understand fails closed instead
 borrowing an item named elsewhere.
 """
 
+from collections.abc import Sequence
 import re
+from typing import Literal
 
 from app.figures.currency import CURRENCY
 
@@ -187,25 +189,118 @@ KOREAN_PHRASES = {phrase: item for phrase, item in PHRASE_ITEMS.items() if not p
 ITEM_WORDS = frozenset(word for words, _ in ENGLISH_PHRASES for word in words)
 
 
+# How a question's words stand around its item phrases (see :func:`items_named`).
+# Words a walk from an item phrase passes over: fillers without "%", "percent" and
+# "us" ("US revenue" is a segment), connectives, "FY" and Korean year words.
+_QUESTION_PASS = (FILLERS - {"%", "percent", "us"}) | CONNECTIVES | {"fy"}
+_QUESTION_PASS_KO = frozenset({"년", "년도", "회계연도", "사업연도", "각각"})
+# Words that end such a walk because what lies beyond them no longer qualifies the item.
+_QUESTION_STOPS = frozenset({"what", "which", "how", "much", "did", "does", "do", "?", "!"})
+_QUESTION_STOPS |= {"tell", "show", "give", "me", "？"}
+_QUESTION_STOPS_KO = ("얼마", "무엇", "몇", "어떻게")
+_QUESTION_YEAR = re.compile(r"(?:19|20)\d{2}")
+# A day of the month after its month ("December 31, 2024") is passed over.
+_QUESTION_DAY = re.compile(r"\d{1,2}")
+_MONTHS = frozenset(
+    {"january", "february", "march", "april", "may", "june", "july", "august"}
+    | {"september", "october", "november", "december"}
+)
+# Korean particles a question word may carry; "의" makes an item word a modifier.
+_QUESTION_ENDINGS_KO = (
+    *("으로는", "에서는", "으로", "에서", "까지", "부터", "이며", "이고"),
+    *("은", "는", "이", "가", "을", "를", "의", "에", "도", "와", "과", "로", "만", "고", "며"),
+)
+_POSSESSIVE_KEY = re.compile(r".+(?:'s|s')")
+
+type _QuestionKind = Literal["item", "pass", "stop", "possessive", "unknown"]
+
+
+def _korean_question_word(word: str) -> tuple[_QuestionKind, str | None]:
+    """Classify one Korean question word, reading at most one particle off its end."""
+    if word.startswith(_QUESTION_STOPS_KO):
+        return "stop", None
+    for ending in ("", *_QUESTION_ENDINGS_KO):
+        if ending and not word.endswith(ending):
+            continue
+        stem = word[: len(word) - len(ending)]
+        if stem in KOREAN_PHRASES:
+            return ("unknown", None) if ending == "의" else ("item", KOREAN_PHRASES[stem])
+        if stem in _QUESTION_PASS_KO:
+            return "pass", None
+    if word.endswith("의") and len(word) > 1:
+        return "possessive", None
+    return "unknown", None
+
+
+def _question_word(key: str) -> _QuestionKind:
+    """Classify one casefolded question word outside any English item phrase."""
+    if key in _QUESTION_STOPS or _QUESTION_YEAR.fullmatch(key):
+        return "stop"
+    if key in _QUESTION_PASS:
+        return "pass"
+    if _POSSESSIVE_KEY.fullmatch(key) and key[0].isalpha():
+        return "possessive"
+    return "unknown"
+
+
+def _plain_side(kinds: Sequence[_QuestionKind], start: int, step: int) -> bool:
+    """Whether the words from ``start`` outward, by ``step``, leave an item phrase plain.
+
+    The walk passes fillers and connectives and succeeds at the text's edge, a stop
+    word, a year or another item phrase. Before the phrase a possessive ("AMD's",
+    "삼성전자의") also ends it, unless an unknown word precedes it ("Data Center's");
+    after the phrase a possessive or any unknown word qualifies the item.
+    """
+    index = start
+    while 0 <= index < len(kinds):
+        kind = kinds[index]
+        if kind == "pass":
+            index += step
+            continue
+        if kind == "possessive":
+            return step < 0 and (index == 0 or kinds[index - 1] in {"pass", "stop", "item"})
+        return kind in {"item", "stop"}
+    return True
+
+
 def items_named(text: str) -> frozenset[str]:
     """Return the financial items a question names, read with the answers' vocabulary.
 
-    English phrases match whole words, longest first; Korean phrases match as stems,
-    longest first, so "매출원가" is not also read as "매출". A question naming no listed
-    phrase names no item: nothing is inferred from other words.
+    English phrases match whole words, longest first; a Korean word names an item when
+    it is a listed phrase with at most one particle, so "매출원가" is never also read as
+    "매출" and "영업이익률" names nothing. Like an answer's figure, an item phrase that
+    an unknown or qualifying word touches ("Data Center revenue", "별도 기준 매출액")
+    is not the plain item; then the question names no item at all, so a total row can
+    never answer a qualified question. A "(loss)" or note reference keeps the item, as
+    in a row label. A question naming no listed phrase names no item: nothing is
+    inferred from other words.
     """
-    found: set[str] = set()
-    words = [word.casefold() for word in TOKEN.findall(text)]
-    used = [False] * len(words)
+    words = [phrase_key(word) for word in TOKEN.findall(SAME_ITEM_QUALIFIER.sub(" ", text))]
+    kinds: list[_QuestionKind] = ["unknown"] * len(words)
+    spans: list[tuple[int, int, str]] = []
     for phrase, item in ENGLISH_PHRASES:
         size = len(phrase)
         for start in range(len(words) - size + 1):
-            if not any(used[start : start + size]) and tuple(words[start : start + size]) == phrase:
-                found.add(item)
-                used[start : start + size] = [True] * size
-    remaining = "".join(text.split())
-    for phrase in sorted(KOREAN_PHRASES, key=len, reverse=True):
-        if phrase in remaining:
-            found.add(KOREAN_PHRASES[phrase])
-            remaining = remaining.replace(phrase, " ")
-    return frozenset(found)
+            if (
+                all(kind == "unknown" for kind in kinds[start : start + size])
+                and tuple(words[start : start + size]) == phrase
+            ):
+                spans.append((start, start + size, item))
+                covered: list[_QuestionKind] = ["item"] * size
+                kinds[start : start + size] = covered
+    for index, word in enumerate(words):
+        if kinds[index] == "item":
+            continue
+        if "가" <= word[0] <= "힣":
+            kind, item = _korean_question_word(word)
+            if item is not None:
+                spans.append((index, index + 1, item))
+        elif _QUESTION_DAY.fullmatch(word) and index and words[index - 1] in _MONTHS:
+            kind = "pass"
+        else:
+            kind = _question_word(word)
+        kinds[index] = kind
+    plain = all(
+        _plain_side(kinds, start - 1, -1) and _plain_side(kinds, end, 1) for start, end, _ in spans
+    )
+    return frozenset(item for _, _, item in spans) if plain else frozenset()

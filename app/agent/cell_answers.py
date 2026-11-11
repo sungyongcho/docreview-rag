@@ -64,6 +64,16 @@ CANNOT_RESOLVE = {
         "수치를 보고하지 않습니다."
     ),
 }
+QUESTION_ITEM_UNREAD = {
+    "en": (
+        "The application could not read which item the question asks for, so the selected "
+        "table cells could not be matched to it and no figure is reported."
+    ),
+    "ko": (
+        "질문이 묻는 항목을 애플리케이션이 읽지 못해 선택된 표의 칸을 질문과 맞출 수 없으므로 "
+        "수치를 보고하지 않습니다."
+    ),
+}
 UNIT_HELD = {
     "en": (
         "The cited table names this item, but the unit or currency of its cell could not "
@@ -308,9 +318,9 @@ def review_cell_selection(
         return CellVerdict(
             AgentReportAnswer(
                 label="UNVERIFIED",
-                answer=CANNOT_RESOLVE[locale],
+                answer=QUESTION_ITEM_UNREAD[locale],
                 citations=_citations(chunk_ids, evidence),
-                rationale="The question names no item the application can match to a table row.",
+                rationale=QUESTION_ITEM_UNREAD[locale],
             ),
             checks=tuple(_check(cell, "question item unknown") for cell in cells),
         )
