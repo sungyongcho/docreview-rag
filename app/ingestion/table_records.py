@@ -38,12 +38,27 @@ def builder_identity() -> str:
     return hashlib.sha256(b"".join((_APP / name).read_bytes() for name in names)).hexdigest()
 
 
+# The code that decides a stored reading: the figure rules, and the fact reader whose
+# contexts, period terms and statement declarations give tagged and untagged cells
+# their years and scopes.
+RESOLVER_FILES = (
+    "figures/currency.py",
+    "figures/vocabulary.py",
+    "figures/text.py",
+    "figures/tables.py",
+    "ingestion/parsing/facts.py",
+)
+
+
 @lru_cache(maxsize=1)
 def resolver_identity() -> str:
-    """Fingerprint the code that reads units, currencies, years and items from a table."""
-    names = ("currency.py", "vocabulary.py", "text.py", "tables.py")
+    """Fingerprint the code that reads units, currencies, years, scopes and items.
+
+    Besides the figure rules this includes the fact reader (``RESOLVER_FILES``),
+    since its contexts, period terms and statement declarations change readings.
+    """
     return hashlib.sha256(
-        b"".join((_APP / "figures" / name).read_bytes() for name in names)
+        b"".join((_APP / name).read_bytes() for name in RESOLVER_FILES)
     ).hexdigest()
 
 

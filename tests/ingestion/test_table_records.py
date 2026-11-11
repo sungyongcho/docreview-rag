@@ -3,11 +3,13 @@
 from dataclasses import asdict, replace
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 import re
 
 import pytest
 
 from app.figures.tables import read_table_cells
+from app.ingestion import table_records as table_records_module
 from app.ingestion.chunking import CellFragment, TableFragment, chunk_filing
 from app.ingestion.parsing.facts import (
     FilingFacts,
@@ -17,6 +19,7 @@ from app.ingestion.parsing.facts import (
 )
 from app.ingestion.parsing.models import Block
 from app.ingestion.table_records import (
+    RESOLVER_FILES,
     _joined,
     builder_identity,
     resolver_identity,
@@ -317,3 +320,27 @@ def test_only_an_inline_xbrl_tag_states_a_sign():
     assert _joined(fact, FilingFacts("ixbrl", facts=(fact,))).sign == "+"
     negated = replace(fact, sign="-")
     assert _joined(negated, FilingFacts("ixbrl", facts=(negated,))).sign == "-"
+
+
+def test_the_resolver_identity_covers_the_fact_reader(tmp_path, monkeypatch):
+    """Readings change with the figure rules and with facts.py, so both are hashed."""
+    assert RESOLVER_FILES == (
+        "figures/currency.py",
+        "figures/vocabulary.py",
+        "figures/text.py",
+        "figures/tables.py",
+        "ingestion/parsing/facts.py",
+    )
+    app = Path(table_records_module.__file__).resolve().parents[1]
+    for name in RESOLVER_FILES:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_bytes((app / name).read_bytes())
+    monkeypatch.setattr(table_records_module, "_APP", tmp_path)
+    resolver_identity.cache_clear()
+    try:
+        copied = resolver_identity()
+        (tmp_path / "ingestion/parsing/facts.py").write_bytes(b"# changed\n")
+        resolver_identity.cache_clear()
+        assert resolver_identity() != copied
+    finally:
+        resolver_identity.cache_clear()
