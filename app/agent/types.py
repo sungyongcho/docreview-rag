@@ -26,7 +26,7 @@ type AgentStatus = Literal["ok", "budget_exceeded", "provider_error", "tool_erro
 
 
 class AgentPeriodMismatch(StrictSchema):
-    """Every figure of a supported answer came from a period other than the requested one."""
+    """Figures of the answer matched only a different known fiscal period."""
 
     requested_fiscal_years: tuple[PositiveInt, ...]
     evidenced_fiscal_years: tuple[PositiveInt, ...]

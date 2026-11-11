@@ -22,6 +22,7 @@ from app.agent.types import (
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
+from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text
 from app.figures.answers import (
     UNIT_UNVERIFIED_ANSWER,
     UNIT_UNVERIFIED_RATIONALE,
@@ -132,16 +133,13 @@ def period_mismatch_report(
         ),
         figures=tuple(check.figure for check in mismatched),
     )
-    requested_text = ", ".join(str(year) for year in mismatch.requested_fiscal_years)
-    evidenced_text = ", ".join(str(year) for year in mismatch.evidenced_fiscal_years)
     report = AgentReportAnswer(
         label="PERIOD_MISMATCH",
-        answer=(
-            f"The cited evidence does not report this for {requested_text}. "
-            f"The figures {', '.join(mismatch.figures)} are for {evidenced_text}."
+        answer=period_mismatch_text(
+            mismatch.requested_fiscal_years, mismatch.evidenced_fiscal_years, mismatch.figures
         ),
         citations=answer.citations,
-        rationale="The cited figures belong to a different period than the question asks about.",
+        rationale=period_mismatch_rationale(),
     )
     return report, mismatch
 

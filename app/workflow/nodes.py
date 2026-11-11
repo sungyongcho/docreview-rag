@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel
 
 from app.contracts.evidence import EvidenceCitation
+from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text
 from app.figures.answers import (
     UNIT_UNVERIFIED_ANSWER,
     UNIT_UNVERIFIED_ANSWER_KO,
@@ -434,7 +435,7 @@ def check_node(
     evidence. Any figure whose cited item unit, or own unit, cannot be established
     withholds the whole answer, which the report states as ``UNVERIFIED`` with the
     citations kept, even beside other failing figures. Otherwise a figure the evidence
-    contradicts or cannot hold downgrades it to absence, and figures that all come from
+    contradicts or cannot hold downgrades it to absence, and mismatched figures that come from
     other periods record a period mismatch, which the report states instead of the answer.
     """
     if result.status != "ok":
@@ -555,14 +556,12 @@ def _absence_rationale(state: WorkflowState) -> str:
 
 def _mismatch_answer(state: WorkflowState, mismatch: PeriodMismatch) -> str:
     """State which period the cited figures belong to instead of the requested one."""
-    requested = ", ".join(str(year) for year in mismatch.requested_fiscal_years)
-    evidenced = ", ".join(str(year) for year in mismatch.evidenced_fiscal_years)
-    figures = ", ".join(mismatch.figures)
-    return _fixed_rationale(
-        state,
-        f"The cited evidence does not report this for {requested}. "
-        f"The figures {figures} are for {evidenced}.",
-        f"인용 근거에는 {requested}년 값이 없습니다. {figures}은(는) {evidenced}년 값입니다.",
+    locale = detect_query_language(state.original_query or state.query)
+    return period_mismatch_text(
+        mismatch.requested_fiscal_years,
+        mismatch.evidenced_fiscal_years,
+        mismatch.figures,
+        locale=locale,
     )
 
 
@@ -636,8 +635,8 @@ def report_node(state: WorkflowState) -> WorkflowState:
                 if mismatch is None
                 else _fixed_rationale(
                     state,
-                    "The cited figures belong to a different period than the question asks about.",
-                    "인용한 수치가 질문한 기간이 아닌 다른 기간의 값입니다.",
+                    period_mismatch_rationale(locale="en"),
+                    period_mismatch_rationale(locale="ko"),
                 ),
                 reasons=state.reasons,
             )

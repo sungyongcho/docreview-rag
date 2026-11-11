@@ -69,3 +69,19 @@ def test_another_period_is_reported_as_a_mismatch():
         requested_fiscal_years=(2023,), evidenced_fiscal_years=(2024,), figures=("25,785",)
     )
     assert judged.unit_unverified is None
+
+
+def test_mismatch_reports_only_the_mismatched_subset_without_claiming_absence():
+    """The table has the requested year's value and another answer figure already verifies."""
+    answer = supported("FY2024 net revenue was $22,680 million and net income was $1,641 million.")
+    html = USD_INCOME_TABLE.replace(
+        "</table>", "<tr><td>Net income</td><td>1,641</td><td>854</td></tr></table>"
+    )
+    judged = judge_written_answer(answer, evidence(html), [2024])
+    assert judged.report is not None and judged.report.label == "PERIOD_MISMATCH"
+    assert judged.report.answer == (
+        "The stated figures 22,680 were found for fiscal 2023, not the requested fiscal 2024."
+    )
+    assert judged.period_mismatch.figures == ("22,680",)
+    assert "does not report" not in judged.report.answer
+    assert "Every" not in judged.report.rationale

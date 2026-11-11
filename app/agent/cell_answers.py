@@ -24,6 +24,7 @@ from app.agent.types import (
 )
 from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
+from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text
 
 type Locale = Literal["en", "ko"]
 
@@ -56,20 +57,15 @@ _SCALES_KO = {0: "", 3: "천", 4: "만", 6: "백만", 8: "억", 9: "십억", 12:
 # True also when the search returned no hits: nothing is claimed about retrieved chunks.
 NOT_FOUND = {
     "en": (
-        "The filings were searched in this question and no table cell answering the "
-        "question was found."
+        "The filings were searched in this question; the model reported no answering table cell."
     ),
-    "ko": "이 질문에서 공시를 검색했지만 질문에 답하는 표의 칸을 찾지 못했습니다.",
+    "ko": "이 질문에서 공시를 검색했고 모델은 질문에 답하는 표의 칸을 찾지 못했다고 보고했습니다.",
 }
 CANNOT_RESOLVE = {
     "en": (
-        "The cited evidence relates to the question, but no single table cell could be "
-        "established as the answer, so no figure is reported."
+        "No answering table cell was established from the cited evidence, so no figure is reported."
     ),
-    "ko": (
-        "인용한 근거는 질문과 관련 있지만 답이 되는 표의 칸 하나를 확정하지 못해 "
-        "수치를 보고하지 않습니다."
-    ),
+    "ko": ("인용한 근거에서 답이 되는 표의 칸을 확정하지 못해 수치를 보고하지 않습니다."),
 }
 QUESTION_ITEM_UNREAD = {
     "en": (
@@ -90,10 +86,6 @@ UNIT_HELD = {
         "인용한 표에 이 항목이 있지만 해당 칸의 단위나 통화를 확정하지 못해 "
         "수치를 보고하지 않습니다."
     ),
-}
-PERIOD_MISMATCH = {
-    "en": "The selected cells belong to a different period than the question asks about.",
-    "ko": "선택된 칸은 질문이 묻는 기간과 다른 기간의 값입니다.",
 }
 ASSEMBLED = {
     "en": (
@@ -414,20 +406,18 @@ def review_cell_selection(
             evidenced_fiscal_years=tuple(sorted(years)),
             figures=tuple(cell.cell["raw_text"] for cell in cells),
         )
-        asked = ", ".join(str(year) for year in mismatch.requested_fiscal_years)
-        found = ", ".join(str(year) for year in mismatch.evidenced_fiscal_years)
-        # Only the selection was checked, not whether the evidence reports the
-        # asked period elsewhere, so the sentence speaks about the selection alone.
-        if locale == "ko":
-            answer = f"선택된 표의 칸은 {asked} 회계연도가 아니라 {found} 회계연도의 값입니다."
-        else:
-            answer = f"The selected table cells are for fiscal {found}, not fiscal {asked}."
+        answer = period_mismatch_text(
+            mismatch.requested_fiscal_years,
+            mismatch.evidenced_fiscal_years,
+            locale=locale,
+            selection=True,
+        )
         return CellVerdict(
             AgentReportAnswer(
                 label="PERIOD_MISMATCH",
                 answer=answer,
                 citations=_citations(chunk_ids, evidence),
-                rationale=PERIOD_MISMATCH[locale],
+                rationale=period_mismatch_rationale(locale=locale, selection=True),
             ),
             period_mismatch=mismatch,
             checks=tuple(_check(cell, "other period") for cell in cells),

@@ -164,7 +164,7 @@ class FiguresUnitUnverified(StrictSchema):
 
 
 class PeriodMismatch(StrictSchema):
-    """Every figure of a supported answer came from a period other than the requested one."""
+    """Figures of the answer matched only a different known fiscal period."""
 
     code: Literal["period_mismatch"] = "period_mismatch"
     requested_fiscal_years: tuple[PositiveInt, ...]

@@ -185,8 +185,8 @@ def test_not_found_before_any_search_returned_is_returned_for_a_search():
         assert result.report is not None and result.report.label == "NOT_IN_DOCS"
         assert result.report.citations == ()
         assert result.report.rationale == (
-            "The filings were searched in this question and no table cell answering the "
-            "question was found."
+            "The filings were searched in this question; "
+            "the model reported no answering table cell."
         )
 
 
@@ -210,13 +210,10 @@ def test_every_korean_report_has_a_korean_rationale():
     assert (
         unresolved.report.answer
         == unresolved.report.rationale
-        == (
-            "인용한 근거는 질문과 관련 있지만 답이 되는 표의 칸 하나를 확정하지 못해 "
-            "수치를 보고하지 않습니다."
-        )
+        == ("인용한 근거에서 답이 되는 표의 칸을 확정하지 못해 수치를 보고하지 않습니다.")
     )
     assert absent.report is not None and absent.report.rationale == (
-        "이 질문에서 공시를 검색했지만 질문에 답하는 표의 칸을 찾지 못했습니다."
+        "이 질문에서 공시를 검색했고 모델은 질문에 답하는 표의 칸을 찾지 못했다고 보고했습니다."
     )
 
 
