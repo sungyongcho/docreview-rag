@@ -17,7 +17,7 @@ from fastmcp.client.transports import StdioTransport
 import httpx2
 from langchain.mcp import MCPAdapter
 from langchain_core.messages import AIMessage, ToolMessage
-from langchain_core.tools import tool
+from langchain_core.tools import BaseTool, tool
 import openai
 from pydantic import SecretStr
 import pytest
@@ -722,14 +722,8 @@ def test_trace_does_not_call_a_gate_rejected_fetch_an_execution(tmp_path):
     assert not any(e["event"] == "tool_start" and e["layer"] == "execution" for e in events)
 
 
-def test_trace_retains_tool_exception_without_private_details(tmp_path):
-    """An unexpected tool exception propagates and leaves a redacted dispatch failure."""
-
-    @tool
-    async def search_filings(query: str, issuers: list[str], fiscal_years: list[int]) -> str:
-        """A test retrieval failure after actual tool dispatch."""
-        raise RuntimeError("private database password=do-not-log")
-
+def ask_with_search(tmp_path: Path, search_filings: BaseTool) -> dict[str, Any]:
+    """Ask once with ``search_filings`` as the only tool; the model calls it, then stops."""
     fake = FakeOpenAI(
         counts=[1000], replies=[response("search_fail", "search_filings", SEARCH, (900, 30))]
     )
@@ -738,13 +732,43 @@ def test_trace_retains_tool_exception_without_private_details(tmp_path):
     )
     model = counted_model(LUNA, gate, api_key=FAKE_KEY, http_async_client=fake.client())
     agent = review_agent(model, [search_filings], contracts(), gate)
-    with pytest.raises(RuntimeError, match="private database"):
-        asyncio.run(ask_review_agent(agent, QUESTION, ReviewContext((2024,)), gate))
+    return asyncio.run(ask_review_agent(agent, QUESTION, ReviewContext((2024,)), gate))
+
+
+def test_trace_retains_tool_exception_without_private_details(tmp_path):
+    """An unexpected tool exception ends the question and leaves a redacted dispatch failure."""
+
+    @tool
+    async def search_filings(query: str, issuers: list[str], fiscal_years: list[int]) -> str:
+        """A test retrieval failure after actual tool dispatch."""
+        raise RuntimeError("private database password=do-not-log")
+
+    outcome = ask_with_search(tmp_path, search_filings)
+    assert (outcome["status"], outcome["failure"]) == (
+        "tool_error",
+        "RuntimeError: agent run failed",
+    )
+    assert outcome["budget"]["attempts"] == 1
+    assert "do-not-log" not in json.dumps(outcome)
     events = trace_events(tmp_path)
     failures = [e for e in events if e["event"] == "tool_error"]
     assert [e["layer"] for e in failures] == ["execution", "gate"]
     assert all(e["call_id"] == "search_fail" for e in failures)
     assert "do-not-log" not in (tmp_path / "trace.jsonl").read_text()
+
+
+def test_a_tool_result_without_structured_content_still_reports_the_question(tmp_path):
+    """A foreign tool's plain-text result makes the review raise; the run still reports."""
+
+    @tool
+    async def search_filings(query: str, issuers: list[str], fiscal_years: list[int]) -> str:
+        """A search result with no structured content, as a foreign server may send."""
+        return "TestCo revenue was 100 USD."
+
+    outcome = ask_with_search(tmp_path, search_filings)
+    assert (outcome["status"], outcome["answer"]) == ("tool_error", None)
+    assert outcome["failure"] == "ValueError: agent run failed"
+    assert outcome["budget"]["reserved_usd"] == str(LUNA.reservation(1000))
 
 
 def test_trace_excludes_model_reasoning_and_redacts_credentials(tmp_path):

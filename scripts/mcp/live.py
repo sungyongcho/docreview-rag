@@ -836,7 +836,9 @@ async def ask_review_agent(
     """Ask one question and report it; a budget, count or provider failure has no answer.
 
     A run that ends without an answer or a recorded failure is classified by
-    :func:`unanswered`, so it always carries a reason.
+    :func:`unanswered`, so it always carries a reason. Any other exception from the
+    run, such as a tool result the review cannot read, ends as ``tool_error`` with
+    only the exception type in its failure.
     """
     try:
         state = await agent.ainvoke({"messages": [HumanMessage(question)]}, context=context)
@@ -846,6 +848,10 @@ async def ask_review_agent(
         return gate.outcome("count_error", failure=str(error))
     except openai.OpenAIError as error:
         return gate.outcome("provider_error", failure=safe_runtime_error(error, "model request"))
+    except Exception as error:
+        # Paid turns may already have run, so the question is still reported, with a
+        # redacted failure, rather than leaving the run without a result.
+        return gate.outcome("tool_error", failure=safe_runtime_error(error, "agent run"))
     answer = state.get("structured_response")
     failure = state.get("failure")
     status = "tool_error" if failure else "ok" if answer is not None else "no_answer"
