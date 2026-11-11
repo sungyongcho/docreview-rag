@@ -58,6 +58,7 @@ def test_a_plain_question_names_its_items(question, expected):
         "What was Q4 revenue?",
         "What was revenue in segment 31?",
         "What was R&D expense ratio in 2024?",
+        "What was the segment's revenue in 2024?",
     ],
 )
 def test_a_phrase_touched_by_a_qualifier_or_unknown_word_names_no_item(question):

@@ -210,7 +210,10 @@ _QUESTION_ENDINGS_KO = (
     *("으로는", "에서는", "으로", "에서", "까지", "부터", "이며", "이고"),
     *("은", "는", "이", "가", "을", "를", "의", "에", "도", "와", "과", "로", "만", "고", "며"),
 )
-_POSSESSIVE_KEY = re.compile(r".+(?:'s|s')")
+# A possessive names the issuer only when capitalized ("AMD's") or as "company's";
+# "the segment's revenue" is a qualified item.
+_POSSESSIVE = re.compile(r"[A-Z].*(?:['’]s|s['’])")
+_GENERIC_POSSESSIVES = frozenset({"company's", "companies'"})
 
 type _QuestionKind = Literal["item", "pass", "stop", "possessive", "unknown"]
 
@@ -232,13 +235,14 @@ def _korean_question_word(word: str) -> tuple[_QuestionKind, str | None]:
     return "unknown", None
 
 
-def _question_word(key: str) -> _QuestionKind:
-    """Classify one casefolded question word outside any English item phrase."""
+def _question_word(word: str) -> _QuestionKind:
+    """Classify one question word outside any English item phrase."""
+    key = phrase_key(word)
     if key in _QUESTION_STOPS or _QUESTION_YEAR.fullmatch(key):
         return "stop"
     if key in _QUESTION_PASS:
         return "pass"
-    if _POSSESSIVE_KEY.fullmatch(key) and key[0].isalpha():
+    if _POSSESSIVE.fullmatch(word) or key in _GENERIC_POSSESSIVES:
         return "possessive"
     return "unknown"
 
@@ -275,7 +279,8 @@ def items_named(text: str) -> frozenset[str]:
     in a row label. A question naming no listed phrase names no item: nothing is
     inferred from other words.
     """
-    words = [phrase_key(word) for word in TOKEN.findall(SAME_ITEM_QUALIFIER.sub(" ", text))]
+    written = TOKEN.findall(SAME_ITEM_QUALIFIER.sub(" ", text))
+    words = [phrase_key(word) for word in written]
     kinds: list[_QuestionKind] = ["unknown"] * len(words)
     spans: list[tuple[int, int, str]] = []
     for phrase, item in ENGLISH_PHRASES:
@@ -298,7 +303,7 @@ def items_named(text: str) -> frozenset[str]:
         elif _QUESTION_DAY.fullmatch(word) and index and words[index - 1] in _MONTHS:
             kind = "pass"
         else:
-            kind = _question_word(word)
+            kind = _question_word(written[index])
         kinds[index] = kind
     plain = all(
         _plain_side(kinds, start - 1, -1) and _plain_side(kinds, end, 1) for start, end, _ in spans
