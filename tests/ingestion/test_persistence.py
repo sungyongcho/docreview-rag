@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models import TableSourceCell, TableSourceFact
-from app.ingestion.persistence import _declared_facts, persist_seed_batch
+from app.ingestion.persistence import _declared_facts, persist_seed_batch, slices
 from tests.ingestion.seed.support import TAGGED_TABLE_HTML, tagged_table_batch
 from tests.live_postgres import isolated_session
 
@@ -84,3 +84,12 @@ def test_fact_rows_keep_declared_references_and_drop_undeclared_ones():
         {"context_id": "fy23", "unit_id": None},
         {"context_id": "fy23", "unit_id": None},
     ]
+
+
+def test_slices_bound_each_statement_and_keep_every_id_in_order():
+    """Split 2,500 ids into three bounded slices that rejoin to the original list."""
+    ids = list(range(2_500))
+    parts = list(slices(ids))
+    assert [len(part) for part in parts] == [1_000, 1_000, 500]
+    assert [value for part in parts for value in part] == ids
+    assert list(slices([])) == []

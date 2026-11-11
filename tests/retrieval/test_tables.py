@@ -97,3 +97,20 @@ def test_stored_fact_readings_come_back_as_they_were_read():
             assert statuses[f"{chunk_id}:r3c1"] == "scope_qualified"
 
     asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_tables_load_for_more_chunk_ids_than_one_statement_can_bind():
+    """Load a stored table among 40,000 requested ids, from the live index and a snapshot."""
+
+    async def exercise() -> None:
+        """Store one table chunk and request it with ids past asyncpg's 32,767 limit."""
+        async with isolated_session() as session:
+            await persist_seed_batch(session, table_batch())
+            chunk_id = await session.scalar(select(Chunk.id).where(Chunk.kind == "table"))
+            assert chunk_id is not None
+            ids = [chunk_id, *range(10_000_000, 10_040_000)]
+            assert set(await load_chunk_tables(session, ids)) == {chunk_id}
+            assert await load_chunk_tables(session, ids, snapshot_id=1) == {}
+
+    asyncio.run(exercise())

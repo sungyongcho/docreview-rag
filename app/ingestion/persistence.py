@@ -139,7 +139,7 @@ async def _persist_sources(session: AsyncSession, batch: SeedBatch) -> None:
         structure = structure_values(filing)
         await session.execute(insert(ParsedStructure).values(**structure).on_conflict_do_nothing())
         for model, values in fact_rows(structure["structure_id"], filing.facts).items():
-            for chunk in _slices(values):
+            for chunk in slices(values):
                 await session.execute(insert(model).values(chunk).on_conflict_do_nothing())
         pointer = insert(DocumentParse).values(
             doc_id=source.document.document_id, structure_id=structure["structure_id"]
@@ -378,8 +378,8 @@ def _declared_facts(rows: list[dict[str, Any]], facts: FilingFacts) -> list[dict
     ]
 
 
-def _slices(rows: list[dict[str, Any]], size: int = 1000) -> Iterable[list[dict[str, Any]]]:
-    """Split insert rows so one statement stays under PostgreSQL's bind-parameter limit."""
+def slices[T](rows: Sequence[T], size: int = 1000) -> Iterable[Sequence[T]]:
+    """Split rows or ids so one statement stays under PostgreSQL's bind-parameter limit."""
     for start in range(0, len(rows), size):
         yield rows[start : start + size]
 
@@ -408,14 +408,16 @@ async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
         TableCell,
         TableCellSource,
     ):
-        for values in _slices(rows.get(model, [])):
+        for values in slices(rows.get(model, [])):
             await session.execute(insert(model).values(values))
     keys = {member.chunk_stable_key for record in records for member in record.memberships}
     keys |= {header.chunk_stable_key for record in records for header in record.headers}
-    stored = await session.execute(
-        select(ChunkModel.stable_key, ChunkModel.id).where(ChunkModel.stable_key.in_(keys))
-    )
-    ids = {stable_key: chunk_id for stable_key, chunk_id in stored}
+    ids: dict[str, int] = {}
+    for part in slices(sorted(keys)):
+        stored = await session.execute(
+            select(ChunkModel.stable_key, ChunkModel.id).where(ChunkModel.stable_key.in_(part))
+        )
+        ids.update((stable_key, chunk_id) for stable_key, chunk_id in stored)
     memberships = [
         {
             "chunk_id": ids[member.chunk_stable_key],
@@ -429,7 +431,7 @@ async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
         for record in records
         for member in record.memberships
     ]
-    for values in _slices(memberships):
+    for values in slices(memberships):
         await session.execute(insert(ChunkTableCell).values(values))
     headers = [
         {
@@ -442,7 +444,7 @@ async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
         for record in records
         for header in record.headers
     ]
-    for values in _slices(headers):
+    for values in slices(headers):
         await session.execute(insert(ChunkTableHeader).values(values))
 
 

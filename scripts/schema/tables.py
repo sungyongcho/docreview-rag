@@ -27,7 +27,7 @@ from app.db.models import (
     SnapshotTableSourceCell,
 )
 from app.figures.tables import interpret_table_cell, read_table_cells, read_table_unit
-from app.ingestion.persistence import reading_columns
+from app.ingestion.persistence import reading_columns, slices
 from app.ingestion.table_records import resolver_identity
 from app.retrieval.tables import load_table_fragments
 
@@ -235,8 +235,8 @@ async def migrate_tables(session: AsyncSession, *, drop: bool) -> dict[str, obje
                 ).items():
                     batches.setdefault(model, []).extend(values)
             for model, values in batches.items():
-                for start in range(0, len(values), 1000):
-                    await session.execute(insert(model).values(values[start : start + 1000]))
+                for part in slices(values):
+                    await session.execute(insert(model).values(part))
         stored = {row.chunk_id: row.table_fragment for row in rows}
         snapshots[str(snapshot_id)] = {
             "chunks": len(stored),

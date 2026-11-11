@@ -7,9 +7,11 @@ canonical table rows, from the live index or from the snapshot it was retrieved 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from app.db.models import (
     Base,
@@ -29,6 +31,7 @@ from app.db.models import (
     TableSourceCell,
 )
 from app.figures.tables import TableCellReading
+from app.ingestion.persistence import slices
 
 type _GridCell = TableSourceCell | SnapshotTableSourceCell
 type _Member = ChunkTableCell | SnapshotChunkTableCell
@@ -224,44 +227,54 @@ async def load_chunk_tables(
         """Read only the rows a snapshot froze, or the live index."""
         return frozen.get(model, [])
 
-    members = (
-        await session.scalars(
-            select(members_model)
-            .where(*scope(members_model), members_model.chunk_id.in_(ids))
-            .order_by(members_model.chunk_id, members_model.ordinal)
-        )
-    ).all()
+    async def read[M: Base](
+        model: type[M],
+        column: InstrumentedAttribute[Any],
+        keys: Sequence[object],
+        *order: InstrumentedAttribute[Any],
+    ) -> list[M]:
+        """Read one model's rows whose ``column`` is among ``keys``, a bounded slice at a time.
+
+        Every row of one chunk or table falls in one slice, so its rows keep ``order``.
+        """
+        rows: list[M] = []
+        for part in slices(keys):
+            rows.extend(
+                await session.scalars(
+                    select(model).where(*scope(model), column.in_(part)).order_by(*order)
+                )
+            )
+        return rows
+
+    members = await read(
+        members_model, members_model.chunk_id, ids, members_model.chunk_id, members_model.ordinal
+    )
     if not members:
         return {}
     table_ids = sorted({member.table_id for member in members})
     tables = {
         table.table_id: table
-        for table in await session.scalars(
-            select(tables_model).where(*scope(tables_model), tables_model.table_id.in_(table_ids))
-        )
+        for table in await read(tables_model, tables_model.table_id, table_ids)
     }
-    table_captions = await session.scalars(
-        select(captions_model)
-        .where(*scope(captions_model), captions_model.table_id.in_(table_ids))
-        .order_by(captions_model.table_id, captions_model.ordinal)
+    table_captions = await read(
+        captions_model,
+        captions_model.table_id,
+        table_ids,
+        captions_model.table_id,
+        captions_model.ordinal,
     )
-    grid_cells = await session.scalars(
-        select(cells_model).where(*scope(cells_model), cells_model.table_id.in_(table_ids))
+    grid_cells = await read(cells_model, cells_model.table_id, table_ids)
+    chunk_headers = await read(
+        headers_model, headers_model.chunk_id, ids, headers_model.chunk_id, headers_model.ordinal
     )
-    chunk_headers = await session.scalars(
-        select(headers_model)
-        .where(*scope(headers_model), headers_model.chunk_id.in_(ids))
-        .order_by(headers_model.chunk_id, headers_model.ordinal)
-    )
-    cell_links = await session.scalars(
-        select(links_model)
-        .where(*scope(links_model), links_model.table_id.in_(table_ids))
-        .order_by(
-            links_model.table_id,
-            links_model.source_row,
-            links_model.column_index,
-            links_model.ordinal,
-        )
+    cell_links = await read(
+        links_model,
+        links_model.table_id,
+        table_ids,
+        links_model.table_id,
+        links_model.source_row,
+        links_model.column_index,
+        links_model.ordinal,
     )
     return assemble_tables(members, tables, table_captions, grid_cells, chunk_headers, cell_links)
 
