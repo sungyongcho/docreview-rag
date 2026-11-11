@@ -96,6 +96,7 @@ def review(answer: CellSelectionAnswer, *cells: StoredCell, fetched=None, **cont
         stored={cell.ref: cell for cell in cells},
         requested_items=context.get("items", frozenset({"revenue"})),
         requested_years=context.get("years", (2024,)),
+        searched=context.get("searched", True),
         locale=context.get("locale", "en"),
     )
 
@@ -171,15 +172,22 @@ def test_a_period_mismatch_states_only_what_the_selection_shows_in_each_language
     assert korean.report.rationale == "선택된 칸은 질문이 묻는 기간과 다른 기간의 값입니다."
 
 
-def test_not_found_before_any_retrieval_is_returned_for_a_search():
-    """Never report that evidence was searched when nothing was retrieved in this question."""
+def test_not_found_before_any_search_returned_is_returned_for_a_search():
+    """Never report a search that did not happen; a search with no hits is a search."""
     absent = proposal(label="NOT_IN_DOCS", reason="not_found", selections=[])
-    unsearched = review(absent, evidence={})
-    searched = review(absent)
+    unsearched = review(absent, evidence={}, searched=False)
+    zero_hits = review(absent, evidence={})
+    with_hits = review(absent)
     assert unsearched.report is None and unsearched.problem == (
-        "nothing was retrieved in this question; search the filings before reporting not_found"
+        "no search has returned in this question; search the filings before reporting not_found"
     )
-    assert searched.report is not None and searched.report.label == "NOT_IN_DOCS"
+    for result in (zero_hits, with_hits):
+        assert result.report is not None and result.report.label == "NOT_IN_DOCS"
+        assert result.report.citations == ()
+        assert result.report.rationale == (
+            "The filings were searched in this question and no table cell answering the "
+            "question was found."
+        )
 
 
 def test_every_korean_report_has_a_korean_rationale():
@@ -208,7 +216,7 @@ def test_every_korean_report_has_a_korean_rationale():
         )
     )
     assert absent.report is not None and absent.report.rationale == (
-        "이 질문에서 검색한 근거에서 질문에 답하는 표의 칸을 찾지 못했습니다."
+        "이 질문에서 공시를 검색했지만 질문에 답하는 표의 칸을 찾지 못했습니다."
     )
 
 
@@ -294,6 +302,7 @@ def test_two_cells_for_one_item_and_year_are_returned_for_correction():
         stored={"2024:r1c1": stored(), "2025:r1c1": other},
         requested_items=frozenset({"revenue"}),
         requested_years=(2024,),
+        searched=True,
     )
     assert result.report is None and result.problem == (
         "cells 2024:r1c1 and 2025:r1c1 both answer revenue for fiscal 2024; select one cell "

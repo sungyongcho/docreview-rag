@@ -53,12 +53,13 @@ _SCALES_EN = {0: "", 3: "thousand", 6: "million", 9: "billion", 12: "trillion"}
 _SCALES_KO = {0: "", 3: "천", 4: "만", 6: "백만", 8: "억", 9: "십억", 12: "조"}
 
 # Each report's answer and rationale are written in the report's language.
+# True also when the search returned no hits: nothing is claimed about retrieved chunks.
 NOT_FOUND = {
     "en": (
-        "The evidence retrieved in this question was searched and no table cell answering "
-        "the question was found."
+        "The filings were searched in this question and no table cell answering the "
+        "question was found."
     ),
-    "ko": "이 질문에서 검색한 근거에서 질문에 답하는 표의 칸을 찾지 못했습니다.",
+    "ko": "이 질문에서 공시를 검색했지만 질문에 답하는 표의 칸을 찾지 못했습니다.",
 }
 CANNOT_RESOLVE = {
     "en": (
@@ -265,6 +266,7 @@ def review_cell_selection(
     stored: Mapping[str, StoredCell],
     requested_items: frozenset[str],
     requested_years: Sequence[int],
+    searched: bool,
     locale: Locale = "en",
 ) -> CellVerdict:
     """Decide on one cell-selecting final answer.
@@ -281,6 +283,9 @@ def review_cell_selection(
         The selected cells as stored now, read after the proposal.
     requested_items, requested_years : frozenset[str], Sequence[int]
         What the question asks for, read from the question by the application.
+    searched : bool
+        Whether a retrieval tool call returned a result in this question, even one
+        with no hits; ``not_found`` is refused until one has.
     locale : Locale
         Language the answer is written in.
 
@@ -294,9 +299,9 @@ def review_cell_selection(
     if problem is not None:
         return CellVerdict(problem=problem)
     if proposal.reason == "not_found":
-        if not evidence:
+        if not searched:
             return CellVerdict(
-                problem="nothing was retrieved in this question; search the filings before "
+                problem="no search has returned in this question; search the filings before "
                 "reporting not_found"
             )
         return CellVerdict(

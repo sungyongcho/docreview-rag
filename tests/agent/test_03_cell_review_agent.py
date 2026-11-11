@@ -8,7 +8,8 @@ from typing import Any, Literal, cast
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import StructuredTool, ToolException
+import pytest
 
 from app.agent.cell_answers import StoredCell
 from app.agent.review_middleware import (
@@ -57,12 +58,20 @@ def catalog(cell: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def tools(cell: dict[str, Any]) -> list[StructuredTool]:
-    """Stand-ins for the MCP tools that return structured content like the adapter does."""
+def tools(
+    cell: dict[str, Any], search: Literal["hit", "none", "fail"] = "hit"
+) -> list[StructuredTool]:
+    """Stand-ins for the MCP tools that return structured content like the adapter does.
+
+    ``search`` makes the search return chunk 2024, no hits, or a tool error.
+    """
 
     def search_filings(**_: Any) -> tuple[str, dict[str, Any]]:
-        """Return chunk 2024 as the one hit."""
-        payload = {"hits": [{**IDENTITY, "score": 1.0, "snippet": "Net revenue"}]}
+        """Return chunk 2024 as the one hit, no hits, or fail."""
+        if search == "fail":
+            raise ToolException("search failed")
+        hits = [{**IDENTITY, "score": 1.0, "snippet": "Net revenue"}] if search == "hit" else []
+        payload = {"hits": hits}
         return json.dumps(payload), {"structured_content": payload}
 
     def fetch_chunk(chunk_id: int) -> tuple[str, dict[str, Any]]:
@@ -79,6 +88,7 @@ def tools(cell: dict[str, Any]) -> list[StructuredTool]:
             description=contracts.get(name).description,
             args_schema=contracts.get(name).parameters,
             response_format="content_and_artifact",
+            handle_tool_error=True,
         )
         for name, function in (("search_filings", search_filings), ("fetch_chunk", fetch_chunk))
     ]
@@ -113,11 +123,13 @@ def ask(
     reads: list[tuple[str, ...]] | None = None,
     replies: list[AIMessage] | None = None,
     reader_configured: bool = True,
+    search: Literal["hit", "none", "fail"] = "hit",
 ):
     """Search, fetch, then answer with each final in turn; return the state and model.
 
     ``reads`` collects the refs of every stored-cell read; ``replies`` replaces the
-    whole scripted conversation; ``reader_configured`` False leaves out the reader.
+    whole scripted conversation; ``reader_configured`` False leaves out the reader;
+    ``search`` is passed to :func:`tools`.
     """
     model = ScriptedChatModel.from_replies(
         *(
@@ -147,7 +159,7 @@ def ask(
     middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(contracts)]
     agent = create_agent(
         model,
-        tools(cell),
+        tools(cell, search),
         middleware=middleware,
         response_format=final_answer_format(cells=True),
         context_schema=ReviewContext,
@@ -265,23 +277,51 @@ def test_a_cell_that_was_not_fetched_is_returned_without_reading_it():
     assert state["structured_response"].label == "SUPPORTED"
 
 
-def test_not_found_before_any_search_is_returned_and_accepted_after_one():
-    """Refuse a first-turn not_found with nothing retrieved, then accept it after a search."""
-    absent = {**selection(), "label": "NOT_IN_DOCS", "reason": "not_found", "selections": []}
-    state, model = ask(
-        [],
-        replies=[
-            reply("call_final_0", "final_answer", absent),
-            reply("call_search", "search_filings", SEARCH),
-            reply("call_final_1", "final_answer", absent),
-        ],
-    )
-    errors = [
+ABSENT = {**selection(), "label": "NOT_IN_DOCS", "reason": "not_found", "selections": []}
+UNSEARCHED = (
+    "ERROR: no search has returned in this question; search the filings before reporting not_found"
+)
+
+
+def errors_of(state: dict[str, Any]) -> list[Any]:
+    """The error tool results the run answered, in order."""
+    return [
         m.content for m in state["messages"] if isinstance(m, ToolMessage) and m.status == "error"
     ]
-    assert errors == [
-        "ERROR: nothing was retrieved in this question; search the filings before reporting "
-        "not_found"
-    ]
+
+
+@pytest.mark.parametrize("search", ["hit", "none"])
+def test_not_found_before_any_search_is_returned_and_accepted_after_one(search):
+    """Refuse a first-turn not_found, then accept it after a search, even one with no hits."""
+    state, model = ask(
+        [],
+        search=search,
+        replies=[
+            reply("call_final_0", "final_answer", ABSENT),
+            reply("call_search", "search_filings", SEARCH),
+            reply("call_final_1", "final_answer", ABSENT),
+        ],
+    )
+    assert errors_of(state) == [UNSEARCHED]
     assert len(model.requests) == 3
-    assert state["structured_response"].label == "NOT_IN_DOCS"
+    report = state["structured_response"]
+    assert (report.label, report.answer) == ("NOT_IN_DOCS", "NOT_IN_DOCS")
+    assert bool(state["evidence"]) is (search == "hit")
+
+
+def test_a_failed_search_is_not_a_search():
+    """Keep refusing not_found after a search that ended in a tool error."""
+    state, model = ask(
+        [],
+        search="fail",
+        replies=[
+            reply("call_search", "search_filings", SEARCH),
+            reply("call_final_0", "final_answer", ABSENT),
+            AIMessage(content="No answer.", usage_metadata=USAGE),
+        ],
+    )
+    errors = errors_of(state)
+    assert len(errors) == 2 and errors[1] == UNSEARCHED
+    assert "search failed" in errors[0]
+    assert len(model.requests) == 3
+    assert state.get("structured_response") is None

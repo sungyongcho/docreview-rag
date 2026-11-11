@@ -31,6 +31,7 @@ from app.agent.review_middleware import (
     keep_first_failure,
     merge_cells,
     merge_evidence,
+    retrieval_returned,
 )
 from app.agent.tools.filings import build_default_registry
 from app.contracts.evidence import EvidenceCitation
@@ -603,3 +604,23 @@ def test_cell_updates_merge_and_a_disagreement_stops_before_the_next_model_call(
     assert stop.before_model(cast(Any, {"messages": [], "cells": first}), runtime) is None
     gate = ReviewGate(contracts())
     assert gate.before_agent(cast(Any, {"messages": []}), runtime)["cells"] is None
+
+
+def test_only_a_returned_retrieval_in_this_question_counts_as_a_search():
+    """Count a non-error retrieval result since the last human message, even with no hits."""
+    registry = contracts()
+    call = AIMessage(content="", tool_calls=[])
+
+    def result(name: str, status: str = "success") -> ToolMessage:
+        """One tool result of ``name``."""
+        return ToolMessage(content='{"hits": []}', tool_call_id="c", name=name, status=status)
+
+    question = HumanMessage("TestCo FY2024 revenue?")
+    assert retrieval_returned([question, call, result("search_filings")], registry)
+    assert retrieval_returned([question, call, result("compare_years")], registry)
+    assert not retrieval_returned([question], registry)
+    assert not retrieval_returned([question, call, result("search_filings", "error")], registry)
+    assert not retrieval_returned([question, call, result("final_answer")], registry)
+    assert not retrieval_returned([question, call, result("delete_filings")], registry)
+    earlier = [HumanMessage("first"), call, result("search_filings")]
+    assert not retrieval_returned([*earlier, question, call], registry)

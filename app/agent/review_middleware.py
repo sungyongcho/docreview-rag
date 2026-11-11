@@ -28,7 +28,13 @@ from langchain.agents.middleware import (
     hook_config,
 )
 from langchain.agents.structured_output import ToolStrategy
-from langchain_core.messages import AIMessage, ToolCall as MessageToolCall, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    ToolCall as MessageToolCall,
+    ToolMessage,
+)
 from langgraph.errors import GraphBubbleUp
 from langgraph.runtime import Runtime
 from langgraph.types import Command
@@ -320,6 +326,26 @@ def _returned_identities(tool: Tool[Any], message: ToolMessage) -> tuple[Evidenc
     return found
 
 
+def retrieval_returned(messages: Sequence[AnyMessage], contracts: ToolRegistry) -> bool:
+    """Whether a retrieval tool returned a result in this question.
+
+    A question starts at its last human message. A retrieval tool is a registered tool
+    with an evidence extractor; its non-error result counts even with no hits, while
+    an error result, including one the gate refused, does not.
+    """
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage):
+            return False
+        if (
+            isinstance(message, ToolMessage)
+            and message.status != "error"
+            and message.name in contracts.names
+            and contracts.get(message.name).evidence_ids is not None
+        ):
+            return True
+    return False
+
+
 class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
     """Question-scoped tool rules and the final-answer gate of ``run_agent``.
 
@@ -481,7 +507,8 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         evidence = request.state.get("evidence") or {}
         if context.cell_answers:
             cells = request.state.get("cells") or {}
-            return await self._review_cells(message, call, evidence, cells, context)
+            searched = retrieval_returned(request.state.get("messages") or [], self.contracts)
+            return await self._review_cells(message, call, evidence, cells, context, searched)
         return await self._review_final(message, call, evidence, context)
 
     async def _review_final(
@@ -538,12 +565,14 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         evidence: EvidenceLedger,
         cells: CellLedger,
         context: ReviewContext,
+        searched: bool,
     ) -> ModelResult:
         """Check one cell-selecting ``final_answer`` and report the answer it assembles.
 
         The proposal names cells only; the stored cells are read again so a changed
         source ends the run instead of being reported, and the answer is written by the
-        application from the stored values.
+        application from the stored values. ``searched`` is :func:`retrieval_returned`
+        for this question.
         """
         try:
             proposal = CellSelectionAnswer.model_validate_json(
@@ -568,6 +597,7 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
                 stored=stored,
                 requested_items=context.requested_items,
                 requested_years=context.requested_fiscal_years,
+                searched=searched,
                 locale=context.locale,
             )
         except GraphBubbleUp:
