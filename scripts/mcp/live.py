@@ -794,13 +794,50 @@ def review_agent(
     )
 
 
+def unanswered(messages: Sequence[BaseMessage]) -> tuple[str, str]:
+    """Classify a run that ended with neither an answer nor a recorded failure.
+
+    The last model reply's Responses ``status`` decides, as in ``run_agent``: a turn the
+    output ceiling cut off (``incomplete`` for ``max_output_tokens`` or no stated
+    reason) is ``budget_exceeded``; one cut off for another reason, such as a content
+    filter, is ``provider_error`` naming it. A completed turn without a valid tool call,
+    such as a text-only reply, stays ``no_answer`` with that reason.
+
+    Returns
+    -------
+    tuple[str, str]
+        The outcome status and its failure text.
+    """
+    reply = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
+    if reply is None:
+        return "no_answer", "the agent ended without a model reply"
+    metadata = reply.response_metadata
+    if metadata.get("status") == "incomplete":
+        details = metadata.get("incomplete_details")
+        reason = details.get("reason") if isinstance(details, dict) else None
+        if reason not in (None, "max_output_tokens"):
+            return (
+                "provider_error",
+                f"the provider cut the turn off before it finished: {reason}",
+            )
+        return (
+            "budget_exceeded",
+            "the output-token ceiling cut the provider turn off before it finished",
+        )
+    return "no_answer", "the model ended its turn without a valid final_answer or tool call"
+
+
 async def ask_review_agent(
     agent: CompiledStateGraph[Any, Any, Any, Any],
     question: str,
     context: ReviewContext,
     gate: ModelGate,
 ) -> dict[str, Any]:
-    """Ask one question and report it; a budget, count or provider failure has no answer."""
+    """Ask one question and report it; a budget, count or provider failure has no answer.
+
+    A run that ends without an answer or a recorded failure is classified by
+    :func:`unanswered`, so it always carries a reason.
+    """
     try:
         state = await agent.ainvoke({"messages": [HumanMessage(question)]}, context=context)
     except BudgetExhaustedError as error:
@@ -812,6 +849,8 @@ async def ask_review_agent(
     answer = state.get("structured_response")
     failure = state.get("failure")
     status = "tool_error" if failure else "ok" if answer is not None else "no_answer"
+    if status == "no_answer":
+        status, failure = unanswered(state.get("messages", []))
     return gate.outcome(
         status,
         answer=None if answer is None else answer.model_dump(mode="json"),

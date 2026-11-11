@@ -799,6 +799,61 @@ def absent_response() -> dict[str, Any]:
     return reply
 
 
+def unfinished(output: list[dict[str, Any]], reason: str | None = None) -> dict[str, Any]:
+    """A reply with ``output`` and no function call: incomplete for ``reason``, if given."""
+    reply = response("call_none", "final_answer", FINAL, (900, 30))
+    reply["output"] = output
+    if reason is not None:
+        reply |= {"status": "incomplete", "incomplete_details": {"reason": reason}}
+    return reply
+
+
+TEXT_ONLY = [
+    {
+        "type": "message",
+        "id": "msg_1",
+        "role": "assistant",
+        "status": "completed",
+        "content": [{"type": "output_text", "text": REVENUE, "annotations": []}],
+    }
+]
+
+
+@pytest.mark.parametrize(
+    ("reply", "status", "failure"),
+    [
+        (
+            unfinished([], "max_output_tokens"),
+            "budget_exceeded",
+            "the output-token ceiling cut the provider turn off before it finished",
+        ),
+        (
+            unfinished(TEXT_ONLY, "content_filter"),
+            "provider_error",
+            "the provider cut the turn off before it finished: content_filter",
+        ),
+        (
+            unfinished(TEXT_ONLY),
+            "no_answer",
+            "the model ended its turn without a valid final_answer or tool call",
+        ),
+        (
+            unfinished([]),
+            "no_answer",
+            "the model ended its turn without a valid final_answer or tool call",
+        ),
+    ],
+    ids=["cut-off-by-ceiling", "cut-off-by-filter", "text-only", "empty"],
+)
+def test_a_turn_without_an_answer_reports_why(tmp_path, reply, status, failure):
+    """A cut-off, filtered, text-only or empty turn ends with the loop's typed reason."""
+    fake = FakeOpenAI(counts=[1000], replies=[reply])
+    outcome, budget = ask_offline(tmp_path, fake)
+    assert (outcome["status"], outcome["answer"], outcome["failure"]) == (status, None, failure)
+    assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH]
+    assert budget.reserved_usd == LUNA.reservation(1000)
+
+
 def test_observed_cost_includes_cache_writes_without_refunding_the_reservation(tmp_path):
     """SDK usage categories reach the journal and cost estimate; reservation stays whole."""
     fake = FakeOpenAI(counts=[1000], replies=[absent_response()])
