@@ -161,6 +161,18 @@ _NOTE_CITATION = re.compile(r"\s*(?:notes?|주석?)\s*[\d,\s~-]*", re.IGNORECASE
 _ENUMERATOR = re.compile(r"^\s*(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|\d+|[ivx]+|[가-하])[.)]\s*", re.IGNORECASE)
 
 
+type ScopeCause = Literal[
+    "statement_undeclared", "header_unread", "part_row", "second_label", "parent_unread"
+]
+SCOPE_REASONS: dict[ScopeCause, str] = {
+    "statement_undeclared": "the statement does not declare a whole-entity scope",
+    "header_unread": "the column header contains words not established as a reported amount",
+    "part_row": "the row is under a heading naming part of the entity",
+    "second_label": "a second row label leaves the entity scope unestablished",
+    "parent_unread": "a parent heading is not understood as a whole-entity statement section",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class TableCellReading:
     """One original table cell holding figures: its values, years, unit and row item.
@@ -200,6 +212,11 @@ class TableCellReading:
     measure: Literal["amount", "per_share", "other"] | None = None
 
     @property
+    def scope_cause(self) -> ScopeCause | None:
+        """Read the typed scope cause persisted in the existing override column."""
+        return next((cause for cause in SCOPE_REASONS if "scope:" + cause in self.overrides), None)
+
+    @property
     def amount_problem(self) -> tuple[CellStatus, str] | None:
         """Name a structural hold shared by selection and comparison, excluding units/sign.
 
@@ -224,9 +241,11 @@ class TableCellReading:
         if len(self.years) != 1:
             return "period_unknown", "no single fiscal year"
         if self.scope == UNKNOWN:
-            return (
-                "scope_unknown",
-                "the filing declares no entity scope for it",
+            cause = self.scope_cause
+            return "scope_unknown", (
+                SCOPE_REASONS[cause]
+                if cause is not None
+                else "the cell's row, column and statement do not establish entity scope"
             )
         if self.scope is not None:
             return "scope_qualified", self.scope
@@ -806,6 +825,8 @@ def _with_fact(
         if standard.group("name") not in ITEMS[item].concepts:
             overrides.append("concept")
             item = None
+    if scope != UNKNOWN:
+        overrides = [override for override in overrides if not override.startswith("scope:")]
     resolved_values = reading.values
     if fact.sign is not None and measure in {"amount", "per_share"}:
         resolved_values = frozenset(
@@ -943,6 +964,7 @@ def read_table_cells(
                 )
                 over = _headers_over(source, headers)
                 scope = _statement_scope(statement)
+                cause: ScopeCause | None = "statement_undeclared" if scope == UNKNOWN else None
                 second_label = any(col < column for col in label_columns.get(row, [])[1:])
                 if scope is None and (
                     row in under_part or second_label or _header_reading(over)[1]
@@ -952,6 +974,13 @@ def read_table_cells(
                     # ("Adjustments", "Guidance") are not shown to be the whole
                     # entity's reported amount.
                     scope = UNKNOWN
+                    cause = (
+                        "part_row"
+                        if row in under_part
+                        else "second_label"
+                        if second_label
+                        else "header_unread"
+                    )
                 reading = TableCellReading(
                     row,
                     column,
@@ -967,6 +996,7 @@ def read_table_cells(
                     resolve(unit.currency | own),
                     bool(own),
                     label,
+                    overrides=() if cause is None else ("scope:" + cause,),
                     scope=scope,
                 )
                 if reading.values:

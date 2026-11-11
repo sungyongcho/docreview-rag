@@ -139,7 +139,7 @@ def test_a_cell_without_one_figure_is_not_selectable():
             "1,234",
             {"scope": "?", "item": None},
             "scope_unknown",
-            "the filing declares no entity scope for it",
+            "the cell's row, column and statement do not establish entity scope",
         ),
         ("1,234", {"scope": "axis=member", "item": None}, "scope_qualified", "axis=member"),
         (
@@ -339,7 +339,8 @@ def test_a_dart_tag_without_a_statement_axis_keeps_the_declared_scope(statement,
     """ "CFY2024dFY" states no consolidated or separate scope, so the declaration stays."""
     dart_fact = fact(numerator=None, scale=None, text="300,870,903", dimensions=())
     cell = stated_revenue(statement, dart_fact)
-    assert (cell.scope, cell.overrides) == (scope, ())
+    expected = ("scope:statement_undeclared",) if scope == "?" else ()
+    assert (cell.scope, cell.overrides) == (scope, expected)
     assert interpret_table_cell("300,870,903", [cell]).status == status
 
 
@@ -756,3 +757,34 @@ def test_a_part_named_without_a_part_word_is_still_read_as_the_entity():
     """
     html = one_column("2024", ("Data Center:", ""), ("Revenue", "47,525"))
     assert statuses(html) == {(2, 1): "known"}
+
+
+@pytest.mark.parametrize(
+    "header,rows,statement,cause,reason",
+    [
+        ("2024 Guidance", [("Revenue", "1,234")], None, "header_unread", "column header"),
+        (
+            "2024",
+            [("DS segment:", ""), ("Revenue", "1,234")],
+            None,
+            "part_row",
+            "heading naming part",
+        ),
+        (
+            "2024",
+            [("Revenue", "1,234")],
+            TableStatement("notes", "consolidated"),
+            "statement_undeclared",
+            "statement does not declare",
+        ),
+    ],
+)
+def test_scope_unknown_explains_only_the_established_cause(header, rows, statement, cause, reason):
+    """Header, structural and declaration holds carry distinct typed causes."""
+    cells = read_table_cells(table_fragment(one_column(header, *rows)), statement=statement)
+    (cell,) = [cell for cell in cells if cell.item == "revenue"]
+    interpretation = interpret_table_cell("1,234", [cell])
+    assert interpretation.status == "scope_unknown"
+    assert cell.scope_cause == cause
+    assert reason in interpretation.reason
+    assert "filing declares no" not in interpretation.reason
