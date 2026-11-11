@@ -110,8 +110,12 @@ def ask(
     cell: dict[str, Any] = REVENUE,
     stored: dict[str, Any] | None = None,
     locale: Literal["en", "ko"] = "en",
+    reads: list[tuple[str, ...]] | None = None,
 ):
-    """Search, fetch, then answer with each final in turn; return the state and model."""
+    """Search, fetch, then answer with each final in turn; return the state and model.
+
+    ``reads`` collects the refs of every stored-cell read.
+    """
     model = ScriptedChatModel.from_replies(
         reply("call_search", "search_filings", SEARCH),
         reply("call_fetch", "fetch_chunk", {"chunk_id": 2024}),
@@ -121,6 +125,8 @@ def ask(
 
     async def reader(refs: tuple[str, ...]) -> dict[str, StoredCell]:
         """Return the selected cells as stored now."""
+        if reads is not None:
+            reads.append(refs)
         return {
             ref: StoredCell(ref, 2024, current, "k" * 64, "r" * 64, Decimal(25785)) for ref in refs
         }
@@ -192,3 +198,20 @@ def test_a_cell_changed_after_its_fetch_ends_the_run_without_another_request():
     assert len(model.requests) == 3
     assert state.get("structured_response") is None
     assert state["failure"]
+
+
+def test_a_cell_that_was_not_fetched_is_returned_without_reading_it():
+    """Refuse a ref outside this question's fetches before any stored cell is read."""
+    stray = selection()
+    stray["selections"][0]["cell_id"] = "2024:r9c9"
+    reads: list[tuple[str, ...]] = []
+    state, model = ask([stray, selection()], reads=reads)
+    errors = [
+        m.content for m in state["messages"] if isinstance(m, ToolMessage) and m.status == "error"
+    ]
+    assert errors == [
+        "ERROR: cell 2024:r9c9 was not returned by a fetch in this question; fetch its chunk"
+    ]
+    assert reads == [("2024:r1c1",)]
+    assert len(model.requests) == 4
+    assert state["structured_response"].label == "SUPPORTED"

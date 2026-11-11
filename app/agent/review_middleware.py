@@ -557,7 +557,10 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         try:
             if reader is None:
                 raise RuntimeError("no stored cell reader is configured")
-            stored = await reader(refs) if refs else {}
+            # A ref this question did not fetch is refused by the review below, so it
+            # is never read: only fetched cells are read again.
+            fetched = bool(refs) and all(ref in cells for ref in refs)
+            stored = await reader(refs) if fetched else {}
             verdict = review_cell_selection(
                 proposal,
                 ledger=cells,
