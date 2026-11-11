@@ -27,6 +27,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-09-12
 - source: PR #213
 - decision: This repository was renamed from docreview-rag-agent to docreview-rag; OPS records reconcile it by the numeric repository id, and the dashboard/registry use the canonical slug.
+- note: D-9: the OPS-record clause no longer applies.
 
 ### D-2 — Unreachable code and its tests are removed
 - status: active
@@ -76,6 +77,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-10-26
 - source: mcp-and-langgraph Day 5A follow-up (learning branch session decision, design 2026-10-26-cell-fact-tags)
 - decision: Parsing keeps SEC inline XBRL facts and DART ACODE/ACONTEXT tags, and the period terms a DART filing declares, as relational records; a tagged cell's currency, scale, fiscal year and dimensional scope come from its tag and override the text reading with the override recorded, dimensional values are not selectable, items still come only from row labels, untagged cells keep the text rules with no general currency or period assumption, and published evaluation snapshots keep their stored readings; this is an exception to D-3's schema-freeze clause for this change only, and chunk stable_key, chunk ids and embeddings keep their current inputs.
+- note: D-10 narrows untagged scope; D-14 narrows the item of a tagged standard concept; D-25 lets a tag's explicit sign resolve ambiguous notation.
 
 ### D-9 — OPS orchestration is removed from this project
 - status: active
@@ -104,6 +106,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: A stored table whose builder identity or resolver identity (which now includes the fact reader) differs from the running code is stale: its cell catalog is served as unavailable, the figure check on every path receives no cells and no body for it, paid agent runs of the live script are refused before the attempt is claimed, and schema check, the corpus status and /ready report the stale count without degrading readiness; evaluation snapshots keep serving their frozen readings; consequently any change to the table-reading files requires re-indexing before table-based answers verify again, and a deployment that changes those files must ship re-indexed data.
+- note: D-31 names the two states a stale or incomplete table is served as (stale_reading, missing_records) in place of "unavailable".
 
 ### D-13 — A table chunk is never read as running text by the figure check
 - status: active
@@ -111,6 +114,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: The figure check builds its evidence for every cited chunk through one rule shared by the agent path and the review workflow: running text gives its body, a table chunk with usable current readings gives its body and those cells, and a table chunk without usable readings (stale, or stored without table rows) gives neither, because reading a table's text as prose was measured to be looser than its cells, not stricter.
+- note: D-23 adds that a table chunk supplies no narrative fallback at all, including its context header.
 
 ### D-14 — A tagged cell's standard concept must be one its row label's item accepts
 - status: active
@@ -125,6 +129,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: The table reader holds, and the reading the figure check compares carries the hold for, a percentage whose sign sits in its own cell, a figure with malformed digit grouping or one its single tag disputes, a cell scale word against a table that declares a scale, and an unsigned figure under a loss-only label (status only; magnitudes still compare); a value's sign comes from its notation or its inline XBRL tag; for untagged cells a header naming a period shorter than a fiscal year dates nothing, a column that is not the reported amount, a row under a part of the entity and a row with a second label are scope_unknown, a caption's single year dates only a table's one value column, and a column whose tagged cell moves the year leaves its untagged cells undated; the status set is unchanged.
+- note: D-18 replaces the sub-year-header and non-amount-column clauses; D-19 replaces "magnitudes still compare"; D-25 replaces the direction hold of a tagged cell; D-26 replaces the part-row clause; D-27 narrows "a column whose tagged cell moves the year".
 
 ### D-16 — The cell-selection gate reports only what it checked and asks for one cell per item and year
 - status: active
@@ -132,6 +137,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: A not_found proposal is accepted only after a retrieval tool has returned in the question (zero hits count); a selected cell is checked against its claim and the question before a unit hold is reported; a percentage cell, a cell only partly in its chunk, a cell without one item or one fiscal year, and a second cell for the same item and fiscal year are returned to the model; the period-mismatch and no-item reports state only what was checked and every report's rationale follows the answer's language; the question's items are read around the issuer names the application already knows (items_named(issuers=...)), a qualifier or unknown word beside an item names no item, and words that restate the entity scope are not qualifiers.
+- note: D-18 and D-20 replace the qualifier-beside-an-item clause; D-22 states the mixed-year rule; D-30 restates the report and language clauses; D-33 renames the unit hold.
 
 ### D-17 — The live experiment script fails closed on mode, money and results
 - status: active
@@ -139,6 +145,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: 2026-11-11 audit session on mcp-and-langgraph (user direction to fix the audited defects without stopgaps; audit reports and corpus measurement recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: scripts/mcp/live.py refuses MODE=prod at both entry points, counts model and embedding usage observed above its reservation against the cap and refuses the next send that no longer fits, ends a search over the embedding cap as a system failure instead of a model-facing tool error, reports why a question ended without an answer, checks the key and the issuer's names before the attempt is claimed, and leaves a result file for every way a claimed run can end.
+- note: D-32 moves the issuer-name check to app.query.scope and renames the accounted budget fields.
 
 ### D-18 — An untagged column and a question's item are established only when every word is understood
 - status: active
@@ -146,6 +153,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: 2026-11-11 audit session on mcp-and-langgraph (third study preflight rehearsal on 56bfd8b8 found the earlier rules were lists of forbidden shapes that further shapes walked past; recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: The table reader establishes an untagged column as a fiscal year's reported whole-entity amount only when its header, after the year or year-end date, the unit declaration and a closed vocabulary of full-fiscal-year words are taken out, leaves nothing: a remaining period word leaves the year not established (period_unknown) and any other remaining word leaves the scope not established (scope_unknown); a question's item is named only when every other word of its sentence is a filler, connective, question word, fiscal year, entity-scope word, issuer name the application passed or another item, and a period shorter than a fiscal year always qualifies the item; these allow-lists replace D-15's clauses on sub-year headers and non-amount columns and D-16's clause on qualifiers beside an item, whose lists of forbidden words they supersede.
+- note: D-20 replaces the question clause; D-21 states what "year-end date" checks and the several-year header rule; D-24 owns period forms; D-26 gives scope_unknown its causes.
 
 ### D-19 — A figure is verified only in the direction its cell states
 - status: active
@@ -153,3 +161,102 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: 2026-11-11 audit session on mcp-and-langgraph (third study preflight rehearsal on 56bfd8b8 found the earlier rules were lists of forbidden shapes that further shapes walked past; recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: The figure check compares direction as well as magnitude: a stored reading carries the sign its notation or inline XBRL tag states, a level claim states a loss when its figure is written negative or its item words are a loss phrase of the vocabulary, a claim and a cell that agree in magnitude, unit and period but not in direction are not verified, and where the cell's or the claim's direction is not established the claim is withheld; the withheld-answer sentence and its rationale, defined once beside the verdict, say that the unit or the sign could not be confirmed; this replaces D-15's "magnitudes still compare"; wordings such as "a loss of" and "적자" name no item and stay unverified, and change claims are not compared by direction.
+- note: D-33 replaces the withheld-answer sentence and rationale clause with typed causes; D-25 adds that a tag's sign resolves ambiguous notation.
+
+### D-20 — A question's item is read by the question reader's own closed vocabulary
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: The question reader names an item only when every other word of the sentence is in its own closed vocabulary — request, report and citation words, bounded annual-filing source constructions (from, per, in or according to an annual report, 10-K, 20-F or 사업보고서), entity-scope words, issuer names the application passed, fiscal years, a recognised annual period form, other items and a unit word after the item — and it inherits nothing from the answer reader's fillers and connectives; a month, any other date, a comparison, a segment, a basis and a period shorter than a fiscal year name no item; an explicit two-digit FY or fiscal year means 2000–2099 on the question, header and answer readers; this replaces the question clause of D-18.
+
+### D-21 — A header dates a column by one year, read by form
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: A column under a header that names several years is dated by the one single-year leaf header among them, and a cell that still carries several years or none confirms no claim and creates no period mismatch; an untagged header date is read by its form and is not compared with the filing's fiscal year end, so "year-end date" in D-18 means a date form the header reader removes; when a header's annual ending carries an explicit fiscal-year identifier that identifier dates the column, and an ending without one keeps its written calendar year because no issuer fiscal calendar is inferred.
+
+### D-22 — A cell selection that mixes an asked year with another year is returned
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: When a cell selection contains a cell of an asked fiscal year and a cell of another year, the off-year cell is returned to the model; a selection whose years are all unasked is a period mismatch; withholding is reported only after each held cell matches its claim, the asked item and, when any selected cell is of an asked year, an asked year, so it outranks a period mismatch only then.
+
+### D-23 — One eligibility rule decides which table cell is a comparable amount
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: The written-answer check and the cell-selection gate share one reading-owned rule: a cell is a comparable amount only when it holds one complete original monetary figure for one item, one fiscal year and the whole entity; a share count, ratio, percentage or per-share tag, a cell with several figures or a footnote digit, and a cell only partly inside its chunk neither confirm a claim nor create a period mismatch; uncertainty in unit, currency or direction alone withholds; a table chunk supplies no narrative fallback from its body or its context header, and running text confirms only a claim that states and requests no period.
+
+### D-24 — Period forms are classified once for questions, headers and answers
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: app/figures/periods.py owns the classification of a stated period as annual, shorter than a year, a date or none, and the annual forms: an explicit fiscal-year ending in English or Korean, a complete annual duration (52 or 53 weeks, twelve months) with the noun it modifies, and a full-year date range of 364, 365, 366 or 371 inclusive days; readers keep their own identifier and amount grammars but consume these spans; an answer sentence that names a month, another date, a period shorter than a year or an unspecified period is not confirmed by an annual cell and every figure of that sentence is refused without a period mismatch; an English month word is a date only beside a day or year number or after a dating preposition; in an answer an explicit fiscal-year identifier inside an annual ending owns the year of that ending.
+
+### D-25 — A fact tag's sign resolves ambiguous notation
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: When one matching monetary fact tag states an explicit sign, the stored reading carries that signed value even where the cell's notation (a triangle, parentheses) is ambiguous, and interpretation and checking consume that value; a direction hold remains only when neither the text nor a tag establishes direction; this replaces D-15's hold on an unsigned figure for tagged cells and extends D-19.
+
+### D-26 — Whole-entity scope follows understood structure, and unknown scope states its cause
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: An untagged child row under a label-only parent heading is whole-entity only when every structural parent is a complete item phrase or a closed statement-section name, and an unresolved ancestor leaves it scope_unknown until an entity-wide fact tag establishes the cell; scope_unknown carries a typed cause (declaration, header word, part row, second label, unknown parent) with a cause-specific reason kept in the existing override and reason columns, so a header or structural hold never states that the filing declared no scope; this replaces D-15's part-row clause and the name-only-segment limit.
+
+### D-27 — An opening balance does not undate a column's closing year
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: A column's untagged cells are undated by a tagged cell only when that tag's period has the ending role and conflicts with the column's year: an instant established as an opening balance by a parsed duration boundary or an understood opening label keeps its own year without moving the column, an instant whose role is unknown establishes no column-wide conflict, and the ending role must be shown by a closing label, a literal header end date or the header year's duration end; the context dates already stored are joined for this without a schema change; this narrows D-15's "a column whose tagged cell moves the year".
+
+### D-28 — Financial items are defined once
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: app/figures/items.py defines each financial item's key, accepted English and Korean phrases, accepted standard concepts and its English and Korean output labels; the question, row-label and answer readers and the cell-answer assembly consume that one definition, question-only synonyms and separate concept and label maps are removed, and every emitted label reads back as the same item.
+
+### D-29 — Conflicting identities for one chunk or cell end the run
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: Within one question the chunk and cell ledgers keep identical repeats and keep a same-key disagreement until the next question; a disagreement ends the agent loop, the middleware path and the cell path alike as a system failure before another model call or a final answer, a malformed evidence extraction is a redacted system failure on every path, and one module (app/agent/ledger.py) owns the merge.
+
+### D-30 — Reports state only what a check established, in the caller's resolved language
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: A period-mismatch report names the mismatched written figures or selected cells and the fiscal years they were found for and never states that the filing lacks the requested year; not-found and cannot-resolve reports state checked facts or attribute the proposal to the model; every boundary that authors a localized report (agent loop, middleware, workflow, cell selection and their report builders) requires the caller's resolved locale as a keyword with no default, and no reader infers the language from the answer text; this restates the report and language clauses of D-16 for every path.
+
+### D-31 — A cell catalog says why it has no cells
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: The cell catalog of a fetched chunk is available, not_table, missing_records (the stored table rows are missing) or stale_reading (the table was read by other builder or resolver code, with the stored and the running identity pairs); the two non-available table states give no selectable cells and give the figure check neither body nor cells; evaluation snapshots keep serving their frozen readings; this replaces the single "unavailable" state of D-12.
+
+### D-32 — The live experiment accounts money by request and takes issuer names from the application
+- status: active
+- category: tooling
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: Issuer-name enumeration lives in app.query.scope beside ManifestScopeIndex and raises query-domain errors that only script entry points turn into a process exit before claiming a run; the live script's accounted_usd is the sum over requests of the larger of the reserved estimate and the observed cost, a response whose usage is unknown keeps its reservation, the token and response counters are named for what they count, and a refusal before sending ends as budget_exceeded rather than provider_error; no alias for the old field names is kept (D-3: no stored consumer).
+
+### D-33 — A figure that can be neither confirmed nor refuted is withheld with typed causes
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: 2026-11-12 consolidation session on mcp-and-langgraph (survey of conflicting documents and code, repaired without stopgaps; survey and implementation reports recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
+- decision: The figure-check verdict is withheld and carries a non-empty, ordered, closed tuple of causes from scale, currency and direction, established by the comparison that could not decide; the cell statuses that withhold map to their cause beside the status definitions; the shared English and Korean sentence and rationale name only the causes that occurred (the scale cause is worded as the unit); the public label stays UNVERIFIED, the workflow reason code is figures_withheld and agent results and states use withheld; the name unit_unverified, its constants and its fixed unit-or-sign sentence are removed without an alias because no stored record carried them (checked 2026-11-11: no row in the local database, never on main); this replaces the sentence clause of D-19.
