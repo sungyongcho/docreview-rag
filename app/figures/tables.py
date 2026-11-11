@@ -125,6 +125,15 @@ _PART = re.compile(
     r"|부문|사업부|지역|종속|관계기업|공동기업|피투자",
     re.IGNORECASE,
 )
+# Words that name a period in a header without writing its year ("Current", "Prior",
+# "Year end", "당기", "제56기", "분기"): a table with one is dated by its headers.
+_PERIOD_WORD = re.compile(
+    r"당기|전기|제\s*\d+\s*기|기말|기초|분기|반기"
+    r"|\b(?:current|prior|previous|fiscal|years?|quarters?|months?|weeks?|periods?)\b",
+    re.IGNORECASE,
+)
+# A header naming a column of note references.
+_NOTE_HEADER = re.compile(r"\s*(?:notes?|주석)\s*", re.IGNORECASE)
 # A cell that only cites notes ("Note 5", "주석 4,5") labels no row.
 _NOTE_CITATION = re.compile(r"\s*(?:notes?|주석?)\s*[\d,\s~-]*", re.IGNORECASE)
 
@@ -392,13 +401,15 @@ def _headers_over(
 
 
 def _column_years(
-    over: Sequence[str], caption_years: set[int], terms: Mapping[str, int]
+    over: Sequence[str], caption_years: set[int] | None, terms: Mapping[str, int]
 ) -> set[int]:
     """Return the years the headers above one data cell's columns name.
 
     A header names years by writing them or, when it writes none, by being one period
     word its document defines (see :func:`_term_year`). A header naming a period
     shorter than a fiscal year ("Three Months Ended December 28, 2024") names none.
+    ``caption_years`` are the caption's years when they may date this column (see
+    :func:`_caption_dates`); the column takes them only when they are one year.
     """
     if any(_SHORT_PERIOD.search(text) for text in over):
         return set()
@@ -408,9 +419,38 @@ def _column_years(
         if not written and (term := _term_year(text, terms)) is not None:
             written = {term}
         years.update(written)
-    if not years and len(caption_years) == 1:
+    if not years and caption_years is not None and len(caption_years) == 1:
         return set(caption_years)
     return years
+
+
+def _caption_dates(
+    fragment: Mapping[str, object],
+    headers: Sequence[Mapping[str, object]],
+    terms: Mapping[str, int],
+) -> int | None:
+    """Return the one column a caption's year may date, or None.
+
+    Only a table none of whose headers names a year or a period ("Current", "전기",
+    a defined term) and with exactly one value column lets its caption date that
+    column; a column headed Note(s)/주석 holds references, so it is no value column
+    and is never dated.
+    """
+    texts = [str(header.get("text", "")) for header in headers]
+    if any(
+        YEAR.search(text) or _PERIOD_WORD.search(text) or _term_year(text, terms) is not None
+        for text in texts
+    ):
+        return None
+    columns: set[int] = set()
+    for member in _entries(fragment, "cells"):
+        for source in _entries(member, "sources"):
+            over = _headers_over(source, headers)
+            if values(str(source.get("text", ""))) and not any(
+                _NOTE_HEADER.fullmatch(text) for text in over
+            ):
+                columns.add(_int(source["column"]))
+    return next(iter(columns)) if len(columns) == 1 else None
 
 
 def _not_amount(over: Sequence[str]) -> bool:
@@ -660,6 +700,7 @@ def read_table_cells(
     known = unit.status == "known"
     labels = _row_labels(fragment)
     under_part, label_columns = _row_structure(fragment)
+    dated_by_caption = _caption_dates(fragment, headers, terms)
     cells = []
     for member in _entries(fragment, "cells"):
         for source in _entries(member, "sources"):
@@ -706,7 +747,11 @@ def read_table_cells(
                     row,
                     column,
                     frozenset(cell_values),
-                    frozenset(_column_years(over, caption_years, terms)),
+                    frozenset(
+                        _column_years(
+                            over, caption_years if column == dated_by_caption else None, terms
+                        )
+                    ),
                     scale,
                     _label_item(label) if label is not None else None,
                     percent,

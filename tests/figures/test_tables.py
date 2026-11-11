@@ -12,10 +12,12 @@ from app.figures.tables import (
     read_table_unit,
 )
 from tests.figures.support import (
+    DART_FRAGMENT,
     INCOME_TABLE,
     SEPARATE,
     USD_INCOME_TABLE,
     fact,
+    linked,
     reading,
     stated_revenue,
     table_fragment,
@@ -549,3 +551,53 @@ def test_a_row_with_a_second_label_is_not_the_entitys():
 def test_the_annual_income_statement_stays_known():
     """The AMD statement's year-end columns and rows keep every amount known."""
     assert set(statuses(USD_INCOME_TABLE).values()) == {"known"}
+
+
+def captioned(*header_texts: str, values: tuple[str, ...], caption: str) -> dict:
+    """Build a stored fragment with one caption, its headers and one "Total assets" row."""
+    headers = [{"row": 0, "column": i + 1, "text": text} for i, text in enumerate(header_texts)]
+    cells = [{"sources": [{"row": 1, "column": 0, "text": "Total assets"}]}]
+    cells += [
+        {"sources": [{"row": 1, "column": i + 1, "text": value}]} for i, value in enumerate(values)
+    ]
+    return {"caption_sources": [linked(caption)], "header_cells": headers, "cells": cells}
+
+
+CAPTION = "As of December 31, 2024 (In millions of U.S. dollars)"
+
+
+@pytest.mark.parametrize(
+    ("headers", "values", "years"),
+    [
+        (("Notes", "Current", "Prior"), ("5", "67,885", "62,117"), [set(), set(), set()]),
+        (("", ""), ("67,885", "62,117"), [set(), set()]),
+        (("Notes", "Amount"), ("5", "67,885"), [set(), {2024}]),
+        (("Amount",), ("67,885",), [{2024}]),
+        (("",), ("67,885",), [{2024}]),
+        (("Balance at year end",), ("67,885",), [set()]),
+    ],
+)
+def test_the_caption_year_dates_only_a_tables_one_value_column(headers, values, years):
+    """The caption's year dates a lone value column, never notes or a second column."""
+    readings = sorted(
+        read_table_cells(captioned(*headers, values=values, caption=CAPTION)),
+        key=lambda cell: cell.column,
+    )
+    assert [set(cell.years) for cell in readings] == years
+
+
+def test_an_undefined_prior_period_word_does_not_take_the_caption_year():
+    """DART "당기 | 전기" with 전기 undefined leaves 전기 undated."""
+    fragment = {
+        **DART_FRAGMENT,
+        "caption_sources": [linked("2024년 12월 31일 현재 (단위 : 백만원)")],
+        "header_cells": [
+            {"row": 0, "column": 0, "text": "과목"},
+            {"row": 0, "column": 1, "text": "당기"},
+            {"row": 0, "column": 2, "text": "전기"},
+        ],
+    }
+    readings = {
+        cell.column: cell.years for cell in read_table_cells(fragment, None, {"당기": 2024})
+    }
+    assert readings == {1: {2024}, 2: frozenset()}
