@@ -642,6 +642,7 @@ def _judge(
             )
             for fact in facts
             if not wanted
+            and claim.period == "none"
             and fact.item == item
             and not fact.dated_ambiguously
             and fact.change == claim.change

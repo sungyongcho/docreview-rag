@@ -234,3 +234,14 @@ def test_an_identifier_shaped_amount_with_a_unit_does_not_disappear(prefix):
 
     claims = _claims(f"Revenue was {prefix} million USD.", answer=True)
     assert claims and claims[0].figure.value is not None
+
+
+@pytest.mark.parametrize("period", ["for the year", "for the fiscal year", "for the prior year"])
+def test_a_period_stated_without_a_year_number_cannot_borrow_running_text(period):
+    """Narrative confirms only claims that ask for and state no period at all."""
+    evidence = [EvidenceText(1, "Revenue was USD 1,234 million.", "")]
+    assert (
+        check_figures(f"Revenue {period} was USD 1,234 million.", evidence, []).verdict
+        == "unverified"
+    )
+    assert check_figures("Revenue was USD 1,234 million.", evidence, []).verdict == "verified"
