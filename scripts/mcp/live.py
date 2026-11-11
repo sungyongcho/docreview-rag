@@ -890,11 +890,23 @@ class CappedEmbedding(OpenAIEmbeddingProvider):
 
     @override
     async def embed_query(self, text: str) -> list[float]:
-        """Reserve the query's estimated cost, then embed it once, never retrying."""
+        """Reserve the query's estimated cost, then embed it once, never retrying.
+
+        Billed usage above the estimate is added to ``budget``, so a later query that no
+        longer fits under the cap is refused before it is sent.
+        """
         price = resolve_openai_model("embedding", self.model).pricing.input_per_million_usd
         estimated = Decimal(self.count_input_tokens(text)) * price / Decimal(1_000_000)
         self.budget.reserve(estimated, "embedding")
-        return await super().embed_query(text)
+        billed_before = self.usage.estimated_cost_usd
+        try:
+            return await super().embed_query(text)
+        finally:
+            # A billed response counts even when its vectors are then rejected.
+            excess = self.usage.estimated_cost_usd - billed_before - estimated
+            if excess > 0:
+                self.budget.reserved_usd += excess
+                self.budget.write("embedding", {"status": "overrun", "overrun_usd": excess})
 
 
 def read_only_engine() -> AsyncEngine:

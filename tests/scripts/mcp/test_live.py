@@ -163,19 +163,23 @@ def test_development_mode_serves_the_registry_and_releases_the_pool(monkeypatch)
 
 
 # The capped query embedder the server uses on the OpenAI embedding path
-def embedding_client(sent: list[dict[str, Any]]) -> openai.AsyncOpenAI:
-    """An SDK client whose embeddings endpoint is served offline and records each body."""
+def embedding_client(sent: list[dict[str, Any]], billed: list[int]) -> openai.AsyncOpenAI:
+    """An SDK client whose embeddings endpoint is served offline and records each body.
+
+    Each reply bills the next of ``billed`` input tokens, or one token once they run out.
+    """
 
     def respond(request: httpx2.Request) -> httpx2.Response:
         """Answer one embedding request with a unit vector and its billed tokens."""
         sent.append(json.loads(request.content))
+        tokens = billed.pop(0) if billed else 1
         return httpx2.Response(
             200,
             json={
                 "object": "list",
                 "model": "text-embedding-3-large",
                 "data": [{"object": "embedding", "index": 0, "embedding": [1.0] * 384}],
-                "usage": {"prompt_tokens": 1, "total_tokens": 1},
+                "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
             },
         )
 
@@ -186,9 +190,30 @@ def embedding_client(sent: list[dict[str, Any]]) -> openai.AsyncOpenAI:
     )
 
 
-def capped(budget: Reservation, sent: list[dict[str, Any]]) -> CappedEmbedding:
-    """The capped embedder over the offline endpoint."""
-    return CappedEmbedding(budget, client=embedding_client(sent), credential_slot="dev")
+def capped(
+    budget: Reservation, sent: list[dict[str, Any]], billed: tuple[int, ...] = ()
+) -> CappedEmbedding:
+    """The capped embedder over the offline endpoint billing ``billed`` tokens in turn."""
+    client = embedding_client(sent, list(billed))
+    return CappedEmbedding(budget, client=client, credential_slot="dev")
+
+
+EMBEDDING_TOKEN_USD = Decimal("0.13") / Decimal(1_000_000)  # USD per embedding input token
+
+
+def embed_twice(
+    cap: str, billed: tuple[int, ...]
+) -> tuple[Reservation, list[Any], Exception | None]:
+    """Embed two queries under ``cap``; return the budget, the bodies sent and any refusal."""
+    sent: list[dict[str, Any]] = []
+    budget = Reservation(Decimal(cap), 8)
+    provider = capped(budget, sent, billed)
+    asyncio.run(provider.embed_query("revenue"))
+    try:
+        asyncio.run(provider.embed_query("revenue 2024"))
+    except BudgetExhaustedError as error:
+        return budget, sent, error
+    return budget, sent, None
 
 
 def test_a_query_embedding_is_reserved_then_sent_once():
@@ -202,6 +227,28 @@ def test_a_query_embedding_is_reserved_then_sent_once():
     assert budget.attempts == 1
     assert budget.reserved_usd == Decimal(tokens) * Decimal("0.13") / Decimal(1_000_000)
     assert provider.usage.requests == 1
+
+
+def test_billed_embedding_usage_past_the_cap_blocks_the_next_query():
+    """100,000 billed tokens ($0.013) under a $0.01 cap: the next query is never sent."""
+    budget, sent, refused = embed_twice("0.01", (100_000,))
+    assert refused is not None and len(sent) == 1
+    assert budget.reserved_usd == Decimal("0.013")
+
+
+def test_a_billed_excess_leaves_less_room_for_the_next_query():
+    """Without the $0.0065 excess the second query would fit; with it, it is refused unsent."""
+    budget, sent, refused = embed_twice(str(Decimal("0.0065") + EMBEDDING_TOKEN_USD / 2), (50_000,))
+    assert refused is not None and len(sent) == 1
+    assert budget.reserved_usd == Decimal("0.0065")
+
+
+def test_a_billed_excess_that_still_fits_lets_the_next_query_run():
+    """The excess is added and the next query is reserved and sent as usual."""
+    budget, sent, refused = embed_twice("0.01", (50_000,))
+    assert refused is None and len(sent) == 2
+    tokens = capped(Reservation(Decimal(1), 1), []).count_input_tokens("revenue 2024")
+    assert budget.reserved_usd == Decimal("0.0065") + tokens * EMBEDDING_TOKEN_USD
 
 
 def test_an_exhausted_embedding_budget_is_not_a_correctable_tool_error():
