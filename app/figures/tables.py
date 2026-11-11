@@ -614,12 +614,18 @@ def _scope(dimensions: tuple[tuple[str, str], ...]) -> str | None:
 
 
 def _with_fact(
-    reading: TableCellReading, fact: CellFact, notes: frozenset[str], negative: bool | None
+    reading: TableCellReading,
+    fact: CellFact,
+    notes: frozenset[str],
+    negative: bool | None,
+    declared: bool,
 ) -> TableCellReading:
     """Read one cell from the fact its filing tags, recording what overrides the text.
 
     The fact's fiscal year and scope always apply; a declared statement scope that
     the tag contradicts (a consolidated tag in a separate statement) is overridden.
+    In a filing that declares its statements (``declared``), a tag with no dimension
+    at all ("CFY2024dFY") states no statement scope, so the declared one stays.
     An inline XBRL tag's sign is the value's sign: when it differs from the sign the
     cell's notation writes (``negative``), ``sign`` is recorded and the interpretation
     applies the tag's.
@@ -634,10 +640,13 @@ def _with_fact(
     years = frozenset() if fact.fiscal_year is None else frozenset({fact.fiscal_year})
     if reading.years and reading.years != years:
         overrides.append("year")
-    scope = _scope(fact.dimensions)
-    tagged_separate = _SEPARATE_SCOPE in (scope or "")
-    if reading.scope != UNKNOWN and (reading.scope == _SEPARATE_SCOPE) != tagged_separate:
-        overrides.append("scope")
+    if declared and not fact.dimensions:
+        scope = reading.scope
+    else:
+        scope = _scope(fact.dimensions)
+        tagged_separate = _SEPARATE_SCOPE in (scope or "")
+        if reading.scope != UNKNOWN and (reading.scope == _SEPARATE_SCOPE) != tagged_separate:
+            overrides.append("scope")
     scale, percent, resolved = reading.scale, reading.percent, reading.currency
     measure = None
     currency = _ISO_CURRENCY.fullmatch(fact.numerator or "")
@@ -763,7 +772,13 @@ def read_table_cells(
                 )
                 tagged = facts.get((row, column), ())
                 if len(tagged) == 1 and values(tagged[0].text) == cell_values:
-                    reading = _with_fact(reading, tagged[0], unit.currency | own, _negative(text))
+                    reading = _with_fact(
+                        reading,
+                        tagged[0],
+                        unit.currency | own,
+                        _negative(text),
+                        statement is not None,
+                    )
                 elif len(tagged) == 1:
                     # The tag shows another number ("25,785" tagged, "25,7851" with a
                     # glued footnote written): the text keeps its reading, and the

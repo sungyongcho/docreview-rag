@@ -261,6 +261,7 @@ def test_dart_statements_follow_section_codes_classes_and_summary_headings():
     facts = dart_facts(DART_STATEMENTS, filing_document(registry="dart"))
 
     def declared(text: str) -> list[tuple[object, object, str]]:
+        """Return the kind, scope and basis declared around one table's cell text."""
         position = DART_STATEMENTS.index(f"<TD>{text}</TD>")
         return [(d.kind, d.scope, d.basis) for d in facts.declarations_at(position)]
 
@@ -280,3 +281,40 @@ def test_dart_statements_follow_section_codes_classes_and_summary_headings():
         ("notes", "separate", "section D-0-3-5-0"),
         ("notes", "separate", "class {XBRL}NT_S_D851105"),
     ]
+
+
+def summary_declarations(paragraphs: str) -> dict[str, list[tuple[object, object, str]]]:
+    """Read a summary section's headings and return what each table's cell sees."""
+    raw = (
+        f'<SECTION-2><TITLE AASSOCNOTE="D-0-3-1-0">1. 요약재무정보</TITLE>{paragraphs}</SECTION-2>'
+    )
+    facts = dart_facts(raw, filing_document(registry="dart"))
+    return {
+        text: [
+            (d.kind, d.scope, d.basis) for d in facts.declarations_at(raw.index(f"<TD>{text}</TD>"))
+        ]
+        for text in ("1", "2")
+    }
+
+
+def test_a_summary_heading_counts_only_as_a_whole_paragraph():
+    """A paragraph only mentioning a heading declares nothing and ends the one before."""
+    found = summary_declarations(
+        "<P>가. 요약연결재무정보</P><TABLE><TR><TD>1</TD></TR></TABLE>"
+        "<P>나. 요약별도재무정보 (연결 기준은 가. 요약연결재무정보 참조)</P>"
+        "<TABLE><TR><TD>2</TD></TR></TABLE>"
+    )
+    assert found["1"][1] == ("summary", "consolidated", "heading 요약연결재무정보")
+    assert found["2"] == [("summary", None, "section D-0-3-1-0")]
+
+
+def test_a_summary_heading_may_sit_in_spans_and_line_breaks():
+    """The report form's markup around a heading ("&cr;", spans, spaces) keeps it whole."""
+    found = summary_declarations(
+        '<P>\n<SPAN USERMARK=" B">가. 요약연결재무정보&cr;</SPAN>\n</P>'
+        "<TABLE><TR><TD>1</TD></TR></TABLE>"
+        '<P USERMARK=" B">\n<SPAN>&cr;&cr;</SPAN>\n<SPAN>나. 요약 별도재무정보</SPAN>\n</P>'
+        "<TABLE><TR><TD>2</TD></TR></TABLE>"
+    )
+    assert found["1"][1] == ("summary", "consolidated", "heading 요약연결재무정보")
+    assert found["2"][1] == ("summary", "separate", "heading 요약 별도재무정보")

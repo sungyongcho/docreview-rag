@@ -103,8 +103,14 @@ _INCOME_KINDS: dict[str | None, StatementKind] = {
 _SECTION = re.compile(r"<SECTION-2\b[^>]*>(.*?)</SECTION-2>", re.S)
 _SECTION_CODE = re.compile(r'<TITLE\b[^>]*\bAASSOCNOTE="(D-0-3-\d-0)"')
 _GROUP = re.compile(r"<TABLE-GROUP\b([^>]*)>.*?</TABLE-GROUP>", re.S)
-# The headings the report form prescribes inside "1. 요약재무정보".
-_SUMMARY_HEADING = re.compile(rf"요약{_GAP}(연결|별도){_GAP}재무{_GAP}정보")
+# The headings the report form prescribes inside "1. 요약재무정보". A heading stands as a
+# whole paragraph or title, at most behind its enumerator ("가. 요약연결재무정보"); a
+# paragraph that only mentions one ("나. 요약별도재무정보 (연결 기준은 가.
+# 요약연결재무정보 참조)") declares nothing and ends the heading before it.
+_BLOCK = re.compile(r"<(P|TITLE)\b[^>]*>(.*?)</\1>", re.S)
+_SUMMARY_HEADING = re.compile(
+    r"(?:(?:[가-하]|\d+)[.)]|\(\d+\))?\s*(?P<heading>요약\s*(?P<scope>연결|별도)\s*재무\s*정보)"
+)
 # Prior-period words and how many fiscal years before the reporting year they name.
 _PRIOR_TERMS = (("전기", 1), ("전전기", 2))
 
@@ -422,7 +428,8 @@ def dart_statements(raw: str) -> tuple[StatementDeclaration, ...]:
     Each financial section with a standard code declares its span; each table group
     with a statement class declares its kind and, with a ``_C``/``_S`` suffix, its
     scope; inside "1. 요약재무정보" each prescribed heading ("요약연결재무정보",
-    "요약별도재무정보") declares the scope from itself to the next heading.
+    "요약별도재무정보") that stands as a whole paragraph or title declares the scope
+    from itself to the next paragraph naming one.
     """
     declarations: list[StatementDeclaration] = []
     for section in _SECTION.finditer(raw):
@@ -436,15 +443,21 @@ def dart_statements(raw: str) -> tuple[StatementDeclaration, ...]:
         )
         if kind != "summary":
             continue
-        headings = list(_SUMMARY_HEADING.finditer(raw, start, end))
-        for heading, following in zip(headings, [*headings[1:], None], strict=True):
+        headings = [
+            (block.start(), _SUMMARY_HEADING.fullmatch(text))
+            for block in _BLOCK.finditer(raw, start, end)
+            if _SUMMARY_HEADING.search(text := _text(block.group(2).replace("&cr;", " ")))
+        ]
+        for (position, heading), following in zip(headings, [*headings[1:], None], strict=True):
+            if heading is None:
+                continue
             declarations.append(
                 StatementDeclaration(
-                    heading.start(),
-                    end if following is None else following.start(),
+                    position,
+                    end if following is None else following[0],
                     "summary",
-                    "consolidated" if heading.group(1) == "연결" else "separate",
-                    f"heading {_text(heading.group(0))}",
+                    "consolidated" if heading.group("scope") == "연결" else "separate",
+                    f"heading {heading.group('heading')}",
                 )
             )
     for group in _GROUP.finditer(raw):

@@ -280,7 +280,17 @@ def test_only_a_declared_consolidated_entity_statement_is_the_entity(statement, 
 
 def test_a_consolidated_tag_in_a_separate_statement_overrides_its_declaration():
     """The tag decides the scope and the contradicted declaration is recorded."""
-    dart_fact = fact(numerator=None, scale=None, text="300,870,903")
+    dart_fact = fact(
+        numerator=None,
+        scale=None,
+        text="300,870,903",
+        dimensions=(
+            (
+                "ifrs-full:ConsolidatedAndSeparateFinancialStatementsAxis",
+                "ifrs-full:ConsolidatedMember",
+            ),
+        ),
+    )
     cell = stated_revenue(TableStatement("income", "separate"), dart_fact)
     assert (cell.scope, cell.overrides) == (None, ("scope",))
     agreeing = stated_revenue(
@@ -296,6 +306,22 @@ def test_a_consolidated_tag_in_a_separate_statement_overrides_its_declaration():
         ),
     )
     assert (agreeing.scope, agreeing.overrides) == (SEPARATE, ())
+
+
+@pytest.mark.parametrize(
+    ("statement", "scope", "status"),
+    [
+        (TableStatement("income", "separate"), SEPARATE, "scope_qualified"),
+        (TableStatement("income", "consolidated"), None, "known"),
+        (TableStatement("notes", "consolidated"), "?", "scope_unknown"),
+    ],
+)
+def test_a_dart_tag_without_a_statement_axis_keeps_the_declared_scope(statement, scope, status):
+    """ "CFY2024dFY" states no consolidated or separate scope, so the declaration stays."""
+    dart_fact = fact(numerator=None, scale=None, text="300,870,903", dimensions=())
+    cell = stated_revenue(statement, dart_fact)
+    assert (cell.scope, cell.overrides) == (scope, ())
+    assert interpret_table_cell("300,870,903", [cell]).status == status
 
 
 # NVDA's layout: the percent sign of a margin sits in a source cell of its own.
