@@ -406,7 +406,9 @@ uv run python -m app.mcp.filings_server --include-cells   # fetch_chunk가 저�
 
 `--http PORT`를 주면 서버는 인증과 HTTPS 없이 `127.0.0.1`에서만 연결을 받으며, `Host` 헤더가 loopback 주소가 아닌 요청은 HTTP 421로 거부합니다. 클라이언트는 `http://127.0.0.1:PORT/mcp`로 연결합니다. 클라이언트를 닫아도 서버는 멈추지 않으므로 Ctrl-C나 SIGTERM으로 종료합니다. 도구와 결과는 stdio와 같습니다. 고칠 수 있는 도구 실패는 `isError` 결과로, 시스템 실패는 JSON-RPC 오류로 돌아오며 둘 다 HTTP 200 응답에 담깁니다. 필수 MCP 헤더가 빠진 요청처럼 형식이 잘못된 요청은 HTTP 4xx 상태로 거부됩니다. 클라이언트가 호출을 취소하면 SDK가 실행 중인 도구의 비동기 작업을 취소합니다.
 
-`--include-cells`를 주면 `fetch_chunk`가 `table` 객체를 함께 반환하고, 서버가 그 출력 schema를 공개합니다. 세 도구와 입력은 그대로입니다. `table.status`는 청크의 저장된 셀이 있으면 `available`, 일반 문단이면 `not_table`, 표 기록 없이 저장됐거나 지금 실행 중인 코드와 다른 표 해석 코드로 색인된 표 청크면 `unavailable`입니다. 뒤의 두 상태는 공시에 답이 없다는 뜻이 아닙니다. 이렇게 오래된 표는 해당 공시를 다시 색인할 때까지 답변의 수치도 확인하지 않습니다. `rag-dev schema check`는 그 개수를 `stored_tables.stale`로, `/ready`와 corpus 상태는 `stale_tables`로 보여 줍니다. 각 셀에는 `ref`(`<chunk_id>:r<row>c<column>`), 행 이름, 열 제목, 원문, 색인 때 읽은 항목·회계연도·배율·통화, 이들이 모두 확정됐을 때만 `known`인 `status`, 청크가 셀 전체를 담았는지가 들어 있습니다. 없는 단위나 통화는 추측하지 않고 상태로 알립니다. 공시가 수치에 태그를 붙여 두었으면(SEC 공시의 inline XBRL, DART 보고서의 재무제표 셀) 열 제목과 단위 주석 대신 태그의 회계연도·통화·배율을 씁니다. 사업부문이나 DART 별도 재무제표로 태그된 값은 `scope_qualified`, 태그된 주식 수나 비율은 `not_monetary`이며, 둘 다 회사 전체의 수치로 고를 수 없습니다. DART 표의 열 제목이 보고서가 날짜와 함께 직접 정의한 기간 용어(`당기`, `전기`, `제56기`) 하나뿐이면 그 회계연도로 읽습니다. 그런 선언이 없으면 그 열은 `period_unknown`으로 남습니다. DART 보고서에는 연결과 별도 재무제표가 함께 있습니다. 그래서 태그 없는 DART 셀은 보고서가 절 코드·재무제표 분류·요약 소제목으로 연결 재무상태표·손익계산서·포괄손익계산서·현금흐름표나 요약연결재무정보라고 선언한 표에 있을 때만 회사 전체의 수치로 봅니다. 별도 재무제표는 `scope_qualified`, 주석·자본변동표·선언 없는 표는 `scope_unknown`입니다.
+`--include-cells`를 주면 `fetch_chunk`가 `table` 객체를 함께 반환하고, 서버가 그 출력 schema를 공개합니다. 세 도구와 입력은 그대로입니다. `table.status`는 청크의 저장된 셀이 있으면 `available`, 일반 문단이면 `not_table`, 저장된 표 행이 없으면 `missing_records`, 표를 읽은 builder 또는 resolver가 실행 중인 코드와 다르면 `stale_reading`입니다. 기록이 없으면 원문을 확인하고 공시를 다시 색인하고, 오래된 해석은 실행 중인 코드로 다시 색인하세요. 재색인은 별도 승인이 필요합니다. 두 상태는 선택 가능한 셀이 없고 수치 확인에 본문과 셀을 모두 제공하지 않으며 공시에 답이 없다는 뜻은 아닙니다. 오래된 결과의 `stored_identity`와 `running_identity`에는 각각 `builder_identity`와 `resolver_identity`가 있습니다. `rag-dev schema check`는 그 개수를 `stored_tables.stale`로, `/ready`와 corpus 상태는 `stale_tables`로 보여 줍니다. 각 셀에는 `ref`(`<chunk_id>:r<row>c<column>`), 행 이름, 열 제목, 원문, 색인 때 읽은 항목·회계연도·배율·통화, 이들이 모두 확정됐을 때만 `known`인 `status`, 청크가 셀 전체를 담았는지가 들어 있습니다. 없는 단위나 통화는 추측하지 않고 상태로 알립니다. 공시가 수치에 태그를 붙여 두었으면(SEC 공시의 inline XBRL, DART 보고서의 재무제표 셀) 열 제목과 단위 주석 대신 태그의 회계연도·통화·배율을 씁니다. 사업부문이나 DART 별도 재무제표로 태그된 값은 `scope_qualified`, 태그된 주식 수나 비율은 `not_monetary`이며, 둘 다 회사 전체의 수치로 고를 수 없습니다. DART 표의 열 제목이 보고서가 날짜와 함께 직접 정의한 기간 용어(`당기`, `전기`, `제56기`) 하나뿐이면 그 회계연도로 읽습니다. 그런 선언이 없으면 그 열은 `period_unknown`으로 남습니다. DART 보고서에는 연결과 별도 재무제표가 함께 있습니다. 그래서 태그 없는 DART 셀은 보고서가 절 코드·재무제표 분류·요약 소제목으로 연결 재무상태표·손익계산서·포괄손익계산서·현금흐름표나 요약연결재무정보라고 선언한 표에 있을 때만 회사 전체의 수치로 봅니다. 별도 재무제표는 `scope_qualified`, 주석·자본변동표·선언 없는 표는 `scope_unknown`입니다.
+
+셀 상태는 `known`, `blank`, `not_numeric`, `conflicting`, `not_monetary`, `scale_unknown`, `currency_unconfirmed`, `period_unknown`, `scope_qualified`, `scope_unknown`, `item_unknown`입니다. 선택 가능한 수치는 항목 하나·연도 하나·회사 전체의 완전한 금액 하나여야 합니다. 일부만 담긴 셀, 여러 수치, 각주 숫자, 주식 수, 비율, 매출 행의 주당 태그는 주장을 확인하거나 기간 불일치를 만들지 않습니다. 태그는 ▲나 괄호의 부호를 정할 수 있습니다. 이름만 있는 부모 아래 자식은 모든 부모가 이해된 항목이나 재무제표 구분일 때만 회사 전체에 해당합니다. `scope_unknown`은 선언·머리글 단어·부분 행·두 번째 이름·알 수 없는 부모 중 원인을 밝힙니다. 변동표의 기말 잔액은 기초 잔액이 있어도 연도를 유지합니다. 셀로 조립한 답은 `Net income`, `순이익`처럼 항목의 정식 이름을 씁니다.
 
 `catalog_server`는 `manifest.json`만 읽습니다. `filings_server`는 설정된 DB를 쓰고, 검색에는 설정된 embedding 제공자를 사용하므로 검색에 사용량이 발생할 수 있습니다. 개발용 도구라서 개발 키(`OPENAI_API_KEY_LOCAL`)로만 실행하며, `MODE=prod`이면 시작하지 않고 종료 코드 2로 끝납니다. 잘못된 인자나 없는 청크처럼 호출자가 고칠 수 있는 실패는 모델이 읽을 수 있는 `isError` 결과로 돌아오고, 아무것도 찾지 못한 검색은 성공한 빈 결과입니다. DB 등 시스템 실패는 대신 비밀 정보를 가린 메시지의 JSON-RPC `INTERNAL_ERROR`(-32603)로 돌아옵니다. MCP 클라이언트는 이를 모델에게 넘기는 결과가 아니라 오류로 올리므로 애플리케이션이 "근거 없음"과 구별할 수 있으며, DocReview agent loop는 실행을 `tool_error`로 끝냅니다. 연결은 이후 호출에 계속 쓸 수 있습니다. `final_answer`는 서버 도구가 아니며 agent loop가 담당합니다.
 
@@ -500,7 +502,7 @@ rag-dev compose exec -T db psql -U filing -d filing -c '\dt'
 ```
 
 새 DB에는 아직 앱 테이블이 없습니다. 원문과 `.env` 등은 그대로 있어야 합니다.
-[초기 schema 준비](#초기-schema-준비)로 빈 DB에 테이블을 만들고 [실습 가이드](overview.md)의 DB 적재부터 다시 진행합니다.
+[초기 schema 준비](#initial-schema-setup)로 빈 DB에 테이블을 만들고 [실습 가이드](overview.md)의 DB 적재부터 다시 진행합니다.
 embedding 재생성은 다시 유료입니다. 웹 재시작 후 DB 문서와 과거 job/eval 기록 상태를 확인합니다.
 브라우저의 예전 대화는 남지만 삭제된 DB 근거·run을 더 이상 조회하지 못할 수 있습니다.
 
@@ -516,10 +518,10 @@ embedding 재생성은 다시 유료입니다. 웹 재시작 후 DB 문서와 �
 있음을 확인한 뒤에만 삭제합니다. `data/corpus` 전체를 지우지 않습니다.
 
 ```bash
-ls -l data/corpus/NVDA/2024-02-21_0001045810-24-000029.html
+ls -l data/corpus/sec/NVDA/0001045810-24-000029/primary.html
 # 필요한 백업을 마친 뒤, 확인한 이 파일만 삭제합니다.
-rm -i -- data/corpus/NVDA/2024-02-21_0001045810-24-000029.html
-test ! -e data/corpus/NVDA/2024-02-21_0001045810-24-000029.html && echo 'Source removed'
+rm -i -- data/corpus/sec/NVDA/0001045810-24-000029/primary.html
+test ! -e data/corpus/sec/NVDA/0001045810-24-000029/primary.html && echo 'Source removed'
 ```
 
 그 원문만 사라지고 manifest·golden·profiles와 DB는 남습니다.
@@ -589,8 +591,8 @@ rag-dev corpus readiness
 | BM25 미준비 | 파싱·청킹 뒤 통계가 없는 정상 준비 단계 | 4단계 BM25 계산/재계산 필요. 하이브리드·키워드는 대기, 벡터는 임베딩만 필요 |
 | `NOT_IN_DOCS` | corpus·기업·연도 필터와 검색된 근거 | 문서와 인용 후보 확인 후 문서에 실제 있는 질문으로 재시도 |
 | `figures_unverified` 사유 또는 거절된 수치 | 인용 표 기준 각 수치의 항목·단위·기간 | 수치 바로 앞 문구가 지원하는 항목(매출, 순이익 등)을 밝히고 단위 환산 뒤 그 행의 해당 기간 셀 하나와 맞아야 인정됨. 양쪽이 밝힌 단위로 셀과 어긋나는 값은 여기서 거절되고, 단위가 불확실한 수치가 있으면 그런 값과 함께여도 대신 `UNVERIFIED`로 끝남. 수식어가 붙거나 지원하지 않는 문구, 표 금액에 대한 증가율·비율 수치, 연도가 중요한 경우의 본문 문장은 거절됨 |
-| `PERIOD_MISMATCH` | `period_mismatch` 사유의 요청 연도와 인용 수치의 연도 | 인용 수치가 다른 연도의 값임; 그 연도로 다시 묻거나 요청 연도를 보고한 공시를 선택 |
-| `UNVERIFIED` | 보류한 수치를 담은 `figures_unit_unverified` 사유(웹) 또는 `unit_unverified`(agent JSON) | 수치가 가리키는 항목 셀의 단위나 명시적 통화가 표 머리글·셀·연결된 단위 주석 묶음에 없거나 온전히 읽을 수 없거나 서로 다름("$"·"달러"·"¥"만 있는 경우 포함), 또는 답변에 단위나 통화가 없음. 알려진 다른 통화는 환산하지 않고 거절됨. 단위를 추측하지 않으며, 이런 수치가 하나라도 있으면 틀린 수치가 함께 있어도 답변 전체를 보류함. 인용은 유지되므로 인용한 표의 단위를 직접 확인. 영문 단위 주석 지원 전에 청킹한 표는 다시 청킹하기 전까지 이 결과가 유지됨 |
+| `PERIOD_MISMATCH` | `period_mismatch` 사유의 요청 연도와 인용 수치의 연도 | 표시된 수치가 다른 연도에서 확인됨; 셀 선택에는 별도 문장을 사용. 인용을 확인하거나 그 연도로 다시 질문 |
+| `UNVERIFIED` | `figures_withheld` 사유(웹) 또는 `withheld` 판정(agent JSON)과 유형별 `causes` | 단위·통화·손익 방향을 확정하지 못함. 해당 원인만 표시하고 인용은 유지하므로 근거를 직접 확인. 알려진 다른 통화는 환산하지 않고 거절 |
 | `provider_failure` | 실행 트레이스의 status·attempts·details·node | 키·모델 접근 권한·연결·한도를 확인; DB 재생성으로 해결하지 않음 |
 | `budget_exceeded` | resource·limit·observed·blocked_node | 대화 설정 → 실행 한도에서 해당 한도만 조정; 재시도는 추가 비용 가능 |
 | `node_error` | error_type·message·node | 해당 검색·파싱 등 단계의 원인을 해결한 뒤 재시도 |
@@ -624,7 +626,7 @@ rag-alias remove
 프로젝트 파일·DB는 지우지 않습니다. `rag-alias remove`는 현재 셸의 변경되지 않은 프로젝트 명령도
 해제하지만 별도로 실행한 `--uninstall`은 부모 셸을 바꿀 수 없으므로 안내된 후속 명령을 따릅니다.
 백업 경로를 보관하고 새 터미널에서 자동 로드되지 않는지 확인합니다. 다시 등록하려면
-[명령 등록과 도움말](#명령-등록과-도움말)을 따릅니다.
+[명령 등록과 도움말](#register-commands-and-open-help)을 따릅니다.
 
 <!-- heading-alias: quick-start와-데이터-초기화 -->
 ## Quick Start와 데이터 초기화 {#quick-start-and-data-reset}
