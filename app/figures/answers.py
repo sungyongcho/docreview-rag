@@ -589,7 +589,7 @@ def _judge(
             ),
         )
         for cell in cells
-        if not claim.change and cell.item == item and cell.scope is None
+        if not claim.change and cell.item == item and cell.evidence_eligible
     ]
     certain = [years for years, outcome in compared if outcome == "match"]
     unsure = [years for years, outcome in compared if outcome == "uncertain"]
@@ -648,16 +648,11 @@ def check_figures(
     """
     requested = set(requested_years)
     cells = [cell for item in evidence if item.table_cells is not None for cell in item.table_cells]
-    data_values = {abs(value) for cell in cells for value in cell.values}
     facts = [
         claim
         for item in evidence
-        for claim in _claims(item.context_header)
-        + (
-            [fact for fact in _claims(item.body) if fact.figure.value not in data_values]
-            if item.table_cells is not None
-            else _claims(item.body)
-        )
+        if item.table_cells is None
+        for claim in _claims(item.context_header) + _claims(item.body)
     ]
     judged = [
         _judge(claim, cells, facts, requested)

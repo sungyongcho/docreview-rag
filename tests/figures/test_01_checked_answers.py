@@ -467,11 +467,11 @@ def test_per_share_rows_need_a_monetary_table_note(caption, answer, verdict):
 @pytest.mark.parametrize(
     ("caption", "value", "answer", "verdict"),
     [
-        ("(단위 : %)", "14.5", "2024년 매출액은 14.5%이다.", "verified"),
+        ("(단위 : %)", "14.5", "2024년 매출액은 14.5%이다.", "unverified"),
         ("(단위 : %)", "14.5", "2024년 매출액은 14.5백만원이다.", "unverified"),
-        ("(단위 : 백만원)", "14.5%", "2024년 매출액은 14.5%이다.", "verified"),
+        ("(단위 : 백만원)", "14.5%", "2024년 매출액은 14.5%이다.", "unverified"),
         (None, "14.5", "2024년 매출액은 14.5%이다.", "unit_unverified"),
-        (None, "14.5%", "2024년 매출액은 14.5%이다.", "verified"),
+        (None, "14.5%", "2024년 매출액은 14.5%이다.", "unverified"),
         (None, "14.5%", "2024년 매출액은 14.6%이다.", "unverified"),
     ],
 )
@@ -984,11 +984,11 @@ def test_a_marker_between_two_figures_certifies_neither():
 @pytest.mark.parametrize(
     ("cell", "answer", "verdict"),
     [
-        ("25%", "USD 25%", "unit_unverified"),
-        ("25%", "25% USD", "unit_unverified"),
-        ("25%", "USD 25% KRW", "unit_unverified"),
-        ("USD 25%", "25%", "unit_unverified"),
-        ("25%", "25%", "verified"),
+        ("25%", "USD 25%", "unverified"),
+        ("25%", "25% USD", "unverified"),
+        ("25%", "USD 25% KRW", "unverified"),
+        ("USD 25%", "25%", "unverified"),
+        ("25%", "25%", "unverified"),
         ("25%", "26%", "unverified"),
     ],
 )

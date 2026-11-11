@@ -69,7 +69,12 @@ def test_table_readings_keep_an_ambiguous_dollar_unresolved():
         ("1,234", {"measure": "other"}, "not_monetary", Decimal(1234)),
         ("1,234", {"scope": "axis=member"}, "scope_qualified", Decimal(1234)),
         ("1,234", {"scope": "axis=member", "years": frozenset()}, "period_unknown", Decimal(1234)),
-        ("12.5%", {"percent": True, "scale": None, "currency": None}, "known", Decimal("12.5")),
+        (
+            "12.5%",
+            {"percent": True, "scale": None, "currency": None},
+            "not_monetary",
+            Decimal("12.5"),
+        ),
     ],
 )
 def test_a_cell_is_known_only_when_every_fact_is_established(text, changes, status, value):
@@ -130,8 +135,8 @@ def test_a_cell_without_one_figure_is_not_selectable():
         (
             "12.5%",
             {"percent": True, "scale": None, "currency": None, "years": frozenset()},
-            "period_unknown",
-            "no single fiscal year",
+            "not_monetary",
+            "the cell is not a monetary amount",
         ),
     ],
 )
@@ -175,11 +180,10 @@ def test_a_per_share_tag_states_plain_currency_units():
     )
 
 
-def test_tagged_values_that_are_not_amounts_keep_the_text_unit():
-    """Shares and ratios are not amounts; their text unit stays and they are not selectable."""
-    text_cell = tagged_revenue()
+def test_tagged_values_that_are_not_amounts_cannot_borrow_the_text_unit():
+    """Shares and ratios are not amounts and cannot borrow a monetary table note."""
     cell = tagged_revenue(fact(numerator="xbrli:shares"))
-    assert (cell.measure, cell.scale, cell.currency) == ("other", text_cell.scale, "$")
+    assert (cell.measure, cell.scale, cell.currency) == ("other", None, None)
     assert interpret_table_cell("$ 25,785", [cell]).status == "not_monetary"
 
 
@@ -359,8 +363,8 @@ def test_an_amount_tag_on_a_written_percentage_cannot_show_which():
     [
         ("12.5 %", {}, "conflicting"),
         ("12.5 %", {"percent": None}, "conflicting"),
-        ("12.5 %", {"percent": True, "scale": None, "currency": None}, "known"),
-        ("12.5%", {"percent": True, "scale": None, "currency": None}, "known"),
+        ("12.5 %", {"percent": True, "scale": None, "currency": None}, "not_monetary"),
+        ("12.5%", {"percent": True, "scale": None, "currency": None}, "not_monetary"),
     ],
 )
 def test_a_percentage_is_known_only_when_its_reading_is_one(text, changes, status):

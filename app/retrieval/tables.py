@@ -5,7 +5,7 @@ canonical table rows, from the live index or from the snapshot it was retrieved 
 """
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any
 
@@ -31,7 +31,7 @@ from app.db.models import (
     TableSourceCell,
 )
 from app.figures.answers import EvidenceText
-from app.figures.tables import TableCellReading
+from app.figures.tables import TableCellReading, complete_cell
 from app.ingestion.persistence import slices
 from app.ingestion.table_records import builder_identity, resolver_identity
 
@@ -197,9 +197,17 @@ def assemble_tables(
                 "sources": [_source_json(source) for source in member_sources],
             }
         )
-        readings.setdefault(member.chunk_id, []).extend(
-            reading for source in member_sources if (reading := _reading(source)) is not None
-        )
+        text = " ".join(source.text for source in member_sources if source.text)
+        complete = complete_cell(text, member.text_start, member.text_end)
+        member_readings = [r for source in member_sources if (r := _reading(source)) is not None]
+        for reading in member_readings:
+            holds = (() if complete else ("incomplete",)) + (
+                ("multiple",) if len(member_readings) > 1 else ()
+            )
+            readings.setdefault(member.chunk_id, []).append(
+                replace(reading, overrides=(*reading.overrides, *holds)) if holds else reading
+            )
+        readings.setdefault(member.chunk_id, [])
     return {
         chunk_id: StoredTable(
             {
@@ -405,7 +413,7 @@ def catalog_cells(
                 "currency": None if reading is None else reading.currency,
                 "percent": None if reading is None else reading.percent,
                 "status": cell.status,
-                "complete": member.text_start == 0 and member.text_end == len(cell.text),
+                "complete": complete_cell(cell.text, member.text_start, member.text_end),
             }
         )
     return {

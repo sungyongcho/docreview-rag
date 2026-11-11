@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import BM25Idf, LexicalRanker
 from app.evals.execution.models import EvaluationRetrieval
+from app.figures.tables import complete_cell
 from app.query.language import lexical_corpus_language, lexical_plan
 from app.retrieval.embedding.provider import EmbeddingProvider
 from app.retrieval.ranking.fusion import DEFAULT_RRF_K
@@ -37,11 +38,18 @@ def _fragment_cell_spans(fragment: object) -> tuple[tuple[int, int], ...] | None
     """
     if not isinstance(fragment, dict) or not isinstance(cells := fragment.get("cells"), list):
         return None
-    sources: list[object] = [
-        source
-        for member in cells
-        for source in (member.get("sources", [None]) if isinstance(member, dict) else [None])
-    ]
+    sources: list[object] = []
+    for member in cells:
+        if not isinstance(member, dict) or not isinstance(member.get("sources"), list):
+            return None
+        linked = member["sources"]
+        if not all(
+            isinstance(source, dict) and isinstance(source.get("text"), str) for source in linked
+        ):
+            return None
+        text = " ".join(source["text"] for source in linked if source["text"])
+        if complete_cell(text, member.get("text_start", 0), member.get("text_end", len(text))):
+            sources.extend(linked)
     sources.extend(fragment.get("header_cells") or [])
     for caption in fragment.get("caption_sources") or []:
         if not isinstance(caption, dict):

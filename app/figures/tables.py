@@ -205,6 +205,50 @@ class TableCellReading:
     scope: str | None = None
     measure: Literal["amount", "per_share", "other"] | None = None
 
+    @property
+    def amount_problem(self) -> tuple[CellStatus, str] | None:
+        """Name a structural hold shared by selection and comparison, excluding units/sign.
+
+        Unit and direction uncertainty alone may withhold a written claim. Every other
+        missing fact makes this cell ineligible as evidence, even for an undated claim.
+        """
+        if len(self.values) != 1 or any(x in self.overrides for x in ("multiple", "incomplete")):
+            return "conflicting", "no single complete figure"
+        if self.measure == "other" or self.percent is True:
+            return "not_monetary", "the cell is not a monetary amount"
+        if (
+            self.measure == "per_share"
+            and self.item is not None
+            and self.item
+            not in {
+                "earnings per share",
+                "basic earnings per share",
+                "diluted earnings per share",
+            }
+        ):
+            return "not_monetary", "a per-share tag is not this item's amount"
+        if len(self.years) != 1:
+            return "period_unknown", "no single fiscal year"
+        if self.scope == UNKNOWN:
+            return (
+                "scope_unknown",
+                "the filing declares no entity scope for it",
+            )
+        if self.scope is not None:
+            return "scope_qualified", self.scope
+        if self.item is None:
+            return "item_unknown", (
+                "the tag's concept is not the row label's item"
+                if "concept" in self.overrides
+                else "row label names no item"
+            )
+        return None
+
+    @property
+    def evidence_eligible(self) -> bool:
+        """Whether this cell can supply an amount, possibly held only for unit or sign."""
+        return self.amount_problem is None
+
 
 @dataclass(frozen=True, slots=True)
 class CellFact:
@@ -761,6 +805,7 @@ def _with_fact(
         resolved = resolve(frozenset({code}) | notes)
     elif fact.numerator is not None:
         measure = "other"
+        scale, resolved = None, None
     item = reading.item
     standard = _STANDARD_CONCEPT.fullmatch(fact.concept)
     if item is not None and standard is not None:
@@ -864,7 +909,7 @@ def read_table_cells(
                 spans = [f for f in figure_spans(blank(text)) if f.value is not None]
                 # Digits not grouped in threes ("25,7851" with a glued footnote) state
                 # no one amount, so the reading holds no value to compare.
-                established = all(_GROUPED.fullmatch(f.text) for f in spans)
+                established = len(spans) == 1 and all(_GROUPED.fullmatch(f.text) for f in spans)
                 label = labels.get(_int(source["row"]))
                 per_share = label is not None and _PER_SHARE.search(label)
                 scale = unit.scale if known else None
@@ -948,6 +993,22 @@ def read_table_cells(
                 cells.append(reading)
     # A tag dating its column to another year than the header's text (a filer whose
     # "2023" ends in 2024) leaves the column's untagged cells without a year.
+    multiple = {
+        (_int(source["row"]), _int(source["column"]))
+        for member in _entries(fragment, "cells")
+        if sum(
+            len([f for f in figure_spans(blank(str(src.get("text", "")))) if f.value is not None])
+            for src in _entries(member, "sources")
+        )
+        > 1
+        for source in _entries(member, "sources")
+    }
+    cells = [
+        replace(cell, overrides=(*cell.overrides, "multiple"))
+        if (cell.row, cell.column) in multiple
+        else cell
+        for cell in cells
+    ]
     shifted = {cell.column for cell in cells if "year" in cell.overrides}
     return [
         replace(cell, years=frozenset())
@@ -1029,19 +1090,11 @@ def interpret_table_cell(text: str, readings: Sequence[TableCellReading]) -> Cel
             return CellInterpretation(
                 "currency_unconfirmed", "no explicit currency", value, reading
             )
-    if len(reading.years) != 1:
-        return CellInterpretation("period_unknown", "no single fiscal year", value, reading)
-    if reading.scope == UNKNOWN:
-        return CellInterpretation(
-            "scope_unknown", "the filing declares no entity scope for it", value, reading
-        )
-    if reading.scope is not None:
-        return CellInterpretation("scope_qualified", reading.scope, value, reading)
-    if reading.item is None:
-        reason = (
-            "the tag's concept is not the row label's item"
-            if "concept" in reading.overrides
-            else "row label names no item"
-        )
-        return CellInterpretation("item_unknown", reason, value, reading)
+    if (problem := reading.amount_problem) is not None:
+        return CellInterpretation(problem[0], problem[1], value, reading)
     return CellInterpretation("known", None, value, reading)
+
+
+def complete_cell(text: str, start: int, end: int) -> bool:
+    """Whether a chunk membership carries the entire normalized cell, including labels."""
+    return start == 0 and end == len(text)
