@@ -1,6 +1,6 @@
 """Check that every strict request body takes what JSON can carry for its fields."""
 
-from collections.abc import Hashable, Iterator, Sequence
+from collections.abc import Collection, Hashable, Iterator, Sequence
 import dataclasses
 from ipaddress import IPv4Address
 import json
@@ -137,6 +137,11 @@ def _validated_classes(names: set[str]) -> list[type]:
     return sorted(found.values(), key=lambda cls: (cls.__module__, cls.__qualname__))
 
 
+def _arrays_taken(cls: type) -> set[type]:
+    """Return which of list, tuple, set and frozenset an instance check of a class takes."""
+    return {type(value) for value in ARRAY_VALUES if isinstance(value, cls)}
+
+
 def _refusals(
     node: object,
     *,
@@ -203,14 +208,20 @@ def _refusals(
     if kind == "union":
         choices = [choice[0] if isinstance(choice, tuple) else choice for choice in node["choices"]]
         # An instance check beside another choice only lets a ready-made object
-        # through; a JSON value takes the other choice.
-        open_to_json = [choice for choice in choices if choice.get("type") != "is-instance"]
+        # through, and a JSON value takes the other choice, unless its class takes arrays.
+        open_to_json = [
+            choice
+            for choice in choices
+            if choice.get("type") != "is-instance" or _arrays_taken(choice["cls"])
+        ]
         yield from below(open_to_json or choices, arrives=arrives)
         return
     if kind == "is-instance":
-        cls = node["cls"]
-        taken = {type(value) for value in ARRAY_VALUES if isinstance(value, cls)}
-        if 0 < len(taken) < len(ARRAY_VALUES):
+        taken = _arrays_taken(cls := node["cls"])
+        if arrives is None:
+            # Nobody has read what the function before this check hands it.
+            fits = False
+        elif 0 < len(taken) < len(ARRAY_VALUES):
             # A class that takes some arrays and not others must take the one that arrives.
             fits = arrives in taken
         else:
@@ -434,6 +445,20 @@ class _Dog(BaseModel):
         ),
         (InstanceOf[Sequence], [1], []),
         (InstanceOf[object], [1], []),
+        # A class that takes every array still refuses what an unread function hands on.
+        (InstanceOf[Collection], [1], []),
+        (
+            typing.Annotated[InstanceOf[Collection], BeforeValidator(iter)],
+            [1],
+            ["Body.value (is-instance)"],
+        ),
+        # Beside another choice the array-taking class is still the one an array is for.
+        (InstanceOf[Collection] | int, [1], []),
+        (
+            typing.Annotated[InstanceOf[Collection] | int, BeforeValidator(iter)],
+            [1],
+            ["Body.value (is-instance)"],
+        ),
         # A kind no group names is reported, whatever it would do with the value.
         (complex, "1+2j", ["Body.value (complex)"]),
     ],
