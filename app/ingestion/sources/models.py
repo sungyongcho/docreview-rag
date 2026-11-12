@@ -14,6 +14,7 @@ Identifier = Annotated[
     str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 ]
 Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+SEC_AMENDMENT_SUFFIX = "/A"
 
 
 class Contract(BaseModel):
@@ -35,6 +36,18 @@ class SecMetadata(Contract):
     cik: Annotated[str, Field(pattern=r"^[0-9]{10}$")]
     accession: Annotated[str, Field(pattern=r"^[0-9]{10}-[0-9]{2}-[0-9]{6}$")]
     primary_document: Annotated[str, Field(min_length=1)]
+    # When EDGAR accepted the filing. It orders the amendments of one report, which can
+    # share a filing date. Entries written before this was recorded have none, and the
+    # field is left out of their serialized form so they stay byte-identical.
+    accepted_at: Annotated[datetime | None, Field(exclude_if=lambda value: value is None)] = None
+
+    @field_validator("accepted_at")
+    @classmethod
+    def require_timezone(cls, value: datetime | None) -> datetime | None:
+        """Require an unambiguous acceptance time when one is recorded."""
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("accepted_at must include a timezone")
+        return value
 
 
 class DartMetadata(Contract):
@@ -63,6 +76,17 @@ class DocumentReference(Contract):
     source_url: Annotated[str, Field(pattern=r"^https?://[^\s]+$")]
     sec: SecMetadata | None = None
     dart: DartMetadata | None = None
+
+    @property
+    def kind(self) -> Literal["report", "amendment"]:
+        """Tell a whole report from a filing that restates only part of one.
+
+        EDGAR marks an amendment by appending ``/A`` to the form it amends, and an
+        amendment sets out only the Items it changes. A DART correction is the entire
+        report filed again, so every DART filing is a report.
+        """
+        amends = self.registry == "sec" and self.form.endswith(SEC_AMENDMENT_SUFFIX)
+        return "amendment" if amends else "report"
 
     @model_validator(mode="after")
     def validate_registry(self) -> Self:

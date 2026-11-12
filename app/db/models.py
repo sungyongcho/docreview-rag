@@ -294,6 +294,85 @@ class DocumentParse(Base):
     structure: Mapped[ParsedStructure] = relationship(lazy="raise", viewonly=True)
 
 
+def _in(column: str, values: tuple[str, ...]) -> str:
+    """Render a CHECK that keeps one text column inside a closed vocabulary."""
+    return f"{column} IN ({', '.join(repr(value) for value in values)})"
+
+
+FILING_KINDS = ("report", "amendment")
+AMENDMENT_ACTIONS = ("replace", "add", "withhold")
+
+
+class FilingVersion(Base):
+    """One filing a registry holds for a report period, whether indexed or only known.
+
+    Filings that share ``registry``, ``issuer_id`` and ``report_period`` are versions of
+    one report. A ``report`` is a whole document, so it replaces every earlier version.
+    An ``amendment`` carries only some Items: until a review records what each Item does
+    (``amendment_effects``), the whole report period is withheld from evidence.
+
+    ``filed_key`` orders versions of one kind: the registry's receipt number, or the
+    acceptance time as ``YYYYMMDDHHMMSS``. An amendment always follows its report.
+    """
+
+    __tablename__ = "filing_versions"
+
+    filing_registry: Mapped[str] = mapped_column("registry", String(16), primary_key=True)
+    filing_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    issuer_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    report_period: Mapped[str] = mapped_column(String(10), nullable=False)
+    issuer: Mapped[str] = mapped_column(Text, nullable=False)
+    fiscal_year: Mapped[int] = mapped_column(nullable=False)
+    form: Mapped[str] = mapped_column(Text, nullable=False)
+    filing_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    filed_key: Mapped[str] = mapped_column(String(14), nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The source the reviewer read. A different source returns the amendment to review.
+    reviewed_source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(_in("kind", FILING_KINDS), name="ck_filing_versions_kind"),
+        CheckConstraint("filed_key ~ '^[0-9]{14}$'", name="ck_filing_versions_filed_key"),
+        CheckConstraint(
+            "(reviewed_at IS NULL AND reviewer IS NULL AND rationale IS NULL "
+            "AND reviewed_source_sha256 IS NULL) OR "
+            "(kind = 'amendment' AND reviewed_at IS NOT NULL AND btrim(reviewer) <> '' "
+            "AND btrim(rationale) <> '' AND reviewed_source_sha256 ~ '^[0-9a-f]{64}$')",
+            name="ck_filing_versions_review",
+        ),
+        Index("ix_filing_versions_family", "registry", "issuer_id", "report_period"),
+    )
+
+
+class AmendmentEffect(Base):
+    """What a reviewed amendment does to one Item of its report.
+
+    ``replace`` admits the amendment's Item and retires the same Item of every earlier
+    version. ``add`` admits it beside the earlier text. ``withhold`` retires the earlier
+    Item without admitting the amendment's, for an Item neither filing states in full.
+    """
+
+    __tablename__ = "amendment_effects"
+
+    filing_registry: Mapped[str] = mapped_column("registry", String(16), primary_key=True)
+    filing_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    item: Mapped[str] = mapped_column(String(8), primary_key=True)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["registry", "filing_id"],
+            ["filing_versions.registry", "filing_versions.filing_id"],
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(_in("action", AMENDMENT_ACTIONS), name="ck_amendment_effects_action"),
+        CheckConstraint("btrim(item) <> ''", name="ck_amendment_effects_item"),
+    )
+
+
 class Chunk(Base):
     """A source-cited retrieval unit with separate evidence and context text."""
 
@@ -375,11 +454,6 @@ STATEMENT_KINDS = (
 STATEMENT_SCOPES = ("consolidated", "separate", "conflicting")
 READING_BASES = ("text", "fact")
 READING_MEASURES = ("amount", "per_share", "other")
-
-
-def _in(column: str, values: tuple[str, ...]) -> str:
-    """Render a CHECK that keeps one text column inside a closed vocabulary."""
-    return f"{column} IN ({', '.join(repr(value) for value in values)})"
 
 
 class ParsedTable(Base):

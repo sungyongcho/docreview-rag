@@ -8,6 +8,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.amendments.registration import register_filings
+from app.amendments.review import reset_outdated_reviews
 from app.db.models import (
     Chunk as ChunkModel,
     ChunkTableCell,
@@ -457,6 +459,8 @@ async def persist_seed_batch(
 ) -> SeedResult:
     """Upsert one batch and remove stale trailing chunks in one transaction.
 
+    Each document is also recorded as a version of its report period, and an amendment
+    whose review no longer describes what was indexed returns to the unreviewed state.
     Reject active sessions and nonpositive chunk batch sizes before writing.
     """
     if session.in_transaction():
@@ -473,6 +477,8 @@ async def persist_seed_batch(
             on_progress(OperationProgress("documents", 0, 1, "Upserting documents"))
         if batch.documents:
             await session.execute(document_upsert_statement(batch.documents))
+            # A document becomes evidence only as a recorded version of its report period.
+            await register_filings(session, batch.documents)
             await _persist_sources(session, batch)
         if on_progress is not None:
             on_progress(OperationProgress("documents", 1, 1, f"{len(batch.documents)} documents"))
@@ -506,6 +512,11 @@ async def persist_seed_batch(
                 on_progress(OperationProgress("cleanup", position, len(chunk_keys), doc_id))
         if batch.documents:
             await _persist_tables(session, batch)
+        # A review decided the Items of the parse it was written against.
+        await reset_outdated_reviews(
+            session,
+            tuple(record.document_id for record in batch.documents if record.kind == "amendment"),
+        )
 
     return SeedResult(documents=len(batch.documents), chunks=len(batch.chunks))
 

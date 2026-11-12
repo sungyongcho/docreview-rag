@@ -303,6 +303,19 @@
           "minLength": 1,
           "title": "Primary Document",
           "type": "string"
+        },
+        "accepted_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accepted At"
         }
       },
       "required": [

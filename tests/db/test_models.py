@@ -8,13 +8,14 @@ import sys
 from typing import get_args, get_type_hints
 
 import pytest
-from sqlalchemy import func, insert, null, select, update
+from sqlalchemy import delete, func, insert, null, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.config import EMBEDDING_DIMENSIONS
 from app.db.models import (
     TABLE_CELL_STATUSES,
     TABLE_UNIT_STATUSES,
+    AmendmentEffect,
     BM25CorpusStat,
     Chunk,
     ChunkEmbedding,
@@ -23,6 +24,7 @@ from app.db.models import (
     EvalResult,
     FilingFactContext,
     FilingPeriodTerm,
+    FilingVersion,
     LexemeStat,
     ParsedStructure,
     ParsedTable,
@@ -81,6 +83,56 @@ def test_source_rows_reject_incomplete_identity_and_provenance():
                 with pytest.raises(IntegrityError):
                     async with session.begin_nested():
                         await session.execute(update(model).values(**values))
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_filing_versions_reject_reviews_and_effects_their_constraints_name():
+    """Only an amendment carries a complete review, and effects die with their filing."""
+
+    async def exercise():
+        """Persisting a report records its version; each invalid change is then refused."""
+        async with isolated_session() as session:
+            await persist_seed_batch(session, sample_batch())
+            review = {
+                "reviewed_at": func.now(),
+                "reviewer": "operator",
+                "rationale": "Read against the original.",
+                "reviewed_source_sha256": "a" * 64,
+            }
+            invalid_updates = (
+                review,
+                {"kind": "amendment", **review, "rationale": " "},
+                {"kind": "amendment", **review, "reviewed_source_sha256": "abc"},
+                {"kind": "amendment", "reviewer": "operator"},
+                {"kind": "correction"},
+                {"filed_key": "2024-02-21"},
+            )
+            for values in invalid_updates:
+                with pytest.raises(IntegrityError):
+                    async with session.begin_nested():
+                        await session.execute(update(FilingVersion).values(**values))
+
+            await session.execute(update(FilingVersion).values(kind="amendment", **review))
+            version = (await session.scalars(select(FilingVersion))).one()
+            identity = {"registry": version.filing_registry, "filing_id": version.filing_id}
+            for values in ({"item": "7", "action": "ignore"}, {"item": " ", "action": "add"}):
+                with pytest.raises(IntegrityError):
+                    async with session.begin_nested():
+                        await session.execute(insert(AmendmentEffect).values(**identity, **values))
+            with pytest.raises(IntegrityError):
+                async with session.begin_nested():
+                    await session.execute(
+                        insert(AmendmentEffect).values(
+                            registry="sec", filing_id="unknown", item="7", action="add"
+                        )
+                    )
+            await session.execute(
+                insert(AmendmentEffect).values(**identity, item="7", action="replace")
+            )
+            await session.execute(delete(FilingVersion))
+            assert await session.scalar(select(func.count()).select_from(AmendmentEffect)) == 0
 
     asyncio.run(exercise())
 
