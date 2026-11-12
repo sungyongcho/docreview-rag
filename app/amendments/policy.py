@@ -10,7 +10,6 @@ that an operator and a reader can be told why evidence is missing.
 
 from collections import Counter
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass
 from typing import Literal
 
 from sqlalchemy import Select, and_, func, or_, select, tuple_
@@ -18,29 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.contracts.evidence import EvidenceHold, HoldReason
 from app.db.models import AmendmentEffect, Chunk, Document, FilingVersion
 
-HoldReason = Literal["amendment_pending", "report_missing", "order_unknown"]
-WithheldReason = Literal[
-    "amendment_pending", "report_missing", "order_unknown", "not_indexed", "item_withheld"
-]
+FamilyHold = Literal["amendment_pending", "report_missing", "order_unknown"]
 ADMITTING_ACTIONS = ("replace", "add")
 RETIRING_ACTIONS = ("replace", "withhold")
 FAMILY_COLUMNS = ("filing_registry", "issuer_id", "report_period")
-
-
-@dataclass(frozen=True, slots=True)
-class WithheldEvidence:
-    """Evidence a search could not use, and why, for one issuer's report period.
-
-    ``items`` names the withheld Items; an empty tuple means the whole report period.
-    """
-
-    registry: str
-    issuer: str
-    fiscal_year: int
-    reason: WithheldReason
-    items: tuple[str, ...] = ()
 
 
 class EvidenceWithheldError(Exception):
@@ -54,7 +37,7 @@ class EvidenceWithheldError(Exception):
         )
 
 
-def family_hold(versions: Sequence[FilingVersion]) -> HoldReason | None:
+def family_hold(versions: Sequence[FilingVersion]) -> FamilyHold | None:
     """Return why one report period's evidence is withheld whole, if it is.
 
     Parameters
@@ -72,15 +55,41 @@ def family_hold(versions: Sequence[FilingVersion]) -> HoldReason | None:
     return None
 
 
+def period_hold(members: Sequence[tuple[FilingVersion, bool]]) -> HoldReason | None:
+    """Return why a report period's indexed evidence is held whole, if it is.
+
+    Parameters
+    ----------
+    members : Sequence[tuple[FilingVersion, bool]]
+        Every recorded version of one report period, each with whether it is indexed.
+
+    Returns
+    -------
+    HoldReason | None
+        ``family_hold``'s reason, or ``not_indexed`` when the latest report replaced an
+        indexed one and is not indexed itself. ``None`` when nothing is held, which
+        includes a report period with no indexed filing: nothing of it was evidence.
+    """
+    if not any(indexed for _, indexed in members):
+        return None
+    if reason := family_hold([version for version, _ in members]):
+        return reason
+    _latest, indexed = max(
+        (member for member in members if member[0].kind == "report"),
+        key=lambda member: member[0].filed_key,
+    )
+    return None if indexed else "not_indexed"
+
+
 def _same_family(left: type[FilingVersion], right: type[FilingVersion]) -> ColumnElement[bool]:
     """Match two versions of one report period."""
     return and_(*(getattr(left, name) == getattr(right, name) for name in FAMILY_COLUMNS))
 
 
-def _held_families() -> Select[tuple[str, str, str]]:
+def _held_families() -> Select[str, str, str]:
     """Select the report periods ``family_hold`` withholds, as family keys."""
     version = aliased(FilingVersion)
-    family = tuple(getattr(version, name) for name in FAMILY_COLUMNS)
+    family = (version.filing_registry, version.issuer_id, version.report_period)
     pending = and_(version.kind == "amendment", version.reviewed_at.is_(None))
     position = version.kind + ":" + version.filed_key
     return (
@@ -110,7 +119,7 @@ def _not_held(version: type[FilingVersion]) -> ColumnElement[bool]:
     return family.not_in(_held_families())
 
 
-def _current_reports() -> Select[tuple[str]]:
+def _current_reports() -> Select[str]:
     """Select documents of the latest report of each report period that is not withheld."""
     report, later = aliased(FilingVersion), aliased(FilingVersion)
     replaced = (
@@ -129,7 +138,7 @@ def _current_reports() -> Select[tuple[str]]:
     )
 
 
-def _admitted_items() -> Select[tuple[str, str]]:
+def _admitted_items() -> Select[str, str]:
     """Select the (document, Item) pairs a reviewed amendment contributes as evidence."""
     amendment = aliased(FilingVersion)
     return (
@@ -150,7 +159,7 @@ def _admitted_items() -> Select[tuple[str, str]]:
     )
 
 
-def _retired_items() -> Select[tuple[str, str]]:
+def _retired_items() -> Select[str, str]:
     """Select the (document, Item) pairs a later amendment took out of evidence."""
     amendment, earlier = aliased(FilingVersion), aliased(FilingVersion)
     return (
@@ -227,14 +236,14 @@ async def require_eligible(session: AsyncSession, chunk_ids: Collection[int]) ->
         raise EvidenceWithheldError(withheld)
 
 
-async def withheld_evidence(
+async def evidence_holds(
     session: AsyncSession,
     *,
     registries: Collection[str] = (),
     issuers: Collection[str] = (),
     fiscal_years: Collection[int] = (),
     doc_ids: Collection[str] = (),
-) -> tuple[WithheldEvidence, ...]:
+) -> tuple[EvidenceHold, ...]:
     """List the evidence a search over this scope cannot use, and why.
 
     An empty scope dimension does not restrict. A document scope selects the report
@@ -243,7 +252,7 @@ async def withheld_evidence(
 
     Returns
     -------
-    tuple[WithheldEvidence, ...]
+    tuple[EvidenceHold, ...]
         One entry per report period withheld whole (an unreviewed amendment, versions
         that cannot be ordered, or a newer report that is not indexed yet), and one per
         report period with Items a review withheld. Ordered by registry, issuer, year.
@@ -272,32 +281,31 @@ async def withheld_evidence(
         families.setdefault(key, []).append((version, is_indexed))
     withheld_items = await _withheld_items(session, families)
 
-    found: list[WithheldEvidence] = []
+    found: list[EvidenceHold] = []
     for key, members in families.items():
-        versions = [version for version, _ in members]
-        named = max(versions, key=lambda version: (version.kind == "report", version.filed_key))
-        # A report period with nothing indexed has no evidence to withhold.
+        # A report period with nothing indexed has no evidence to hold.
         if not any(is_indexed for _, is_indexed in members):
             continue
-        reason: WithheldReason | None = family_hold(versions)
-        if reason is None:
-            named, is_indexed = max(
-                (member for member in members if member[0].kind == "report"),
-                key=lambda member: member[0].filed_key,
-            )
-            if not is_indexed:
-                reason = "not_indexed"
-        if reason is not None:
-            found.append(
-                WithheldEvidence(named.filing_registry, named.issuer, named.fiscal_year, reason)
-            )
+        named = max(
+            (version for version, _ in members),
+            key=lambda version: (version.kind == "report", version.filed_key),
+        )
+        if reason := period_hold(members):
+            found.append(_hold(named, reason))
         elif items := withheld_items.get(key):
-            found.append(
-                WithheldEvidence(
-                    named.filing_registry, named.issuer, named.fiscal_year, "item_withheld", items
-                )
-            )
+            found.append(_hold(named, "item_withheld", items))
     return tuple(sorted(found, key=lambda entry: (entry.registry, entry.issuer, entry.fiscal_year)))
+
+
+def _hold(version: FilingVersion, reason: HoldReason, items: tuple[str, ...] = ()) -> EvidenceHold:
+    """Describe a hold on the report period one of its versions names."""
+    return EvidenceHold(
+        registry=version.filing_registry,
+        issuer=version.issuer,
+        fiscal_year=version.fiscal_year,
+        reason=reason,
+        items=items,
+    )
 
 
 async def _withheld_items(

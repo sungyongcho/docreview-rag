@@ -83,6 +83,11 @@ class ControlledSession:
             kind=hit.kind,
         )
 
+    async def scalars(self, statement: object) -> list[int]:
+        """Answer the current-evidence check: every fixture chunk is current evidence."""
+        del statement
+        return [SEARCH_CHUNK_ID, 2023, 2024]
+
 
 def record(log_path: Path, event: dict[str, object]) -> None:
     """Append one data-layer event outside the stdout protocol stream."""
@@ -120,11 +125,11 @@ def controlled_retrieve(log_path: Path):
         if query == "fail" or (query == "fail-2024" and years == (2024,)):
             raise RuntimeError(PRIVATE_DETAIL)
         if query == "both-empty" or query == "no-match":
-            return SimpleNamespace(hits=())
+            return SimpleNamespace(hits=(), holds=())
         if query == "empty-2024" and years == (2024,):
-            return SimpleNamespace(hits=())
+            return SimpleNamespace(hits=(), holds=())
         chunk_id = years[0] if len(years) == 1 else SEARCH_CHUNK_ID
-        return SimpleNamespace(hits=(fixture_hit(chunk_id),))
+        return SimpleNamespace(hits=(fixture_hit(chunk_id),), holds=())
 
     return retrieve
 

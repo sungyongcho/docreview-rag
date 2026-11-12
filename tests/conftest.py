@@ -17,6 +17,22 @@ def _isolated_public_allowance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     )
 
 
+@pytest.fixture
+def no_evidence_holds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Report no held report period to a search whose session is a stand-in.
+
+    Retrieval reads the holds of its scope from the database after ranking; a test that
+    replaces the ranking functions and passes no real session replaces that read too.
+    """
+
+    async def none(session: object, filters: object) -> tuple[()]:
+        """Return no hold without touching the stand-in session."""
+        del session, filters
+        return ()
+
+    monkeypatch.setattr("app.retrieval.search.service.scope_holds", none)
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Expose an explicit local gate for live PostgreSQL coverage."""
     parser.addoption(

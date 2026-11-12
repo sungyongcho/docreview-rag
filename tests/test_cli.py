@@ -98,6 +98,7 @@ def test_retrieve_defaults_to_the_configured_provider_and_prints_stable_json(
                 "score": 0.75,
             }
         ],
+        "holds": [],
         "provider": "deterministic",
         "query": "NVDA revenue",
         "status": "ok",

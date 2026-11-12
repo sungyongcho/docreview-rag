@@ -8,6 +8,7 @@ database stores, never what the model wrote.
 from sqlalchemy import select
 
 from app.agent.cell_answers import StoredCell
+from app.amendments.policy import require_eligible
 from app.db.models import Chunk, ChunkTableCell, TableCell
 from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
@@ -23,8 +24,16 @@ from app.retrieval.tables import (
 async def read_cited_evidence(
     session_factory: SessionFactory, chunk_ids: tuple[int, ...]
 ) -> dict[int, EvidenceText]:
-    """Read cited chunks as the answer figure check takes them (see ``figure_evidence``)."""
+    """Read cited chunks as the answer figure check takes them (see ``figure_evidence``).
+
+    Raises
+    ------
+    EvidenceWithheldError
+        If a cited chunk stopped being evidence after it was retrieved: a later filing
+        replaced it or holds it back, so the answer must not be reported from it.
+    """
     async with session_factory() as session:
+        await require_eligible(session, chunk_ids)
         rows = (
             await session.execute(
                 select(Chunk.id, Chunk.kind, Chunk.body, Chunk.context_header).where(
@@ -46,10 +55,16 @@ async def read_selected_cells(
 
     A ref whose chunk no longer stores that cell is left out, so the gate treats it as a
     changed source instead of answering from it.
+
+    Raises
+    ------
+    EvidenceWithheldError
+        If a selected cell's chunk stopped being evidence after it was fetched.
     """
     chunk_ids = sorted({cell_ref_chunk(ref) for ref in refs})
     result: dict[str, StoredCell] = {}
     async with session_factory() as session:
+        await require_eligible(session, chunk_ids)
         for chunk_id in chunk_ids:
             catalog = await load_cell_catalog(session, chunk_id)
             match catalog["status"]:

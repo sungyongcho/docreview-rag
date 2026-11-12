@@ -1,6 +1,7 @@
 """Bind evaluation evidence and report the readiness of the current corpus."""
 
 import asyncio
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.amendments.policy import eligible_chunk
 from app.corpus_admin.types import CorpusStatus
 from app.db.models import Chunk
 from app.db.session_factory import SessionFactory
@@ -77,6 +79,49 @@ async def missing_parsed_sources(
             ).all()
         )
     return expected - found
+
+
+async def replaced_golden_sources(
+    cases: tuple[GoldenCase, ...], session_factory: SessionFactory
+) -> set[str]:
+    """Name required documents whose golden evidence a later filing replaced or holds.
+
+    The check is per evidence span, because an amendment can retire one Item of a
+    report and leave the rest. A document is named when stored chunks cover one of its
+    spans and none of them is current evidence, so no search can return that span.
+    """
+    spans = {
+        (answer.doc_id, str(answer.source_sha256), answer.start_char, answer.end_char)
+        for case in cases
+        for answer in case.answers
+    }
+    if not spans:
+        return set()
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(
+                    Chunk.doc_id,
+                    Chunk.source_sha256,
+                    Chunk.start_char,
+                    Chunk.end_char,
+                    eligible_chunk().label("current"),
+                ).where(Chunk.doc_id.in_({doc_id for doc_id, *_ in spans}))
+            )
+        ).all()
+    covering: dict[tuple[str, str], list[tuple[int, int, bool]]] = defaultdict(list)
+    for doc_id, source_sha256, start, end, current in rows:
+        covering[(doc_id, source_sha256)].append((start, end, current))
+    replaced: set[str] = set()
+    for doc_id, source_sha256, start, end in spans:
+        states = [
+            current
+            for chunk_start, chunk_end, current in covering[(doc_id, source_sha256)]
+            if chunk_start < end and start < chunk_end
+        ]
+        if states and not any(states):
+            replaced.add(doc_id)
+    return replaced
 
 
 def require_index(request: EvaluationRunRequest, status: CorpusStatus) -> None:
@@ -187,6 +232,18 @@ async def prepare_evaluation(
                     blockers=tuple(
                         f"Parse and chunk the required original: {doc_id}"
                         for doc_id, _ in sorted(missing)
+                    ),
+                )
+            replaced = await replaced_golden_sources(bound.cases, session_factory)
+            if replaced:
+                return EvaluationPreparationResource(
+                    **base,
+                    state="source_invalid",
+                    next_step="filings",
+                    blockers=tuple(
+                        "A later filing replaced or holds evidence this dataset cites in "
+                        f"{doc_id}. Review the amendment or cite the current filing."
+                        for doc_id in sorted(replaced)
                     ),
                 )
             require_index(request, status)

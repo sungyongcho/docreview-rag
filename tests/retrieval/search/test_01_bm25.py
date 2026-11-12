@@ -17,6 +17,7 @@ from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.amendments.registration import register_filings
 from app.config import Settings
 from app.db.bootstrap import ensure_bm25_stats_invalidation
 from app.db.models import Base, Chunk as ChunkModel, ChunkEmbedding
@@ -365,6 +366,7 @@ async def _load_fixture_corpus(connection, source_root: Path, schema: str) -> No
     async with AsyncSession(bind=connection, expire_on_commit=False) as session:
         async with session.begin():
             await session.execute(document_upsert_statement(batch.documents))
+            await register_filings(session, batch.documents)
             await _persist_sources(session, batch)
             await session.execute(
                 insert(ChunkModel),

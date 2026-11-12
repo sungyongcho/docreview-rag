@@ -1,6 +1,7 @@
 """Shared pure helpers for ingestion API tests."""
 
 from typing import Literal
+import zlib
 
 import httpx
 
@@ -8,6 +9,20 @@ import httpx
 def client_returning(handler) -> httpx.AsyncClient:
     """Build a mock-transport client for one handler."""
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+REGISTRY_IDS = {"NVDA": "0001045810", "005930": "00126380"}
+
+
+def registry_id(registry: Literal["sec", "dart"], issuer: str) -> str:
+    """Return the registry's own identifier for an issuer, distinct for each issuer.
+
+    Filings that share a registry identifier and a report period are versions of one
+    report, so two synthetic issuers must never share one.
+    """
+    width = 10 if registry == "sec" else 8
+    known = REGISTRY_IDS.get(issuer)
+    return known or str(zlib.crc32(issuer.encode()) % 10**width).zfill(width)
 
 
 def filing_document(
@@ -26,12 +41,13 @@ def filing_document(
 
     issuer = issuer or ("NVDA" if registry == "sec" else "005930")
     filing_id = filing_id or ("0001045810-24-000029" if registry == "sec" else "20250311001085")
+    issuer_id = registry_id(registry, issuer)
     return DocumentReference(
         document_id=document_id or f"{issuer}-FY{fiscal_year}",
         registry=registry,
         language="en" if registry == "sec" else "ko",
         issuer=issuer,
-        issuer_id="0001045810" if registry == "sec" else "00126380",
+        issuer_id=issuer_id,
         aliases=aliases,
         filing_id=filing_id,
         fiscal_year=fiscal_year,
@@ -39,11 +55,11 @@ def filing_document(
         filing_date=date(fiscal_year + (registry == "dart"), 3, 11),
         report_period=date(fiscal_year, 12, 31),
         source_url=f"https://example.test/{filing_id}",
-        sec=SecMetadata(cik="0001045810", accession=filing_id, primary_document="report.html")
+        sec=SecMetadata(cik=issuer_id, accession=filing_id, primary_document="report.html")
         if registry == "sec"
         else None,
         dart=DartMetadata(
-            corp_code="00126380",
+            corp_code=issuer_id,
             receipt_number=filing_id,
             report_code="11011",
             report_name=f"사업보고서 ({fiscal_year}.12)",

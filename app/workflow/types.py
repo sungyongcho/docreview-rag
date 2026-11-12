@@ -7,7 +7,12 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, StrictInt
 from pydantic.functional_validators import model_validator
 
-from app.contracts.evidence import EvidenceCitation, ReportLabel, validate_answer_citations
+from app.contracts.evidence import (
+    EvidenceCitation,
+    EvidenceHold,
+    ReportLabel,
+    validate_answer_citations,
+)
 from app.contracts.validation import NonBlank, NonNegativeInt, PositiveInt, StrictSchema
 from app.figures.withholding import WithholdingCauses
 from app.llm.schemas import AnswerDecision, BudgetExceeded, ProviderBudget
@@ -37,6 +42,24 @@ class RetrievalEmpty(StrictSchema):
     query: NonBlank
     k: PositiveInt
     filters: RetrievalFilters
+
+
+class EvidenceHeld(StrictSchema):
+    """A later filing keeps evidence inside the search scope out of use.
+
+    The run answered without that evidence, so an answer of absence may mean the
+    evidence is held, not that the filings never said it.
+    """
+
+    code: Literal["evidence_held"] = "evidence_held"
+    holds: tuple[EvidenceHold, ...]
+
+    @model_validator(mode="after")
+    def require_holds(self) -> Self:
+        """Refuse a reason that names nothing held."""
+        if not self.holds:
+            raise ValueError("evidence_held requires at least one hold")
+        return self
 
 
 class DuplicateRetrievedChunks(StrictSchema):
@@ -203,6 +226,7 @@ class NodeError(StrictSchema):
 
 type WorkflowReason = Annotated[
     RetrievalEmpty
+    | EvidenceHeld
     | DuplicateRetrievedChunks
     | DuplicateEvidenceText
     | DocumentQuotaApplied

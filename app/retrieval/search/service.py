@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.amendments.policy import evidence_holds
+from app.contracts.evidence import EvidenceHold
 from app.contracts.validation import PositiveInt
 from app.db.models import (
     BM25CorpusStat,
@@ -62,7 +64,9 @@ class RetrievalResult(BaseModel):
 
     ``score_stage`` identifies whether final hit scores came from fusion or reranking,
     while ``component_rankings`` preserves the pre-fusion proposal order independently
-    of those scores.
+    of those scores. ``holds`` names the report periods and Items inside the search
+    scope that a later filing keeps out of evidence, so a caller can tell missing
+    evidence from evidence that is being held back.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -71,6 +75,24 @@ class RetrievalResult(BaseModel):
     candidates: tuple[ChunkHit, ...]
     score_stage: ScoreStage
     component_rankings: ComponentRankings
+    holds: tuple[EvidenceHold, ...] = ()
+
+
+async def scope_holds(session: AsyncSession, filters: RetrievalFilters) -> tuple[EvidenceHold, ...]:
+    """Name the evidence inside a search scope that a later filing keeps out of use.
+
+    A snapshot holds only the evidence that was current when it was frozen and is read
+    as it is, so nothing is withheld from a snapshot search.
+    """
+    if filters.snapshot_id is not None:
+        return ()
+    return await evidence_holds(
+        session,
+        registries=filters.registries,
+        issuers=filters.issuers,
+        fiscal_years=filters.fiscal_years,
+        doc_ids=filters.doc_ids,
+    )
 
 
 async def retrieve(
@@ -206,6 +228,7 @@ async def retrieve(
     return RetrievalResult(
         hits=tuple(fused[:k]),
         candidates=tuple(fused),
+        holds=await scope_holds(session, active_filters),
         score_stage="reranker" if reranker is not None else "rrf",
         component_rankings=ComponentRankings(
             vector=tuple(hit.chunk_id for hit in vector_hits),

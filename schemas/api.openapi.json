@@ -2731,6 +2731,30 @@
         "title": "EvidenceCitation",
         "type": "object"
       },
+      "EvidenceHeld": {
+        "additionalProperties": false,
+        "description": "A later filing keeps evidence inside the search scope out of use.\n\nThe run answered without that evidence, so an answer of absence may mean the\nevidence is held, not that the filings never said it.",
+        "properties": {
+          "code": {
+            "const": "evidence_held",
+            "default": "evidence_held",
+            "title": "Code",
+            "type": "string"
+          },
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceHold"
+            },
+            "title": "Holds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "holds"
+        ],
+        "title": "EvidenceHeld",
+        "type": "object"
+      },
       "EvidenceHit": {
         "additionalProperties": false,
         "description": "One retrieved evidence unit with complete source identity.",
@@ -2826,6 +2850,55 @@
           "score"
         ],
         "title": "EvidenceHit",
+        "type": "object"
+      },
+      "EvidenceHold": {
+        "additionalProperties": false,
+        "description": "Evidence a search could not use for one issuer's report period, and why.\n\nA later filing of the period keeps it out of use: an amendment nobody has reviewed\nyet (``amendment_pending``), an amendment whose report is unknown\n(``report_missing``), filings that cannot be ordered (``order_unknown``), a newer\nreport that is not indexed (``not_indexed``), or Items a review withheld\n(``item_withheld``). ``items`` names the withheld Items; an empty tuple means the\nwhole report period.",
+        "properties": {
+          "fiscal_year": {
+            "exclusiveMinimum": 0.0,
+            "title": "Fiscal Year",
+            "type": "integer"
+          },
+          "issuer": {
+            "minLength": 1,
+            "title": "Issuer",
+            "type": "string"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "enum": [
+              "amendment_pending",
+              "report_missing",
+              "order_unknown",
+              "not_indexed",
+              "item_withheld"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "registry": {
+            "minLength": 1,
+            "title": "Registry",
+            "type": "string"
+          }
+        },
+        "required": [
+          "registry",
+          "issuer",
+          "fiscal_year",
+          "reason"
+        ],
+        "title": "EvidenceHold",
         "type": "object"
       },
       "EvidenceSelection": {
@@ -6265,6 +6338,14 @@
             "title": "Component Rankings",
             "type": "object"
           },
+          "evidence_holds": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceHold"
+            },
+            "title": "Evidence Holds",
+            "type": "array"
+          },
           "path_decision": {
             "anyOf": [
               {
@@ -8039,6 +8120,7 @@
             "document_quota_applied": "#/components/schemas/DocumentQuotaApplied",
             "duplicate_evidence_text": "#/components/schemas/DuplicateEvidenceText",
             "duplicate_retrieved_chunks": "#/components/schemas/DuplicateRetrievedChunks",
+            "evidence_held": "#/components/schemas/EvidenceHeld",
             "figures_unverified": "#/components/schemas/FiguresUnverified",
             "figures_withheld": "#/components/schemas/FiguresWithheld",
             "grade_coverage_incomplete": "#/components/schemas/GradeCoverageIncomplete",
@@ -8055,6 +8137,9 @@
         "oneOf": [
           {
             "$ref": "#/components/schemas/RetrievalEmpty"
+          },
+          {
+            "$ref": "#/components/schemas/EvidenceHeld"
           },
           {
             "$ref": "#/components/schemas/DuplicateRetrievedChunks"

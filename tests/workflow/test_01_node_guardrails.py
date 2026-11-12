@@ -6,6 +6,7 @@ from typing import cast
 from pydantic import ValidationError
 import pytest
 
+from app.contracts.evidence import EvidenceHold
 from app.figures.tables import read_table_cells
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
 from app.retrieval.types import ChunkHit
@@ -17,6 +18,7 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
+    EvidenceHeld,
     FiguresUnverified,
     FiguresWithheld,
     GradeCoverageIncomplete,
@@ -50,6 +52,21 @@ def _state(*, max_context_chars=12_000, **overrides):
         **overrides,
     )
     return initial_state(request)
+
+
+def test_held_evidence_is_reported_ahead_of_an_empty_retrieval():
+    """Name what a later filing holds back, so the absence that follows is explained."""
+    held = EvidenceHold(registry="sec", issuer="AMD", fiscal_year=2025, reason="amendment_pending")
+
+    retrieved = retrieve_node(_state(), [], [held])
+
+    assert [reason.code for reason in retrieved.reasons] == ["evidence_held", "retrieval_empty"]
+    assert cast(EvidenceHeld, retrieved.reasons[0]).holds == (held,)
+    report = report_node(retrieved).report
+    assert report is not None and report.reasons == retrieved.reasons
+    assert [reason.code for reason in retrieve_node(_state(), []).reasons] == ["retrieval_empty"]
+    with pytest.raises(ValidationError, match="at least one hold"):
+        EvidenceHeld(holds=())
 
 
 def test_empty_retrieval_is_typed_immutable_and_reports_not_in_docs():

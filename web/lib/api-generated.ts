@@ -2246,6 +2246,22 @@ export interface components {
             start_char: number;
         };
         /**
+         * EvidenceHeld
+         * @description A later filing keeps evidence inside the search scope out of use.
+         *
+         *     The run answered without that evidence, so an answer of absence may mean the
+         *     evidence is held, not that the filings never said it.
+         */
+        EvidenceHeld: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            code: "evidence_held";
+            /** Holds */
+            holds: components["schemas"]["EvidenceHold"][];
+        };
+        /**
          * EvidenceHit
          * @description One retrieved evidence unit with complete source identity.
          */
@@ -2277,6 +2293,35 @@ export interface components {
             source_sha256: string;
             /** Start Char */
             start_char: number;
+        };
+        /**
+         * EvidenceHold
+         * @description Evidence a search could not use for one issuer's report period, and why.
+         *
+         *     A later filing of the period keeps it out of use: an amendment nobody has reviewed
+         *     yet (``amendment_pending``), an amendment whose report is unknown
+         *     (``report_missing``), filings that cannot be ordered (``order_unknown``), a newer
+         *     report that is not indexed (``not_indexed``), or Items a review withheld
+         *     (``item_withheld``). ``items`` names the withheld Items; an empty tuple means the
+         *     whole report period.
+         */
+        EvidenceHold: {
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Issuer */
+            issuer: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: string[];
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "amendment_pending" | "report_missing" | "order_unknown" | "not_indexed" | "item_withheld";
+            /** Registry */
+            registry: string;
         };
         /**
          * EvidenceSelection
@@ -3653,6 +3698,11 @@ export interface components {
             component_rankings: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+            /**
+             * Evidence Holds
+             * @default []
+             */
+            evidence_holds: components["schemas"]["EvidenceHold"][];
             /** Path Decision */
             path_decision?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -4348,7 +4398,7 @@ export interface components {
         /** @enum {string} */
         WithholdingCause: "scale" | "currency" | "direction";
         WithholdingCauses: components["schemas"]["WithholdingCause"][];
-        WorkflowReason: components["schemas"]["RetrievalEmpty"] | components["schemas"]["DuplicateRetrievedChunks"] | components["schemas"]["DuplicateEvidenceText"] | components["schemas"]["DocumentQuotaApplied"] | components["schemas"]["ContextTruncated"] | components["schemas"]["GradeReferencesFiltered"] | components["schemas"]["GradeCoverageIncomplete"] | components["schemas"]["RelevanceBelowThreshold"] | components["schemas"]["CitationsFiltered"] | components["schemas"]["SupportDowngraded"] | components["schemas"]["FiguresUnverified"] | components["schemas"]["FiguresWithheld"] | components["schemas"]["PeriodMismatch"] | components["schemas"]["ProviderFailure"] | components["schemas"]["NodeError"];
+        WorkflowReason: components["schemas"]["RetrievalEmpty"] | components["schemas"]["EvidenceHeld"] | components["schemas"]["DuplicateRetrievedChunks"] | components["schemas"]["DuplicateEvidenceText"] | components["schemas"]["DocumentQuotaApplied"] | components["schemas"]["ContextTruncated"] | components["schemas"]["GradeReferencesFiltered"] | components["schemas"]["GradeCoverageIncomplete"] | components["schemas"]["RelevanceBelowThreshold"] | components["schemas"]["CitationsFiltered"] | components["schemas"]["SupportDowngraded"] | components["schemas"]["FiguresUnverified"] | components["schemas"]["FiguresWithheld"] | components["schemas"]["PeriodMismatch"] | components["schemas"]["ProviderFailure"] | components["schemas"]["NodeError"];
         /**
          * WorkflowReport
          * @description The guarded answer and its complete degradation provenance.

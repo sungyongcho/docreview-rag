@@ -266,6 +266,7 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
             else None
         ),
         "hits": [_evidence_payload(hit) for hit in result.hits],
+        "holds": [hold.model_dump(mode="json") for hold in result.holds],
         "component_rankings": result.component_rankings.model_dump(mode="json"),
     }
 

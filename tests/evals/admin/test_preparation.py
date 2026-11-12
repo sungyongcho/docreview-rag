@@ -46,6 +46,7 @@ def test_missing_sources_block_job_registration(tmp_path):
     [
         ("unparsed", "parsing_required"),
         ("changed_source", "parsing_required"),
+        ("replaced_evidence", "source_invalid"),
         ("missing_bm25", "index_update_required"),
         ("ready", "ready"),
     ],
@@ -80,8 +81,13 @@ def test_preparation_distinguishes_index_and_exact_source_versions(
         """Represent the independent exact-source lookup, verified by a live DB test."""
         return {("current", "a" * 64)} if scenario == "changed_source" else set()
 
+    async def replaced(cases, session_factory):
+        """Represent the current-evidence lookup, verified by a live DB test."""
+        return {"current"} if scenario == "replaced_evidence" else set()
+
     monkeypatch.setattr(preparation_module, "bound_golden", bound)
     monkeypatch.setattr(preparation_module, "missing_parsed_sources", missing)
+    monkeypatch.setattr(preparation_module, "replaced_golden_sources", replaced)
     result = asyncio.run(
         service.preparation(
             EvaluationRunRequest(
@@ -94,6 +100,12 @@ def test_preparation_distinguishes_index_and_exact_source_versions(
     assert result.state == expected
     assert result.kind == "user"
     assert result.verification_status == "pending_review"
+    if scenario == "replaced_evidence":
+        assert result.next_step == "filings"
+        assert result.blockers == (
+            "A later filing replaced or holds evidence this dataset cites in current. "
+            "Review the amendment or cite the current filing.",
+        )
 
 
 @pytest.mark.live_postgres
@@ -191,3 +203,76 @@ def test_preparation_preserves_source_and_runtime_failure_categories(
     result = asyncio.run(service.preparation(EvaluationRunRequest(suite_id="sec-en", mode=mode)))
     assert result.state == ("source_invalid" if mode == "matrix" else "unavailable")
     assert result.next_step == ("filings" if mode == "matrix" else "setup")
+
+
+@pytest.mark.live_postgres
+def test_golden_evidence_a_review_replaced_is_named_per_span():
+    """Name a document only when one of its cited spans has no current chunk left."""
+    from app.amendments.review import ItemEffect, record_review
+    from app.evals.golden.loading import GOLDEN_CASES
+    from app.ingestion.persistence import persist_seed_batch
+    from tests.amendments.support import amendment_document, batch, parsed, sec_document
+    from tests.live_postgres import isolated_session_factory
+
+    report, amendment = sec_document(18), amendment_document(21)
+
+    def cases(*spans: tuple[int, int]):
+        """Build one golden case citing the given spans of the report."""
+        return tuple(
+            GOLDEN_CASES.validate_python(
+                [
+                    {
+                        "id": "case-1",
+                        "question": "Evidence?",
+                        "category": "multi_hop",
+                        "facet": "factual",
+                        "tags": [],
+                        "answers": [
+                            {
+                                "doc_id": report.document_id,
+                                "source_sha256": "a" * 64,
+                                "start_char": start,
+                                "end_char": end,
+                            }
+                            for start, end in spans
+                        ],
+                        "expected_label": "SUPPORTED",
+                        "reference_answer": "Evidence.",
+                        "note": "Fixture.",
+                        "curation_status": "agent-curated",
+                        "approval_status": "pending-author-approval",
+                        "human_verified": False,
+                    }
+                ]
+            )
+        )
+
+    async def exercise():
+        """Store a report whose Item 7 an amendment replaces, then check three spans."""
+        async with isolated_session_factory() as factory:
+            async with factory() as session:
+                await persist_seed_batch(
+                    session, batch(parsed(report, ("1", "7")), parsed(amendment, ("7",)))
+                )
+                await session.commit()
+            item_1, item_7, between_chunks = (10, 20), (110, 120), (60, 70)
+            held = await preparation_module.replaced_golden_sources(cases(item_1), factory)
+            assert held == {report.document_id}
+
+            async with factory() as session, session.begin():
+                await record_review(
+                    session,
+                    amendment.document_id,
+                    reviewer="operator",
+                    rationale="Item 7 restated in full.",
+                    effects=[ItemEffect("7", "replace")],
+                )
+            kept = await preparation_module.replaced_golden_sources(
+                cases(item_1, between_chunks), factory
+            )
+            replaced = await preparation_module.replaced_golden_sources(
+                cases(item_1, item_7), factory
+            )
+            assert (kept, replaced) == (set(), {report.document_id})
+
+    asyncio.run(exercise())

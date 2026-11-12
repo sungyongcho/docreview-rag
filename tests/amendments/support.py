@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.amendments.policy import eligible_chunk
+from app.contracts.evidence import EvidenceHold, HoldReason
 from app.db.models import Chunk as ChunkRow
 from app.ingestion import pipeline as seed
 from app.ingestion.chunking import Chunk
@@ -139,3 +140,12 @@ async def eligible(session: AsyncSession) -> set[tuple[str, str | None]]:
     """Return the (document, Item) of every chunk the policy admits as current evidence."""
     rows = await session.execute(select(ChunkRow.doc_id, ChunkRow.item).where(eligible_chunk()))
     return {(doc_id, item) for doc_id, item in rows}
+
+
+def hold(
+    registry: str, issuer: str, fiscal_year: int, reason: HoldReason, items: tuple[str, ...] = ()
+) -> EvidenceHold:
+    """Build the notice a search gives for one held report period."""
+    return EvidenceHold(
+        registry=registry, issuer=issuer, fiscal_year=fiscal_year, reason=reason, items=items
+    )

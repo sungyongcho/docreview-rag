@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel
 
-from app.contracts.evidence import EvidenceCitation
+from app.contracts.evidence import EvidenceCitation, EvidenceHold
 from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text, withheld_text
 from app.figures.answers import (
     check_figures,
@@ -30,6 +30,7 @@ from app.workflow.types import (
     DocumentQuotaApplied,
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
+    EvidenceHeld,
     FiguresUnverified,
     FiguresWithheld,
     GradeCoverageIncomplete,
@@ -193,7 +194,9 @@ def select_evidence(
     return selected, quota_dropped, context_dropped
 
 
-def retrieve_node(state: WorkflowState, hits: Sequence[ChunkHit]) -> WorkflowState:
+def retrieve_node(
+    state: WorkflowState, hits: Sequence[ChunkHit], holds: Sequence[EvidenceHold] = ()
+) -> WorkflowState:
     """Select distinct evidence and apply the whole-chunk context limit.
 
     Parameters
@@ -202,6 +205,8 @@ def retrieve_node(state: WorkflowState, hits: Sequence[ChunkHit]) -> WorkflowSta
         Immutable pre-retrieval state.
     hits : Sequence[ChunkHit]
         Ranked and potentially over-fetched candidates.
+    holds : Sequence[EvidenceHold]
+        Evidence inside the search scope that a later filing keeps out of use.
 
     Returns
     -------
@@ -228,6 +233,8 @@ def retrieve_node(state: WorkflowState, hits: Sequence[ChunkHit]) -> WorkflowSta
         max_context_chars=state.max_context_chars,
     )
     reasons = list(state.reasons)
+    if holds:
+        reasons.append(EvidenceHeld(holds=tuple(holds)))
     if duplicates:
         reasons.append(DuplicateRetrievedChunks(chunk_ids=duplicates))
     if text_removed:

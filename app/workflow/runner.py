@@ -32,7 +32,7 @@ from app.observability.types import (
 )
 from app.release.ai_allowance import AIAllowanceError
 from app.retrieval.search.service import RetrievalResult
-from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.retrieval.types import RetrievalFilters
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
 from app.workflow.prompts import build_check_prompt, build_grade_prompt
 from app.workflow.types import (
@@ -259,11 +259,11 @@ def _allowance_failure(
     )
 
 
-def _result_hits(result: RetrievalResult) -> tuple[ChunkHit, ...]:
-    """Return the hits of the retrieval result a retriever must produce."""
+def _checked_result(result: RetrievalResult) -> RetrievalResult:
+    """Return the retrieval result a retriever must produce, refusing anything else."""
     if not isinstance(result, RetrievalResult):
         raise TypeError("retriever must return RetrievalResult")
-    return result.hits
+    return result
 
 
 async def run_workflow(
@@ -489,7 +489,8 @@ async def run_workflow(
             await notify("retrieve", state)
             measurement.failed = True
             return failed(state)
-        state = retrieve_node(state, _result_hits(retrieval))
+        retrieval = _checked_result(retrieval)
+        state = retrieve_node(state, retrieval.hits, retrieval.holds)
     await notify("retrieve", state)
 
     if not state.evidence:

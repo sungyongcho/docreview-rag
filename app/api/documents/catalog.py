@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.amendments.policy import eligible_chunk
 from app.api.documents.schemas import (
     AdminDocumentResource,
     DocumentDetailResponse,
@@ -581,11 +582,15 @@ class DocumentCatalog:
     async def golden_evidence_chunks(
         self, doc_id: str, query: str, after: int, limit: int
     ) -> GoldenEvidencePage:
-        """Page current chunks deterministically using their exact stored source spans."""
+        """Page current chunks deterministically using their exact stored source spans.
+
+        Only current evidence is offered, so a new golden case cannot cite text a later
+        filing replaced or holds back.
+        """
         statement = (
             select(Chunk)
             .join(Document, Document.doc_id == Chunk.doc_id)
-            .where(Chunk.doc_id == doc_id, Chunk.id > after)
+            .where(Chunk.doc_id == doc_id, Chunk.id > after, eligible_chunk())
         )
         if query:
             statement = statement.where(Chunk.body.icontains(query, autoescape=True))

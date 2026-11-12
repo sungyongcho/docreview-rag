@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import ColumnCollection, Select, SQLColumnExpression, or_, select
 from sqlalchemy.sql.elements import ColumnElement, SQLCoreOperations
 
+from app.amendments.policy import eligible_chunk
 from app.db.models import Chunk, Document, SnapshotChunk
 from app.retrieval.types import RetrievalFilters
 
@@ -89,9 +90,13 @@ def filter_predicates(
     Notes
     -----
     Issuer, fiscal-year, and form predicates require a ``Document`` join; Item values
-    and ``None`` are alternatives within one filter dimension.
+    and ``None`` are alternatives within one filter dimension. Live chunks are also
+    restricted to current evidence, so a replaced or withheld filing never takes a rank
+    from a current one. A snapshot froze that decision when it was created.
     """
     predicates: list[ColumnElement[bool]] = []
+    if source is Chunk:
+        predicates.append(eligible_chunk())
     if filters.doc_ids:
         predicates.append(source.doc_id.in_(filters.doc_ids))
     if filters.languages:

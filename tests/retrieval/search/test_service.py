@@ -15,6 +15,8 @@ from app.retrieval.search.plan import SearchPlan
 from app.retrieval.types import RetrievalFilters
 from tests.retrieval.support import hit
 
+pytestmark = pytest.mark.usefixtures("no_evidence_holds")
+
 
 def test_public_query_normalization_preserves_compatibility():
     """Expand R&D variants without changing unrelated ampersands."""

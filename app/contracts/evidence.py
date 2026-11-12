@@ -33,6 +33,29 @@ class EvidenceCitation(StrictSchema):
         return self
 
 
+HoldReason = Literal[
+    "amendment_pending", "report_missing", "order_unknown", "not_indexed", "item_withheld"
+]
+
+
+class EvidenceHold(StrictSchema):
+    """Evidence a search could not use for one issuer's report period, and why.
+
+    A later filing of the period keeps it out of use: an amendment nobody has reviewed
+    yet (``amendment_pending``), an amendment whose report is unknown
+    (``report_missing``), filings that cannot be ordered (``order_unknown``), a newer
+    report that is not indexed (``not_indexed``), or Items a review withheld
+    (``item_withheld``). ``items`` names the withheld Items; an empty tuple means the
+    whole report period.
+    """
+
+    registry: NonBlank
+    issuer: NonBlank
+    fiscal_year: PositiveInt
+    reason: HoldReason
+    items: tuple[NonBlank, ...] = ()
+
+
 def validate_answer_citations(label: ReportLabel, answer: str, chunk_ids: Sequence[int]) -> None:
     """Require unique evidence for cited answers and no evidence for an absent answer."""
     if len(chunk_ids) != len(set(chunk_ids)):

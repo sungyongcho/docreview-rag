@@ -16,7 +16,7 @@ from pydantic.functional_validators import model_validator
 from app.api.review.evidence import EvidenceSelection
 from app.api.review.execution import ExecutionData
 from app.api.review.profiles import ResolvedRetrievalProfile, ReviewSessionProfile
-from app.contracts.evidence import SourceSha256
+from app.contracts.evidence import EvidenceHold, SourceSha256
 from app.contracts.validation import (
     FiniteFloat,
     NonBlank,
@@ -172,6 +172,8 @@ class RetrieveResponse(StrictSchema):
     resolved_profile: ResolvedRetrievalProfile
     resolved_scope: ResolvedQueryScope | None = None
     path_decision: JsonObject | None = None
+    # Evidence inside the searched scope that a later filing keeps out of use.
+    evidence_holds: tuple[EvidenceHold, ...] = ()
 
 
 class DocumentResource(StrictSchema):

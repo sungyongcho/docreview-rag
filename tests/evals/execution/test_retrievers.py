@@ -112,7 +112,9 @@ def test_bm25_parameters_are_identical_in_lexical_and_hybrid_paths(monkeypatch):
 
 
 @pytest.mark.parametrize("strategy", ["vector", "hybrid"])
-def test_vector_and_hybrid_arms_preserve_mixed_corpus_languages(monkeypatch, strategy):
+def test_vector_and_hybrid_arms_preserve_mixed_corpus_languages(
+    monkeypatch, no_evidence_holds, strategy
+):
     """Keep both corpus languages through vector search and hybrid lexical fan-out."""
     calls = []
     filters = RetrievalFilters(languages=("en", "ko"))

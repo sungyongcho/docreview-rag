@@ -8,11 +8,10 @@ from sqlalchemy import delete, select
 
 from app.amendments.policy import (
     EvidenceWithheldError,
-    WithheldEvidence,
     eligible_ids,
+    evidence_holds,
     family_hold,
     require_eligible,
-    withheld_evidence,
 )
 from app.amendments.registration import register_filings
 from app.amendments.review import ItemEffect, record_review
@@ -23,6 +22,7 @@ from tests.amendments.support import (
     batch,
     dart_document,
     eligible,
+    hold,
     parsed,
     sec_document,
 )
@@ -65,7 +65,7 @@ def test_only_a_recorded_filing_is_evidence() -> None:
                 (REPORT.document_id, "7"),
                 (REPORT.document_id, None),
             }
-            assert await withheld_evidence(session) == ()
+            assert await evidence_holds(session) == ()
 
             await session.execute(delete(FilingVersion))
             assert await eligible(session) == set()
@@ -84,8 +84,8 @@ def test_a_later_report_replaces_the_whole_earlier_report() -> None:
             await session.commit()
 
             assert await eligible(session) == set()
-            assert await withheld_evidence(session, issuers=["000660"]) == (
-                WithheldEvidence("dart", "000660", 2020, "not_indexed"),
+            assert await evidence_holds(session, issuers=["000660"]) == (
+                hold("dart", "000660", 2020, "not_indexed"),
             )
 
             await session.rollback()
@@ -94,7 +94,7 @@ def test_a_later_report_replaces_the_whole_earlier_report() -> None:
                 (CORRECTION.document_id, "I"),
                 (CORRECTION.document_id, "II"),
             }
-            assert await withheld_evidence(session) == ()
+            assert await evidence_holds(session) == ()
 
     asyncio.run(scenario())
 
@@ -108,12 +108,12 @@ def test_an_unreviewed_amendment_withholds_its_report_period() -> None:
             await persist_seed_batch(session, batch(parsed(REPORT, ("1", "7"))))
             await register_filings(session, [AMENDMENT])
             await session.commit()
-            pending = (WithheldEvidence("sec", "AMD", 2025, "amendment_pending"),)
+            pending = (hold("sec", "AMD", 2025, "amendment_pending"),)
 
             assert await eligible(session) == set()
-            assert await withheld_evidence(session, fiscal_years=[2025]) == pending
-            assert await withheld_evidence(session, doc_ids=[REPORT.document_id]) == pending
-            assert await withheld_evidence(session, fiscal_years=[2024]) == ()
+            assert await evidence_holds(session, fiscal_years=[2025]) == pending
+            assert await evidence_holds(session, doc_ids=[REPORT.document_id]) == pending
+            assert await evidence_holds(session, fiscal_years=[2024]) == ()
 
             await session.rollback()
             await persist_seed_batch(session, batch(parsed(AMENDMENT, ("7", "15"))))
@@ -152,8 +152,8 @@ def test_a_review_decides_each_item() -> None:
                 (AMENDMENT.document_id, "7"),
                 (AMENDMENT.document_id, "15"),
             }
-            assert await withheld_evidence(session) == (
-                WithheldEvidence("sec", "AMD", 2025, "item_withheld", ("8",)),
+            assert await evidence_holds(session) == (
+                hold("sec", "AMD", 2025, "item_withheld", ("8",)),
             )
 
     asyncio.run(scenario())
@@ -201,9 +201,7 @@ def test_versions_that_cannot_be_ordered_or_lack_a_report_are_withheld() -> None
                 session, batch(parsed(REPORT, ("1",)), parsed(sec_document(19), ("1",)))
             )
             assert await eligible(session) == set()
-            assert await withheld_evidence(session) == (
-                WithheldEvidence("sec", "AMD", 2025, "order_unknown"),
-            )
+            assert await evidence_holds(session) == (hold("sec", "AMD", 2025, "order_unknown"),)
 
         async with isolated_session() as session:
             await persist_seed_batch(session, batch(parsed(AMENDMENT, ("7",))))
@@ -216,9 +214,7 @@ def test_versions_that_cannot_be_ordered_or_lack_a_report_are_withheld() -> None
             )
             await session.commit()
             assert await eligible(session) == set()
-            assert await withheld_evidence(session) == (
-                WithheldEvidence("sec", "AMD", 2025, "report_missing"),
-            )
+            assert await evidence_holds(session) == (hold("sec", "AMD", 2025, "report_missing"),)
 
     asyncio.run(scenario())
 

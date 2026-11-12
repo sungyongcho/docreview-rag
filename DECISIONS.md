@@ -290,3 +290,11 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-12
 - source: user instruction in the 2026-11-12 consolidation session on mcp-and-langgraph
 - decision: mcp-and-langgraph is rebase-merged into main once study and implementation are complete, and main and the running service stay unchanged until then; AGENTS.md holds only rules that apply now, in one editable-on-request file, and names no model other than the gpt-6-astra study session.
+
+### D-38 — A later filing decides which stored text is evidence
+- status: active
+- category: interface
+- date: 2026-11-12
+- source: issue #231; user decisions in the 2026-11-12 session on feat/231-amendment-evidence (DART is included, the design that ties filings together is new, embedding calls for it are approved)
+- decision: Every filing a registry holds for a report period is recorded in filing_versions as soon as acquisition lists it, grouped by registry, issuer id and report period, and a stored chunk is evidence only while app.amendments.policy.eligible_chunk admits it; that one predicate restricts live ranking before any rank limit, every read of a chunk by id (the agent's fetch and final-answer review, pinned selections), snapshot creation, the index fingerprint and golden authoring, while a snapshot keeps serving what it froze; a later whole report (every DART filing, a second 10-K) replaces the earlier one as soon as it is known, a 10-K/A applies per Item only through an operator review that decides replace, add or withhold for every Item its chunks carry, and the whole report period is held while an amendment is unreviewed, no report is known or two filings of one kind share an order key (the DART receipt number or the EDGAR acceptance time; an amendment always follows its report); a document with no recorded version is not evidence, so a database indexed earlier runs `python -m scripts.schema filings` once; a review is withdrawn when its amendment is indexed again from another source or with an undecided Item; held evidence is reported as such (evidence_holds on retrieval, the evidence_held workflow reason, holds in tool results) instead of reading as absence.
+- note: BM25 corpus statistics still count held and replaced chunks; that shifts term weights slightly and never returns such a chunk.

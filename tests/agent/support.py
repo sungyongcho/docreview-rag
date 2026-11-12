@@ -57,6 +57,12 @@ class FakeSession:
         self.transaction_open = True
         return self.chunk
 
+    async def scalars(self, statement):
+        """Answer the current-evidence check: the staged chunk is current evidence."""
+        del statement
+        self.transaction_open = True
+        return [] if self.chunk is None else [self.chunk.id]
+
     def in_transaction(self):
         """Report whether this fake session currently holds a transaction."""
         return self.transaction_open

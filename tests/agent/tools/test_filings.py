@@ -47,7 +47,7 @@ def patch_retrieve(monkeypatch, responses):
         provider = kwargs.get("provider")
         if provider is not None:
             await provider.embed_query(query)
-        return SimpleNamespace(hits=responses[len(calls) - 1])
+        return SimpleNamespace(hits=responses[len(calls) - 1], holds=())
 
     module = sys.modules[build_default_registry.__module__]
     monkeypatch.setattr(module, "retrieve", fake_retrieve)

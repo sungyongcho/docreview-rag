@@ -13,6 +13,7 @@ from pydantic import JsonValue, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.amendments.policy import eligible_chunk
 from app.api.documents.catalog import DocumentCatalog
 from app.api.errors import ApiProblemError, bad_request, translate_runtime_errors, unavailable
 from app.api.review.engines import ReviewEngines
@@ -70,6 +71,7 @@ from app.retrieval.search.service import (
     RetrievalResult,
     SearchNotReadyError,
     consistent_retrieve,
+    scope_holds,
 )
 from app.retrieval.tables import load_table_readings
 from app.retrieval.types import ChunkHit, RetrievalFilters
@@ -656,6 +658,7 @@ class RuntimeApiServices:
                     resolved_profile=profile,
                     resolved_scope=scope,
                     path_decision=path,
+                    evidence_holds=result.holds,
                 )
 
     async def list_documents(self) -> Sequence[DocumentResource]:
@@ -904,6 +907,7 @@ class RuntimeApiServices:
                         session,
                         snapshot,
                         request.evidence_selection,
+                        scope.filters,
                         k=profile.k,
                         max_context_chars=policy.max_context_chars,
                     )
@@ -1012,6 +1016,7 @@ class RuntimeApiServices:
         session: AsyncSession,
         snapshot: CandidateSnapshot,
         selection: EvidenceSelection,
+        filters: RetrievalFilters,
         *,
         k: int,
         max_context_chars: int,
@@ -1020,10 +1025,13 @@ class RuntimeApiServices:
 
         The chunks are reloaded by the ids the snapshot names, so the workflow sees the
         pinned and ranked evidence the reviewer saw instead of running a new search, and
-        every stage records the snapshot's candidates.
+        every stage records the snapshot's candidates. A candidate of the live corpus
+        that a later filing replaced or holds back since the search is not reloaded,
+        which reports the candidates as stale so the reviewer retrieves again.
         """
         ids = tuple(candidate.chunk_id for candidate in snapshot.candidates)
-        rows = tuple(await session.scalars(select(Chunk).where(Chunk.id.in_(ids))))
+        current = () if filters.snapshot_id is not None else (eligible_chunk(),)
+        rows = tuple(await session.scalars(select(Chunk).where(Chunk.id.in_(ids), *current)))
         models = {row.id: row for row in rows}
         ordered_hits = tuple(
             _snapshot_hit(models[item.chunk_id], rank)
@@ -1057,6 +1065,7 @@ class RuntimeApiServices:
         selected_result = RetrievalResult(
             hits=selected,
             candidates=selected,
+            holds=await scope_holds(session, filters),
             score_stage="rrf",
             component_rankings=ComponentRankings(
                 vector=(),

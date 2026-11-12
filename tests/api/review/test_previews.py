@@ -13,7 +13,9 @@ from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 
 
 @pytest.mark.parametrize("strategy", ["vector", "lexical", "hybrid"])
-def test_preview_strategies_use_the_shared_search_contract(monkeypatch, hit, strategy):
+def test_preview_strategies_use_the_shared_search_contract(
+    monkeypatch, no_evidence_holds, hit, strategy
+):
     """Run each valid preview plan through retrieval and preserve its actual component ranks."""
     from contextlib import asynccontextmanager
 

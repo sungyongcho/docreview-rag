@@ -10,6 +10,7 @@ from typing import Any, Final
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.amendments.policy import eligible_chunk
 from app.canonical_json import canonical_json
 from app.db.models import Chunk, ChunkEmbedding, Document, ParsedStructure
 from app.db.queries import join_current_parse
@@ -65,7 +66,12 @@ def _encode(value: object) -> bytes:
 
 
 async def index_fingerprint(session: AsyncSession, identity: EmbeddingIdentity) -> str:
-    """Hash document sources, chunk inputs, structure, and exact selected vectors."""
+    """Hash document sources, chunk inputs, structure, and exact selected vectors.
+
+    Only chunks that are current evidence are hashed: a search ranks nothing else, so
+    recording a filing that replaces another, or reviewing an amendment, changes the
+    fingerprint exactly when it changes what an evaluation can retrieve.
+    """
     documents = (
         await session.execute(
             join_current_parse(select(Document.doc_id, ParsedStructure.source_sha256)).order_by(
@@ -93,6 +99,7 @@ async def index_fingerprint(session: AsyncSession, identity: EmbeddingIdentity) 
                 ChunkEmbedding.embedding,
             )
             .outerjoin(ChunkEmbedding, matching_embedding(identity))
+            .where(eligible_chunk())
             .order_by(Chunk.doc_id, Chunk.stable_key)
         )
     ).all()

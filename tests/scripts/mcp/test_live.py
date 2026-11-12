@@ -281,7 +281,7 @@ def test_a_search_over_the_embedding_cap_is_a_system_failure(
     async def retrieve(session: object, query: str, **kwargs: Any) -> SimpleNamespace:
         """Embed the query like retrieval does, then find nothing."""
         await kwargs["provider"].embed_query(query)
-        return SimpleNamespace(hits=())
+        return SimpleNamespace(hits=(), holds=())
 
     monkeypatch.setattr(filings, "retrieve", retrieve)
     sent: list[dict[str, Any]] = []

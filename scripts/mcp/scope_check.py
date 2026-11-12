@@ -113,6 +113,7 @@ async def serve(log_path: Path, failing_year: int) -> None:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     from app.agent.tools.filings import build_default_registry
+    from app.amendments.policy import eligible_chunk
     from app.db.models import Chunk, Document
     from app.mcp.filings_server import serve as serve_stdio
     from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
@@ -124,17 +125,19 @@ async def serve(log_path: Path, failing_year: int) -> None:
         filters = kwargs["filters"]
         assert isinstance(filters, RetrievalFilters)
         if query == "empty":
-            return SimpleNamespace(hits=())
+            return SimpleNamespace(hits=(), holds=())
         if query == FAILING_QUERY and filters.fiscal_years == (failing_year,):
             raise RuntimeError("controlled retrieval failure")
-        statement = select(Chunk).join(Document, Document.doc_id == Chunk.doc_id)
+        statement = (
+            select(Chunk).join(Document, Document.doc_id == Chunk.doc_id).where(eligible_chunk())
+        )
         if filters.issuers:
             statement = statement.where(Document.issuer.in_(filters.issuers))
         if filters.fiscal_years:
             statement = statement.where(Document.fiscal_year.in_(filters.fiscal_years))
         chunk = await session.scalar(statement.order_by(Chunk.id).limit(1))
         if chunk is None:
-            return SimpleNamespace(hits=())
+            return SimpleNamespace(hits=(), holds=())
         hit = SimpleNamespace(
             chunk_id=chunk.id,
             doc_id=chunk.doc_id,
@@ -145,7 +148,7 @@ async def serve(log_path: Path, failing_year: int) -> None:
             score=1.0,
             index_text=chunk.body,
         )
-        return SimpleNamespace(hits=(hit,))
+        return SimpleNamespace(hits=(hit,), holds=())
 
     original_get = AsyncSession.get
 
@@ -170,9 +173,10 @@ async def serve(log_path: Path, failing_year: int) -> None:
 
 
 async def first_chunk(issuer: str, year: int) -> int:
-    """Find the first stored chunk of one filing year."""
+    """Find the first stored chunk of one filing year that is current evidence."""
     from sqlalchemy import select
 
+    from app.amendments.policy import eligible_chunk
     from app.db.models import Chunk, Document
     from scripts.mcp.live import read_only_engine
 
@@ -182,7 +186,7 @@ async def first_chunk(issuer: str, year: int) -> int:
             chunk_id = await connection.scalar(
                 select(Chunk.id)
                 .join(Document, Document.doc_id == Chunk.doc_id)
-                .where(Document.issuer == issuer, Document.fiscal_year == year)
+                .where(Document.issuer == issuer, Document.fiscal_year == year, eligible_chunk())
                 .order_by(Chunk.id)
                 .limit(1)
             )

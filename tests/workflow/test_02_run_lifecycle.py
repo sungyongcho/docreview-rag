@@ -5,8 +5,9 @@ from typing import Any, cast
 
 import pytest
 
+from app.contracts.evidence import EvidenceHold
 from app.figures.tables import read_table_cells
-from app.observability.persistence import report_to_records
+from app.observability.persistence import records_to_report, report_to_records
 from app.observability.stages import record_stages, stage_metadata
 from app.observability.types import Budget, RunReport
 from app.release.ai_allowance import AIAllowanceError
@@ -159,6 +160,27 @@ def test_no_evidence_short_circuits_both_provider_calls():
     assert report_of(result)["label"] == "NOT_IN_DOCS"
     assert report_of(result)["reasons"][0]["code"] == "retrieval_empty"
     assert provider.prompts == ()
+
+
+def test_held_evidence_survives_the_report_and_its_stored_record():
+    """Carry the retriever's holds into the run report and back out of its records."""
+    held = EvidenceHold(
+        registry="sec", issuer="AMD", fiscal_year=2025, reason="item_withheld", items=("8",)
+    )
+
+    async def retriever(query: str, k: int, filters) -> RetrievalResult:
+        """Return no hits and one hold on the searched scope."""
+        return retrieval_result([]).model_copy(update={"holds": (held,)})
+
+    result = asyncio.run(
+        run_workflow(_request(), retriever=retriever, provider=_provider([]), clock=SequenceClock())
+    )
+
+    reasons = report_of(result)["reasons"]
+    assert [reason["code"] for reason in reasons] == ["evidence_held", "retrieval_empty"]
+    assert reasons[0]["holds"] == [held.model_dump(mode="json")]
+    run, traces = report_to_records(result)
+    assert report_of(records_to_report(run, traces))["reasons"] == reasons
 
 
 def test_zero_budget_refuses_before_retrieval():

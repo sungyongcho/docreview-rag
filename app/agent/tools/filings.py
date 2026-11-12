@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import field_validator, model_validator
 
 from app.agent.tools.registry import Tool, ToolError, ToolRegistry
+from app.amendments.policy import eligible_ids
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.validation import NonBlank, PositiveInt, StrictSchema
 from app.db.models import Chunk
@@ -16,7 +17,7 @@ from app.retrieval.embedding.provider import (
     EmbeddingProvider,
     get_embedding_provider,
 )
-from app.retrieval.search.service import retrieve
+from app.retrieval.search.service import RetrievalResult, retrieve
 from app.retrieval.tables import load_cell_catalog
 from app.retrieval.types import ChunkHit, Form, Issuer, RetrievalFilters
 
@@ -226,6 +227,18 @@ def _hit_payload(hit: ChunkHit) -> dict[str, Any]:
     }
 
 
+def _search_payload(result: RetrievalResult) -> dict[str, Any]:
+    """Materialize one search as its hits, plus any evidence a later filing holds back.
+
+    ``holds`` appears only when the searched scope has held evidence, so a caller can
+    tell that from a filing that never said what was asked.
+    """
+    payload: dict[str, Any] = {"hits": [_hit_payload(hit) for hit in result.hits]}
+    if result.holds:
+        payload["holds"] = [hold.model_dump(mode="json") for hold in result.holds]
+    return payload
+
+
 def _citation(payload: dict[str, Any]) -> EvidenceCitation:
     """Project one tool payload onto the immutable citation contract."""
     return EvidenceCitation(
@@ -310,14 +323,19 @@ def build_default_registry(
                     forms=params.forms or (),
                 ),
             )
-            return {"hits": [_hit_payload(hit) for hit in result.hits]}
+            return _search_payload(result)
 
     async def fetch_chunk(params: FetchChunkParams) -> dict[str, Any]:
-        """Read one stored chunk in full, rejecting ids the corpus does not contain."""
+        """Read one stored chunk in full, rejecting ids that are not current evidence."""
         async with session_factory() as session:
             chunk = await session.get(Chunk, params.chunk_id)
             if chunk is None:
                 raise ToolError(f"chunk {params.chunk_id} does not exist")
+            if not await eligible_ids(session, [chunk.id]):
+                raise ToolError(
+                    f"chunk {params.chunk_id} is no longer evidence: a later filing "
+                    "replaced it or holds it back; search again"
+                )
             payload = {
                 "chunk_id": chunk.id,
                 "doc_id": chunk.doc_id,
@@ -353,12 +371,7 @@ def build_default_registry(
                         fiscal_years=(fiscal_year,),
                     ),
                 )
-                years.append(
-                    {
-                        "fiscal_year": fiscal_year,
-                        "hits": [_hit_payload(hit) for hit in result.hits],
-                    }
-                )
+                years.append({"fiscal_year": fiscal_year, **_search_payload(result)})
             return {"issuer": params.issuer, "years": years}
 
     registry = ToolRegistry()
@@ -368,7 +381,11 @@ def build_default_registry(
             description=(
                 "Hybrid-search the 10-K corpus and return scored, citable chunks. "
                 "Optional issuers, fiscal_years, and forms narrow the corpus; "
-                "null means unrestricted."
+                "null means unrestricted. Text an amendment restated carries the "
+                "amendment's form (10-K/A), so name forms only when the question does. "
+                "A `holds` list names report periods whose evidence a later filing "
+                "keeps out of use: say so instead of answering that the filing does "
+                "not cover the question."
             ),
             parameters=SearchFilingsParams,
             run=search_filings,

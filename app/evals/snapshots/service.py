@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlalchemy import func, insert, literal, select
 from sqlalchemy.exc import IntegrityError
 
+from app.amendments.policy import eligible_chunk
 from app.db.models import (
     BM25CorpusStat,
     Chunk,
@@ -164,7 +165,11 @@ class SnapshotService:
         eval_result_id: int,
         public: bool,
     ) -> SnapshotResource:
-        """Freeze current document and embedding identity around one eval result."""
+        """Freeze current document and embedding identity around one eval result.
+
+        Only chunks that are current evidence are frozen, so a snapshot never serves
+        text a later filing replaced, and it keeps serving what it froze after that.
+        """
         async with self._session_factory() as session:
             await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
             result = await session.get(EvalResult, eval_result_id)
@@ -194,6 +199,7 @@ class SnapshotService:
                         ChunkEmbedding.embedding,
                     )
                     .outerjoin(ChunkEmbedding, matching_embedding(embedding_identity))
+                    .where(eligible_chunk())
                     .order_by(Chunk.doc_id, Chunk.ordinal)
                 )
             ).all()
@@ -223,6 +229,10 @@ class SnapshotService:
             await session.flush()
             for document in documents:
                 identity_rows = by_document[document.doc_id]
+                if not identity_rows:
+                    # A filing that a later one replaced, or whose report period is
+                    # held, contributes no evidence, so the snapshot does not hold it.
+                    continue
                 session.add(
                     SnapshotDocument(
                         snapshot_id=snapshot.id,
@@ -293,7 +303,8 @@ class SnapshotService:
                         ChunkEmbedding.embedding,
                     )
                     .join(Document, Document.doc_id == Chunk.doc_id)
-                    .outerjoin(ChunkEmbedding, matching_embedding(embedding_identity)),
+                    .outerjoin(ChunkEmbedding, matching_embedding(embedding_identity))
+                    .where(eligible_chunk()),
                 )
             )
             for live, frozen in SNAPSHOT_TABLES:
