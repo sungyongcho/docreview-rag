@@ -92,7 +92,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - status: active
 - category: interface
 - date: 2026-10-26
-- source: commit 25a16a19 on mcp-and-langgraph (user instruction recorded in the 2026-10-26 fact-tag log; entry added by the 2026-11-11 audit)
+- source: commit 36cee8f3 on mcp-and-langgraph (user instruction recorded in the 2026-10-26 fact-tag log; entry added by the 2026-11-11 audit)
 - decision: For DART tables without fact tags, parsing reads the statement kind, scope and basis that the report itself declares (section codes, table-group classes and summary headings) into parsed_tables.statement_kind, statement_scope and statement_basis; cells of a declared consolidated statement are entity-wide, cells of a separate statement are scope_qualified, and cells of notes, equity-change statements and undeclared tables are scope_unknown; this narrows D-8's "untagged cells keep the text rules" for scope only and is an exception to D-3's schema-freeze clause for this change only.
 
 ### D-11 — An answer's figures are read by answer rules and cited text by filing rules
@@ -153,7 +153,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - status: active
 - category: interface
 - date: 2026-11-11
-- source: 2026-11-11 audit session on mcp-and-langgraph (third study preflight rehearsal on 56bfd8b8 found the earlier rules were lists of forbidden shapes that further shapes walked past; recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- source: 2026-11-11 audit session on mcp-and-langgraph (third study preflight rehearsal on 744cf028 found the earlier rules were lists of forbidden shapes that further shapes walked past; recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: The table reader establishes an untagged column as a fiscal year's reported whole-entity amount only when its header, after the year or year-end date, the unit declaration and a closed vocabulary of full-fiscal-year words are taken out, leaves nothing: a remaining period word leaves the year not established (period_unknown) and any other remaining word leaves the scope not established (scope_unknown); a question's item is named only when every other word of its sentence is a filler, connective, question word, fiscal year, entity-scope word, issuer name the application passed or another item, and a period shorter than a fiscal year always qualifies the item; these allow-lists replace D-15's clauses on sub-year headers and non-amount columns and D-16's clause on qualifiers beside an item, whose lists of forbidden words they supersede.
 - note: D-20 replaces the question clause; D-21 states what "year-end date" checks and the several-year header rule; D-24 owns period forms; D-26 gives scope_unknown its causes.
 
@@ -161,7 +161,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - status: active
 - category: interface
 - date: 2026-11-11
-- source: 2026-11-11 audit session on mcp-and-langgraph (third study preflight rehearsal on 56bfd8b8 found the earlier rules were lists of forbidden shapes that further shapes walked past; recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
+- source: 2026-11-11 audit session on mcp-and-langgraph (third study preflight rehearsal on 744cf028 found the earlier rules were lists of forbidden shapes that further shapes walked past; recorded in the Second Brain log 2026-11-11-audit-defect-fixes)
 - decision: The figure check compares direction as well as magnitude: a stored reading carries the sign its notation or inline XBRL tag states, a level claim states a loss when its figure is written negative or its item words are a loss phrase of the vocabulary, a claim and a cell that agree in magnitude, unit and period but not in direction are not verified, and where the cell's or the claim's direction is not established the claim is withheld; the withheld-answer sentence and its rationale, defined once beside the verdict, say that the unit or the sign could not be confirmed; this replaces D-15's "magnitudes still compare"; wordings such as "a loss of" and "적자" name no item and stay unverified, and change claims are not compared by direction.
 - note: D-33 replaces the withheld-answer sentence and rationale clause with typed causes; D-25 adds that a tag's sign resolves ambiguous notation.
 

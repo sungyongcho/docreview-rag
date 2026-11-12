@@ -9,7 +9,7 @@ before job admission and again before execution. Missing sources and stale parse
 inputs are preparation states. Built-in and user-revision provenance remain separate from
 human review; no approval flags were upgraded. The audit snapshot below predates this fix.
 
-## Dataset at commit 150fb55f
+## Dataset at commit 3de8fd81
 
 The seven files contain 124 cases: 102 positive and 22 absent. Counts below
 were validated with `GOLDEN_CASES` and `validate_unique_cases`; source files were
@@ -93,7 +93,7 @@ source-validation claims do not establish readiness for today's local corpus. Th
 
 ## Historical SEC-only review — before 2026-09-08
 
-This section, including the case table and counts, records the earlier set and is not a description of the files at commit 150fb55f.
+This section, including the case table and counts, records the earlier set and is not a description of the files at commit 3de8fd81.
 
 ## Status
 
