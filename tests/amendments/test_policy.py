@@ -524,6 +524,19 @@ ORDER_CASES = {
         (_filed(18, FEB_4), _filed(21, FEB_4, (2, 4, 20, 6, 57), form="10-K/A")),
         None,
     ),
+    # Both keys are the first second of one day, and the pair still needs no order.
+    "the only report and its amendment, neither with a time": (
+        (_filed(18, FEB_4), _filed(21, FEB_4, form="10-K/A")),
+        None,
+    ),
+    "two reports of different days, neither with a time": (
+        (_filed(18, FEB_3), _filed(19, FEB_4)),
+        None,
+    ),
+    "a refiled report and an amendment of a later day, none with a time": (
+        (_filed(18, FEB_4), _filed(40, MAR_2), _filed(41, APR_1, form="10-K/A")),
+        None,
+    ),
     "a refiled report without a time and an amendment of its day": (
         (
             _filed(18, FEB_4),
@@ -558,6 +571,7 @@ ORDER_CASES = {
         (_filed(18, FEB_3), _filed(19, FEB_4, (2, 3, 23, 14, 52))),
         None,
     ),
+    # The stored key of this report is the one a report without a time gets.
     "a time at the first second of the filing day reads as no time": (
         (_filed(18, FEB_4, (2, 4, 0, 0, 0)), _filed(19, FEB_4, (2, 4, 15, 0, 0))),
         "order_unknown",
