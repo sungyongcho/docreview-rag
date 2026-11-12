@@ -1,6 +1,6 @@
 """Check that every strict request body takes what JSON can carry for its fields."""
 
-from collections.abc import Iterator
+from collections.abc import Hashable, Iterator, Sequence
 import dataclasses
 from ipaddress import IPv4Address
 import json
@@ -15,6 +15,7 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
+    InstanceOf,
     SecretStr,
     WrapValidator,
     computed_field,
@@ -72,6 +73,8 @@ TRANSPARENT = frozenset({"default", "nullable", "union", "function-after"})
 type _Ids = tuple[int, ...]
 # One value of every type a decoded JSON body can hold.
 JSON_VALUES = ("", 0, 0.0, True, None, [], {})
+# One array of every type Python can hold it in; JSON carries only the list.
+ARRAY_VALUES = ([], (), set(), frozenset())
 # Entries of a validator that are not validators, whatever they look like.
 NOT_VALIDATORS = frozenset(
     {
@@ -191,11 +194,11 @@ def _refusals(
     refuses = bool(node.get("strict", strict))
     if kind == "lax-or-strict":
         # Only the branch of the mode in force ever sees the value.
-        yield from below(node["strict_schema" if refuses else "lax_schema"])
+        yield from below(node["strict_schema" if refuses else "lax_schema"], arrives=arrives)
         return
     if kind == "json-or-python":
         # A request body reaches its model already decoded, as Python values.
-        yield from below(node["python_schema"])
+        yield from below(node["python_schema"], arrives=arrives)
         return
     if kind == "union":
         choices = [choice[0] if isinstance(choice, tuple) else choice for choice in node["choices"]]
@@ -205,7 +208,14 @@ def _refusals(
         yield from below(open_to_json or choices, arrives=arrives)
         return
     if kind == "is-instance":
-        if not any(isinstance(value, node["cls"]) for value in JSON_VALUES):
+        cls = node["cls"]
+        taken = {type(value) for value in ARRAY_VALUES if isinstance(value, cls)}
+        if 0 < len(taken) < len(ARRAY_VALUES):
+            # A class that takes some arrays and not others must take the one that arrives.
+            fits = arrives in taken
+        else:
+            fits = any(isinstance(value, cls) for value in JSON_VALUES)
+        if not fits:
             yield f"{path} ({kind})"
         return
     if kind in ARRAYS:
@@ -415,6 +425,15 @@ class _Dog(BaseModel):
         (SecretStr, "secret", []),
         (IPv4Address, "192.0.2.1", ["Body.value (is-instance)"]),
         (Path, "a/b", ["Body.value (is-instance)"]),
+        # A class that takes a ready-made tuple and not a list refuses the JSON array.
+        (InstanceOf[Hashable], [1], ["Body.value (is-instance)"]),
+        (
+            typing.Annotated[InstanceOf[Hashable], BeforeValidator(tuple_from_json_array)],
+            [1],
+            [],
+        ),
+        (InstanceOf[Sequence], [1], []),
+        (InstanceOf[object], [1], []),
         # A kind no group names is reported, whatever it would do with the value.
         (complex, "1+2j", ["Body.value (complex)"]),
     ],
