@@ -166,7 +166,7 @@ DocReview는 모든 로컬 호출을 숨은 추론을 끈 채(`think: false`) �
 | CPU 전용(`size_vram` 0) | 캐시되지 않은 2.5k 토큰 grade 프롬프트 기준 80–95 tokens/s(약 30초); 반복되는 프롬프트 접두어는 캐시에서 처리 | 약 10 tokens/s(단독 측정 12–14) | 끝까지 36–103초: grade 19–68초, 검증 17–35초; 재시작 후 첫 호출은 모델 로드 10–20초 추가 | 측정한 예열 상태의 실행은 120초 안에 끝났으며, 300초는 콜드 로드의 여유를 늘리지만 완료를 보장하지 않음. `LOCAL_LLM_MAX_OUTPUT_TOKENS`는 600 유지(grade 150–300, 검증 140–160 필요). 측정한 사례에서 근거 8,000자는 같은 결과를 유지하며 입력 처리를 줄였음. k는 검증한 5 유지; 더 큰 후보 집합은 이 CPU에서 검증하지 않음. `LOCAL_LLM_TIMEOUT_S=300` 설정. |
 | GPU 또는 혼합 | 미측정 | 미측정 | 미측정 | CPU 설정에서 시작해 측정 후 경과 시간을 낮춤 |
 
-이 변경 전에는 같은 질문이 grade 단계에서 77–144초 뒤 `output_tokens: used=600 limit=600`과 잘못된 JSON 본문으로 실패했습니다. 600토큰은 숨은 추론이었습니다. [보관된 README](https://github.com/sungyongcho/docreview-rag/blob/main/docs/README_archive.md)의 `ollama run MODEL ""` 사전 로드는 Ollama 기본 4,096토큰 창으로 모델을 올리므로 DocReview의 첫 호출이 설정된 창으로 다시 로드하는 것은 정상입니다. 남은 입력 허용량을 넘길 것으로 추정되는 프롬프트는 호출 전에 거절됩니다([실행 한도](runtime.md#limits) 참고).
+이 변경 전에는 같은 질문이 grade 단계에서 77–144초 뒤 `output_tokens: used=600 limit=600`과 잘못된 JSON 본문으로 실패했습니다. 600토큰은 숨은 추론이었습니다. `ollama run MODEL ""`로 모델을 미리 올리면 Ollama 기본 4,096토큰 창으로 올라가므로 DocReview의 첫 호출이 설정된 창으로 다시 로드하는 것은 정상입니다. 남은 입력 허용량을 넘길 것으로 추정되는 프롬프트는 호출 전에 거절됩니다([실행 한도](runtime.md#limits) 참고).
 
 ## DocReview에서 연결하기 {#connect}
 

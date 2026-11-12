@@ -1,12 +1,12 @@
 # Decision and requirement ledger
 
-Canonical record of this project's agreed decisions and requirements. Sessions
-consult this file at session start or intake and on any requirement change; a
-conflict between new instructions and an `active` entry is surfaced to the user
-before proceeding, and the resolution is recorded here.
+Record of this project's standing decisions about the code. A session reads the
+entries for the area it changes. A user instruction that contradicts an `active`
+entry replaces it: the entry is marked superseded, the new one is appended and the
+report says so.
 
-Entries are appended under `## Entries` and never deleted; a superseded entry keeps
-its original text and gains `superseded-by` pointing at the replacing id.
+Entries are appended under `## Entries`; a superseded entry keeps its original text
+and gains `superseded-by` pointing at the replacing id.
 
 ## Entries
 
@@ -35,6 +35,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-09-25
 - source: PR #220
 - decision: Code that no entry point reaches (the served app, the documented CLIs, the deploy and release scripts, the evaluation harness and the web app) is deleted together with the tests that cover only it; every deletion carries evidence and three independent reachability verdicts in docs/refactor-2026-09.md.
+- note: D-36: docs/refactor-2026-09.md and its evidence appendix were removed; the report stays in the history of PR #220.
 
 ### D-3 — Compatibility and legacy code stays only for a live consumer
 - status: active
@@ -275,3 +276,17 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-12
 - source: user instruction in the 2026-11-12 consolidation session on mcp-and-langgraph
 - decision: WORKER.md, MODERATOR.md, INTERACTIVE.md and AUTO.md are deleted together with the AGENTS.md rules that existed only for their roles: worker delivery and review states, the OCCUPIED/REVIEW_READY/MERGE_READY label flow, reviewer, resolver and moderator authority, INTERACTIVE sessions and the shared-defaults block; the maintainer flow through commit-it, the commit identity, the Git, engineering, documentation and runtime rules and this ledger remain.
+
+### D-36 — Stale and overlapping documents are removed
+- status: active
+- category: scope
+- date: 2026-11-12
+- source: user instruction in the 2026-11-12 consolidation session on mcp-and-langgraph
+- decision: A document stays in the repository only while something current reads it: the README, the paired tutorials, the deployment guides, the development story the web app serves, AGENTS.md and this ledger; docs/README_archive.md, docs/refactor-2026-09.md with its evidence appendix, docs/draft.en.md, docs/draft.ko.md, docs/draft/DEVELOPMENT_STORY_OUTLINE_draft.md, tests/RULES.md and NOTES.md are deleted, and the test-layout rules live in AGENTS.md.
+
+### D-37 — The study branch lands on main by rebase merge
+- status: active
+- category: workflow
+- date: 2026-11-12
+- source: user instruction in the 2026-11-12 consolidation session on mcp-and-langgraph
+- decision: mcp-and-langgraph is rebase-merged into main once study and implementation are complete, and main and the running service stay unchanged until then; AGENTS.md holds only rules that apply now, in one editable-on-request file, and names no model other than the gpt-6-astra study session.
