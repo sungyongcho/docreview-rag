@@ -208,8 +208,8 @@ table td { line-height: 1.55; }
   .composer-toolbar .chip-group { gap: 6px; }
   .composer-toolbar .chip-group > label select { max-width: 190px; min-height: 44px; }
   .review-progress-steps strong { font-size: 0; }
-  .review-progress-steps li.current strong { font-size: 10px; }
-  .review-progress-steps li.current { flex: 3; }
+  .review-progress-steps li.current strong, .review-progress-steps li.skipped strong { font-size: 10px; }
+  .review-progress-steps li.current, .review-progress-steps li.skipped { flex: 3; }
   .review-progress-steps li { justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -297,6 +297,8 @@ table td { line-height: 1.55; }
 /* Intentional skips remain readable when compact progress hides ordinary details. */
 .review-progress-steps li.skipped { border-color: var(--phase-warning); color: var(--phase-warning); }
 .review-progress-steps li.skipped .review-phase-icon { color: var(--phase-warning); }
+/* A tile can be narrower than one word of its label or reason, so both break inside their own tile. */
+.review-progress-steps li > span:not(.review-phase-icon) { min-width: 0; overflow-wrap: anywhere; }
 .review-progress-steps small.review-phase-reason { display: block; color: var(--phase-warning); font-size: 11px; }
 
 /* Expected early stops retain readable stage names and explicit downstream status. */

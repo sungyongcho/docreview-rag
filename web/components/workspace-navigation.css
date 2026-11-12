@@ -19,3 +19,7 @@
 .workspace-history-title > svg { flex: none; }
 .topbar > .topbar-status { flex-wrap: nowrap; white-space: nowrap; }
 .topbar-status > * { flex-shrink: 0; }
+/* A phone header cannot hold both arrows beside the status controls; the title's list and the browser's own back and forward reach every entry. */
+@media (max-width: 560px) {
+  .topbar-navigation .workspace-history-arrow { display: none; }
+}
