@@ -87,15 +87,18 @@ async def register_filings(
     Returns
     -------
     int
-        How many filings were given.
+        How many filings were recorded or refreshed: every given one, or with
+        ``keep_recorded`` only those that were not on record yet.
     """
     values = [version_values(document) for document in documents]
     if not values:
         return 0
     statement = insert(FilingVersion).values(values)
     if keep_recorded:
-        await session.execute(statement.on_conflict_do_nothing())
-        return len(values)
+        added = await session.scalars(
+            statement.on_conflict_do_nothing().returning(FilingVersion.filing_id)
+        )
+        return len(added.all())
     described = (
         "issuer_id",
         "report_period",
@@ -127,7 +130,7 @@ async def register_stored_documents(session: AsyncSession) -> int:
     Returns
     -------
     int
-        How many stored documents were read.
+        How many stored documents were not on record yet and are recorded now.
     """
     documents = await session.scalars(select(Document).order_by(Document.doc_id))
     return await register_filings(

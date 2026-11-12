@@ -161,6 +161,8 @@ def acceptance_refreshes(
     with one exception: when its report period holds another filing of the same kind,
     the two cannot be ordered without the time and the whole period stays out of
     evidence. Only such an entry is completed, and only when EDGAR states the time.
+    That also covers the one case in which a report is ordered against an amendment:
+    a report period with more than one report, whose reports are completed here.
     """
     stated = {
         document.filing_id: document.sec.accepted_at

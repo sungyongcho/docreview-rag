@@ -62,11 +62,20 @@ def superseded(amendment: FilingVersion, versions: Sequence[FilingVersion]) -> b
 def family_hold(versions: Sequence[FilingVersion]) -> FamilyHold | None:
     """Return why one report period's evidence is withheld whole, if it is.
 
+    When several reasons hold at once, the one named is the one to settle first: which
+    report an amendment follows cannot be told before a report is known and the filings
+    are ordered, and a review only matters after that.
+
     Parameters
     ----------
     versions : Sequence[FilingVersion]
         Every recorded version of one report period.
     """
+    if not any(version.kind == "report" for version in versions):
+        return "report_missing"
+    positions = Counter((version.kind, version.filed_key) for version in versions)
+    if any(count > 1 for count in positions.values()):
+        return "order_unknown"
     if any(
         version.kind == "amendment"
         and version.reviewed_at is None
@@ -74,11 +83,6 @@ def family_hold(versions: Sequence[FilingVersion]) -> FamilyHold | None:
         for version in versions
     ):
         return "amendment_pending"
-    if not any(version.kind == "report" for version in versions):
-        return "report_missing"
-    positions = Counter((version.kind, version.filed_key) for version in versions)
-    if any(count > 1 for count in positions.values()):
-        return "order_unknown"
     return None
 
 
@@ -93,9 +97,10 @@ def period_hold(members: Sequence[tuple[FilingVersion, bool]]) -> HoldReason | N
     Returns
     -------
     HoldReason | None
-        ``family_hold``'s reason, or ``not_indexed`` when the latest report replaced an
-        indexed one and is not indexed itself. ``None`` when nothing is held, which
-        includes a report period with no indexed filing: nothing of it was evidence.
+        ``family_hold``'s reason, or ``not_indexed`` when the latest report is not
+        indexed while an earlier report or an amendment is. ``None`` when nothing is
+        held, which includes a report period with no indexed filing: nothing of it was
+        evidence.
     """
     if not any(indexed for _, indexed in members):
         return None

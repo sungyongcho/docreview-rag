@@ -55,6 +55,11 @@ def test_a_report_period_is_withheld_until_its_versions_are_settled() -> None:
     assert family_hold([report, version("amendment", "20260204200657", reviewed=True)]) is None
     assert family_hold([version("amendment", "20260204200657", reviewed=True)]) == "report_missing"
     assert family_hold([report, version("report", "20260204000000")]) == "order_unknown"
+    # What must be settled first is named first: a review cannot place an amendment
+    # before its report is known and the filings are ordered.
+    pending = version("amendment", "20260204200657")
+    assert family_hold([pending]) == "report_missing"
+    assert family_hold([report, version("report", "20260204000000"), pending]) == "order_unknown"
 
 
 def test_a_later_report_replaces_an_amendment_accepted_before_it() -> None:

@@ -35,10 +35,11 @@ def test_stored_documents_become_evidence_again_once_recorded():
             # left these tables: only this schema may answer whether they exist.
             await session.execute(text("SELECT set_config('search_path', current_schema(), true)"))
 
-            for _ in range(2):
+            # A second run finds every document on record and changes nothing.
+            for added in (2, 0):
                 assert await record_filings(await session.connection()) == {
                     "status": "recorded",
-                    "filings_recorded": 2,
+                    "filings_recorded": added,
                 }
             assert await eligible(session) == stored
             assert await session.scalar(select(func.count()).select_from(FilingVersion)) == 2

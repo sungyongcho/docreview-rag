@@ -87,7 +87,7 @@ def test_stored_documents_fill_missing_versions_without_changing_recorded_ones()
             await register_filings(session, [timed])
             await session.commit()
 
-            assert await register_stored_documents(session) == 1
+            assert await register_stored_documents(session) == 0
             await session.commit()
             version = await session.get(FilingVersion, ("sec", report.filing_id))
             assert version is not None
@@ -95,7 +95,7 @@ def test_stored_documents_fill_missing_versions_without_changing_recorded_ones()
 
             await session.delete(version)
             await session.commit()
-            await register_stored_documents(session)
+            assert await register_stored_documents(session) == 1
             await session.commit()
             restored = await session.get(FilingVersion, ("sec", report.filing_id))
             assert restored is not None
