@@ -1,12 +1,23 @@
-"""Check that every strict request body takes the JSON arrays its contract declares."""
+"""Check that every strict request body takes what JSON can carry for its fields."""
 
-import types
+from collections.abc import Iterator
+import sys
 import typing
 
-from pydantic import BaseModel, BeforeValidator
+from pydantic import BaseModel, BeforeValidator, ConfigDict
 
 from app.api.app import PROD_SURFACE, create_api_app
 from app.contracts.validation import StrictSchema, tuple_from_json_array
+
+# Compiled validators that refuse, in strict mode, the value a decoded JSON body holds
+# for them: an array for the first group, a string for the second.
+ARRAYS = frozenset({"tuple", "set", "frozenset"})
+STRINGS = frozenset(
+    {"date", "datetime", "time", "timedelta", "uuid", "decimal", "bytes", "enum", "url"}
+)
+# Wrappers that hand their input on unchanged, so a validator placed before them still
+# decides what the wrapped type receives.
+TRANSPARENT = frozenset({"default", "nullable", "union"})
 
 
 def _request_schema_names(document: dict[str, typing.Any]) -> set[str]:
@@ -36,38 +47,123 @@ def _request_schema_names(document: dict[str, typing.Any]) -> set[str]:
     return names
 
 
-def _strict_models(base: type[BaseModel]) -> list[type[BaseModel]]:
-    """Return every loaded strict schema below the given class."""
-    found: list[type[BaseModel]] = []
-    for model in base.__subclasses__():
-        found.extend([model, *_strict_models(model)])
-    return found
+def _validated_classes(names: set[str]) -> list[type]:
+    """Return every loaded application class with a compiled validator and a listed name."""
+    found: dict[int, type] = {}
+    for module_name, module in list(sys.modules.items()):
+        if module_name != "app" and not module_name.startswith("app."):
+            continue
+        for value in vars(module).values():
+            if (
+                isinstance(value, type)
+                and "__pydantic_core_schema__" in vars(value)
+                and (value.__name__ in names or f"{value.__name__}-Input" in names)
+            ):
+                found[id(value)] = value
+    return sorted(found.values(), key=lambda cls: (cls.__module__, cls.__qualname__))
 
 
-def _holds_tuple(annotation: object) -> bool:
-    """Tell whether a field annotation is a tuple, alone or as one alternative."""
-    origin = typing.get_origin(annotation)
-    if origin is typing.Annotated:
-        return _holds_tuple(typing.get_args(annotation)[0])
-    if origin in (typing.Union, types.UnionType):
-        return any(_holds_tuple(argument) for argument in typing.get_args(annotation))
-    return origin is tuple
+def _refusals(node: object, *, strict: bool, admitted: bool, path: str) -> Iterator[str]:
+    """Yield the places in a compiled validator that refuse a decoded JSON value.
+
+    ``strict`` is the mode in force at the node, and ``admitted`` is whether a validator
+    directly before it already turns a JSON array into a tuple.
+    """
+    if isinstance(node, list | tuple):
+        for child in node:
+            yield from _refusals(child, strict=strict, admitted=admitted, path=path)
+        return
+    if not isinstance(node, dict):
+        return
+    kind = node.get("type")
+    if not isinstance(kind, str):
+        # A plain mapping, such as the fields of a model: its keys name the way down.
+        for name, child in node.items():
+            yield from _refusals(child, strict=strict, admitted=False, path=f"{path}.{name}")
+        return
+    config = node.get("config")
+    if kind == "model":
+        # A model validates in its own mode, whatever the model around it uses.
+        strict = bool((config or {}).get("strict", False))
+    elif isinstance(config, dict) and "strict" in config:
+        strict = bool(config["strict"])
+    refuses = bool(node.get("strict", strict))
+    if (kind in ARRAYS and refuses and not admitted) or (kind in STRINGS and refuses):
+        yield f"{path} ({kind})"
+    passes_on = (
+        kind == "function-before" and node["function"]["function"] is tuple_from_json_array
+    ) or (kind in TRANSPARENT and admitted)
+    for name, child in node.items():
+        if name not in {"cls", "metadata", "function", "config", "serialization"}:
+            yield from _refusals(child, strict=strict, admitted=passes_on, path=path)
 
 
-def test_strict_request_bodies_take_json_arrays_for_their_tuples():
-    """A strict model refuses a JSON array for a tuple unless the field admits arrays."""
+def _all_refusals(cls: type) -> list[str]:
+    """List where one class's compiled validator refuses a decoded JSON value."""
+    schema = vars(cls)["__pydantic_core_schema__"]
+    return sorted(set(_refusals(schema, strict=False, admitted=False, path=cls.__name__)))
+
+
+def test_strict_request_bodies_take_what_json_carries():
+    """A strict request model refuses a JSON array or string unless the field admits it."""
     names = _request_schema_names(create_api_app(surface=PROD_SURFACE).openapi())
-    refusing = sorted(
-        f"{model.__name__}.{name}"
-        for model in _strict_models(StrictSchema)
-        if model.__name__ in names or f"{model.__name__}-Input" in names
-        for name, field in model.model_fields.items()
-        if _holds_tuple(field.annotation)
-        and not any(
-            isinstance(entry, BeforeValidator) and entry.func is tuple_from_json_array
-            for entry in field.metadata
-        )
-    )
+    classes = _validated_classes(names)
+
+    refusing = [place for cls in classes for place in _all_refusals(cls)]
 
     assert refusing == []
-    assert {"AmendmentReviewRequest", "ReviewRequest", "EvidenceSelection"} <= names
+    assert {"AmendmentReviewRequest", "ReviewRequest", "EvidenceSelection", "AdminCommand"} <= {
+        cls.__name__ for cls in classes
+    }
+
+
+def test_the_check_finds_a_refusal_wherever_the_field_type_hides_it():
+    """Aliases, mapping values, nested arrays, sets and any strict model are all read."""
+    type Ids = tuple[int, ...]
+    admitted = BeforeValidator(tuple_from_json_array)
+
+    class Probe(BaseModel):
+        """A strict model that is not a ``StrictSchema``."""
+
+        model_config = ConfigDict(strict=True)
+
+        aliased: Ids
+        by_name: dict[str, tuple[int, ...]]
+        nested: typing.Annotated[tuple[tuple[int, ...], ...], admitted]
+        unordered: frozenset[int]
+        optional: typing.Annotated[tuple[int, ...] | None, admitted] = None
+
+    class Lenient(BaseModel):
+        """A model that coerces, inside which a strict one keeps its own mode."""
+
+        ids: tuple[int, ...]
+        inner: Probe
+
+    class Admitted(StrictSchema):
+        """A strict model whose only array field admits arrays."""
+
+        ids: typing.Annotated[tuple[int, ...], admitted] = ()
+
+    assert _all_refusals(Probe) == [
+        "Probe.aliased (tuple)",
+        "Probe.by_name (tuple)",
+        "Probe.nested (tuple)",
+        "Probe.unordered (frozenset)",
+    ]
+    assert _all_refusals(Lenient) == [
+        f"Lenient.inner.{place.removeprefix('Probe.')}" for place in _all_refusals(Probe)
+    ]
+    assert _all_refusals(Admitted) == []
+    # The check agrees with what the models do with a decoded JSON body.
+    Admitted.model_validate({"ids": [1, 2]})
+    Lenient.model_validate({"ids": [1], "inner": Probe(**_probe_values()).model_dump()})
+
+
+def _probe_values() -> dict[str, object]:
+    """Give the probe model values of the exact types its strict fields require."""
+    return {
+        "aliased": (1,),
+        "by_name": {"a": (1,)},
+        "nested": ((1,),),
+        "unordered": frozenset({1}),
+    }
