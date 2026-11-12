@@ -495,6 +495,54 @@
         "primary_document": "amd-20201226.htm"
       },
       "dart": null
+    },
+    {
+      "document_id": "sec-0000002488-26-000018",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "AMD",
+      "issuer_id": "0000002488",
+      "aliases": [
+        "AMD",
+        "ADVANCED MICRO DEVICES INC"
+      ],
+      "filing_id": "0000002488-26-000018",
+      "fiscal_year": 2025,
+      "form": "10-K",
+      "filing_date": "2026-02-04",
+      "report_period": "2025-12-27",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000018/amd-20251227.htm",
+      "sec": {
+        "cik": "0000002488",
+        "accession": "0000002488-26-000018",
+        "primary_document": "amd-20251227.htm",
+        "accepted_at": "2026-02-03T23:14:52Z"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0000002488-26-000021",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "AMD",
+      "issuer_id": "0000002488",
+      "aliases": [
+        "AMD",
+        "ADVANCED MICRO DEVICES INC"
+      ],
+      "filing_id": "0000002488-26-000021",
+      "fiscal_year": 2025,
+      "form": "10-K/A",
+      "filing_date": "2026-02-04",
+      "report_period": "2025-12-27",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000021/amd-20251227.htm",
+      "sec": {
+        "cik": "0000002488",
+        "accession": "0000002488-26-000021",
+        "primary_document": "amd-20251227.htm",
+        "accepted_at": "2026-02-04T20:06:57Z"
+      },
+      "dart": null
     }
   ],
   "artifacts": [
@@ -1037,6 +1085,42 @@
         "original_encoding": "utf-8",
         "normalized_separator_count": 0
       }
+    },
+    {
+      "artifact_id": "sec-0000002488-26-000018:primary:f41a767dc01c9aa989b5c167b8995a235c971926f8d7a1f929cdd949654f49e2",
+      "document_id": "sec-0000002488-26-000018",
+      "role": "primary",
+      "path": "sec/AMD/0000002488-26-000018/primary.html",
+      "sha256": "f41a767dc01c9aa989b5c167b8995a235c971926f8d7a1f929cdd949654f49e2",
+      "byte_length": 2174709,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-11-12T14:10:53.288017Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000018/amd-20251227.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0000002488-26-000021:primary:21e8f396231abee7d90df5dea28f16742d3a29656149cb3c81ed7d9e36359c6e",
+      "document_id": "sec-0000002488-26-000021",
+      "role": "primary",
+      "path": "sec/AMD/0000002488-26-000021/primary.html",
+      "sha256": "21e8f396231abee7d90df5dea28f16742d3a29656149cb3c81ed7d9e36359c6e",
+      "byte_length": 293839,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-11-12T14:10:53.970310Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000021/amd-20251227.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
     }
   ],
   "selections": [
@@ -1149,6 +1233,13 @@
       "selection_id": "sec-d42cc77695aede34",
       "artifact_ids": [
         "sec-0001045810-19-000023:primary:ae8b0a5ce06b0603c2debf57b51efb6a3036b698c4c529a4b5d7ea1103e00067"
+      ]
+    },
+    {
+      "selection_id": "sec-0477124cd1d417ed",
+      "artifact_ids": [
+        "sec-0000002488-26-000018:primary:f41a767dc01c9aa989b5c167b8995a235c971926f8d7a1f929cdd949654f49e2",
+        "sec-0000002488-26-000021:primary:21e8f396231abee7d90df5dea28f16742d3a29656149cb3c81ed7d9e36359c6e"
       ]
     }
   ]
