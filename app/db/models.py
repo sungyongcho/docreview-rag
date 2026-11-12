@@ -312,8 +312,10 @@ class FilingVersion(Base):
     (``amendment_effects``), the whole report period is withheld from evidence.
 
     ``filed_key`` orders the versions: the registry's receipt number, or the acceptance
-    time as ``YYYYMMDDHHMMSS``. An amendment follows the report it amends, so the first
-    report of a report period never replaces it; a report accepted after it does.
+    time as ``YYYYMMDDHHMMSS``, or the filing day followed by six zeros when the time is
+    not known, which orders a filing against no other of that day. An amendment follows
+    the report it amends, so the first report of a report period never replaces it; a
+    report accepted after it does.
     """
 
     __tablename__ = "filing_versions"

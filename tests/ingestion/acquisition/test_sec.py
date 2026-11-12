@@ -657,6 +657,17 @@ def test_a_filing_alone_in_its_period_keeps_its_recorded_form():
     assert acceptance_refreshes([alone, amendment, other_issuer], stated) == []
 
 
+def test_an_amendment_gains_its_time_once_its_period_has_a_second_report():
+    """Complete an amendment that must be ordered against a report other than the first."""
+    first, second = manifest_item("NVDA", "2024", "a"), manifest_item("NVDA", "2024", "b")
+    amendment = manifest_item("NVDA", "2024", "c").model_copy(update={"form": "10-K/A"})
+    stated = [
+        accepted(document, "2024-02-21T16:36:57-05:00") for document in (first, second, amendment)
+    ]
+
+    assert acceptance_refreshes([first, second, amendment], stated) == stated
+
+
 # --- progress plumbing ---
 
 

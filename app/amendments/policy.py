@@ -9,7 +9,6 @@ chunks, and ``period_hold`` states the withholding part again for one loaded rep
 period, so that an operator and a reader can be told why evidence is missing.
 """
 
-from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -59,6 +58,39 @@ def superseded(amendment: FilingVersion, versions: Sequence[FilingVersion]) -> b
     return any(key > amendment.filed_key and key > first for key in reports)
 
 
+def _states_only_day(version: FilingVersion) -> bool:
+    """Tell whether a version's order key states its filing day and no time."""
+    return version.filed_key == version.filing_date.replace("-", "") + "000000"
+
+
+def unordered(versions: Sequence[FilingVersion]) -> bool:
+    """Tell whether two versions whose order decides evidence cannot be ordered.
+
+    Two versions cannot be ordered when their keys are equal, or when they were filed
+    on one day and the key of either states no time: the day alone does not say which
+    came first. The order of two reports, of two amendments, and of an amendment and a
+    report other than the period's first decides evidence. An amendment follows the
+    first report whatever their keys say (``superseded``), so that pair needs no order.
+
+    Parameters
+    ----------
+    versions : Sequence[FilingVersion]
+        Every recorded version of one report period.
+    """
+    first = min((version.filed_key for version in versions if version.kind == "report"), default="")
+    for index, left in enumerate(versions):
+        for right in versions[index + 1 :]:
+            report = left if left.kind == "report" else right
+            if left.kind != right.kind and report.filed_key == first:
+                continue
+            if left.filed_key == right.filed_key or (
+                left.filing_date == right.filing_date
+                and (_states_only_day(left) or _states_only_day(right))
+            ):
+                return True
+    return False
+
+
 def family_hold(versions: Sequence[FilingVersion]) -> FamilyHold | None:
     """Return why one report period's evidence is withheld whole, if it is.
 
@@ -73,8 +105,7 @@ def family_hold(versions: Sequence[FilingVersion]) -> FamilyHold | None:
     """
     if not any(version.kind == "report" for version in versions):
         return "report_missing"
-    positions = Counter((version.kind, version.filed_key) for version in versions)
-    if any(count > 1 for count in positions.values()):
+    if unordered(versions):
         return "order_unknown"
     if any(
         version.kind == "amendment"
@@ -133,7 +164,6 @@ def _held_families() -> Select[str, str, str]:
     )
     indexed = select(Document.doc_id).where(_indexed(version)).exists()
     latest_indexed_report = func.max(version.filed_key).filter(is_report, indexed)
-    position = version.kind + ":" + version.filed_key
     return (
         select(*family)
         .group_by(*family)
@@ -144,28 +174,65 @@ def _held_families() -> Select[str, str, str]:
                 latest_unreviewed >= latest_report,
                 and_(latest_unreviewed.is_not(None), first_report == latest_report),
                 func.count().filter(is_report) == 0,
-                func.count(position.distinct()) < func.count(),
+                _unordered(version),
                 latest_indexed_report.is_distinct_from(latest_report),
             )
         )
     )
 
 
-def _superseded(amendment: type[FilingVersion]) -> ColumnElement[bool]:
-    """Match an amendment a later report replaced, as ``superseded`` decides it."""
-    later, first = aliased(FilingVersion), aliased(FilingVersion)
-    first_report = (
+def _first_report_key(version: type[FilingVersion]) -> ColumnElement[str]:
+    """Return the order key of the first report of a version's report period."""
+    first = aliased(FilingVersion)
+    return (
         select(func.min(first.filed_key))
-        .where(_same_family(first, amendment), first.kind == "report")
+        .where(_same_family(first, version), first.kind == "report")
         .scalar_subquery()
     )
+
+
+def _unordered(version: type[FilingVersion]) -> ColumnElement[bool]:
+    """Match a report period with two versions ``unordered`` cannot order."""
+    left, right = aliased(FilingVersion), aliased(FilingVersion)
+
+    def only_day(side: type[FilingVersion]) -> ColumnElement[bool]:
+        """Match an order key that states the filing day and no time."""
+        return side.filed_key == func.replace(side.filing_date, "-", "") + "000000"
+
+    return (
+        select(left.filing_id)
+        .join(right, _same_family(right, left))
+        .where(
+            _same_family(left, version),
+            or_(
+                left.filed_key == right.filed_key,
+                and_(left.filing_date == right.filing_date, or_(only_day(left), only_day(right))),
+            ),
+            # Each pair whose order decides evidence, once: two of a kind, or a report
+            # other than the first with an amendment.
+            or_(
+                and_(left.kind == right.kind, left.filing_id < right.filing_id),
+                and_(
+                    left.kind == "report",
+                    right.kind == "amendment",
+                    left.filed_key > _first_report_key(left),
+                ),
+            ),
+        )
+        .exists()
+    )
+
+
+def _superseded(amendment: type[FilingVersion]) -> ColumnElement[bool]:
+    """Match an amendment a later report replaced, as ``superseded`` decides it."""
+    later = aliased(FilingVersion)
     return (
         select(later.filing_id)
         .where(
             _same_family(later, amendment),
             later.kind == "report",
             later.filed_key > amendment.filed_key,
-            later.filed_key > first_report,
+            later.filed_key > _first_report_key(amendment),
         )
         .exists()
     )

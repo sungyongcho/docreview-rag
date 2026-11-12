@@ -158,11 +158,11 @@ def acceptance_refreshes(
     """Return known entries completed with the acceptance time EDGAR states for them.
 
     An entry written before acceptance times were recorded keeps its serialized form,
-    with one exception: when its report period holds another filing of the same kind,
-    the two cannot be ordered without the time and the whole period stays out of
-    evidence. Only such an entry is completed, and only when EDGAR states the time.
-    That also covers the one case in which a report is ordered against an amendment:
-    a report period with more than one report, whose reports are completed here.
+    unless the order it takes in its report period decides evidence
+    (``app.amendments.policy.unordered``): another filing of its kind shares the period,
+    or it is an amendment in a period with more than one report. Only such an entry is
+    completed, and only when EDGAR states the time. An amendment beside the only report
+    of its period follows that report whatever the times are, so both stay as they were.
     """
     stated = {
         document.filing_id: document.sec.accepted_at
@@ -170,6 +170,14 @@ def acceptance_refreshes(
         if document.sec is not None and document.sec.accepted_at is not None
     }
     crowd = Counter(_version_slot(document) for document in entries)
+
+    def needs_order(document: DocumentReference) -> bool:
+        """Tell whether this filing must be ordered against another of its period."""
+        registry, issuer_id, period, kind = _version_slot(document)
+        return crowd[_version_slot(document)] > 1 or (
+            kind == "amendment" and crowd[(registry, issuer_id, period, "report")] > 1
+        )
+
     return [
         document.model_copy(
             update={"sec": document.sec.model_copy(update={"accepted_at": accepted})}
@@ -177,7 +185,7 @@ def acceptance_refreshes(
         for document in entries
         if document.sec is not None
         and document.sec.accepted_at is None
-        and crowd[_version_slot(document)] > 1
+        and needs_order(document)
         and (accepted := stated.get(document.filing_id)) is not None
     ]
 

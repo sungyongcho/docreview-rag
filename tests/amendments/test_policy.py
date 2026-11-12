@@ -39,10 +39,18 @@ ORIGINAL = dart_document("20210322000782")
 CORRECTION = dart_document("20210330000776")
 
 
-def version(kind: str, filed_key: str, *, reviewed: bool = False) -> FilingVersion:
-    """Build an unsaved version carrying only what the hold rule reads."""
+def version(
+    kind: str, filed_key: str, *, reviewed: bool = False, filed: str | None = None
+) -> FilingVersion:
+    """Build an unsaved version carrying only what the hold rule reads.
+
+    ``filed`` is the filing day when it differs from the day the order key starts with.
+    """
     return FilingVersion(
-        kind=kind, filed_key=filed_key, reviewed_at=datetime.now(UTC) if reviewed else None
+        kind=kind,
+        filed_key=filed_key,
+        filing_date=filed or f"{filed_key[:4]}-{filed_key[4:6]}-{filed_key[6:8]}",
+        reviewed_at=datetime.now(UTC) if reviewed else None,
     )
 
 
@@ -75,6 +83,31 @@ def test_a_later_report_replaces_an_amendment_accepted_before_it() -> None:
     assert not superseded(late_amendment, [first, refiled, late_amendment])
     assert family_hold([first, amendment, refiled]) is None
     assert family_hold([first, refiled, late_amendment]) == "amendment_pending"
+
+
+def test_a_key_without_a_time_orders_no_filing_of_its_own_day() -> None:
+    """Same-day filings are withheld when one states no time and their order decides."""
+    first = version("report", "20260204000000")
+    amendment = version("amendment", "20260204200657", reviewed=True)
+    refiled = version("report", "20260302000000")
+
+    # An amendment follows the first report whatever the times are.
+    assert family_hold([first, amendment]) is None
+    # Another day is ordered by the day alone.
+    assert family_hold([first, refiled]) is None
+    assert family_hold([first, version("report", "20260204150000")]) == "order_unknown"
+    assert (
+        family_hold([first, amendment, version("amendment", "20260204000000", reviewed=True)])
+        == "order_unknown"
+    )
+    assert (
+        family_hold([first, refiled, version("amendment", "20260302150000", reviewed=True)])
+        == "order_unknown"
+    )
+    # A filing accepted after hours carries the next day as its filing day.
+    after_hours = version("report", "20260203231452", filed="2026-02-04")
+    assert family_hold([first, after_hours]) == "order_unknown"
+    assert family_hold([version("report", "20260203000000"), after_hours]) is None
 
 
 @pytest.mark.live_postgres
@@ -449,6 +482,62 @@ def test_versions_that_cannot_be_ordered_or_lack_a_report_are_withheld() -> None
             await session.commit()
             assert await eligible(session) == set()
             assert await evidence_holds(session) == (hold("sec", "AMD", 2025, "report_missing"),)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.live_postgres
+def test_same_day_filings_are_withheld_when_one_states_no_time() -> None:
+    """Search and hold agree on which same-day filings a missing time leaves unordered."""
+    reviewed = {
+        "reviewer": "operator",
+        "rationale": "Item 7 restated in full.",
+        "effects": [ItemEffect("7", "replace")],
+    }
+
+    async def scenario() -> None:
+        timed_report = sec_document(19, accepted=datetime(2026, 2, 4, 15, 0, 0, tzinfo=UTC))
+        async with isolated_session() as session:
+            await persist_seed_batch(
+                session, batch(parsed(REPORT, ("1",)), parsed(timed_report, ("1",)))
+            )
+            assert await eligible(session) == set()
+            assert await evidence_holds(session) == (hold("sec", "AMD", 2025, "order_unknown"),)
+
+        async with isolated_session() as session:
+            # The only report states no time, and its amendment follows it all the same.
+            await persist_seed_batch(
+                session, batch(parsed(REPORT, ("1", "7")), parsed(AMENDMENT, ("7",)))
+            )
+            await record_review(session, AMENDMENT.document_id, **reviewed)
+            await session.commit()
+            assert await eligible(session) == {
+                (REPORT.document_id, "1"),
+                (AMENDMENT.document_id, "7"),
+            }
+            assert await evidence_holds(session) == ()
+
+        refiled = sec_document(40, filed=date(2026, 3, 2))
+        same_day = sec_document(
+            41,
+            form="10-K/A",
+            filed=date(2026, 3, 2),
+            accepted=datetime(2026, 3, 2, 15, 0, 0, tzinfo=UTC),
+        )
+        async with isolated_session() as session:
+            # Whether the amendment came before the refiled report or after it is unknown.
+            await persist_seed_batch(
+                session,
+                batch(
+                    parsed(REPORT, ("1", "7")),
+                    parsed(refiled, ("1", "7")),
+                    parsed(same_day, ("7",)),
+                ),
+            )
+            await record_review(session, same_day.document_id, **reviewed)
+            await session.commit()
+            assert await eligible(session) == set()
+            assert await evidence_holds(session) == (hold("sec", "AMD", 2025, "order_unknown"),)
 
     asyncio.run(scenario())
 

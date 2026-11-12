@@ -17,7 +17,8 @@ def filed_key(document: DocumentReference) -> str:
 
     A DART receipt number is the receipt date followed by that day's sequence. EDGAR
     states when it accepted a filing; a manifest entry written before that was recorded
-    has only its filing date, which sorts at the start of that day.
+    has only its filing date, and its key is that day with no time. Such a key orders the
+    filing against those of other days and against none of its own day.
     """
     if document.dart is not None:
         return document.dart.receipt_number
