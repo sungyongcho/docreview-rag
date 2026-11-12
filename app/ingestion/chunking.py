@@ -314,14 +314,14 @@ def _citation(filing: ParsedFiling, section: Section) -> str:
 
     Each registry names its own section codes — EDGAR writes ``Item 7`` where DART
     writes a Roman numeral — so the label comes from the registry rather than from a
-    format string that would spell every corpus the EDGAR way.
+    format string that would spell every corpus the EDGAR way. An amendment restates
+    an Item of a report filed for the same year, so its citation also names its form;
+    the two would otherwise read alike wherever only the citation is shown.
     """
-    item = (
-        section_label(filing.source.document.registry, section.item)
-        if section.item
-        else "Unnumbered section"
-    )
-    return f"{filing.source.document.issuer} FY{filing.source.document.fiscal_year} · {item}"
+    document = filing.source.document
+    item = section_label(document.registry, section.item) if section.item else "Unnumbered section"
+    citation = f"{document.issuer} FY{document.fiscal_year} · {item}"
+    return f"{citation} ({document.form})" if document.kind == "amendment" else citation
 
 
 def _context_header(

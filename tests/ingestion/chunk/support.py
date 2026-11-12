@@ -7,6 +7,7 @@ import re
 from bs4 import BeautifulSoup
 
 from app.ingestion.parsing.models import Block, ParsedFiling, Section
+from app.ingestion.sources.models import DocumentReference
 from app.query.language import HANGUL_RANGES
 from tests.ingestion.support import filing_source
 
@@ -28,10 +29,10 @@ TOKEN = re.compile(
 )
 
 
-def build_filing(blocks: list[Block]) -> ParsedFiling:
+def build_filing(blocks: list[Block], *, document: DocumentReference | None = None) -> ParsedFiling:
     """Build a source-identified filing for chunk unit tests."""
     filing = ParsedFiling(
-        source=filing_source(Path(__file__)),
+        source=filing_source(Path(__file__), document=document),
         source_length=1_000,
         source_sha256="a" * 64,
     )

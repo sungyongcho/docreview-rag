@@ -6,6 +6,7 @@ import app.ingestion.chunking as chunking
 from app.ingestion.parsing.models import Block, Section
 from app.ingestion.tokens import InputBudget
 from tests.ingestion.chunk.support import build_filing
+from tests.ingestion.support import filing_document
 
 
 def test_chunk_filing_rejects_missing_source_identity():
@@ -20,6 +21,19 @@ def test_chunk_filing_rejects_missing_source_identity():
     filing.source_sha256 = ""
     with pytest.raises(ValueError, match="source SHA-256"):
         chunking.chunk_filing(filing)
+
+
+@pytest.mark.parametrize(
+    ("form", "citation"),
+    (("10-K", "NVDA FY2024 · Item 7"), ("10-K/A", "NVDA FY2024 · Item 7 (10-K/A)")),
+)
+def test_an_amendment_names_its_form_in_the_citation(form, citation):
+    """A restated Item reads apart from the original wherever only the citation is shown."""
+    document = filing_document().model_copy(update={"form": form})
+    block = Block("paragraph", "Revenue rose.", source_pos=10, end_pos=23)
+    (chunk,) = chunking.chunk_filing(build_filing([block], document=document))
+    assert chunk.citation == citation
+    assert chunk.context_header == f"{citation} · Management's Discussion"
 
 
 def test_text_chunks_respect_block_boundaries():
