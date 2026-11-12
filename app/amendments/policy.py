@@ -69,7 +69,8 @@ def unordered(versions: Sequence[FilingVersion]) -> bool:
     Two versions cannot be ordered when their keys are equal, or when they were filed
     on one day and the key of either states no time: the day alone does not say which
     came first. The order of two reports, of two amendments, and of an amendment and a
-    report other than the period's first decides evidence. An amendment follows the
+    report other than the period's first can decide evidence, and every such pair
+    counts, also one whose filings a later report replaces. An amendment follows the
     first report whatever their keys say (``superseded``), so that pair needs no order.
 
     Parameters

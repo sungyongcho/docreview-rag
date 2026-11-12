@@ -18,6 +18,7 @@ from app.amendments.registration import register_filings
 from app.amendments.review import ItemEffect, record_review
 from app.db.models import Chunk, Document, FilingVersion
 from app.ingestion.persistence import persist_seed_batch
+from app.ingestion.sources.models import DocumentReference
 from tests.amendments.support import (
     amendment_document,
     batch,
@@ -108,6 +109,12 @@ def test_a_key_without_a_time_orders_no_filing_of_its_own_day() -> None:
     after_hours = version("report", "20260203231452", filed="2026-02-04")
     assert family_hold([first, after_hours]) == "order_unknown"
     assert family_hold([version("report", "20260203000000"), after_hours]) is None
+    # A later report that replaces both filings of a pair does not lift the hold.
+    pair = [
+        version("amendment", "20260302000000", reviewed=True),
+        version("amendment", "20260302150000", reviewed=True),
+    ]
+    assert family_hold([first, *pair, version("report", "20260401000000")]) == "order_unknown"
 
 
 @pytest.mark.live_postgres
@@ -486,58 +493,123 @@ def test_versions_that_cannot_be_ordered_or_lack_a_report_are_withheld() -> None
     asyncio.run(scenario())
 
 
+def _filed(
+    sequence: int,
+    day: date,
+    at: tuple[int, int, int, int, int] | None = None,
+    *,
+    form: str = "10-K",
+) -> DocumentReference:
+    """Describe a filing of ``day``; ``at`` is its acceptance: month, day, hour, minute, second."""
+    accepted = None if at is None else datetime(2026, *at, tzinfo=UTC)
+    return sec_document(sequence, form=form, filed=day, accepted=accepted)
+
+
+FEB_3, FEB_4, MAR_2, APR_1 = date(2026, 2, 3), date(2026, 2, 4), date(2026, 3, 2), date(2026, 4, 1)
+ORDER_CASES = {
+    "two reports of one day, one without a time": (
+        (_filed(18, FEB_4), _filed(19, FEB_4, (2, 4, 15, 0, 0))),
+        "order_unknown",
+    ),
+    "two timed reports of one day": (
+        (_filed(18, FEB_4, (2, 4, 14, 0, 0)), _filed(19, FEB_4, (2, 4, 15, 0, 0))),
+        None,
+    ),
+    "two reports accepted at one time": (
+        (_filed(18, FEB_4, (2, 4, 15, 0, 0)), _filed(19, FEB_4, (2, 4, 15, 0, 0))),
+        "order_unknown",
+    ),
+    # The amendment follows the only report whatever the times are.
+    "the only report without a time and its amendment": (
+        (_filed(18, FEB_4), _filed(21, FEB_4, (2, 4, 20, 6, 57), form="10-K/A")),
+        None,
+    ),
+    "a refiled report without a time and an amendment of its day": (
+        (
+            _filed(18, FEB_4),
+            _filed(40, MAR_2),
+            _filed(41, MAR_2, (3, 2, 15, 0, 0), form="10-K/A"),
+        ),
+        "order_unknown",
+    ),
+    "two amendments of one day, one without a time": (
+        (
+            _filed(18, FEB_4),
+            _filed(21, MAR_2, form="10-K/A"),
+            _filed(22, MAR_2, (3, 2, 15, 0, 0), form="10-K/A"),
+        ),
+        "order_unknown",
+    ),
+    "two timed amendments of one day": (
+        (
+            _filed(18, FEB_4),
+            _filed(21, MAR_2, (3, 2, 15, 0, 0), form="10-K/A"),
+            _filed(22, MAR_2, (3, 2, 16, 0, 0), form="10-K/A"),
+        ),
+        None,
+    ),
+    # A filing accepted after hours carries the next day as its filing day, so the day
+    # its key starts with is not the day that decides.
+    "a report accepted after hours and one of its filing day without a time": (
+        (_filed(18, FEB_4), _filed(19, FEB_4, (2, 3, 23, 14, 52))),
+        "order_unknown",
+    ),
+    "a report accepted after hours and one of the day before without a time": (
+        (_filed(18, FEB_3), _filed(19, FEB_4, (2, 3, 23, 14, 52))),
+        None,
+    ),
+    "a time at the first second of the filing day reads as no time": (
+        (_filed(18, FEB_4, (2, 4, 0, 0, 0)), _filed(19, FEB_4, (2, 4, 15, 0, 0))),
+        "order_unknown",
+    ),
+    # The rule does not look at whether a later report replaces both filings.
+    "a pair that a later report replaces": (
+        (
+            _filed(18, FEB_4),
+            _filed(21, MAR_2, form="10-K/A"),
+            _filed(22, MAR_2, (3, 2, 15, 0, 0), form="10-K/A"),
+            _filed(40, APR_1),
+        ),
+        "order_unknown",
+    ),
+}
+
+
 @pytest.mark.live_postgres
-def test_same_day_filings_are_withheld_when_one_states_no_time() -> None:
-    """Search and hold agree on which same-day filings a missing time leaves unordered."""
-    reviewed = {
-        "reviewer": "operator",
-        "rationale": "Item 7 restated in full.",
-        "effects": [ItemEffect("7", "replace")],
-    }
+@pytest.mark.parametrize(("documents", "expected"), ORDER_CASES.values(), ids=ORDER_CASES)
+def test_search_and_hold_agree_on_which_filings_are_unordered(
+    documents: tuple[DocumentReference, ...], expected: str | None
+) -> None:
+    """The SQL that ranks evidence and the rule that reports holds read one period alike."""
 
     async def scenario() -> None:
-        timed_report = sec_document(19, accepted=datetime(2026, 2, 4, 15, 0, 0, tzinfo=UTC))
         async with isolated_session() as session:
-            await persist_seed_batch(
-                session, batch(parsed(REPORT, ("1",)), parsed(timed_report, ("1",)))
-            )
-            assert await eligible(session) == set()
-            assert await evidence_holds(session) == (hold("sec", "AMD", 2025, "order_unknown"),)
-
-        async with isolated_session() as session:
-            # The only report states no time, and its amendment follows it all the same.
-            await persist_seed_batch(
-                session, batch(parsed(REPORT, ("1", "7")), parsed(AMENDMENT, ("7",)))
-            )
-            await record_review(session, AMENDMENT.document_id, **reviewed)
-            await session.commit()
-            assert await eligible(session) == {
-                (REPORT.document_id, "1"),
-                (AMENDMENT.document_id, "7"),
-            }
-            assert await evidence_holds(session) == ()
-
-        refiled = sec_document(40, filed=date(2026, 3, 2))
-        same_day = sec_document(
-            41,
-            form="10-K/A",
-            filed=date(2026, 3, 2),
-            accepted=datetime(2026, 3, 2, 15, 0, 0, tzinfo=UTC),
-        )
-        async with isolated_session() as session:
-            # Whether the amendment came before the refiled report or after it is unknown.
             await persist_seed_batch(
                 session,
                 batch(
-                    parsed(REPORT, ("1", "7")),
-                    parsed(refiled, ("1", "7")),
-                    parsed(same_day, ("7",)),
+                    *(
+                        parsed(document, ("7",) if document.form == "10-K/A" else ("1", "7"))
+                        for document in documents
+                    )
                 ),
             )
-            await record_review(session, same_day.document_id, **reviewed)
+            for document in documents:
+                if document.form == "10-K/A":
+                    await record_review(
+                        session,
+                        document.document_id,
+                        reviewer="operator",
+                        rationale="Item 7 restated in full.",
+                        effects=[ItemEffect("7", "replace")],
+                    )
             await session.commit()
-            assert await eligible(session) == set()
-            assert await evidence_holds(session) == (hold("sec", "AMD", 2025, "order_unknown"),)
+            versions = (await session.scalars(select(FilingVersion))).all()
+
+            assert family_hold(versions) == expected
+            assert (await eligible(session) == set()) == (expected is not None)
+            assert await evidence_holds(session) == (
+                () if expected is None else (hold("sec", "AMD", 2025, "order_unknown"),)
+            )
 
     asyncio.run(scenario())
 
