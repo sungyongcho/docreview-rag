@@ -95,6 +95,12 @@ def test_a_later_report_replaces_the_whole_earlier_report() -> None:
                 (CORRECTION.document_id, "II"),
             }
             assert await evidence_holds(session) == ()
+            # A search that names only the replaced filing is told so, not left empty.
+            assert await evidence_holds(session, doc_ids=[ORIGINAL.document_id]) == (
+                hold("dart", "000660", 2020, "replaced"),
+            )
+            both = [ORIGINAL.document_id, CORRECTION.document_id]
+            assert await evidence_holds(session, doc_ids=both) == ()
 
     asyncio.run(scenario())
 

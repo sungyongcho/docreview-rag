@@ -254,8 +254,10 @@ async def evidence_holds(
     -------
     tuple[EvidenceHold, ...]
         One entry per report period withheld whole (an unreviewed amendment, versions
-        that cannot be ordered, or a newer report that is not indexed yet), and one per
-        report period with Items a review withheld. Ordered by registry, issuer, year.
+        that cannot be ordered, or a newer report that is not indexed yet), one per
+        report period with Items a review withheld, and, for a document scope, one per
+        report period whose named documents were all replaced by a filing the scope
+        does not name. Ordered by registry, issuer, year.
     """
     scope: list[ColumnElement[bool]] = []
     if registries:
@@ -273,13 +275,17 @@ async def evidence_holds(
                 .where(Document.doc_id.in_(doc_ids))
             )
         )
-    indexed = select(Document.doc_id).where(_indexed(FilingVersion)).exists()
+    indexed = select(Document.doc_id).where(_indexed(FilingVersion)).scalar_subquery()
     rows = (await session.execute(select(FilingVersion, indexed).where(*scope))).all()
     families: dict[tuple[str, str, str], list[tuple[FilingVersion, bool]]] = {}
-    for version, is_indexed in rows:
+    named_documents: dict[tuple[str, str, str], set[str]] = {}
+    for version, indexed_doc in rows:
         key = (version.filing_registry, version.issuer_id, version.report_period)
-        families.setdefault(key, []).append((version, is_indexed))
+        families.setdefault(key, []).append((version, indexed_doc is not None))
+        if indexed_doc in doc_ids:
+            named_documents.setdefault(key, set()).add(indexed_doc)
     withheld_items = await _withheld_items(session, families)
+    replaced = await _replaced_documents(session, doc_ids)
 
     found: list[EvidenceHold] = []
     for key, members in families.items():
@@ -294,7 +300,24 @@ async def evidence_holds(
             found.append(_hold(named, reason))
         elif items := withheld_items.get(key):
             found.append(_hold(named, "item_withheld", items))
+        elif (documents := named_documents.get(key)) and documents <= replaced:
+            found.append(_hold(named, "replaced"))
     return tuple(sorted(found, key=lambda entry: (entry.registry, entry.issuer, entry.fiscal_year)))
+
+
+async def _replaced_documents(session: AsyncSession, doc_ids: Collection[str]) -> set[str]:
+    """Return which of the named documents have stored text and none of it is evidence."""
+    if not doc_ids:
+        return set()
+    stored = set(
+        await session.scalars(select(Chunk.doc_id).where(Chunk.doc_id.in_(doc_ids)).distinct())
+    )
+    current = set(
+        await session.scalars(
+            select(Chunk.doc_id).where(Chunk.doc_id.in_(doc_ids), eligible_chunk()).distinct()
+        )
+    )
+    return stored - current
 
 
 def _hold(version: FilingVersion, reason: HoldReason, items: tuple[str, ...] = ()) -> EvidenceHold:

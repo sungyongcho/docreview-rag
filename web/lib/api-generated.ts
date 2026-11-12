@@ -2367,7 +2367,9 @@ export interface components {
          *     (``report_missing``), filings that cannot be ordered (``order_unknown``), a newer
          *     report that is not indexed (``not_indexed``), or Items a review withheld
          *     (``item_withheld``). ``items`` names the withheld Items; an empty tuple means the
-         *     whole report period.
+         *     whole report period. ``replaced`` answers a search that named documents: every
+         *     document it named for this report period was replaced by a later filing, which the
+         *     search did not name.
          */
         EvidenceHold: {
             /** Fiscal Year */
@@ -2383,7 +2385,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "amendment_pending" | "report_missing" | "order_unknown" | "not_indexed" | "item_withheld";
+            reason: "amendment_pending" | "report_missing" | "order_unknown" | "not_indexed" | "item_withheld" | "replaced";
             /** Registry */
             registry: string;
         };
@@ -3577,7 +3579,7 @@ export interface components {
             /** Fiscal Year */
             fiscal_year: number;
             /** Hold */
-            hold: ("amendment_pending" | "report_missing" | "order_unknown" | "not_indexed" | "item_withheld") | null;
+            hold: ("amendment_pending" | "report_missing" | "order_unknown" | "not_indexed" | "item_withheld" | "replaced") | null;
             /** Issuer */
             issuer: string;
             /** Registry */
@@ -3749,6 +3751,11 @@ export interface components {
                     [key: string]: number[];
                 };
             };
+            /**
+             * Evidence Holds
+             * @default []
+             */
+            evidence_holds: components["schemas"]["EvidenceHold"][];
             profile: components["schemas"]["RetrievalProfile"];
             /** Query */
             query: string;

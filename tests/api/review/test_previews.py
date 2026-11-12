@@ -8,14 +8,13 @@ import pytest
 from app.api.composition import create_admin_services
 from app.api.review.previews import _retrieval_preview, _review_preview
 from app.api.review.runtime import RuntimeApiServices
+from app.contracts.evidence import EvidenceHold
 from app.db.session_factory import SessionFactory
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 
 
 @pytest.mark.parametrize("strategy", ["vector", "lexical", "hybrid"])
-def test_preview_strategies_use_the_shared_search_contract(
-    monkeypatch, no_evidence_holds, hit, strategy
-):
+def test_preview_strategies_use_the_shared_search_contract(monkeypatch, hit, strategy):
     """Run each valid preview plan through retrieval and preserve its actual component ranks."""
     from contextlib import asynccontextmanager
 
@@ -38,6 +37,15 @@ def test_preview_strategies_use_the_shared_search_contract(
         calls.append("lexical")
         return [hit]
 
+    held = EvidenceHold(
+        registry="sec", issuer="AMD", fiscal_year=2025, reason="amendment_pending", items=()
+    )
+
+    async def scope_holds(*args):
+        """Report one held report period without reading the stand-in session."""
+        del args
+        return (held,)
+
     @asynccontextmanager
     async def no_database():
         """Provide the session seam consumed by the isolated search components."""
@@ -46,6 +54,7 @@ def test_preview_strategies_use_the_shared_search_contract(
     monkeypatch.setattr(retrieval, "prepare_search", prepare)
     monkeypatch.setattr(retrieval, "vector_search", vector_search)
     monkeypatch.setattr(retrieval, "lexical_search", lexical_search)
+    monkeypatch.setattr(retrieval, "scope_holds", scope_holds)
     services = create_admin_services(
         runtime=RuntimeApiServices(
             embedding_provider=DeterministicEmbeddingProvider(),
@@ -66,6 +75,7 @@ def test_preview_strategies_use_the_shared_search_contract(
     expected = [lane for lane in ("vector", "lexical") if strategy in {lane, "hybrid"}]
     assert calls == expected
     assert [item.chunk_id for item in result.results] == [hit.chunk_id]
+    assert result.evidence_holds == (held,)
     assert result.component_rankings["vector"] == ((hit.chunk_id,) if "vector" in expected else ())
     assert result.component_rankings["lexical_by_language"] == (
         {"en": (hit.chunk_id,)} if "lexical" in expected else {}

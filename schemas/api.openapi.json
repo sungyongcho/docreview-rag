@@ -2902,7 +2902,7 @@
       },
       "EvidenceHold": {
         "additionalProperties": false,
-        "description": "Evidence a search could not use for one issuer's report period, and why.\n\nA later filing of the period keeps it out of use: an amendment nobody has reviewed\nyet (``amendment_pending``), an amendment whose report is unknown\n(``report_missing``), filings that cannot be ordered (``order_unknown``), a newer\nreport that is not indexed (``not_indexed``), or Items a review withheld\n(``item_withheld``). ``items`` names the withheld Items; an empty tuple means the\nwhole report period.",
+        "description": "Evidence a search could not use for one issuer's report period, and why.\n\nA later filing of the period keeps it out of use: an amendment nobody has reviewed\nyet (``amendment_pending``), an amendment whose report is unknown\n(``report_missing``), filings that cannot be ordered (``order_unknown``), a newer\nreport that is not indexed (``not_indexed``), or Items a review withheld\n(``item_withheld``). ``items`` names the withheld Items; an empty tuple means the\nwhole report period. ``replaced`` answers a search that named documents: every\ndocument it named for this report period was replaced by a later filing, which the\nsearch did not name.",
         "properties": {
           "fiscal_year": {
             "exclusiveMinimum": 0.0,
@@ -2929,7 +2929,8 @@
               "report_missing",
               "order_unknown",
               "not_indexed",
-              "item_withheld"
+              "item_withheld",
+              "replaced"
             ],
             "title": "Reason",
             "type": "string"
@@ -5999,7 +6000,8 @@
                   "report_missing",
                   "order_unknown",
                   "not_indexed",
-                  "item_withheld"
+                  "item_withheld",
+                  "replaced"
                 ],
                 "type": "string"
               },
@@ -6410,6 +6412,14 @@
             },
             "title": "Component Rankings",
             "type": "object"
+          },
+          "evidence_holds": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceHold"
+            },
+            "title": "Evidence Holds",
+            "type": "array"
           },
           "profile": {
             "$ref": "#/components/schemas/RetrievalProfile"

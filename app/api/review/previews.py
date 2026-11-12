@@ -13,6 +13,7 @@ from app.api.errors import translate_runtime_errors
 from app.api.review.profiles import ReviewSessionProfile
 from app.api.review.runtime import _routed_query_variants
 from app.api.review.schemas import EvidenceHit, ReviewRequest, RunResponse
+from app.contracts.evidence import EvidenceHold
 from app.contracts.validation import PositiveInt, StrictSchema
 from app.retrieval.search.profiles import RetrievalProfile, with_server_bm25
 from app.retrieval.types import RetrievalFilters
@@ -36,6 +37,8 @@ class RetrievalPreviewResponse(StrictSchema):
     # list per routed query language, mirroring `ComponentRankings`.
     component_rankings: dict[str, tuple[PositiveInt, ...] | dict[str, tuple[PositiveInt, ...]]]
     results: tuple[EvidenceHit, ...]
+    # Report periods inside the scope whose evidence a later filing keeps out of use.
+    evidence_holds: tuple[EvidenceHold, ...] = ()
 
 
 class ReviewPreviewRequest(StrictSchema):
@@ -80,6 +83,7 @@ async def _retrieval_preview(
         score_stage=result.score_stage,
         component_rankings=result.component_rankings.model_dump(mode="python"),
         results=tuple(EvidenceHit.from_chunk_hit(hit) for hit in result.hits),
+        evidence_holds=result.holds,
     )
 
 
