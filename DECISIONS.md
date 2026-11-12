@@ -85,6 +85,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-11
 - source: user instruction in the 2026-11-11 maintenance session
 - decision: Project rules no longer use the sungyongcho-ops account, opsctl and the other ops commands, OPS-managed rule blocks and their .ops/project.json fingerprints, or the DEV/OPS purpose labels; commits, pushes, PRs, status labels and work-state records use the personal identity through plain gh, and the OPS-record clause of D-1 no longer applies.
+- note: D-35: the status-label and work-state clause no longer applies.
 
 ### D-10 — Untagged DART cells take statement scope from the report's own declarations
 - status: active
@@ -267,3 +268,10 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-12
 - source: 2026-11-12 consolidation session on mcp-and-langgraph (review of the evaluation lessons found the requested-year reader apart from D-20 and D-24; recorded in the Second Brain log 2026-11-12-doc-code-consolidation)
 - decision: app.query.periods reads a question's requested fiscal years from four-digit years, relative wording resolved against the question date, and the explicit fiscal identifiers and identified annual endings of app/figures/periods.py, so an explicit two-digit FY asks for 2000–2099 and the end date of an ending that carries an identifier is not a second requested year; identifiers joined by a hyphen straight after a digit or by a slash are a range of two years on every reader, so such a header dates no column; a two-digit number followed by a hyphen and one letter (10-K, 20-F) is a filing form number and no year; a follow-up that names a year in any of these forms removes every such form from the turn it continues, and the follow-up detector accepts a two-digit identifier as it accepts a four-digit one.
+
+### D-35 — The OPS-era role files are removed
+- status: active
+- category: workflow
+- date: 2026-11-12
+- source: user instruction in the 2026-11-12 consolidation session on mcp-and-langgraph
+- decision: WORKER.md, MODERATOR.md, INTERACTIVE.md and AUTO.md are deleted together with the AGENTS.md rules that existed only for their roles: worker delivery and review states, the OCCUPIED/REVIEW_READY/MERGE_READY label flow, reviewer, resolver and moderator authority, INTERACTIVE sessions and the shared-defaults block; the maintainer flow through commit-it, the commit identity, the Git, engineering, documentation and runtime rules and this ledger remain.
