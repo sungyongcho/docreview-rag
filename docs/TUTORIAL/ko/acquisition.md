@@ -72,6 +72,22 @@ SEC와 DART는 공통 `manifest.json`을 사용합니다. 선택한 출처·기�
 임베딩 준비를 진행합니다. 다른 카탈로그 항목은 그대로 보존되며 이 선택에 자동으로 포함되지
 않습니다. [단일 공시 CLI 절차](cli.md#nvidia-한-건만-준비하기)도 같은 계약을 사용합니다.
 
+## 새 공시 확인 {#check-for-newer-filings}
+
+기업은 이미 보고한 회계연도에 대해 공시를 다시 낼 수 있습니다. SEC `10-K/A`는 10-K의 일부 Item만 고쳐 내는 수정 공시이고, DART 정정은 사업보고서 전체를 다시 냅니다. **동기화**는 원문이 없는 기업·연도만 요청하므로 이런 공시를 찾지 못합니다.
+
+관리자 모드에서는 **동기화** 옆에 **새 공시 확인**이 있습니다. 이미 내려받은 것을 포함해 선택한 모든 기업·연도를 EDGAR와 DART에 다시 조회하고, 마지막 다운로드 이후 나온 수정·정정 공시를 기록하며, 없는 원문만 내려받습니다. 터미널에서는 같은 기업·연도로 `rag-dev corpus acquire_edgar`나 `acquire_dart`를 다시 실행하면 같은 일을 합니다.
+
+공시는 내려받거나 파싱하기 전, 기록된 순간부터 반영됩니다.
+
+| 찾은 공시 | 근거에 미치는 영향 | 다음 작업 |
+|---|---|---|
+| SEC `10-K/A` | 수정 공시를 검토할 때까지 해당 보고 기간의 내용은 근거로 쓰지 않습니다. | **파싱·청킹**을 실행하고 임베딩과 BM25를 준비한 뒤 [수정·정정 공시](documents.md#amended-filings)에서 검토합니다. |
+| DART 정정 보고서 | 이전 보고서는 더 이상 쓰지 않습니다. 정정 보고서는 파싱한 뒤부터 씁니다. | **파싱·청킹**을 실행하고, 새 문서와 똑같이 임베딩과 BM25를 준비합니다. |
+
+### SCREENSHOT NEEDED
+<!-- Capture Check for newer filings in DEV, Korean, light mode: Build → Pipeline → Filings with a downloaded company/year pair selected, the Check for newer filings button beside Sync selection, and the helper text under the buttons. -->
+
 ## 출처별 준비 사항 {#sources}
 
 | 출처 | 식별자 | 필요한 설정 | 공통 manifest |

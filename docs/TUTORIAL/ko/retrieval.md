@@ -36,6 +36,12 @@ What drove NVIDIA data center revenue growth in fiscal 2024?
 ![검색 연습장에 질의를 입력하고 순위가 매겨진 결과 목록이 표시된 화면.](../assets/search-trial-input-and-ranked-results.ko.png)
 예시: `NVIDIA fiscal 2024 revenue`를 검색하면 준비된 코퍼스에서 NVIDIA FY2024 근거 다섯 개를 확인할 수 있습니다. 결과에는 원문 오프셋과 SHA-256이 유지됩니다. 검색만 실행하며 답변을 생성하지 않습니다.
 
+## 보류 중인 근거 {#evidence-on-hold}
+
+이후 공시 때문에 검색 범위 안의 내용을 쓸 수 없으면 결과와 함께 **보류 중인 근거**가 표시됩니다. 보고 기간마다 이유를 적습니다. 예를 들어 아직 아무도 검토하지 않은 수정 공시가 있는 경우입니다. 이런 내용은 순위에 들어가지 않으므로, 이 안내와 함께 나온 빈 결과나 적은 결과는 공시에 내용이 없다는 뜻이 아닙니다. 이유 전체와 해소 방법은 [보류 중인 근거](troubleshooting.md#evidence-on-hold)에 있습니다.
+
+API는 같은 목록을 `/retrieve`의 `evidence_holds`로 돌려주고, `app.cli retrieve`는 `holds`로 출력합니다.
+
 ## 순위 정보 읽기 {#rankings}
 
 | 확인할 정보 | 읽는 방법 |

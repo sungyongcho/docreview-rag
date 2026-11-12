@@ -44,6 +44,28 @@ In DEV, **Source ingestion** compares the currently stored original and metadata
 
 Choose [source, companies, and years in step 3](acquisition.md#step-3) next. When those originals already exist, skip the matching download and continue with the first missing [indexing](indexing.md) step; if both retrieval paths are prepared, continue to [step 8: retrieval](retrieval.md#step-8).
 
+## Amended filings {#amended-filings}
+
+In administrator mode, **Amended filings** appears above the document list in **Build → Documents**. It lists each report period that has an amendment or more than one filing. The public build does not show it.
+
+Each row names the registry, company and fiscal year and is marked **On hold** or **In use**. Open a row to read why it is on hold and to see every filing of the period: its form, filing date, the Items stored from it with their chunk counts, and whether it is **Used as evidence now**.
+
+A corrected DART report replaces the earlier report without a review. An SEC `10-K/A` restates only some Items, so the whole report period stays on hold until someone decides what each Item does.
+
+1. Select **Review this amendment** on the `10-K/A`. The button appears once the amendment is downloaded and parsed.
+2. Choose one action for every Item: **Replace** uses the amendment's text instead of the report's, **Add** uses both, and **Withhold** uses neither.
+3. To stop the report's text for an Item the amendment has no text for, enter the Item number under **Add an Item this amendment does not contain** and choose **Replace** or **Withhold** for it.
+4. Enter **Reviewer** and **Rationale**, then select **Save review**. The decisions take effect at once, and the row changes to **In use** when nothing else holds the period.
+
+**Edit review** replaces the recorded review. **Withdraw review** puts the whole report period back on hold. Parsing the amendment again from a different source file, or with an Item the review did not decide, also withdraws the review.
+
+When the panel shows a parse status other than `parsed` for an amendment, the parser could not find where every Item starts and ends. The amendment is still stored and can be reviewed, but its Item list may be incomplete, so read the original filing before deciding.
+
+[Evidence on hold](troubleshooting.md#evidence-on-hold) lists every hold reason and what ends it.
+
+### SCREENSHOT NEEDED
+<!-- Capture Amended filings in DEV, English, light mode: Build → Documents with one report period On hold and opened, showing its 10-K and its unreviewed 10-K/A with Items and chunk counts, and the review form with the Replace, Add and Withhold choices, Reviewer and Rationale. -->
+
 ## Search and filters {#filters}
 
 The primary toolbar contains Search, Company, Fiscal year, and **Filters**. Expand

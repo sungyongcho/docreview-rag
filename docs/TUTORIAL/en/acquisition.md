@@ -71,6 +71,22 @@ acquisition scope. The job result supplies a `selection_id` naming the exact acq
 for ingestion and embedding preparation. Other catalog entries remain available without joining that
 selection. The [one-filing CLI procedure](cli.md#prepare-one-nvidia-filing) uses the same contract.
 
+## Check for newer filings {#check-for-newer-filings}
+
+A company can file again for a fiscal year it has already reported. An SEC `10-K/A` amends some Items of a 10-K, and a DART correction files the whole annual report again. **Sync selection** submits only pairs whose original is missing, so it does not find them.
+
+In administrator mode, **Check for newer filings** sits beside **Sync selection**. It asks EDGAR and DART again about every selected company and year, including the ones already downloaded, records amendments and corrections filed since the last download, and downloads only what is missing. From a terminal, repeating `rag-dev corpus acquire_edgar` or `acquire_dart` for the same company and year does the same.
+
+A filing counts from the moment it is recorded, before it is downloaded or parsed:
+
+| Found | Effect on evidence | Next |
+|---|---|---|
+| SEC `10-K/A` | Nothing from that report period is used as evidence until the amendment is reviewed. | Run **Parse & chunk** and prepare embeddings and BM25, then review it under [Amended filings](documents.md#amended-filings). |
+| DART corrected report | The earlier report stops being used. The corrected report is used once it is parsed. | Run **Parse & chunk**, then prepare embeddings and BM25 as for any new document. |
+
+### SCREENSHOT NEEDED
+<!-- Capture Check for newer filings in DEV, English, light mode: Build → Pipeline → Filings with a downloaded company/year pair selected, the Check for newer filings button beside Sync selection, and the helper text under the buttons. -->
+
 ## Source requirements {#sources}
 
 | Source | Identifier | Required configuration | Typical manifest |

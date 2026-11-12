@@ -66,6 +66,16 @@ DEV의 원문 수집과 파싱·청킹 화면에는 회사·연도별 원문 적
 ### SCREENSHOT NEEDED
 <!-- Capture source-ingestion status in DEV, Korean, light mode: an available stale original in Filings and Parse & chunk, its explicit parse action, and the same stale document beside complete embeddings in Documents. -->
 
+## 수정·정정 공시 {#amended-filings}
+
+**파싱·청킹**은 SEC `10-K/A`를 그 공시가 적은 Item 단위로 저장하고, 인용에는 `AMD FY2025 · Item 7 (10-K/A)`처럼 보고서 종류를 함께 적습니다. 수정 공시는 저장만으로 근거가 되지 않습니다. [수정·정정 공시](documents.md#amended-filings)에서 검토할 때까지 그 보고 기간은 보류됩니다. DART 정정 보고서는 일반 사업보고서와 똑같이 파싱되고 이전 보고서를 대체합니다.
+
+저장된 문서는 그 공시가 보고 기간의 한 버전으로 기록돼 있을 때만 근거가 됩니다. 원문 수집과 **파싱·청킹**이 이 기록을 남깁니다. 이 기록이 생기기 전에 색인한 DB에는 기록이 없으므로, 업그레이드 뒤 아래 명령을 한 번 실행하세요. 두 테이블을 만들고 저장된 모든 문서를 기록하며, 청크와 임베딩은 바꾸지 않습니다.
+
+```bash
+uv run python -m scripts.schema filings
+```
+
 ## 임베딩 준비 {#step-6}
 
 > [!GOAL]

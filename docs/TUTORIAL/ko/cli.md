@@ -383,6 +383,15 @@ uv run python -m app.cli retrieve --query 'NVIDIA revenue' --issuer NVDA --fisca
 
 임베딩 생성에는 공급자 사용료가 발생할 수 있습니다. 검색 명령은 근거를 확인하며 답변 요청을 보내지 않습니다. [검색](retrieval.md)을 확인한 뒤 [첫 답변 안내](answers.md)로 이어가세요.
 
+### 수정·정정 공시 {#amended-filings}
+
+```bash
+rag-dev corpus acquire_edgar --identifier AMD --year 2025
+uv run python -m scripts.schema filings
+```
+
+이미 내려받은 기업·연도로 수집을 다시 실행하면 공시 목록을 다시 조회해 그 뒤에 나온 `10-K/A`나 DART 정정을 기록합니다. `scripts.schema filings`는 공시 버전을 기록하기 전에 색인한 DB에서 한 번만 실행하는 단계로, 두 테이블을 만들고 저장된 모든 문서를 기록합니다. 수정 공시 검토는 웹의 [수정·정정 공시](documents.md#amended-filings)에서 기록합니다. 이후 공시 때문에 범위 안의 근거를 쓸 수 없으면 `app.cli retrieve`가 `holds`를 출력합니다.
+
 <!-- heading-alias: dart-수집 -->
 ### DART 수집 {#dart-acquisition}
 

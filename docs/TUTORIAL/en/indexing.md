@@ -63,6 +63,16 @@ Changed originals stay selectable for explicit reingestion. The comparison does 
 ### SCREENSHOT NEEDED
 <!-- Capture source-ingestion status in DEV, English, light mode: an available stale original in Filings and Parse & chunk, its explicit parse action, and the same stale document beside complete embeddings in Documents. -->
 
+## Amendments and corrections {#amended-filings}
+
+**Parse & chunk** stores an SEC `10-K/A` by the Items it sets out, and its citations name the form, for example `AMD FY2025 · Item 7 (10-K/A)`. Storing an amendment does not make it evidence: its report period stays on hold until the review under [Amended filings](documents.md#amended-filings). A corrected DART report is parsed like any annual report and replaces the earlier one.
+
+A stored document counts as evidence only when its filing is on record as a version of its report period. Acquisition and **Parse & chunk** record that. A database indexed before this record existed has none, so run the following once after upgrading. It creates the two tables and records every stored document without changing chunks or embeddings.
+
+```bash
+uv run python -m scripts.schema filings
+```
+
 ## Prepare embeddings {#step-6}
 
 > [!GOAL]

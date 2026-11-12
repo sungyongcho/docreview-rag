@@ -36,6 +36,12 @@ On the public build, every search request uses the same [browser and shared serv
 ![A search trial in the playground with a typed query and the ranked result list below it.](../assets/search-trial-input-and-ranked-results.en.png)
 Example: `NVIDIA fiscal 2024 revenue` returns five NVIDIA FY2024 passages in the prepared corpus. Each result retains its source offsets and SHA-256. This is retrieval only; no answer is generated.
 
+## Evidence on hold {#evidence-on-hold}
+
+When a later filing keeps text inside the search scope out of use, **Evidence on hold** appears with the results. It names each report period and the reason, for example an amendment nobody has reviewed yet. That text is not ranked, so an empty or short result under this notice does not mean the filings are silent. [Evidence on hold](troubleshooting.md#evidence-on-hold) lists the reasons and what ends each one.
+
+The API reports the same list as `evidence_holds` on `/retrieve`, and `app.cli retrieve` prints it as `holds`.
+
 ## Read the ranking information {#rankings}
 
 | Evidence | How to use it |

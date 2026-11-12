@@ -128,6 +128,8 @@ Continue with [stop and continue later](runtime.md#resume), or return to [Answer
 
 Check the next request in the request inspector, and deliberately clear the snapshot chip when returning to the current corpus. A snapshot is not a full backup of the application, browser conversations, or credentials; keep the original sources and normal backups for your own retention needs.
 
+A snapshot freezes only text that is evidence when it is saved and keeps serving exactly that. A later amendment, corrected report or amendment review does not change a saved snapshot; save a new one to compare against the amended corpus.
+
 ## Private storage and public visibility {#visibility}
 
 > [!DEV]

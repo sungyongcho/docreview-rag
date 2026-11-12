@@ -89,6 +89,10 @@ Click the corpus status line (**Corpus total · N filings**) to inspect preparat
 
 For CPU-only local models, use the optional [CPU starting preset and hardware guidance](ollama.md#cpu-starting-preset). Existing defaults remain unchanged; apply a preset explicitly and inspect the next run's timings.
 
+### Evidence on hold {#evidence-on-hold}
+
+An answer shows **Evidence on hold** under its text when a later filing kept evidence inside the scope out of use, and the run records the same list as its `evidence_held` reason. An answer saying the filings do not contain something can then mean the evidence is on hold, so read the notice before relying on it. Evidence candidates retrieved before a filing was replaced or put on hold are no longer accepted as a selection; search again. See [Evidence on hold](troubleshooting.md#evidence-on-hold) for each reason and what ends it.
+
 <!-- heading-alias: reading-the-actual-model-call-limit -->
 ### Reading the actual model-call limit {#model-call-limits}
 

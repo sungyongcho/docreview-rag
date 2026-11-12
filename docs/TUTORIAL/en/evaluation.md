@@ -66,6 +66,8 @@ Results record golden-set identity and review provenance separately from search 
 
 <!-- /details -->
 
+An amendment or a corrected report can retire text that a golden set cites. The readiness check then reports the state `source_invalid` with the document it concerns: "A later filing replaced or holds evidence this dataset cites". Review the amendment under [Amended filings](documents.md#amended-filings), or cite the current filing in the golden set.
+
 ## Choose among seven suites {#suites}
 
 Suite IDs are stable dataset identifiers. The `_v2_astra` suffix does not rename the product or imply that Astra is the model used to run an evaluation.

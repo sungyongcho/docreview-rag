@@ -364,6 +364,15 @@ uv run python -m app.cli retrieve --query 'NVIDIA revenue' --issuer NVDA --fisca
 
 Embedding generation can incur provider usage. Retrieval tests the evidence; it does not submit an answer request. See [retrieval](retrieval.md) before the [first-answer guide](answers.md).
 
+### Amended filings {#amended-filings}
+
+```bash
+rag-dev corpus acquire_edgar --identifier AMD --year 2025
+uv run python -m scripts.schema filings
+```
+
+Repeating an acquisition for a company and year already downloaded lists its filings again and records any `10-K/A` or DART correction filed since. `scripts.schema filings` is a one-time step for a database indexed before filing versions were recorded: it creates the two tables and records every stored document. The amendment review itself is recorded in the web app under [Amended filings](documents.md#amended-filings). `app.cli retrieve` prints `holds` when a later filing keeps evidence inside the scope out of use.
+
 ### DART acquisition {#dart-acquisition}
 
 ```bash

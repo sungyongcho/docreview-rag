@@ -69,6 +69,8 @@ PROD에서도 평가 흐름의 배치를 유지합니다. 게시된 데이터셋
 
 <!-- /details -->
 
+수정 공시나 정정 보고서 때문에 골든셋이 인용한 내용이 더 이상 근거가 아닐 수 있습니다. 이때 실행 준비 확인은 해당 문서와 함께 `source_invalid` 상태를 보고합니다("A later filing replaced or holds evidence this dataset cites"). [수정·정정 공시](documents.md#amended-filings)에서 수정 공시를 검토하거나, 골든셋이 현재 공시를 인용하도록 고치세요.
+
 ## 일곱 평가 데이터셋 고르기 {#suites}
 
 Suite ID는 고정된 데이터셋 식별자입니다. `_v2_astra` 접미사는 제품 이름을 바꾸거나 실제 평가를 Astra 모델이 실행한다는 뜻이 아닙니다.

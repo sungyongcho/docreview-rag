@@ -70,6 +70,21 @@ Check the conversation scope and Filters, then **Build → Documents**, then **M
 
 An empty public catalog can be correct even with a populated development DB. [Snapshot visibility](snapshots.md#visibility) defines that boundary. A displayed global filing count also does not establish the size of your selected SEC/DART subset.
 
+## Evidence is on hold after a later filing {#evidence-on-hold}
+
+**Evidence on hold** on a search or an answer, or **On hold** under **Build → Documents → Amended filings**, means a later filing keeps a report period's text out of evidence. The notice names the report period and gives one of these reasons; the API reports the code as `reason`.
+
+| Reason | Cause | Remedy | Verification |
+|---|---|---|---|
+| `amendment_pending` | A `10-K/A` of the period has not been reviewed. | Review it under [Amended filings](documents.md#amended-filings). | The period reads **In use** and the notice is gone. |
+| `report_missing` | Only an amendment is on record; the report it amends is not. | Run **Check for newer filings**, then **Parse & chunk** for that company and year. | The period lists its report. |
+| `order_unknown` | Two filings of one kind are on record without the time the registry accepted them, so they cannot be ordered. | Run **Check for newer filings**; it reads those times again. | The period is no longer on hold. If it still is, the registry states no acceptance time for those filings. |
+| `not_indexed` | A newer report is on record but not downloaded and parsed. | Download it and run **Parse & chunk**. | The newer report reads **Used as evidence now**. |
+| `item_withheld` | A review withheld the named Items. | Use **Edit review** if those Items should be used. | The notice no longer names them. |
+| `replaced` | The search named only filings that a later filing replaced. | Add the later filing to the scope or remove the document filter. | Results come from the later filing. |
+
+After upgrading a database indexed earlier, every search returns nothing without a notice until the stored documents are recorded as filing versions; run `uv run python -m scripts.schema filings` once, as [indexing](indexing.md#amended-filings) describes.
+
 ## A review failed or is taking longer than expected {#execution}
 
 Open the answer's **Run trace** and **Execution performance**. Preserve the run ID, original node names, and exact failure fields.
