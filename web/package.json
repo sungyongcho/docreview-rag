@@ -6,7 +6,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "next build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "predev": "node scripts/prepare-tutorial.mjs",
     "pretest": "node scripts/prepare-tutorial.mjs",
     "pretypecheck": "node scripts/prepare-tutorial.mjs",
