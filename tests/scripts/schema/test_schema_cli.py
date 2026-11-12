@@ -17,7 +17,7 @@ def test_help_does_not_load_configuration_or_connect(monkeypatch, capsys):
     with pytest.raises(SystemExit) as exit_status:
         command.main()
     assert exit_status.value.code == 0
-    assert "{check,prepare,recover,recreate,tables,facts}" in capsys.readouterr().out
+    assert "{check,prepare,recover,recreate,tables,facts,filings}" in capsys.readouterr().out
     forbidden.assert_not_called()
 
 

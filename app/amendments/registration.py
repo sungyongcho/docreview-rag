@@ -4,10 +4,11 @@ from collections.abc import Iterable
 from datetime import UTC
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import FilingVersion
+from app.db.models import Document, FilingVersion
 from app.ingestion.sources.models import DocumentReference
 
 
@@ -40,6 +41,28 @@ def version_values(document: DocumentReference) -> dict[str, Any]:
         "kind": document.kind,
         "filed_key": filed_key(document),
     }
+
+
+def stored_reference(document: Document) -> DocumentReference:
+    """Rebuild the manifest entry a stored document was written from."""
+    return DocumentReference.model_validate(
+        {
+            "document_id": document.doc_id,
+            "registry": document.filing_registry,
+            "language": document.language,
+            "issuer": document.issuer,
+            "issuer_id": document.issuer_id,
+            "aliases": document.aliases,
+            "filing_id": document.filing_id,
+            "fiscal_year": document.fiscal_year,
+            "form": document.form,
+            "filing_date": document.filing_date,
+            "report_period": document.report_period,
+            "source_url": document.source_url,
+            "sec": document.sec,
+            "dart": document.dart,
+        }
+    )
 
 
 async def register_filings(session: AsyncSession, documents: Iterable[DocumentReference]) -> int:
@@ -75,3 +98,19 @@ async def register_filings(session: AsyncSession, documents: Iterable[DocumentRe
         )
     )
     return len(values)
+
+
+async def register_stored_documents(session: AsyncSession) -> int:
+    """Record every stored document as a filing version.
+
+    A database indexed before filing versions existed has documents and no versions,
+    and a document without a version is not evidence. This records them from the rows
+    themselves, so it needs no source files.
+
+    Returns
+    -------
+    int
+        How many stored documents were recorded.
+    """
+    documents = await session.scalars(select(Document).order_by(Document.doc_id))
+    return await register_filings(session, [stored_reference(document) for document in documents])

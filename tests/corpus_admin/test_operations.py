@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 from pydantic import SecretStr
@@ -118,6 +119,10 @@ def test_acquisition_returns_common_manifest_selection(tmp_path, monkeypatch, re
         """Isolate acquisition dispatch from database readiness."""
         return None
 
+    async def no_schema():
+        """Report a database with no corpus tables, which records no filing versions."""
+        return "empty", "No corpus tables exist yet.", set()
+
     async def acquire(*args, **kwargs):
         """Return the canonical acquisition contract without a network call."""
         return SimpleNamespace(
@@ -128,6 +133,7 @@ def test_acquisition_returns_common_manifest_selection(tmp_path, monkeypatch, re
         )
 
     monkeypatch.setattr(service._operations, "_assert_writable_schema", writable)
+    monkeypatch.setattr(service._inspector, "schema_state", no_schema)
     monkeypatch.setattr(
         operations, "acquire_edgar" if registry == "sec" else "acquire_dart", acquire
     )
@@ -208,7 +214,9 @@ def test_acquisition_is_independent_of_corpus_schema_writes(tmp_path, monkeypatc
             fetched=("filing",), manifest="manifest.json", selection_id="selected"
         )
     )
+    drifted = AsyncMock(return_value=("drifted", "The schema is incomplete.", set()))
     monkeypatch.setattr(service._operations, "_assert_writable_schema", blocked)
+    monkeypatch.setattr(service._inspector, "schema_state", drifted)
     monkeypatch.setattr(operations, "acquire_edgar", acquire)
     result = asyncio.run(
         service._operations.run(
@@ -218,5 +226,57 @@ def test_acquisition_is_independent_of_corpus_schema_writes(tmp_path, monkeypatc
     )
     assert result.selection_id == "selected"
     blocked.assert_not_awaited()
+    drifted.assert_awaited_once()
     with pytest.raises(RuntimeError, match="schema blocked"):
         asyncio.run(service._operations.run(AdminCommand("rebuild_bm25"), lambda progress: None))
+
+
+@pytest.mark.live_postgres
+@pytest.mark.parametrize("download", ["succeeds", "fails"])
+def test_acquisition_records_listed_filings_even_when_a_download_fails(
+    tmp_path, monkeypatch, download
+):
+    """An amendment the catalog lists holds its report period whether or not it was fetched."""
+    from sqlalchemy import select
+
+    from app.db.models import FilingVersion
+    from app.ingestion.persistence import persist_seed_batch
+    from app.ingestion.sources.models import CorpusIdentity, Manifest
+    from tests.amendments.support import amendment_document, batch, eligible, parsed, sec_document
+    from tests.live_postgres import isolated_session_factory
+
+    report, amendment = sec_document(18), amendment_document(21)
+
+    async def acquire(manifest_path, **kwargs):
+        """List the amendment in the catalog, then finish or fail like a download would."""
+        Manifest(
+            corpus=CorpusIdentity(corpus_id="filings", name="Filing corpus"),
+            documents=(report, amendment),
+        ).write(manifest_path)
+        if download == "fails":
+            raise RuntimeError("download failed")
+        return SimpleNamespace(fetched=(), manifest="manifest.json", selection_id="selected")
+
+    async def exercise() -> None:
+        """Index the report, run the acquisition, then read what the database knows."""
+        async with isolated_session_factory() as factory:
+            async with factory() as session:
+                await persist_seed_batch(session, batch(parsed(report, ("1", "7"))))
+            service = RuntimeCorpusAdminService(
+                settings=Settings(corpus_dir=tmp_path),
+                engine=factory.kw["bind"],
+                session_factory=factory,
+            )
+            monkeypatch.setattr(operations, "acquire_edgar", acquire)
+            command = AdminCommand("acquire_edgar", identifiers=("AMD",), years=(2025,))
+            if download == "fails":
+                with pytest.raises(RuntimeError, match="download failed"):
+                    await service._operations.run(command, lambda progress: None)
+            else:
+                await service._operations.run(command, lambda progress: None)
+            async with factory() as session:
+                kinds = await session.scalars(select(FilingVersion.kind))
+                assert sorted(kinds) == ["amendment", "report"]
+                assert await eligible(session) == set()
+
+    asyncio.run(exercise())

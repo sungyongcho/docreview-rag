@@ -159,7 +159,7 @@ def test_python_help_matches_color_policy_without_mutating_parent(shell, tmp_pat
         )
         output = os.read(master, 8192).decode()
         assert "usage:" in output.lower()
-        assert "{check,prepare,recover,recreate,tables,facts}" in output
+        assert "{check,prepare,recover,recreate,tables,facts,filings}" in output
         assert "\x1b" in output
         assert not called.exists()
     finally:

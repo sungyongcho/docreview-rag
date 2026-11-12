@@ -17,7 +17,8 @@ def main() -> int:
     """Use the selected checkout's local published DB port, never an external DSN."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "action", choices=("check", "prepare", "recover", "recreate", "tables", "facts")
+        "action",
+        choices=("check", "prepare", "recover", "recreate", "tables", "facts", "filings"),
     )
     parser.add_argument(
         "--parent",
@@ -118,6 +119,13 @@ def main() -> int:
         from scripts.schema.facts import run as migrate_facts
 
         report = asyncio.run(migrate_facts(url))
+        report["database_target"] = f"127.0.0.1:{bindings['DB_PORT']}/filing"
+        print(json.dumps(report, indent=2))
+        return 0
+    if args.action == "filings":
+        from scripts.schema.filings import run as record_filings
+
+        report = asyncio.run(record_filings(url))
         report["database_target"] = f"127.0.0.1:{bindings['DB_PORT']}/filing"
         print(json.dumps(report, indent=2))
         return 0

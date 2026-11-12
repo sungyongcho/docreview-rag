@@ -1,8 +1,9 @@
 """Run one validated corpus command against source files and PostgreSQL.
 
-Each command kind has its own method. Acquisition only writes source files, so it
-runs even when the corpus schema is unusable; every other kind writes corpus rows
-and first checks that the schema is compatible or still empty.
+Each command kind has its own method. Acquisition writes source files and, when the
+corpus schema is compatible, records the filings it listed, so it still runs when the
+schema is unusable; every other kind writes corpus rows and first checks that the
+schema is compatible or still empty.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
     from app.corpus_admin.service import RuntimeCorpusAdminService
+from app.amendments.registration import register_filings
 from app.corpus_admin.inspection import CorpusInspector
 from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.db.bootstrap import bootstrap_schema
@@ -25,6 +27,7 @@ from app.ingestion.acquisition.sec import DEFAULT_MANIFEST, acquire_edgar
 from app.ingestion.persistence import persist_seed_batch
 from app.ingestion.pipeline import load_seed_batch
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
+from app.ingestion.sources.catalog import acquired_catalog
 from app.ingestion.sources.deletion import SourceDeletion
 from app.ingestion.sources.models import Manifest
 from app.observability.usage import UsageSink
@@ -119,6 +122,23 @@ class CorpusOperations:
             raise ValueError("manifest is not a valid selectable corpus manifest")
         return candidate
 
+    async def _record_known_filings(self) -> None:
+        """Record every filing the catalog lists as a version of its report period.
+
+        Acquisition lists a filing before downloading it, and a listed amendment or
+        correction must keep the text it replaces out of evidence from then on, whether
+        or not its own download succeeded. A database with no corpus tables holds no
+        evidence yet, and ingestion records the filings once it has created them.
+        """
+        status, _message, _tables = await self._inspector.schema_state()
+        if status != "compatible":
+            return
+        catalog = await asyncio.to_thread(acquired_catalog, self._service.corpus_root)
+        if catalog is None:
+            return
+        async with self._service.session_factory() as session, session.begin():
+            await register_filings(session, catalog.documents)
+
     async def _delete_sources(
         self, command: AdminCommand, publish: OperationProgressCallback
     ) -> OperationOutcome:
@@ -134,13 +154,16 @@ class CorpusOperations:
     ) -> OperationOutcome:
         """Fetch SEC filings into the common catalog and report the new selection."""
         publish(OperationProgress("prepare", 0, 1, "Preparing EDGAR acquisition"))
-        result = await acquire_edgar(
-            self._service.corpus_root / DEFAULT_MANIFEST.name,
-            tickers=command.identifiers,
-            years=command.years,
-            user_agent=self._service.settings.sec_user_agent or "",
-            on_progress=publish,
-        )
+        try:
+            result = await acquire_edgar(
+                self._service.corpus_root / DEFAULT_MANIFEST.name,
+                tickers=command.identifiers,
+                years=command.years,
+                user_agent=self._service.settings.sec_user_agent or "",
+                on_progress=publish,
+            )
+        finally:
+            await self._record_known_filings()
         return OperationOutcome(
             f"Fetched {len(result.fetched)} filing(s)", result.manifest, result.selection_id
         )
@@ -152,13 +175,16 @@ class CorpusOperations:
         secret = self._service.settings.dart_api_key
         if secret is None:
             raise ValueError("DART_API_KEY is not configured")
-        result = await acquire_dart(
-            stock_codes=command.identifiers,
-            fiscal_years=command.years,
-            corpus_dir=self._service.corpus_root,
-            api_key=secret.get_secret_value(),
-            on_progress=publish,
-        )
+        try:
+            result = await acquire_dart(
+                stock_codes=command.identifiers,
+                fiscal_years=command.years,
+                corpus_dir=self._service.corpus_root,
+                api_key=secret.get_secret_value(),
+                on_progress=publish,
+            )
+        finally:
+            await self._record_known_filings()
         return OperationOutcome(
             f"Archived {len(result.archived)} filing(s)", result.manifest, result.selection_id
         )
@@ -191,6 +217,7 @@ class CorpusOperations:
         publish(OperationProgress("schema", 0, 1, "Checking schema compatibility"))
         await bootstrap_schema(self._service.database_engine)
         publish(OperationProgress("schema", 1, 1, "Schema compatible"))
+        await self._record_known_filings()
         async with self._service.session_factory() as session:
             result = await persist_seed_batch(
                 session,
