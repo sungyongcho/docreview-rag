@@ -87,9 +87,10 @@ def test_a_reviewed_amendment_shows_its_decisions_and_what_is_current() -> None:
                 "operator",
                 "Item 7 restated in full.",
             )
+            # Decisions read in the order the filing sets out its Items, not by Item code.
             assert amendment.review.decisions == (
-                ItemDecision(item="15", action="withhold"),
                 ItemDecision(item="7", action="replace"),
+                ItemDecision(item="15", action="withhold"),
             )
             assert await amended_report_periods(session, doc_id="unknown") == ()
 

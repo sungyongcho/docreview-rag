@@ -9,12 +9,12 @@ import hmac
 import time
 from typing import Annotated, Self
 
-from pydantic import Field, StrictInt
+from pydantic import BeforeValidator, Field, StrictInt
 from pydantic.functional_validators import model_validator
 
 from app.api.review.profiles import ResolvedRetrievalProfile
 from app.canonical_json import canonical_json
-from app.contracts.validation import StrictSchema
+from app.contracts.validation import StrictSchema, tuple_from_json_array
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
 Clock = Callable[[], float]
@@ -65,8 +65,12 @@ class EvidenceSelection(StrictSchema):
     """One user selection tied to a server-issued candidate snapshot."""
 
     candidate_token: str = Field(min_length=1)
-    pinned_chunk_ids: tuple[Annotated[StrictInt, Field(gt=0)], ...] = ()
-    excluded_chunk_ids: tuple[Annotated[StrictInt, Field(gt=0)], ...] = ()
+    pinned_chunk_ids: Annotated[
+        tuple[Annotated[StrictInt, Field(gt=0)], ...], BeforeValidator(tuple_from_json_array)
+    ] = ()
+    excluded_chunk_ids: Annotated[
+        tuple[Annotated[StrictInt, Field(gt=0)], ...], BeforeValidator(tuple_from_json_array)
+    ] = ()
 
     @model_validator(mode="after")
     def validate_sets(self) -> Self:

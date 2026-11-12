@@ -1,5 +1,6 @@
 """Show an operator the report periods that have more than one filing to weigh."""
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Literal
 
@@ -85,6 +86,21 @@ class ReportPeriodView(StrictSchema):
 def _position(version: FilingVersion) -> tuple[bool, str]:
     """Order a period's filings as the policy applies them: reports, then amendments."""
     return (version.kind == "amendment", version.filed_key)
+
+
+def _in_filing_order(
+    decisions: Sequence[ItemDecision], stored: Sequence[ItemChunks]
+) -> tuple[ItemDecision, ...]:
+    """Order a review's decisions as the filing sets out its Items.
+
+    A decision for an Item the filing has no text for follows them, by Item code.
+    """
+    place = {entry.item: index for index, entry in enumerate(stored)}
+    return tuple(
+        sorted(
+            decisions, key=lambda decision: (place.get(decision.item, len(place)), decision.item)
+        )
+    )
 
 
 async def amended_report_periods(
@@ -195,8 +211,9 @@ async def amended_report_periods(
                                 reviewed_at=version.reviewed_at,
                                 reviewer=version.reviewer or "",
                                 rationale=version.rationale or "",
-                                decisions=tuple(
-                                    decisions.get((version.filing_registry, version.filing_id), ())
+                                decisions=_in_filing_order(
+                                    decisions.get((version.filing_registry, version.filing_id), ()),
+                                    items.get(doc or "", ()),
                                 ),
                             )
                         ),

@@ -1,5 +1,8 @@
 """Signed candidate snapshot and evidence-selection tests."""
 
+from pydantic import ValidationError
+import pytest
+
 from app.api.review.evidence import (
     CandidateSnapshotCodec,
     EvidenceSelection,
@@ -78,6 +81,17 @@ def test_signed_snapshot_pins_excludes_and_preserves_ranked_fill() -> None:
     assert verified.routing_queries == {"ko": "매출 증가"}
     assert verified.candidates[2].score == candidates[2].score
     assert tuple(item.chunk_id for item in selected) == (3, 2)
+
+
+def test_a_selection_is_read_from_the_json_arrays_a_client_sends() -> None:
+    """Pinned and excluded ids arrive as JSON arrays and stay strict about their values."""
+    selection = EvidenceSelection.model_validate(
+        {"candidate_token": "token", "pinned_chunk_ids": [3], "excluded_chunk_ids": [1, 2]}
+    )
+    assert (selection.pinned_chunk_ids, selection.excluded_chunk_ids) == ((3,), (1, 2))
+
+    with pytest.raises(ValidationError):
+        EvidenceSelection.model_validate({"candidate_token": "token", "pinned_chunk_ids": ["3"]})
 
 
 def test_snapshot_rejects_tampering_and_outside_ids() -> None:

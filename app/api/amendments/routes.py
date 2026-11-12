@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter
+from pydantic import BeforeValidator
 
 from app.amendments.overview import ItemDecision, ReportPeriodView, amended_report_periods
 from app.amendments.review import ItemEffect, ReviewError, clear_review, record_review
 from app.api.dependencies import AdminDependency
 from app.api.errors import ApiProblemError, bad_request, not_found, translate_runtime_errors
 from app.api.review.schemas import ErrorResponse
-from app.contracts.validation import NonBlank, StrictSchema
+from app.contracts.validation import NonBlank, StrictSchema, tuple_from_json_array
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -25,7 +28,7 @@ class AmendmentReviewRequest(StrictSchema):
 
     reviewer: NonBlank
     rationale: NonBlank
-    decisions: tuple[ItemDecision, ...]
+    decisions: Annotated[tuple[ItemDecision, ...], BeforeValidator(tuple_from_json_array)]
 
 
 def _review_problem(error: ReviewError, doc_id: str) -> ApiProblemError:

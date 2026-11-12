@@ -5,7 +5,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.amendments.overview import ItemDecision
 from app.api.amendments.routes import (
     AmendmentReviewRequest,
     amended_periods,
@@ -23,13 +22,13 @@ AMENDMENT = amendment_document(21)
 
 
 def review(*decisions: tuple[str, str]) -> AmendmentReviewRequest:
-    """Build a review request deciding the given (Item, action) pairs."""
-    return AmendmentReviewRequest(
-        reviewer="operator",
-        rationale="Read against the original.",
-        decisions=tuple(
-            ItemDecision.model_validate({"item": i, "action": a}) for i, a in decisions
-        ),
+    """Build a review request from the JSON body a client sends for the given pairs."""
+    return AmendmentReviewRequest.model_validate(
+        {
+            "reviewer": "operator",
+            "rationale": "Read against the original.",
+            "decisions": [{"item": item, "action": action} for item, action in decisions],
+        }
     )
 
 
