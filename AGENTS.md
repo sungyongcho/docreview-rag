@@ -28,7 +28,6 @@ Edit this file only when the user asks for a rule change.
 - Link every delivered issue. `Closes` means its full scope is complete; use `Refs` for partial delivery. Opening a PR is not permission to close an issue directly.
 - Issues use Problem / outcome, Scope and observable Acceptance checks. Ordinary issue messages/images do not create Git assets, commits or evidence-only PRs.
 - Keep `core.hooksPath=.githooks` in clones and never bypass hooks. Fetch before integration/publication and inspect divergence.
-- Living drafts #37 (`docs/29-project-ideas`, `ideas.md`) and #38 (`docs/30-development-log`, `docs/DEVELOPMENT_STORY_OUTLINE.md`) retain user wording and only their own file. Never merge them without a specific request; general merge requests exclude them.
 - Dependabot PRs: inspect exact author/head/diff and compatibility and pass the relevant gates before merging. Close only with a concrete reason; never bypass protection or suppress advisories.
 
 ## Engineering and verification
