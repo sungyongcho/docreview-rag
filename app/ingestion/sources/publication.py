@@ -21,12 +21,27 @@ from app.ingestion.sources.storage import (
 )
 
 
-def publish_references(path: Path, discovered: Sequence[DocumentReference]) -> Manifest:
+def publish_references(
+    path: Path,
+    discovered: Sequence[DocumentReference],
+    *,
+    refreshed: Sequence[DocumentReference] = (),
+) -> Manifest:
     """Record filings a registry lists, before any of them is downloaded.
 
     A filing already on record under the same registry identity keeps its entry. A new
     one is added without artifacts, which is the state of a filing that still has to be
     downloaded.
+
+    Parameters
+    ----------
+    path : Path
+        The catalog to record into.
+    discovered : Sequence[DocumentReference]
+        Filings the registry lists. Known ones are left as they are.
+    refreshed : Sequence[DocumentReference]
+        Known filings whose entry the caller completed. Each replaces the entry on
+        record under the same registry identity; one that is not on record is ignored.
     """
     with source_lock(path.parent, recover=True):
         catalog = read_catalog(path)
@@ -36,11 +51,16 @@ def publish_references(path: Path, discovered: Sequence[DocumentReference]) -> M
             for document in discovered
             if (document.registry, document.filing_id) not in known
         ]
-        if not added:
+        replacements = {(document.registry, document.filing_id): document for document in refreshed}
+        documents = tuple(
+            replacements.get((document.registry, document.filing_id), document)
+            for document in catalog.documents
+        )
+        if not added and documents == catalog.documents:
             return catalog
         result = Manifest(
             corpus=catalog.corpus,
-            documents=(*catalog.documents, *added),
+            documents=(*documents, *added),
             artifacts=catalog.artifacts,
             selections=catalog.selections,
         )

@@ -2,7 +2,7 @@
 
 import asyncio
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 import gzip
 import hashlib
 import json
@@ -14,6 +14,7 @@ import pytest
 import app.ingestion.acquisition.sec as edgar_api
 from app.ingestion.acquisition.sec import (
     EdgarApiError,
+    acceptance_refreshes,
     acquire_edgar,
     annual_reports,
     download_pending,
@@ -545,6 +546,56 @@ def test_an_amendment_is_on_record_even_when_its_download_fails(tmp_path, monkey
     assert [artifact.document_id for artifact in catalog.artifacts] == [f"sec-{TEN_K[1]}"]
 
 
+def test_listing_again_orders_two_amendments_recorded_without_acceptance_times(
+    tmp_path, monkeypatch
+):
+    """Two same-day amendments on record without times gain them from the next listing."""
+    monkeypatch.setattr(edgar_api, "REQUEST_INTERVAL_SECONDS", 0.0)
+    second = (
+        "10-K/A",
+        "0001045810-24-000031",
+        *AMENDED[2:4],
+        "nvda-a2.htm",
+        "2024-03-01T22:30:00.000Z",
+    )
+    listed = submissions_payload([TEN_K, AMENDED, second])
+    recorded = [
+        accepted(document, None) if document.kind == "amendment" else document
+        for document in annual_reports(
+            submission_rows(listed["filings"]["recent"]), ticker="NVDA", cik=1045810, years=(2024,)
+        )
+    ]
+    manifest = write_manifest(tmp_path, recorded)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """List the report and both amendments and serve every filing."""
+        if request.url.path.endswith("company_tickers.json"):
+            return httpx.Response(200, json={"0": {"cik_str": 1045810, "ticker": "NVDA"}})
+        if request.url.host == "data.sec.gov":
+            return httpx.Response(200, json=listed)
+        return httpx.Response(200, content=FILING)
+
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        edgar_api.httpx,
+        "AsyncClient",
+        lambda **_kwargs: client_class(transport=httpx.MockTransport(handler)),
+    )
+
+    asyncio.run(acquire_edgar(manifest, tickers=("NVDA",), years=(2024,), user_agent=USER_AGENT))
+
+    times = {
+        d.filing_id: d.sec.accepted_at.isoformat()
+        for d in read_catalog(manifest).documents
+        if d.sec is not None and d.sec.accepted_at is not None
+    }
+    assert times == {
+        TEN_K[1]: "2024-02-21T21:36:57+00:00",
+        AMENDED[1]: "2024-03-01T22:10:05+00:00",
+        second[1]: "2024-03-01T22:30:00+00:00",
+    }
+
+
 # --- merging ---
 
 
@@ -570,6 +621,40 @@ def test_distinct_filings_for_one_fiscal_year_keep_distinct_identities():
     merged, added = merge_entries(existing, [manifest_item("NVDA", "2024", "other")])
     assert len(merged) == 2 and len(added) == 1
     assert merged[0].document_id != merged[1].document_id
+
+
+def accepted(document, stamp: str | None):
+    """Return the filing with the given acceptance time, or without one."""
+    time = None if stamp is None else datetime.fromisoformat(stamp)
+    return document.model_copy(
+        update={"sec": document.sec.model_copy(update={"accepted_at": time})}
+    )
+
+
+def test_an_unordered_pair_gains_the_acceptance_times_edgar_states():
+    """Complete two same-kind filings of one period that only an acceptance time can order."""
+    first, second = manifest_item("NVDA", "2024", "a"), manifest_item("NVDA", "2024", "b")
+    stated = [
+        accepted(first, "2024-02-21T16:36:57-05:00"),
+        accepted(second, "2024-02-21T17:01:02-05:00"),
+    ]
+
+    assert acceptance_refreshes([first, second], stated) == stated
+    assert acceptance_refreshes(stated, stated) == []
+    assert acceptance_refreshes([first, second], [first, second]) == []
+
+
+def test_a_filing_alone_in_its_period_keeps_its_recorded_form():
+    """Leave an entry without an acceptance time untouched when nothing shares its period."""
+    alone = manifest_item("NVDA", "2024", "a")
+    amendment = manifest_item("NVDA", "2024", "b").model_copy(update={"form": "10-K/A"})
+    other_issuer = manifest_item("AMD", "2024", "c")
+    stated = [
+        accepted(document, "2024-02-21T16:36:57-05:00")
+        for document in (alone, amendment, other_issuer)
+    ]
+
+    assert acceptance_refreshes([alone, amendment, other_issuer], stated) == []
 
 
 # --- progress plumbing ---

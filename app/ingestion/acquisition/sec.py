@@ -13,6 +13,7 @@ failure twenty steps downstream, so the body is checked before it reaches disk.
 """
 
 import asyncio
+from collections import Counter
 from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
@@ -149,6 +150,39 @@ def merge_entries(
         merged.append(document)
         added.append(document)
     return merged, added
+
+
+def acceptance_refreshes(
+    entries: Sequence[DocumentReference], discovered: Sequence[DocumentReference]
+) -> list[DocumentReference]:
+    """Return known entries completed with the acceptance time EDGAR states for them.
+
+    An entry written before acceptance times were recorded keeps its serialized form,
+    with one exception: when its report period holds another filing of the same kind,
+    the two cannot be ordered without the time and the whole period stays out of
+    evidence. Only such an entry is completed, and only when EDGAR states the time.
+    """
+    stated = {
+        document.filing_id: document.sec.accepted_at
+        for document in discovered
+        if document.sec is not None and document.sec.accepted_at is not None
+    }
+    crowd = Counter(_version_slot(document) for document in entries)
+    return [
+        document.model_copy(
+            update={"sec": document.sec.model_copy(update={"accepted_at": accepted})}
+        )
+        for document in entries
+        if document.sec is not None
+        and document.sec.accepted_at is None
+        and crowd[_version_slot(document)] > 1
+        and (accepted := stated.get(document.filing_id)) is not None
+    ]
+
+
+def _version_slot(document: DocumentReference) -> tuple[str, str, date, str]:
+    """Name the report period and kind within which filings must be ordered."""
+    return (document.registry, document.issuer_id, document.report_period, document.kind)
 
 
 def pending(
@@ -508,9 +542,11 @@ async def acquire_edgar(
                 client, tickers=wanted, years=years, user_agent=declared, on_progress=on_progress
             )
         documents, added = merge_entries(documents, discovered)
+        refreshed = acceptance_refreshes(documents, discovered)
         # A filing is on record from the moment it is found: an amendment whose download
         # fails must still be known, so that it can withhold the report it amends.
-        catalog = publish_references(manifest_path, added)
+        catalog = publish_references(manifest_path, added, refreshed=refreshed)
+        documents = list(catalog.documents)
     selected = [
         document
         for document in documents

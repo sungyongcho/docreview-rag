@@ -260,3 +260,17 @@ def test_a_discovered_filing_is_recorded_once_without_artifacts(tmp_path):
     assert Manifest.read(tmp_path / "manifest.json") == result
     assert publish_references(tmp_path / "manifest.json", [found]) == result
     assert not (tmp_path / JOURNAL).exists()
+
+
+def test_a_refreshed_entry_replaces_the_one_on_record(tmp_path):
+    """A completed entry takes its filing's place and one that is not on record is ignored."""
+    catalog = write_selection_catalog(tmp_path)
+    known = catalog.documents[0]
+    completed = known.model_copy(update={"aliases": (*known.aliases, "Completed")})
+    stranger = filing_document(filing_id="0001045810-24-000030", document_id="sec-stranger")
+
+    result = publish_references(tmp_path / "manifest.json", [], refreshed=[completed, stranger])
+
+    assert result.documents == (completed, *catalog.documents[1:])
+    assert result.artifacts == catalog.artifacts and result.selections == catalog.selections
+    assert Manifest.read(tmp_path / "manifest.json") == result
