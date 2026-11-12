@@ -16,6 +16,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SecretStr,
+    WrapValidator,
     computed_field,
     create_model,
 )
@@ -29,14 +30,15 @@ from app.contracts.validation import StrictSchema, tuple_from_json_array
 # has classified here cannot pass unread.
 # Kinds that take that value in every mode.
 ACCEPTED = frozenset(
-    {"any", "str", "int", "float", "bool", "none", "list", "dict", "literal", "url"}
+    {"any", "str", "int", "float", "bool", "none", "dict", "literal", "url"}
     # A plain function receives the value itself and holds no validator to read.
     | {"function-plain"}
 )
-# Kinds that refuse it in strict mode: an array for the first group, a string or an
-# object for the second. Of the first group only a tuple can be admitted, because the
-# admitting validator hands on a tuple, which a strict set refuses like an array.
-ARRAYS = frozenset({"tuple", "set", "frozenset"})
+# What each array kind takes in strict mode. A JSON array reaches its field as a list, and
+# as a tuple once the admitting validator has turned it into one, so a strict list and a
+# strict tuple each refuse what the other takes and a strict set refuses both.
+ARRAYS: dict[str, type | None] = {"list": list, "tuple": tuple, "set": None, "frozenset": None}
+# Kinds that refuse a string or an object in strict mode.
 OTHERS = frozenset(
     {"date", "datetime", "time", "timedelta", "uuid", "decimal", "bytes", "enum", "dataclass"}
 )
@@ -66,6 +68,8 @@ HOLDERS = frozenset(
 # Wrappers that hand their input on unchanged, so a validator placed before them still
 # decides what the wrapped type receives.
 TRANSPARENT = frozenset({"default", "nullable", "union", "function-after"})
+# An alias a model can use for two fields, so that its tuple is defined once and referred to.
+type _Ids = tuple[int, ...]
 # One value of every type a decoded JSON body can hold.
 JSON_VALUES = ("", 0, 0.0, True, None, [], {})
 # Entries of a validator that are not validators, whatever they look like.
@@ -134,31 +138,31 @@ def _refusals(
     node: object,
     *,
     strict: bool,
-    admitted: bool,
+    arrives: type | None,
     path: str,
     shared: dict[str, object],
-    seen: set[tuple[str, bool, bool]],
+    seen: set[tuple[str, bool, type | None]],
 ) -> Iterator[str]:
     """Yield the places in a compiled validator that refuse a decoded JSON value.
 
     A validator of a kind this module does not classify is yielded as well: what it does
     with a JSON value is unknown until someone reads it and names it in a group above.
-    ``strict`` is the mode in force at the node, and ``admitted`` is whether a validator
-    directly before it already turns a JSON array into a tuple. ``shared`` holds the
+    ``strict`` is the mode in force at the node. ``arrives`` is the type a JSON array has
+    when it reaches the node: a list, a tuple after the admitting validator, or ``None``
+    after any other function placed before the node, whose result nobody has read and
+    which a strict array field is therefore reported for. ``shared`` holds the
     validators the schema defines once and refers to by name; each is read in the mode of
     every place that refers to it, and ``seen`` holds the ones being read, so that a
     validator that refers to itself is not read without end.
     """
 
-    def below(child: object, *, admitted: bool = False, path: str = path) -> Iterator[str]:
+    def below(child: object, *, arrives: type | None = list, path: str = path) -> Iterator[str]:
         """Read one child in the mode in force here."""
-        return _refusals(
-            child, strict=strict, admitted=admitted, path=path, shared=shared, seen=seen
-        )
+        return _refusals(child, strict=strict, arrives=arrives, path=path, shared=shared, seen=seen)
 
     if isinstance(node, list | tuple):
         for child in node:
-            yield from below(child, admitted=admitted)
+            yield from below(child, arrives=arrives)
         return
     if not isinstance(node, dict):
         return
@@ -169,13 +173,13 @@ def _refusals(
             yield from below(child, path=f"{path}.{name}")
         return
     if kind == "definitions":
-        yield from below(node["schema"], admitted=admitted)
+        yield from below(node["schema"], arrives=arrives)
         return
     if kind == "definition-ref":
-        visit = (node["schema_ref"], strict, admitted)
+        visit = (node["schema_ref"], strict, arrives)
         if visit not in seen:
             seen.add(visit)
-            yield from below(shared[node["schema_ref"]], admitted=admitted)
+            yield from below(shared[node["schema_ref"]], arrives=arrives)
             seen.discard(visit)
         return
     config = node.get("config")
@@ -198,14 +202,14 @@ def _refusals(
         # An instance check beside another choice only lets a ready-made object
         # through; a JSON value takes the other choice.
         open_to_json = [choice for choice in choices if choice.get("type") != "is-instance"]
-        yield from below(open_to_json or choices, admitted=admitted)
+        yield from below(open_to_json or choices, arrives=arrives)
         return
     if kind == "is-instance":
         if not any(isinstance(value, node["cls"]) for value in JSON_VALUES):
             yield f"{path} ({kind})"
         return
     if kind in ARRAYS:
-        if refuses and not (admitted and kind == "tuple"):
+        if refuses and (arrives is None or ARRAYS[kind] is not arrives):
             yield f"{path} ({kind})"
     elif kind in OTHERS:
         if refuses:
@@ -223,13 +227,15 @@ def _refusals(
             yield f"{path} (dict key {keys['type']})"
     elif kind not in ACCEPTED | HOLDERS:
         yield f"{path} ({kind})"
-    passes_on = (
-        kind == "function-before" and node["function"]["function"] is tuple_from_json_array
-    ) or (kind in TRANSPARENT and admitted)
+    if kind in {"function-before", "function-wrap"}:
+        admits = kind == "function-before" and node["function"]["function"] is tuple_from_json_array
+        passes_on: type | None = tuple if admits else None
+    else:
+        passes_on = arrives if kind in TRANSPARENT else list
     for name, child in node.items():
         if name not in NOT_VALIDATORS:
             yield from _refusals(
-                child, strict=strict, admitted=passes_on, path=path, shared=shared, seen=seen
+                child, strict=strict, arrives=passes_on, path=path, shared=shared, seen=seen
             )
 
 
@@ -245,7 +251,7 @@ def _all_refusals(cls: type) -> list[str]:
     }
     name = cls.__name__
     places = set(
-        _refusals(schema, strict=False, admitted=False, path=name, shared=shared, seen=set())
+        _refusals(schema, strict=False, arrives=list, path=name, shared=shared, seen=set())
     )
     return sorted(places - {f"{name} (dataclass)"})
 
@@ -265,7 +271,6 @@ def test_strict_request_bodies_take_what_json_carries():
 
 def test_the_check_finds_a_refusal_wherever_the_field_type_hides_it():
     """Aliases, mapping values, nested arrays, sets and any strict model are all read."""
-    type Ids = tuple[int, ...]
     admitted = BeforeValidator(tuple_from_json_array)
 
     @dataclasses.dataclass
@@ -279,8 +284,8 @@ def test_the_check_finds_a_refusal_wherever_the_field_type_hides_it():
 
         model_config = ConfigDict(strict=True)
 
-        first: Ids
-        second: Ids
+        first: _Ids
+        second: _Ids
         point: Point
 
     class Probe(BaseModel):
@@ -288,7 +293,7 @@ def test_the_check_finds_a_refusal_wherever_the_field_type_hides_it():
 
         model_config = ConfigDict(strict=True)
 
-        aliased: Ids
+        aliased: _Ids
         by_name: dict[str, tuple[int, ...]]
         nested: typing.Annotated[tuple[tuple[int, ...], ...], admitted]
         unordered: frozenset[int]
@@ -331,12 +336,19 @@ def test_the_check_finds_a_refusal_wherever_the_field_type_hides_it():
         raise AssertionError(f"the strict probe accepted {body}")
     # The check agrees with what the models do with a decoded JSON body.
     Admitted.model_validate({"ids": [1, 2]})
-    Lenient.model_validate({"ids": [1], "inner": Probe(**_probe_values()).model_dump()})
+    Lenient.model_validate(
+        {"ids": [1], "inner": Probe.model_validate(_probe_values()).model_dump()}
+    )
 
 
 def _unchanged(value: object) -> object:
     """Stand in for a validator that checks a value and hands it back."""
     return value
+
+
+def _as_tuple(value: object, handler: typing.Callable[[object], object]) -> object:
+    """Stand in for a wrapping validator that hands its field a tuple."""
+    return handler(tuple(value) if isinstance(value, list) else value)
 
 
 class _Cat(BaseModel):
@@ -374,7 +386,16 @@ class _Dog(BaseModel):
             [1],
             [],
         ),
-        # The admitting validator hands on a tuple, which a strict set refuses too.
+        # The admitting validator hands on a tuple, which a strict list or set refuses.
+        (
+            typing.Annotated[list[int], BeforeValidator(tuple_from_json_array)],
+            [1],
+            ["Body.value (list)"],
+        ),
+        (list[int], [1], []),
+        # What any other function placed before an array hands on has not been read.
+        (typing.Annotated[list[int], BeforeValidator(tuple)], [1], ["Body.value (list)"]),
+        (typing.Annotated[list[int], WrapValidator(_as_tuple)], [1], ["Body.value (list)"]),
         (
             typing.Annotated[frozenset[int], BeforeValidator(tuple_from_json_array)],
             [1],
