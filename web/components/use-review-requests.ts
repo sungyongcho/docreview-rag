@@ -10,7 +10,7 @@ import type { NavigationTarget } from "@/lib/navigation";
 import { notificationErrorDetail, notificationErrorMessage, type NotificationDetail } from "@/lib/notification-registry";
 import { reviewLimitationMessage, scopeFailurePatch, scopeFailureProgress } from "@/lib/scope-failure";
 import { saveConversations } from "@/lib/storage";
-import type { ChatMessage, Conversation, EvidenceHit, ReviewExecution, ReviewRun, ReviewSessionDraft } from "@/lib/types";
+import type { ChatMessage, Conversation, EvidenceHit, EvidenceHold, ReviewExecution, ReviewRun, ReviewSessionDraft } from "@/lib/types";
 import type { useRuntimeHealth } from "@/lib/use-runtime-health";
 
 /** The assistant message a running request writes into, and the conversation that owns it. */
@@ -126,9 +126,12 @@ export function useReviewRequests({
   }
 
   /** Commit the terminal response to its reserved message with the request-specific evidence. */
-  function completeReview(request: ReturnType<typeof beginReview>, execution: ReviewExecution, run: ReviewRun, evidence: Partial<Pick<ChatMessage, "evidence" | "question" | "candidateToken" | "pinnedChunkIds" | "excludedChunkIds">>) {
+  function completeReview(request: ReturnType<typeof beginReview>, execution: ReviewExecution, run: ReviewRun, evidence: Partial<Pick<ChatMessage, "evidence" | "question" | "candidateToken" | "pinnedChunkIds" | "excludedChunkIds">>, candidateHolds?: EvidenceHold[]) {
     if (request.controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
     const message = terminalMessage(run);
+    // A report states its own holds. A run that failed before reporting still lists candidates,
+    // so the holds its retrieval reported explain a short list.
+    if (!run.report && candidateHolds?.length) message.evidenceHolds = candidateHolds;
     const finished = finishReviewProgress(execution, run.failure ? "failed" : "completed", Date.now() - request.requestStarted, run.execution, run.report);
     setDailyBudgetResetAt(null);
     updateMessage(request.conversationId, request.assistantId, { ...message, execution: finished, ...evidence }, notificationErrorDetail(run.failure));
@@ -153,6 +156,7 @@ export function useReviewRequests({
     const { conversationId, assistantId, controller, requestStarted } = request;
     let execution = request.execution;
     let preparedEvidence: EvidenceHit[] = [];
+    let preparedHolds: EvidenceHold[] | undefined;
     const selectedProfile = { ...sessionProfile, local_model: localModel };
     try {
       let evidence: EvidenceHit[] = [];
@@ -171,12 +175,13 @@ export function useReviewRequests({
           if (controller.signal.aborted) return;
           evidence = payload.candidates.length ? payload.candidates : payload.results;
           preparedEvidence = evidence;
+          preparedHolds = payload.evidence_holds;
           candidateToken = payload.candidate_token ?? undefined;
           execution = candidateProgress(execution, evidence.length, payload.resolved_scope, payload.path_decision);
           updateMessage(conversationId, assistantId, { execution });
         },
       );
-      completeReview(request, execution, response, { evidence, question, candidateToken, pinnedChunkIds: [], excludedChunkIds: [] });
+      completeReview(request, execution, response, { evidence, question, candidateToken, pinnedChunkIds: [], excludedChunkIds: [] }, preparedHolds);
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === "browser_rate_limited" && currentConversationId.current === conversationId) setQuery((current) => current || query);
       execution = scopeFailureProgress(reason, execution);
@@ -193,12 +198,14 @@ export function useReviewRequests({
         return;
       }
       let evidence = preparedEvidence;
+      let evidenceHolds = preparedHolds;
       // Only the private admin surface may request an evidence-only fallback automatically.
       // Public failures never dispatch a second charged execution request.
       if (developer && reason instanceof ApiError && reason.code === "provider_unavailable" && !evidence.length && !controller.signal.aborted) {
         try {
           const retrieved = await retrieveEvidence(question, selectedProfile, controller.signal);
           evidence = retrieved.candidates.length ? retrieved.candidates : retrieved.results;
+          evidenceHolds = retrieved.evidence_holds;
           execution = { ...execution, resolvedScope: resolvedScopeFromServer(retrieved.resolved_scope) ?? execution.resolvedScope };
         } catch {
           // Preserve the original provider error when retrieval is also unavailable.
@@ -221,6 +228,8 @@ export function useReviewRequests({
         text: message,
         execution,
         evidence,
+        // Held evidence explains a short or empty candidate list.
+        evidenceHolds,
         evidenceLabel: "Retrieved candidates — answer not generated",
       }, notificationErrorDetail(reason));
     } finally {

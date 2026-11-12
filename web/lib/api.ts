@@ -3,6 +3,8 @@ import { requestFetch, type TimedRequestInit } from "./http-request";
 import { BrowserRateLimitError, recordBrowserRequest } from "./browser-request-limits";
 import type {
   AdminDocumentPage,
+  AmendedReportPeriod,
+  AmendmentReview,
   Capabilities,
   AdminCommand,
   CorpusSnapshot,
@@ -13,6 +15,7 @@ import type {
   EvaluationRequest,
   EvaluationResultDetail,
   EvidenceHit,
+  EvidenceHold,
   GoldenCanonical,
   GoldenRevision,
   GoldenSuite,
@@ -131,6 +134,8 @@ interface RetrievePayload {
   candidate_token: string | null;
   candidate_expires_at: number;
   resolved_scope: Record<string, unknown> | null;
+  /** Report periods inside the searched scope that a later filing keeps out of evidence. */
+  evidence_holds?: EvidenceHold[];
 }
 
 export async function retrieveEvidence(query: string, sessionProfile: ReviewSessionProfile, signal?: AbortSignal): Promise<RetrievePayload> {
@@ -474,6 +479,23 @@ export function getPublishedDocumentFacets(registry = "", signal?: AbortSignal):
 
 export function getPublishedDocumentDetail(docId: string): Promise<DocumentDetail> {
   return request<DocumentDetail>(`/public/documents/${encodeURIComponent(docId)}`);
+}
+
+/** List the report periods that hold an amendment or more than one filing; administrator mode only. */
+export async function getAmendedPeriods(signal?: AbortSignal): Promise<AmendedReportPeriod[]> {
+  const payload = await request<components["schemas"]["AmendedPeriodsResponse"]>("/admin/amendments", { signal });
+  if (!Array.isArray(payload.report_periods)) throw new ApiError(502, "invalid_response", "The API returned an unexpected response (HTTP 200).");
+  return payload.report_periods;
+}
+
+/** Record what each Item of an indexed amendment does; the answer is its report period as it stands now. */
+export function reviewAmendment(docId: string, review: AmendmentReview): Promise<AmendedReportPeriod> {
+  return request<AmendedReportPeriod>(`/admin/amendments/${encodeURIComponent(docId)}/review`, { method: "PUT", body: JSON.stringify(review) });
+}
+
+/** Withdraw an amendment's review, which holds its report period again. */
+export function withdrawAmendmentReview(docId: string): Promise<AmendedReportPeriod> {
+  return request<AmendedReportPeriod>(`/admin/amendments/${encodeURIComponent(docId)}/review`, { method: "DELETE" });
 }
 
 export function getOperatorJobs(signal?: AbortSignal): Promise<OperatorJobBoard> {

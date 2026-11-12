@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { Info, ListChecks, ListX, MousePointer2, MessageSquare } from "lucide-react";
+import { Info, ListChecks, ListX, MousePointer2, MessageSquare, RefreshCw } from "lucide-react";
 import type { AcquisitionForm, AcquisitionPair } from "@/components/build-pipeline";
 import { type AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { acquisitionDraft, acquisitionPairs, pairKey, selectedSourceState, sourceSelectionRows, type SourceInventory } from "@/lib/source-selection";
@@ -26,6 +26,9 @@ interface SourceMatrixProps {
   disabled?: boolean;
   onValidityChange?: (valid: boolean) => void;
   onDownload: (next: AcquisitionForm) => void;
+  /** Queue acquisition for every selected pair, downloaded or not; the action is absent without it. */
+  onCheckNewer?: (next: AcquisitionForm) => void;
+  /** Blocks both acquisition actions: downloading what is missing and checking for newer filings. */
   downloadDisabled: boolean;
   onDeleteSources?: (token: string) => Promise<void>;
   deleteDisabled?: boolean;
@@ -37,10 +40,11 @@ interface SourceMatrixProps {
 }
 
 /** Stage missing or recoverable pairs and submit the exact synchronized draft atomically. */
-export function SourceMatrix({ sources, companies: rawCompanies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs, locked = false, corpusScope = "auto", onAskScope }: SourceMatrixProps) {
+export function SourceMatrix({ sources, companies: rawCompanies, acquisition, onChange, disabled = false, onValidityChange, onDownload, onCheckNewer, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs, locked = false, corpusScope = "auto", onAskScope }: SourceMatrixProps) {
   const { t, locale } = useI18n();
   const companies = rawCompanies.map(company => ({ ...company, name: companyDisplayName(company.name, locale) }));
   const scopeId = useId();
+  const checkNewerHelpId = useId();
   const [scopeOpen, setScopeOpen] = useState(false);
   const latestYear = new Date().getFullYear() - 1;
   const [chosen, setChosen] = useState<Array<{ registry: "sec" | "dart"; issuer: string }>>([]);
@@ -140,6 +144,14 @@ export function SourceMatrix({ sources, companies: rawCompanies, acquisition, on
     setStaged([]);
     onDownload(next);
   }
+  /** Submit every selected pair, staged ones included: a downloaded pair is asked about again. */
+  function checkNewer() {
+    if (disabled || downloadDisabled || !valid || !onCheckNewer) return;
+    const next = acquisitionDraft(merged);
+    onChange(next);
+    setStaged([]);
+    onCheckNewer(next);
+  }
 
   if (locked) {
     const publicCompanies = PUBLIC_COMPANIES.map(company => ({ ...company, name: companyDisplayName(company.name, locale) }));
@@ -231,8 +243,12 @@ export function SourceMatrix({ sources, companies: rawCompanies, acquisition, on
           {onAskScope && <button type="button" className="button primary" onClick={() => onAskScope({ registries: [...new Set(merged.map((pair) => pair.registry))], issuers: [...new Set(merged.map((pair) => pair.issuer))], fiscal_years: [...new Set(merged.map((pair) => pair.year))].sort() })}><MessageSquare size={15} aria-hidden="true" />{merged.length ? t("Ask about {count} selected filings", { count: merged.length.toLocaleString() }) : t("Ask about the whole corpus")}</button>}
           <DevLockedButton reason="corpus">{t("Sync selection")}</DevLockedButton>
         </>
-        : <button type="button" className="button primary" disabled={disabled || downloadDisabled || !valid || !pending.length} onClick={sync}>{t("Sync selection")}</button>}
+        : <>
+          {onCheckNewer && <button type="button" className="button" aria-describedby={checkNewerHelpId} disabled={disabled || downloadDisabled || !valid} onClick={checkNewer}><RefreshCw size={14} aria-hidden="true" />{t("Check for newer filings")}</button>}
+          <button type="button" className="button primary" disabled={disabled || downloadDisabled || !valid || !pending.length} onClick={sync}>{t("Sync selection")}</button>
+        </>}
       </div>
+      {onCheckNewer && !locked && <p className="helper source-check-newer-help" id={checkNewerHelpId}>{t("Check for newer filings asks EDGAR and DART again about every selected company and year, including the ones already downloaded. It records amendments and corrections filed since the last download and downloads only what is missing.")}</p>}
     </section>
     </section>
   </section>;

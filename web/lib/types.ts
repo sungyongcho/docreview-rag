@@ -32,6 +32,13 @@ export type ReviewSessionDraft = Required<Omit<ReviewSessionProfile, "prompt_pol
 };
 
 export type EvidenceHit = components["schemas"]["EvidenceHit"];
+/** One report period whose stored text a later filing keeps out of evidence, and why. */
+export type EvidenceHold = components["schemas"]["EvidenceHold"];
+/** Every recorded filing of one report period, as the administrator weighs them. */
+export type AmendedReportPeriod = components["schemas"]["ReportPeriodView"];
+export type FilingVersion = components["schemas"]["FilingVersionView"];
+export type AmendmentReview = components["schemas"]["AmendmentReviewRequest"];
+export type AmendmentDecision = components["schemas"]["ItemDecision"];
 export type ReviewRun = components["schemas"]["RunResponse"];
 
 export type ReviewEventNode = "waiting" | "gate" | "route" | "retrieve" | "grade" | "check" | "report" | "candidates";
@@ -96,6 +103,8 @@ export interface ChatMessage {
   citations?: number;
   /** Established causes from the server's withholding reason, retained with the message. */
   withholdingCauses?: Extract<NonNullable<Extract<NonNullable<ReviewRun["report"]>, { label: unknown }>["reasons"]>[number], { code: "figures_withheld" }>["causes"];
+  /** Report periods the server kept out of evidence for this request, retained with the message. */
+  evidenceHolds?: EvidenceHold[];
   trace?: string;
   /** Only events observed for this request; user messages have no execution. */
   execution?: ReviewExecution;

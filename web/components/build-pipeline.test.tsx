@@ -241,6 +241,29 @@ it.each([
   expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();
 });
 
+it.each([
+  { schemaStatus: "empty", blocked: true },
+  { schemaStatus: "compatible", blocked: false },
+])("offers the check for newer filings exactly when acquisition can run (schema=$schemaStatus)", ({ schemaStatus, blocked }) => {
+  const onCheckNewer = vi.fn();
+  const pairs = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ registry: "sec" as const, issuer, year })));
+  renderPipeline(liveInput(), { schemaStatus, databaseConnected: true, writable: true, focusStage: "filings", onCheckNewer, sources: pairs.map((pair) => selectionSource(pair.issuer, pair.year)) });
+  const check = screen.getByRole("button", { name: "Check for newer filings" });
+  fireEvent.click(check);
+  if (blocked) {
+    expect(check).toBeDisabled();
+    expect(onCheckNewer).not.toHaveBeenCalled();
+  } else {
+    expect(check).toBeEnabled();
+    expect(onCheckNewer).toHaveBeenCalledExactlyOnceWith(acquisitionDraft(pairs));
+  }
+});
+
+it("never offers the check for newer filings on a read-only server", () => {
+  renderPipeline(liveInput({ live: false, readiness: null, corpus: null, manifests: [], snapshots: 2 }), { onCheckNewer: vi.fn() });
+  expect(screen.queryByRole("button", { name: "Check for newer filings" })).toBeNull();
+});
+
 it("allows file acquisition during corpus drift while keeping indexing blocked", () => {
   const handlers = renderPipeline(liveInput(), { schemaStatus: "drifted", databaseConnected: true, writable: true, focusStage: "filings" });
   const download = screen.getByRole("button", { name: "Sync selection" });

@@ -14,7 +14,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { RetainedPanel } from "@/components/retained-panel";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { PipelineGoldenPicker } from "./golden-preparation";
-import { BuildPipeline, type AcquisitionForm } from "@/components/build-pipeline";
+import { BuildPipeline, type AcquisitionForm, type AcquisitionPair } from "@/components/build-pipeline";
+import { AmendedFilings } from "@/components/amended-filings";
 import { DocumentInventory } from "@/components/document-inventory";
 import { JobCenter, jobCopy } from "@/components/job-center";
 import { useNotifications } from "@/components/notifications";
@@ -296,14 +297,13 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
     }
   }
 
-  /** Queue missing or recoverable sources from the exact draft submitted by the picker. */
-  async function downloadFilings(next: AcquisitionForm = acquisition) {
+  /** Queue one acquisition job per registry and year set, reporting how far a failed submission got. */
+  async function queueAcquisition(pairs: AcquisitionPair[]) {
     if (!live) return;
     setBusy(true);
     let queued = 0;
     try {
-      const missing = selectedSourceState(corpus?.sources ?? [], next).downloadPairs;
-      for (const group of acquisitionBatches(missing)) {
+      for (const group of acquisitionBatches(pairs)) {
         await queueCorpusOperation({ kind: group.registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: group.identifiers, years: group.years });
         queued += 1;
         onRefreshJobs();
@@ -312,6 +312,21 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
     } catch (reason) {
       notify(t("Acquisition stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? notificationErrorMessage(reason) : t("Corpus operation failed.")), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
     } finally { setBusy(false); }
+  }
+
+  /** Queue missing or recoverable sources from the exact draft submitted by the picker. */
+  async function downloadFilings(next: AcquisitionForm = acquisition) {
+    await queueAcquisition(selectedSourceState(corpus?.sources ?? [], next).downloadPairs);
+  }
+
+  /**
+   * Ask the registries again about every selected pair, downloaded or not.
+   *
+   * Acquisition records any amendment or correction filed since the last download and fetches
+   * only what is missing, so repeating it for a downloaded pair is how a later filing is found.
+   */
+  async function checkNewerFilings(next: AcquisitionForm = acquisition) {
+    await queueAcquisition(selectedSourceState(corpus?.sources ?? [], next).pairs);
   }
 
   /** Queue only the reviewed deletion token; the dialog owns inline request feedback. */
@@ -457,6 +472,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
         schemaMessage={runtimeCounts?.schema_message ?? null}
         writable={runtimeCounts?.writable ?? null}
         onDownload={downloadFilings}
+        onCheckNewer={live ? checkNewerFilings : undefined}
         onDeleteSources={deleteSources}
         sourceDeletionDisabled={!canOperateCorpus || busy || activeCorpusJobs.length > 0 || jobsLoading || jobsStale}
         onIngestAll={() => void ingestAllManifests()}
@@ -476,7 +492,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
         onRefresh={() => live ? refresh("manual") : publicCorpus.refresh()}
       /></RetainedPanel>
 
-      <RetainedPanel active={tab === "documents"}><DocumentInventory active={tab === "documents"} refreshRevision={documentRevision} ingestedDocuments={live ? corpus?.documents : undefined} onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
+      <RetainedPanel active={tab === "documents"}>{live && <AmendedFilings live={live} active={tab === "documents"} refreshRevision={documentRevision} />}<DocumentInventory active={tab === "documents"} refreshRevision={documentRevision} ingestedDocuments={live ? corpus?.documents : undefined} onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
 
       <RetainedPanel active={tab === "jobs"}>{(live
         ? <JobCenter

@@ -66,6 +66,7 @@ const ADMIN_INITIAL_READS: Record<string, unknown> = {
   "GET /admin/documents/facets": EMPTY_DOCUMENT_FACETS_FIXTURE,
   "GET /admin/documents": EMPTY_DOCUMENTS,
   "GET /admin/snapshots": [],
+  "GET /admin/amendments": { report_periods: [] },
   "GET /admin/golden/sec-en/revisions": [],
   "GET /admin/golden/sec-ko/revisions": [],
   "GET /admin/golden/dart-en/revisions": [],
@@ -493,6 +494,64 @@ it("queues exactly the selected company years after changing matrix cells", asyn
   const submitted = fetchMock.mock.calls.filter(([url, init]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/corpus/jobs") && init?.method === "POST");
   expect(submitted).toHaveLength(1);
   expect(JSON.parse(String(submitted[0][1]?.body))).toEqual({ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] });
+});
+
+it("asks the registries again about every selected pair, including the ones already downloaded", async () => {
+  const pairs = [...SAMPLE_PAIRS, { registry: "dart" as const, issuer: "005930", year: 2023 }];
+  const sources = pairs.map((pair) => ({ manifest: "manifest.json", ingestion_status: "current" as const, document_id: `${pair.issuer}-FY${pair.year}`, filing_id: `${pair.issuer}-FY${pair.year}`, can_redownload: false, registry: pair.registry, issuer: pair.issuer, name: pair.issuer, fiscal_year: pair.year, ready: true, on_disk: true }));
+  const submitted: Record<string, unknown>[] = [];
+  const onRefreshJobs = vi.fn();
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const route = requestRoute(input, init);
+    if (route === "POST /admin/evaluations/preparation") return jsonResponse(READY_PREPARATION);
+    if (route === "POST /admin/corpus/jobs") { submitted.push(JSON.parse(String(init?.body))); return jsonResponse({ job_id: String(submitted.length), status: "queued" }); }
+    if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, sources, acquisition_draft: { ...SAMPLE_DRAFT, pairs, revision: "all-downloaded-v1" } });
+    return adminRead(input, init);
+  }));
+  render(<NotificationProvider><Harness live ready={false} onRefreshJobs={onRefreshJobs} /></NotificationProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+  await screen.findByText("Selected on disk: 5");
+  expect(screen.getByText("To download: 0")).toBeInTheDocument();
+  // Nothing is missing, so the download action has nothing to do; the check still covers every pair.
+  const check = screen.getByRole("button", { name: "Check for newer filings" });
+  await waitFor(() => expect(check).toBeEnabled());
+  expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+  expect(check).toHaveAccessibleDescription(/asks EDGAR and DART again about every selected company and year, including the ones already downloaded/);
+  fireEvent.click(check);
+  await waitFor(() => expect(submitted).toHaveLength(2));
+  expect(submitted).toEqual([
+    { kind: "acquire_edgar", identifiers: ["AMD", "NVDA"], years: [2023, 2024] },
+    { kind: "acquire_dart", identifiers: ["005930"], years: [2023] },
+  ]);
+  expect(onRefreshJobs).toHaveBeenCalledTimes(2);
+  expect(await screen.findByText("Acquisition jobs queued: 2.")).toBeInTheDocument();
+});
+
+it("shows amended filings in the administrator's Documents tab and never asks for them in public mode", async () => {
+  const period = { registry: "sec", issuer: "AMD", fiscal_year: 2025, report_period: "2025-12-27", hold: "report_missing", versions: [{ filing_id: "0000002488-26-000045", form: "10-K/A", kind: "amendment", filing_date: "2026-04-20", doc_id: null, source_url: null, parse_status: null, items: [], unnumbered_chunks: 0, current: false, review: null }] };
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const route = requestRoute(input, init);
+    if (route === "GET /admin/amendments") return jsonResponse({ report_periods: [period] });
+    if (route === "GET /admin/corpus") return jsonResponse({ ...ACQUISITION_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true } });
+    return adminRead(input, init);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const view = render(<Harness live />);
+  const requested = () => fetchMock.mock.calls.filter(([input, init]) => requestRoute(input, init) === "GET /admin/amendments").length;
+  // The list is read when the Documents tab is opened, not while another tab is shown.
+  expect(requested()).toBe(0);
+  fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+  expect(await screen.findByRole("heading", { name: "Amended filings" })).toBeVisible();
+  expect(await screen.findByText(/Only an amendment is on record for this report period and the report it amends was never collected/)).toBeVisible();
+  expect(requested()).toBe(1);
+  view.unmount();
+
+  // The public reads reject every administrator route, so a request here would fail the teardown.
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => publicRead(input, init)));
+  render(<Harness live={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+  expect(await screen.findByRole("heading", { name: "Document inventory" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "Amended filings" })).toBeNull();
 });
 
 it("keeps source acquisition available during schema drift and exposes terminal recovery", async () => {

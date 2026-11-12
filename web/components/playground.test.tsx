@@ -103,6 +103,51 @@ describe("Playground", () => {
     expect(String(fetchMock.mock.calls[0][0])).not.toContain("/admin/");
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).session_profile.retrieval_preset).toBe("custom");
   });
+
+  it("says which report periods a search held back, next to its results", async () => {
+    stubHttp({ "POST /retrieve": () => jsonResponse({
+      results: [], candidates: [], candidate_token: null, candidate_expires_at: 0, component_rankings: { vector: [], lexical: [] },
+      evidence_holds: [{ registry: "sec", issuer: "AMD", fiscal_year: 2025, reason: "amendment_pending", items: [] }],
+    }) });
+    render(<Playground live={false} profile={DEFAULT_PROFILE} onProfileChange={vi.fn()} onOpenSnapshots={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview retrieval" }));
+
+    const notice = await screen.findByRole("note", { name: "Evidence on hold" });
+    expect(notice).toHaveTextContent("SEC · AMD · FY 2025");
+    expect(notice).toHaveTextContent(/An amendment to this report has not been reviewed yet/);
+    expect(notice).not.toHaveTextContent("amendment_pending");
+  });
+
+  it("shows no hold notice for a search that held nothing back", async () => {
+    stubHttp({ "POST /retrieve": () => jsonResponse({ results: [HIT], candidates: [], candidate_token: null, candidate_expires_at: 0, component_rankings: { vector: [41], lexical: [] }, evidence_holds: [] }) });
+    render(<Playground live={false} profile={DEFAULT_PROFILE} onProfileChange={vi.fn()} onOpenSnapshots={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview retrieval" }));
+
+    expect(await screen.findByText("NVDA FY2024 · Item 7")).toBeInTheDocument();
+    expect(screen.queryByRole("note", { name: "Evidence on hold" })).toBeNull();
+  });
+
+  it("says which report periods a review answer was written without", async () => {
+    stubHttp({ "POST /admin/review/preview": () => jsonResponse({
+      profile: DEFAULT_PROFILE,
+      run: {
+        run_id: "run-2", status: "ok", failure: null,
+        report: {
+          report_kind: "document_review", label: "NOT_IN_DOCS", answer: "NOT_IN_DOCS", citations: [], rationale: "No evidence.",
+          reasons: [{ code: "evidence_held", holds: [{ registry: "sec", issuer: "NVDA", fiscal_year: 2024, reason: "item_withheld", items: ["7", "9A"] }] }],
+        },
+      },
+    }) });
+    render(<Playground live profile={DEFAULT_PROFILE} onProfileChange={vi.fn()} onOpenSnapshots={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview review" }));
+
+    const notice = await screen.findByRole("note", { name: "Evidence on hold" });
+    expect(notice).toHaveTextContent("SEC · NVDA · FY 2024");
+    expect(notice).toHaveTextContent(/withheld Item 7, Item 9A of this report period/);
+  });
 });
 
 

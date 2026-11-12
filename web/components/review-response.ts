@@ -1,3 +1,4 @@
+import { heldEvidence } from "@/lib/evidence-holds";
 import { failureReport } from "@/lib/pipeline";
 import type { ChatMessage, ReviewRun } from "@/lib/types";
 
@@ -13,13 +14,14 @@ const EVIDENCE_LABELS: Record<ReportLabel, NonNullable<ChatMessage["evidenceLabe
 };
 
 /** Decode the current terminal wire report once for both review request paths. */
-export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "text" | "performance" | "evidenceLabel" | "citations" | "trace" | "diagnostics" | "failureFix" | "withholdingCauses"> {
+export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "text" | "performance" | "evidenceLabel" | "citations" | "trace" | "diagnostics" | "failureFix" | "withholdingCauses" | "evidenceHolds"> {
   const report = run.report;
   const failure = run.failure ? failureReport(run.failure) : undefined;
   let text: string;
   let evidenceLabel: ChatMessage["evidenceLabel"];
   let citations: number | undefined;
   let withholdingCauses: ChatMessage["withholdingCauses"];
+  let evidenceHolds: ChatMessage["evidenceHolds"];
   if (report && "label" in report) {
     // A period mismatch answer is the server's statement of which period the cited figures belong to;
     // an UNVERIFIED answer is the server's notice that the figures are withheld, never the model's numbers.
@@ -27,6 +29,8 @@ export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "
     evidenceLabel = EVIDENCE_LABELS[report.label];
     citations = report.citations.length;
     withholdingCauses = report.reasons.find(reason => reason.code === "figures_withheld")?.causes;
+    // The run answered without this evidence, so absence may mean a hold, not silence in the filings.
+    evidenceHolds = heldEvidence(report.reasons);
   } else if (report?.report_kind === "conversation") {
     text = report.answer;
   } else if (failure) {
@@ -37,7 +41,7 @@ export function terminalMessage(run: ReviewRun): Pick<ChatMessage, "pending" | "
   }
   const traceFields = ["status", "total_requests", "total_input_tokens", "total_output_tokens", "total_time_seconds"] as const;
   return {
-    pending: false, text, performance: run.execution ?? undefined, evidenceLabel, citations, withholdingCauses,
+    pending: false, text, performance: run.execution ?? undefined, evidenceLabel, citations, withholdingCauses, evidenceHolds,
     trace: traceFields.filter(key => run[key] !== undefined).map(key => `${key}=${String(run[key])}`).join(" · "),
     diagnostics: runDiagnostics(run), failureFix: failure?.fix,
   };

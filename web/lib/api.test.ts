@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, cancelOperatorJob, getCorpusSnapshot, getOperatorJobs, getReadiness, REQUEST_TIMEOUT_MS, streamReview } from "./api";
+import { ApiError, cancelOperatorJob, getAmendedPeriods, getCorpusSnapshot, getOperatorJobs, getReadiness, REQUEST_TIMEOUT_MS, reviewAmendment, streamReview, withdrawAmendmentReview } from "./api";
 import { DEFAULT_SESSION_PROFILE } from "./types";
 
 function streamResponse(parts: string[]) {
@@ -238,4 +238,55 @@ it("preserves structured API failure details for notification entries", async ()
   const error=await getCorpusSnapshot().catch(error=>error);
   expect(error.failure).toEqual(failure);
   vi.unstubAllGlobals();
+});
+
+describe("amendment review calls", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  const PERIOD = { registry: "sec", issuer: "AMD", fiscal_year: 2025, report_period: "2025-12-27", hold: null, filings: [] };
+  const REVIEW = { reviewer: "Operator", rationale: "Part III only.", decisions: [{ item: "10", action: "replace" as const }] };
+  const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
+
+  it("reads the report periods that have more than one filing", async () => {
+    const fetch = vi.fn().mockResolvedValue(json({ report_periods: [PERIOD] }));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(getAmendedPeriods()).resolves.toEqual([PERIOD]);
+    expect(new URL(String(fetch.mock.calls[0][0]), "http://localhost").pathname).toMatch(/\/admin\/amendments\/?$/);
+    expect(fetch.mock.calls[0][1]?.method ?? "GET").toBe("GET");
+  });
+
+  it("rejects a list response without report periods as invalid_response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ periods: [] })));
+    await expect(getAmendedPeriods()).rejects.toMatchObject({ status: 502, code: "invalid_response" });
+  });
+
+  it("saves a review with PUT against the escaped filing and returns its report period", async () => {
+    const fetch = vi.fn().mockResolvedValue(json(PERIOD));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(reviewAmendment("AMD/FY2025 A", REVIEW)).resolves.toEqual(PERIOD);
+    const [url, init] = fetch.mock.calls[0];
+    expect(new URL(String(url), "http://localhost").pathname).toMatch(/\/admin\/amendments\/AMD%2FFY2025%20A\/review\/?$/);
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(String(init.body))).toEqual(REVIEW);
+  });
+
+  it("keeps the server's refusal message for a review it does not accept", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ error: { code: "invalid_review", message: "the review leaves Items undecided: 15" } }, 400)));
+
+    const error = await reviewAmendment("AMD-FY2025-A", REVIEW).catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ status: 400, code: "invalid_review", message: "the review leaves Items undecided: 15" });
+  });
+
+  it("withdraws a review with DELETE and returns its report period", async () => {
+    const fetch = vi.fn().mockResolvedValue(json(PERIOD));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(withdrawAmendmentReview("AMD-FY2025-A")).resolves.toEqual(PERIOD);
+    const [url, init] = fetch.mock.calls[0];
+    expect(new URL(String(url), "http://localhost").pathname).toMatch(/\/admin\/amendments\/AMD-FY2025-A\/review\/?$/);
+    expect(init.method).toBe("DELETE");
+  });
 });

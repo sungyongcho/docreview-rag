@@ -14,6 +14,7 @@ import styles from "./master-detail.module.css";
 
 import { getAdminDocuments, getDocumentDetail, getDocumentFacets, getPublishedDocuments, getPublishedDocumentDetail, getPublishedDocumentFacets } from "@/lib/api";
 import { companyDisplayName, companyLabel } from "@/lib/company-labels";
+import { documentFormLabel, formatFilingDate } from "@/lib/filing-labels";
 import type { AdminDocument, CorpusDocument, DocumentDetail, DocumentEmbeddingStatus, DocumentFacets } from "@/lib/types";
 import { useNotifications } from "@/components/notifications";
 import { IngestionStatusBadge, INGESTION_STATUS_DESCRIPTIONS, type IngestionStatus } from "./ingestion-status";
@@ -192,6 +193,8 @@ export function DocumentInventory({ live, onOpenPipeline, onOpenJobs, onInspectP
   const visibleDocuments = loading && loadedRequestKey !== `${live}:${queryKey}` ? [] : documents;
   const documentGroups = groupDocuments(visibleDocuments, documentGroup, t, locale);
   const companyFacets = documentFacets.issuers.map(facet => ({ ...facet, label: companyDisplayName(facet.label ?? facet.value, locale) }));
+  // The Form filter and its chip name a form the way the rows do; the value stays the raw form.
+  const formFacets = documentFacets.forms.map(facet => ({ ...facet, label: documentFormLabel(facet.label ?? facet.value, t) }));
   const selectedExcluded = selectedId !== null && !loading && !listError && !documents.some((document) => document.doc_id === selectedId);
   const showDetail = selectedId !== null && layout.detailOpen;
   const compact = showDetail && !layout.narrow;
@@ -201,7 +204,7 @@ export function DocumentInventory({ live, onOpenPipeline, onOpenJobs, onInspectP
     { label: t("Fiscal year"), value: documentYear, remove: () => setDocumentYear("all") },
     { label: t("Registry"), value: documentRegistry, remove: () => setDocumentRegistry("all") },
     { label: t("Language"), value: documentLanguage, remove: () => setDocumentLanguage("all") },
-    { label: t("Form"), value: documentForm, remove: () => setDocumentForm("all") },
+    { label: t("Form"), value: documentForm, displayValue: documentFormLabel(documentForm, t), remove: () => setDocumentForm("all") },
     { label: t("Parse status"), value: documentParseStatus, remove: () => setDocumentParseStatus("all") },
     { label: t("Embedding"), value: documentEmbeddingStatus, remove: () => setDocumentEmbeddingStatus("all") },
     { label: t("Snapshot membership"), value: documentSnapshot, remove: () => setDocumentSnapshot("all") },
@@ -224,7 +227,7 @@ export function DocumentInventory({ live, onOpenPipeline, onOpenJobs, onInspectP
       {filtersOpen && <div id="document-advanced-filters" className={styles.advanced}>
         <FacetSelect label={t("Registry")} value={documentRegistry} allLabel="All registries" facets={documentFacets.registries} onChange={setDocumentRegistry} />
         <FacetSelect label={t("Language")} value={documentLanguage} allLabel="All languages" facets={documentFacets.languages} onChange={setDocumentLanguage} />
-        <FacetSelect label={t("Form")} value={documentForm} allLabel="All forms" facets={documentFacets.forms} onChange={setDocumentForm} />
+        <FacetSelect label={t("Form")} value={documentForm} allLabel="All forms" facets={formFacets} onChange={setDocumentForm} />
         <FacetSelect label={t("Parse status")} value={documentParseStatus} translateValues allLabel="All parse states" facets={documentFacets.parse_statuses} onChange={setDocumentParseStatus} />
         <FacetSelect label={t("Embedding")} value={documentEmbeddingStatus} translateValues allLabel="All embedding states" facets={documentFacets.embedding_statuses} onChange={(value) => setDocumentEmbeddingStatus(value as "all" | DocumentEmbeddingStatus)} />
         <FacetSelect label={t("Snapshot membership")} value={documentSnapshot} allLabel="All snapshots" facets={documentFacets.snapshots} onChange={setDocumentSnapshot} />
@@ -294,23 +297,6 @@ function groupDocuments(documents: AdminDocument[], group: DocumentGroup, labelF
       : `${labelFor("Fiscal year")} · ${value}`;
     return [label, rows];
   }).toSorted(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
-}
-
-// Registries store the report type in their own language. Only the displayed label is localized; the
-// raw value stays the filter identity and is never rewritten.
-const FORM_LABEL_SOURCES: Readonly<Record<string, string>> = { "사업보고서": "Annual report" };
-
-/** Show a registry's report type in the reading language without changing the stored form value. */
-function documentFormLabel(form: string, t: (source: string) => string): string {
-  const source = FORM_LABEL_SOURCES[form];
-  return source ? t(source) : form;
-}
-
-/** Format calendar dates in UTC so the filing day stays unchanged across time zones. */
-function formatFilingDate(value: string | null | undefined, locale: string): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, { timeZone: "UTC" }).format(date);
 }
 
 function formatBytes(value: number, locale: string): string {

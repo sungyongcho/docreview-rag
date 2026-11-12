@@ -1,0 +1,7 @@
+.evidence-hold-notice { display: grid; gap: 6px; margin: 12px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-inline-start: 3px solid var(--warn); border-radius: 8px; background: color-mix(in srgb, var(--warn) 7%, var(--surface)); color: var(--text); font-size: 12px; line-height: 1.6; }
+.evidence-hold-title { display: flex; align-items: center; gap: 6px; color: light-dark(#96520e, #e9b976); font-weight: 600; }
+.evidence-hold-notice p { margin: 0; color: var(--muted); }
+.evidence-hold-notice ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.evidence-hold-notice li { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr); gap: 4px 12px; }
+.evidence-hold-period { font-weight: 600; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .evidence-hold-notice li { grid-template-columns: minmax(0, 1fr); } }

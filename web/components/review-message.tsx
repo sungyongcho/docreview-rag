@@ -3,6 +3,7 @@ import { ArrowUpRight } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { EvidenceCandidates } from "@/components/evidence-candidates";
+import { EvidenceHoldNotice } from "@/components/evidence-hold-notice";
 import { INTERRUPTION_NOTICE, isInterruptionNotice } from "@/components/interrupted-reviews";
 import { MarkdownMessage } from "@/components/markdown-message";
 import { PathDecisionBadge, ReviewProgressSteps } from "@/components/review-progress";
@@ -76,6 +77,7 @@ export function ReviewMessage({ message, catalogMode, latestEvidence, busy, onSt
         {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
         {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} catalogMode={catalogMode} />}
         {message.role === "assistant" ? (message.text ? <MarkdownMessage>{isReviewLimitation(message.execution?.pathDecision) ? reviewLimitationMessage(message.execution!.pathDecision!, t) : message.scopeFailure ? t("Query scope metadata is unavailable.") : isInterruptionNotice(message) ? t(INTERRUPTION_NOTICE) : message.evidenceLabel === "Retrieved candidates — answer not generated" ? t(message.text) : message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
+        {message.role === "assistant" && <EvidenceHoldNotice holds={message.evidenceHolds} />}
         {message.scopeFailure && <ScopeFailureSummary message={message} developer={catalogMode === "live"} onOpenFix={onOpenFix} />}
         {message.execution && <div className="review-execution-wrap"><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps showDetailsAction={false} catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Cited evidence — different period" ? "Different period" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{onOpenDetails && <div className="review-stage-actions"><button className="button review-summary-action" type="button" data-run-details-open onClick={() => onOpenDetails()}>{t("Open run details")}<ArrowUpRight size={14} aria-hidden="true" /></button></div>}</div>}
         {message.evidence?.length ? (

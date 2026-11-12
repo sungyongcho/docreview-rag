@@ -77,6 +77,8 @@ export interface BuildPipelineProps {
   onRunOperation?: (commandId: string) => void;
   onCancelJob: (jobId: string) => void;
   onDownload: (next?: AcquisitionForm) => void;
+  /** Ask the registries again about every selected pair; absent where acquisition cannot run. */
+  onCheckNewer?: (next?: AcquisitionForm) => void;
   onIngestAll: () => void;
   onBackfill: () => void;
   onRebuildBm25: () => void;
@@ -270,6 +272,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
             busy={props.busy}
             handler={handler}
             onDownload={props.onDownload}
+            onCheckNewer={pipeline.readOnly ? undefined : props.onCheckNewer}
             onDeleteSources={pipeline.readOnly ? undefined : props.onDeleteSources}
             sourceDeletionDisabled={props.sourceDeletionDisabled || !props.canOperateCorpus || pipeline.stages.some((item) => item.job?.domain === "corpus" && ["queued", "running"].includes(item.job.status))}
             disabled={disabled}
@@ -404,6 +407,7 @@ interface StageCardProps {
   readOnly: boolean;
   handler: (kind: StageActionKind) => () => void;
   onDownload: (next?: AcquisitionForm) => void;
+  onCheckNewer?: (next?: AcquisitionForm) => void;
   disabled: (kind: StageActionKind) => boolean;
   acquisition: AcquisitionForm;
   documents: CorpusDocument[];
@@ -424,7 +428,7 @@ interface StageCardProps {
   onCancelJob: (jobId: string) => void;
 }
 
-function StageCard({ candidates, answerEngines, onOpenLocalSettings, onLocalPrepared, onDownload, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, evaluationSetup, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAskScope, corpusScope, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ candidates, answerEngines, onOpenLocalSettings, onLocalPrepared, onDownload, onCheckNewer, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, evaluationSetup, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAskScope, corpusScope, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t } = useI18n();
   const job = stage.job;
   const repeatsJobMessage = job && (stage.hint === job.message || stage.hint === `Last run ${job.status}: ${job.message}`);
@@ -461,7 +465,7 @@ function StageCard({ candidates, answerEngines, onOpenLocalSettings, onLocalPrep
           )}
           {readOnly && stage.id === "embeddings" && <p className="helper">{t("DocReview generated its document embeddings with OpenAI’s text-embedding-3-large model.")}</p>}
           {stage.id === "evaluate" && (evaluationSetup ? evaluationSetup(stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null) : stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null)}
-          {stage.id === "filings" && <SourceMatrix locked={readOnly} corpusScope={corpusScope} onAskScope={onAskScope} sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
+          {stage.id === "filings" && <SourceMatrix locked={readOnly} corpusScope={corpusScope} onAskScope={onAskScope} sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} onCheckNewer={onCheckNewer} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
           {job && !(stage.id === "index" && activeJob) && (
             <div className="stage-job">
               <JobProgress job={job} />

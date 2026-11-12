@@ -373,3 +373,73 @@ it("shows the four default companies without unselected legacy catalog companies
   fireEvent.click(sync);
   expect(download).toHaveBeenCalledWith(acquisitionDraft(pairs));
 });
+
+describe("check for newer filings", () => {
+  /** Keep the matrix controlled while exposing both acquisition handlers. */
+  function CheckHarness({ initialPairs, check, download = vi.fn(), changed = vi.fn(), disabled = false, downloadDisabled = false }: { initialPairs: AcquisitionPair[]; check?: (next: AcquisitionForm) => void; download?: (next: AcquisitionForm) => void; changed?: (next: AcquisitionForm) => void; disabled?: boolean; downloadDisabled?: boolean }) {
+    const [draft, setDraft] = useState<AcquisitionForm>(acquisitionDraft(initialPairs));
+    return <I18nProvider><SourceMatrix sources={inventory} companies={[{ registry: "sec", issuer: "NVDA", name: "NVDA" }, { registry: "sec", issuer: "AMD", name: "AMD" }]} acquisition={draft} onChange={(next) => { changed(next); setDraft(next); }} disabled={disabled} onDownload={download} onCheckNewer={check} downloadDisabled={downloadDisabled} /></I18nProvider>;
+  }
+  const downloaded: AcquisitionPair[] = [{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "sec", issuer: "AMD", year: 2023 }];
+
+  it("submits every selected pair although all of them are already downloaded", () => {
+    localStorage.setItem("docreview.locale", "en");
+    const check = vi.fn(); const download = vi.fn();
+    render(<CheckHarness initialPairs={downloaded} check={check} download={download} />);
+    expect(screen.getByText("To download: 0")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+    const button = screen.getByRole("button", { name: "Check for newer filings" });
+    expect(button).toBeEnabled();
+    expect(button).toHaveAccessibleDescription("Check for newer filings asks EDGAR and DART again about every selected company and year, including the ones already downloaded. It records amendments and corrections filed since the last download and downloads only what is missing.");
+    fireEvent.click(button);
+    expect(check).toHaveBeenCalledExactlyOnceWith(acquisitionDraft(downloaded));
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("includes a staged missing year together with the downloaded ones", () => {
+    const check = vi.fn(); const changed = vi.fn();
+    render(<CheckHarness initialPairs={downloaded} check={check} changed={changed} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Add years for NVDA/ }));
+    selectYears(2025);
+    fireEvent.click(screen.getByRole("button", { name: "Check for newer filings" }));
+    const expected = acquisitionDraft([...downloaded, { registry: "sec", issuer: "NVDA", year: 2025 }]);
+    expect(check).toHaveBeenCalledExactlyOnceWith(expected);
+    expect(changed.mock.calls.at(-1)![0]).toEqual(expected);
+  });
+
+  it.each([
+    ["a request is in flight", { disabled: true }],
+    ["acquisition is blocked", { downloadDisabled: true }],
+  ])("is unavailable while %s, like the download action", (_case, state) => {
+    const check = vi.fn();
+    render(<CheckHarness initialPairs={downloaded} check={check} {...state} />);
+    const button = screen.getByRole("button", { name: "Check for newer filings" });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  it("is unavailable without a selection", () => {
+    const check = vi.fn();
+    render(<CheckHarness initialPairs={[]} check={check} />);
+    expect(screen.getByRole("button", { name: "Check for newer filings" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+  });
+
+  it("is absent where no handler is supplied and on a read-only server", () => {
+    const view = render(<CheckHarness initialPairs={downloaded} />);
+    expect(screen.queryByRole("button", { name: "Check for newer filings" })).toBeNull();
+    expect(screen.queryByText(/asks EDGAR and DART again/)).toBeNull();
+    view.unmount();
+    render(<I18nProvider><SourceMatrix locked sources={inventory} companies={[]} acquisition={acquisitionDraft(downloaded)} onChange={vi.fn()} onDownload={vi.fn()} onCheckNewer={vi.fn()} downloadDisabled onAskScope={vi.fn()} /></I18nProvider>);
+    expect(screen.queryByRole("button", { name: "Check for newer filings" })).toBeNull();
+    expect(screen.queryByText(/asks EDGAR and DART again/)).toBeNull();
+  });
+
+  it("reads in Korean when that is the interface language", () => {
+    localStorage.setItem("docreview.locale", "ko");
+    render(<CheckHarness initialPairs={downloaded} check={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "새 공시 확인" })).toHaveAccessibleDescription(/EDGAR와 DART에 다시 조회합니다/);
+    localStorage.clear();
+  });
+});

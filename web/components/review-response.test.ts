@@ -87,4 +87,14 @@ describe("terminal review message", () => {
     expect(absent.text).toBe("No evidence.");
     expect(absent.evidenceLabel).toBe("Related evidence — not direct support");
   });
+
+  it("carries the report periods a report says were held, and none when it says nothing", () => {
+    const holds = [{ registry: "sec", issuer: "AMD", fiscal_year: 2025, reason: "amendment_pending", items: [] }];
+    const held = terminalMessage(run({
+      label: "NOT_IN_DOCS", answer: "NOT_IN_DOCS", citations: [], rationale: "No evidence.",
+      reasons: [{ code: "evidence_held", holds }],
+    }));
+    expect(held.evidenceHolds).toEqual(holds);
+    expect(terminalMessage(run({ label: "SUPPORTED", answer: "Revenue grew.", citations: [citation], rationale: "Stated." })).evidenceHolds).toBeUndefined();
+  });
 });

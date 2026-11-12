@@ -117,3 +117,4 @@
 .source-sync-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; flex-wrap: wrap; }
 .source-sync-actions > p { margin: 0; color: var(--muted); font-size: 11px; }
 .source-sync-actions > .button { min-height: 32px; padding: 6px 12px; font-size: 12px; }
+.source-check-newer-help { margin: 6px 0 0; text-align: end; }

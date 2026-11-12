@@ -108,6 +108,7 @@ function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness
     else if (url === "GET /admin/corpus") payload = { status: { ...corpus, provider: "deterministic" }, manifests: [], documents: [] };
     else if (url === "GET /admin/documents/facets") payload = EMPTY_DOCUMENT_FACETS;
     else if (url === "GET /admin/documents") payload = { documents: [], total: 0, next_cursor: null };
+    else if (url === "GET /admin/amendments") payload = { report_periods: [] };
     if (payload === undefined) return unexpectedRequest(input, init);
     return jsonResponse(payload);
   });

@@ -149,6 +149,29 @@ describe("DocumentInventory", () => {
     expect(screen.getByRole("button", { name: "Remove filter: Company" })).toHaveTextContent("Company: ZZZZ");
   });
 
+  it("presents a 10-K/A as an amendment of a 10-K in the list, detail and Form filter while the stored form stays the filter value", async () => {
+    const amendment = { ...filing("amd-2025-a"), form: "10-K/A" };
+    api.getAdminDocuments.mockResolvedValue({ documents: [amendment, filing("doc-b")], total: 2, next_cursor: null });
+    api.getDocumentFacets.mockResolvedValue({ ...facets, forms: [{ value: "10-K", label: null, count: 1 }, { value: "10-K/A", label: null, count: 1 }] });
+    api.getDocumentDetail.mockResolvedValue({ ...detail("amd-2025-a"), document: amendment });
+    render(<DocumentInventory live />);
+
+    const label = "10-K/A (amendment to a 10-K)";
+    expect(within(await screen.findByRole("row", { name: /amd-2025-a/ })).getByText(new RegExp(`· ${label.replace(/[()/]/g, "\\$&")}`))).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /doc-b/ })).queryByText(/amendment to a 10-K/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    expect(await screen.findByRole("option", { name: `${label} (1)` })).toHaveValue("10-K/A");
+    expect(screen.getByRole("option", { name: "10-K (1)" })).toHaveValue("10-K");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter form" }), { target: { value: "10-K/A" } });
+    expect(screen.getByRole("button", { name: "Remove filter: Form" })).toHaveTextContent(`Form: ${label}`);
+    await waitFor(() => expect(api.getAdminDocuments.mock.calls.at(-1)?.[0].get("form")).toBe("10-K/A"));
+
+    fireEvent.click(screen.getByRole("button", { name: "amd-2025-a" }));
+    await screen.findByRole("heading", { name: "Issuer amd-2025-a" });
+    expect(screen.getByText(`NVDA · ${label}`)).toBeInTheDocument();
+  });
+
   it("starts with a full-width inventory, opens the title and row, and exposes removable filters", async () => {
     render(<DocumentInventory live />);
     expect(document.querySelector(".document-detail")).toBeNull();

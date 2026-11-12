@@ -14,7 +14,9 @@ import { ApiError, previewRetrieval, previewReview, retrieveEvidence } from "@/l
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { DevLockedButton } from "@/components/dev-locked-button";
 import { failureMessage } from "@/lib/pipeline";
-import type { EvidenceHit, RetrievalProfile, ReviewRun } from "@/lib/types";
+import type { EvidenceHit, EvidenceHold, RetrievalProfile, ReviewRun } from "@/lib/types";
+import { heldEvidence } from "@/lib/evidence-holds";
+import { EvidenceHoldNotice } from "@/components/evidence-hold-notice";
 import { ProfileFields } from "@/components/profile-fields";
 import { useNotifications } from "@/components/notifications";
 
@@ -33,6 +35,8 @@ interface RetrievalPreview {
   score_stage: string;
   component_rankings: Record<string, number[]>;
   results: EvidenceHit[];
+  /** Report periods the search could not use; only `/retrieve` reports them. */
+  holds: EvidenceHold[];
 }
 
 interface ReviewSummary {
@@ -40,6 +44,8 @@ interface ReviewSummary {
   answer: string | null;
   citations: Array<Record<string, unknown>>;
   failure: string | null;
+  /** Report periods the run answered without. */
+  holds: EvidenceHold[];
 }
 
 const DEFAULT_QUESTION = "What drove NVIDIA data center revenue growth?";
@@ -80,6 +86,7 @@ function toRetrievalPreview(value: Record<string, unknown>): RetrievalPreview {
     score_stage: String(value.score_stage ?? "rrf"),
     component_rankings: flattenRankings(rankings),
     results: Array.isArray(value.results) ? value.results as EvidenceHit[] : [],
+    holds: Array.isArray(value.evidence_holds) ? value.evidence_holds as EvidenceHold[] : [],
   };
 }
 
@@ -92,6 +99,7 @@ function toReviewSummary(run: ReviewRun): ReviewSummary {
       answer: report.answer,
       citations: "citations" in report ? report.citations : [],
       failure: null,
+      holds: ("reasons" in report ? heldEvidence(report.reasons) : undefined) ?? [],
     };
   }
   return {
@@ -100,6 +108,7 @@ function toReviewSummary(run: ReviewRun): ReviewSummary {
     citations: [],
     // The same sentence the review workspace shows, so one failure does not read two ways.
     failure: failure ? failureMessage(failure) : "Review completed without a report.",
+    holds: [],
   };
 }
 
@@ -184,6 +193,7 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
           {rankingKeys.length ? <div className="table-wrap playground-rankings" data-help="measure.playground.rankings"><table><thead><tr><th>{t("Rank")}</th>{rankingKeys.map((key) => <th key={key}>{key.split(" · ").map((part, index) => index === 0 ? t(part) : part).join(" · ")}</th>)}</tr></thead><tbody>
             {Array.from({ length: rankingDepth }, (_item, index) => <tr key={index}><td>{index + 1}</td>{rankingKeys.map((key) => <td key={key}>{retrieval.component_rankings[key][index] ?? "—"}</td>)}</tr>)}
           </tbody></table></div> : <p className="helper">{t("No component rankings were returned.")}</p>}
+          <EvidenceHoldNotice holds={retrieval.holds} />
           <h3>{t("Fused results ·")}{" "}{retrieval.results.length.toLocaleString(locale)}</h3>
           <div className="playground-evidence" data-help="measure.playground.results">
             {retrieval.results.map((hit) => <article className="evidence-hit" key={hit.chunk_id}><strong>{hit.citation}</strong><span>{t("chunk")}{" "}{hit.chunk_id} · {hit.doc_id}{" "}{t("· chars")}{" "}{hit.start_char}–{hit.end_char}</span><p>{hit.body}</p></article>)}
@@ -192,6 +202,7 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
         </>}
         {shown === "review" && review && <div className="playground-report" data-help="measure.playground.review">
           <div className="surface-heading"><div><h2>{t("Review preview")}</h2><p className="helper">{t("Report label")}</p></div><span className={`mode-badge ${review.label === "SUPPORTED" ? "live" : ""}`}>{t(review.label)}</span></div>
+          <EvidenceHoldNotice holds={review.holds} />
           {review.failure ? <p className="notice error">{t(review.failure)}</p> : <>
             {review.answer && <p>{review.answer}</p>}
             {review.citations.length > 0 && <>
