@@ -220,12 +220,17 @@ def test_select_annual_report_refuses_zero_matches():
         select_annual_report([QUARTERLY], corp_code="00126380", fiscal_year=2024)
 
 
-def test_select_annual_report_refuses_two_matches():
-    """An amended filing produces a second row; picking one silently would move the corpus."""
-    amended = dict(ANNUAL, rcept_no="20250401000001", report_nm="[기재정정]사업보고서 (2024.12)")
+CORRECTION_NO = "20250401000001"
+CORRECTION = dict(
+    ANNUAL, rcept_no=CORRECTION_NO, report_nm="[기재정정]사업보고서 (2024.12)", rcept_dt="20250401"
+)
 
-    with pytest.raises(DartApiError, match="2 candidate"):
-        select_annual_report([ANNUAL, amended], corp_code="00126380", fiscal_year=2024)
+
+def test_select_annual_report_takes_the_latest_receipt_of_several_matches():
+    """A correction is the report filed again, so the highest receipt number is current."""
+    for rows in ([ANNUAL, CORRECTION], [CORRECTION, ANNUAL]):
+        report = select_annual_report(rows, corp_code="00126380", fiscal_year=2024)
+        assert (report.rcept_no, report.report_nm) == (CORRECTION_NO, CORRECTION["report_nm"])
 
 
 def test_select_annual_report_refuses_a_malformed_receipt_number():
@@ -464,16 +469,37 @@ def test_manifest_round_trips_with_korean_names_intact(tmp_path):
     assert read_catalog(tmp_path / "manifest.json") == catalog
 
 
-def test_dart_acquisition_skips_a_manifest_entry_whose_source_is_valid(tmp_path, monkeypatch):
-    """A matching file and digest avoid even the corp-code request."""
+def serve_registry(monkeypatch, *, current=None, archives=None):
+    """Serve ``list.json`` with one current report and ``document.xml`` from given archives.
+
+    Returns the list of requested endpoint paths. A receipt with no archive answers
+    with a server error, which is how a failed download is exercised.
+    """
+    paths = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Answer the two endpoints an acquisition of a known issuer may call."""
+        paths.append(request.url.path)
+        if request.url.path.endswith("list.json"):
+            return httpx.Response(200, json={"status": "000", "list": [current or ANNUAL]})
+        assert request.url.path.endswith("document.xml"), request.url.path
+        payload = (archives or {}).get(request.url.params["rcept_no"])
+        return httpx.Response(500) if payload is None else httpx.Response(200, content=payload)
+
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        dart_api.httpx,
+        "AsyncClient",
+        lambda **_kwargs: client_class(transport=httpx.MockTransport(handler)),
+    )
+    return paths
+
+
+def test_a_valid_source_is_kept_while_the_registry_still_names_it(tmp_path, monkeypatch):
+    """The registry is asked for its current report, and an unchanged one is not downloaded."""
     acquired = dart_acquired(tmp_path)
     catalog_with(tmp_path, [acquired])
-
-    def unexpected_client(**_kwargs):
-        """Fail if a no-op acquisition attempts to construct a network client."""
-        raise AssertionError("DART network client must not be constructed")
-
-    monkeypatch.setattr(dart_api.httpx, "AsyncClient", unexpected_client)
+    paths = serve_registry(monkeypatch)
     updates = []
 
     result = asyncio.run(
@@ -481,14 +507,70 @@ def test_dart_acquisition_skips_a_manifest_entry_whose_source_is_valid(tmp_path,
             stock_codes=("005930",),
             fiscal_years=(2024,),
             corpus_dir=tmp_path,
-            api_key="",
+            api_key=API_KEY,
             on_progress=updates.append,
         )
     )
 
+    assert paths == ["/api/list.json"]
     assert result.archived == result.added == ()
     assert result.manifest_entries == 1
     assert updates[-1].current == updates[-1].total == 0
+
+
+def test_a_valid_source_still_needs_the_key_that_asks_the_registry(tmp_path):
+    """Without a key nobody can tell whether a stored report was corrected since."""
+    catalog_with(tmp_path, [dart_acquired(tmp_path)])
+
+    with pytest.raises(ValueError, match="DART_API_KEY"):
+        asyncio.run(
+            acquire_dart(
+                stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=""
+            )
+        )
+
+
+def test_a_correction_filed_later_is_kept_beside_the_report_it_replaces(tmp_path, monkeypatch):
+    """The corrected report becomes a second document; the first keeps its files."""
+    original = dart_acquired(tmp_path)
+    catalog_with(tmp_path, [original])
+    corrected = zip_bytes({f"{CORRECTION_NO}.xml": "<DOCUMENT>정정 후</DOCUMENT>".encode()})
+    paths = serve_registry(monkeypatch, current=CORRECTION, archives={CORRECTION_NO: corrected})
+
+    result = asyncio.run(
+        acquire_dart(
+            stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
+        )
+    )
+
+    assert paths == ["/api/list.json", "/api/document.xml"]
+    assert [document.filing_id for document in result.added] == [CORRECTION_NO]
+    assert result.added[0].dart is not None
+    assert result.added[0].dart.report_name == CORRECTION["report_nm"]
+    assert result.added[0].filing_date.isoformat() == "2025-04-01"
+    catalog = read_catalog(tmp_path / "manifest.json")
+    assert {document.filing_id for document in catalog.documents} == {RCEPT_NO, CORRECTION_NO}
+    assert original.primary.read_bytes(tmp_path) == original.payloads[-1]
+    selected = catalog.selected_sources(result.selection_id, tmp_path)
+    assert {source.document.filing_id for source in selected} == {RCEPT_NO, CORRECTION_NO}
+
+
+def test_a_correction_is_on_record_even_when_its_download_fails(tmp_path, monkeypatch):
+    """Knowing of the correction must survive the failure, so the original can be retired."""
+    monkeypatch.setattr(dart_api, "RETRY_BACKOFF_SECONDS", 0.0)
+    catalog_with(tmp_path, [dart_acquired(tmp_path)])
+    serve_registry(monkeypatch, current=CORRECTION)
+
+    with pytest.raises(DartApiError):
+        asyncio.run(
+            acquire_dart(
+                stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
+            )
+        )
+
+    catalog = read_catalog(tmp_path / "manifest.json")
+    assert {document.filing_id for document in catalog.documents} == {RCEPT_NO, CORRECTION_NO}
+    assert all(artifact.document_id == f"dart-{RCEPT_NO}" for artifact in catalog.artifacts)
 
 
 def test_dart_acquisition_refetches_a_source_with_a_stale_digest(tmp_path, monkeypatch):
@@ -535,7 +617,7 @@ def test_dart_acquisition_refetches_a_source_with_a_stale_digest(tmp_path, monke
 
     assert len(result.archived) == 1
     assert result.added == ()
-    assert requested_paths == ["/api/document.xml"]
+    assert requested_paths == ["/api/list.json", "/api/document.xml"]
     stored = read_catalog(tmp_path / "manifest.json")
     selected = stored.selected_sources(result.selection_id, tmp_path)
     assert selected[0].document.filing_id == RCEPT_NO
@@ -707,7 +789,9 @@ def test_same_year_missing_receipt_is_reacquired_without_replacing_ready_filing(
     payload = zip_bytes({f"{RCEPT_NO}.xml": b"<DOCUMENT>Recovered exact receipt</DOCUMENT>"})
 
     def handler(request):
-        """Serve only the already identified missing receipt, without issuer/year rediscovery."""
+        """Serve the registry's current report and only the missing receipt's archive."""
+        if request.url.path.endswith("list.json"):
+            return httpx.Response(200, json={"status": "000", "list": [ANNUAL]})
         requests.append(str(request.url))
         assert request.url.path.endswith("document.xml")
         assert request.url.params["rcept_no"] == RCEPT_NO
@@ -775,7 +859,9 @@ def test_registered_archive_recovers_exact_receipt_and_preserves_other_inputs(
     requested = []
 
     def handler(request):
-        """Serve only the exact damaged receipt without discovering another filing."""
+        """Serve the registry's current report and only the exact damaged receipt."""
+        if request.url.path == "/api/list.json":
+            return httpx.Response(200, json={"status": "000", "list": [ANNUAL]})
         requested.append(request.url.params["rcept_no"])
         assert request.url.path == "/api/document.xml"
         assert requested[-1] == RCEPT_NO
@@ -877,7 +963,7 @@ def test_dart_identity_conflicts_block_before_download_or_publication(
 
 
 def test_unrelated_archive_lineage_does_not_block_selected_filing(tmp_path, monkeypatch):
-    """A conflict outside the requested year cannot prevent a valid no-op acquisition."""
+    """A conflict outside the requested year cannot prevent a valid acquisition with no download."""
     selected = registered_dart_filing(tmp_path)
     unrelated = dart_acquired(tmp_path, year=2023, receipt="20240311001085")
     publish_acquired(
@@ -902,14 +988,13 @@ def test_unrelated_archive_lineage_does_not_block_selected_filing(tmp_path, monk
     ).write(tmp_path / "manifest.json")
     original = (tmp_path / unrelated.primary.path).read_bytes()
 
-    def unexpected_client(**kwargs):
-        """The requested filing is complete and needs no provider call."""
-        raise AssertionError("Network must not be reached")
-
-    monkeypatch.setattr(dart_api.httpx, "AsyncClient", unexpected_client)
+    paths = serve_registry(monkeypatch)
     result = asyncio.run(
-        acquire_dart(stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key="")
+        acquire_dart(
+            stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
+        )
     )
+    assert paths == ["/api/list.json"]
     assert result.archived == ()
     assert (tmp_path / unrelated.primary.path).read_bytes() == original
     assert selected.primary.read_bytes(tmp_path) == selected.payloads[-1]

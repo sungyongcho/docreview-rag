@@ -34,6 +34,7 @@ from app.ingestion.acquisition.dart_archive import (
     DartArchiveError,
     DocumentArchive,
     archive_document,
+    report_reference,
 )
 from app.ingestion.acquisition.http import AcquisitionHttpError, fetch_bytes
 from app.ingestion.progress import (
@@ -48,7 +49,7 @@ from app.ingestion.sources.models import (
     DocumentReference,
     Manifest,
 )
-from app.ingestion.sources.publication import publish_acquired
+from app.ingestion.sources.publication import publish_acquired, publish_references
 from app.ingestion.sources.selection import (
     SourceDownloadRequiredError,
     resolve_primary,
@@ -289,7 +290,7 @@ async def fetch_annual_report_rows(
 def select_annual_report(
     rows: Collection[Mapping[str, Any]], *, corp_code: str, fiscal_year: int
 ) -> AnnualReport:
-    """Select the one 사업보고서 covering ``fiscal_year`` and refuse every other count.
+    """Select the registry's current 사업보고서 covering ``fiscal_year``.
 
     Parameters
     ----------
@@ -303,19 +304,23 @@ def select_annual_report(
     Returns
     -------
     AnnualReport
-        The single matching row.
+        The matching row with the latest receipt number.
 
     Raises
     ------
     DartApiError
-        If no row or more than one row matches. An amended filing legitimately
-        produces a second row, and picking the later one silently would move the
-        corpus under golden spans that cite the first.
+        If no row matches, or the chosen row has a malformed receipt number.
 
     Notes
     -----
     The period in ``report_nm`` decides the fiscal year, never ``rcept_dt``: an
     FY2024 annual report is filed in 2025.
+
+    A correction (``[기재정정]사업보고서`` and the like) is the whole report filed again
+    under a new receipt number, which begins with its receipt date and that day's
+    sequence. So among several matching rows the highest receipt number is the current
+    report. The corpus keeps an earlier receipt it already holds as its own document;
+    the versions of one report period are ordered and retired where evidence is read.
     """
     period = REPORT_PERIOD_TEMPLATE.format(year=fiscal_year)
     matched = [
@@ -328,15 +333,7 @@ def select_annual_report(
         raise DartApiError(
             "list.json", f"no {ANNUAL_REPORT_FORM} {period} for corp_code={corp_code}"
         )
-    if len(matched) > 1:
-        candidates = "; ".join(
-            f"{row.get('rcept_no')} {row.get('rcept_dt')} {row.get('report_nm')}" for row in matched
-        )
-        raise DartApiError(
-            "list.json",
-            f"{len(matched)} candidate reports for corp_code={corp_code}: {candidates}",
-        )
-    row = matched[0]
+    row = max(matched, key=lambda candidate: str(candidate.get("rcept_no", "")).strip())
     rcept_no = str(row.get("rcept_no", "")).strip()
     if RCEPT_NO_RE.fullmatch(rcept_no) is None:
         raise DartApiError("list.json", f"malformed receipt number: {rcept_no!r}")
@@ -430,6 +427,19 @@ def _known_issuers(manifest: Manifest, stock_codes: Sequence[str]) -> dict[str, 
     return known
 
 
+def _requested_documents(
+    manifest: Manifest, stock_codes: Sequence[str], fiscal_years: Sequence[int]
+) -> list[str]:
+    """Return the documents the manifest holds for the requested issuers and years."""
+    return [
+        document.document_id
+        for document in manifest.documents
+        if document.registry == "dart"
+        and document.issuer in stock_codes
+        and document.fiscal_year in fiscal_years
+    ]
+
+
 async def acquire_dart(
     *,
     stock_codes: Sequence[str],
@@ -438,35 +448,26 @@ async def acquire_dart(
     api_key: str,
     on_progress: OperationProgressCallback | None = None,
 ) -> DartAcquisitionResult:
-    """Download and archive requested DART filings without parsing or ingesting them."""
+    """Download and archive requested DART filings without parsing or ingesting them.
+
+    Every requested issuer-year is compared with the registry's current report, also
+    when its source is already on disk: a correction filed after the first download is
+    a new filing, and the only way to learn of it is to ask again. A newer report is
+    recorded before it is downloaded and kept beside the one it replaces.
+    """
     manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
     existing = read_catalog(manifest_path)
     if not stock_codes or not fiscal_years:
         raise ValueError("DART acquisition requires explicit issuers and fiscal years")
     selection_id = selection_identity("dart", stock_codes, fiscal_years)
-    targets = pending_dart_targets(
+    # Read every requested source first: a conflicting identity stops the run before
+    # any credential is checked or request is sent.
+    pending_dart_targets(
         existing,
         stock_codes=stock_codes,
         fiscal_years=fiscal_years,
         corpus_dir=corpus_dir,
     )
-    if not targets:
-        if on_progress is not None:
-            on_progress(OperationProgress("download", 0, 0, "Every requested filing is valid"))
-        selected = [
-            document.document_id
-            for document in existing.documents
-            if document.registry == "dart"
-            and document.issuer in stock_codes
-            and document.fiscal_year in fiscal_years
-        ]
-        existing = publish_acquired(
-            manifest_path,
-            [],
-            selection_id=selection_id,
-            selected_document_ids=selected,
-        )
-        return DartAcquisitionResult((), (), len(existing.documents), selection_id=selection_id)
     if not api_key.strip():
         raise ValueError("DART_API_KEY is not configured; add it to .env")
     archived: list[AcquiredFiling] = []
@@ -484,9 +485,15 @@ async def acquire_dart(
             stream_progress(on_progress, OperationProgress(stage, current, total, label))
         )
 
-    pending_stock_codes = tuple(dict.fromkeys(stock_code for stock_code, _ in targets))
-    issuers = _known_issuers(existing, pending_stock_codes)
-    unknown = tuple(stock_code for stock_code in pending_stock_codes if stock_code not in issuers)
+    requested = [
+        (stock_code, fiscal_year)
+        for stock_code in dict.fromkeys(stock_codes)
+        for fiscal_year in dict.fromkeys(fiscal_years)
+    ]
+    issuers = _known_issuers(existing, stock_codes)
+    unknown = tuple(
+        stock_code for stock_code in dict.fromkeys(stock_codes) if stock_code not in issuers
+    )
     async with httpx.AsyncClient(follow_redirects=True) as client:
         if unknown:
             with byte_progress(
@@ -500,44 +507,52 @@ async def acquire_dart(
                 )
             issuers.update(parse_corp_codes(bundle, stock_codes=unknown))
 
-        work: list[tuple[str, int, DocumentReference | None]] = []
-        for stock_code, fiscal_year in targets:
-            missing = [
-                known
-                for known in existing.documents
-                if known.registry == "dart"
-                and known.issuer == stock_code
-                and known.fiscal_year == fiscal_year
-                and not _dart_source_ready(existing, known.document_id, corpus_dir)
-            ]
-            work.extend((stock_code, fiscal_year, known) for known in missing or [None])
-        for index, (stock_code, fiscal_year, known_target) in enumerate(work):
+        work: list[tuple[CorpCode, int, AnnualReport, DocumentReference]] = []
+        for index, (stock_code, fiscal_year) in enumerate(requested):
             issuer = issuers[stock_code]
-            label = f"{issuer.corp_name} ({stock_code}) FY{fiscal_year}"
             if on_progress is not None:
-                on_progress(OperationProgress("select", index, len(work), label))
-            if known_target is not None:
-                assert known_target.dart is not None
-                report = AnnualReport(
-                    known_target.filing_id,
-                    issuer.corp_code,
-                    issuer.corp_name,
-                    known_target.dart.report_name,
-                    known_target.filing_date.isoformat(),
-                )
-            else:
-                rows = await fetch_annual_report_rows(
-                    client,
-                    api_key=api_key,
-                    corp_code=issuer.corp_code,
-                    filing_year=fiscal_year + 1,
-                )
-                report = select_annual_report(
-                    rows, corp_code=issuer.corp_code, fiscal_year=fiscal_year
-                )
-            if report.corp_name:
-                issuer = CorpCode(issuer.corp_code, report.corp_name, stock_code)
                 label = f"{issuer.corp_name} ({stock_code}) FY{fiscal_year}"
+                on_progress(OperationProgress("select", index, len(requested), label))
+            known = [
+                document
+                for document in existing.documents
+                if document.registry == "dart"
+                and document.issuer == stock_code
+                and document.fiscal_year == fiscal_year
+            ]
+            # A known filing whose source is missing or damaged is fetched again by
+            # its exact receipt, whether or not it is still the current report.
+            for document in known:
+                if not _dart_source_ready(existing, document.document_id, corpus_dir):
+                    assert document.dart is not None
+                    report = AnnualReport(
+                        document.filing_id,
+                        issuer.corp_code,
+                        issuer.corp_name,
+                        document.dart.report_name,
+                        document.filing_date.isoformat(),
+                    )
+                    work.append((issuer, fiscal_year, report, document))
+            rows = await fetch_annual_report_rows(
+                client,
+                api_key=api_key,
+                corp_code=issuer.corp_code,
+                filing_year=fiscal_year + 1,
+            )
+            current = select_annual_report(
+                rows, corp_code=issuer.corp_code, fiscal_year=fiscal_year
+            )
+            if current.corp_name:
+                issuer = CorpCode(issuer.corp_code, current.corp_name, stock_code)
+            if all(document.filing_id != current.rcept_no for document in known):
+                reference = report_reference(current, issuer, fiscal_year=fiscal_year)
+                # On record before the download: a correction that fails to download
+                # must still retire the report it replaces.
+                existing = publish_references(manifest_path, [reference])
+                work.append((issuer, fiscal_year, current, reference))
+
+        for index, (issuer, fiscal_year, report, reference) in enumerate(work):
+            label = f"{issuer.corp_name} ({issuer.stock_code}) FY{fiscal_year}"
             with byte_progress(
                 label,
                 stage="download",
@@ -555,34 +570,30 @@ async def acquire_dart(
                 report,
                 issuer,
                 fiscal_year=fiscal_year,
-                document_reference=next(
-                    (
-                        known
-                        for known in existing.documents
-                        if known.registry == "dart" and known.filing_id == document.rcept_no
-                    ),
-                    None,
-                ),
+                document_reference=reference,
             )
             archived.append(entry)
-            selected = [
-                known.document_id
-                for known in (*existing.documents, entry.document)
-                if known.registry == "dart"
-                and known.issuer in stock_codes
-                and known.fiscal_year in fiscal_years
-            ]
             existing = publish_acquired(
                 manifest_path,
                 [entry],
                 selection_id=selection_id,
-                selected_document_ids=selected,
+                selected_document_ids=_requested_documents(existing, stock_codes, fiscal_years),
             )
             if on_progress is not None:
                 on_progress(OperationProgress("download", index + 1, len(work), label))
 
+    existing = publish_acquired(
+        manifest_path,
+        [],
+        selection_id=selection_id,
+        selected_document_ids=_requested_documents(existing, stock_codes, fiscal_years),
+    )
+    if not work and on_progress is not None:
+        on_progress(OperationProgress("download", 0, 0, "Every requested filing is valid"))
     added = tuple(
-        entry.document for entry in archived if entry.document.document_id not in prior_ids
+        document
+        for document in existing.documents
+        if document.registry == "dart" and document.document_id not in prior_ids
     )
     return DartAcquisitionResult(
         tuple(archived), added, len(existing.documents), selection_id=selection_id

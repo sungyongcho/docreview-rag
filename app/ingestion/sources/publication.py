@@ -5,7 +5,12 @@ import hashlib
 from pathlib import Path
 
 from app.ingestion.sources.catalog import read_catalog
-from app.ingestion.sources.models import AcquiredFiling, Manifest, ProcessingSelection
+from app.ingestion.sources.models import (
+    AcquiredFiling,
+    DocumentReference,
+    Manifest,
+    ProcessingSelection,
+)
 from app.ingestion.sources.storage import (
     commit_sources,
     confined_path,
@@ -14,6 +19,33 @@ from app.ingestion.sources.storage import (
     fixed_path,
     source_lock,
 )
+
+
+def publish_references(path: Path, discovered: Sequence[DocumentReference]) -> Manifest:
+    """Record filings a registry lists, before any of them is downloaded.
+
+    A filing already on record under the same registry identity keeps its entry. A new
+    one is added without artifacts, which is the state of a filing that still has to be
+    downloaded.
+    """
+    with source_lock(path.parent, recover=True):
+        catalog = read_catalog(path)
+        known = {(document.registry, document.filing_id) for document in catalog.documents}
+        added = [
+            document
+            for document in discovered
+            if (document.registry, document.filing_id) not in known
+        ]
+        if not added:
+            return catalog
+        result = Manifest(
+            corpus=catalog.corpus,
+            documents=(*catalog.documents, *added),
+            artifacts=catalog.artifacts,
+            selections=catalog.selections,
+        )
+        commit_sources(path.parent, result, {})
+        return result
 
 
 def publish_acquired(

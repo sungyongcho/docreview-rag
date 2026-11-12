@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from app.ingestion.sources.models import AcquiredFiling, Manifest
-from app.ingestion.sources.publication import publish_acquired
+from app.ingestion.sources.publication import publish_acquired, publish_references
 from app.ingestion.sources.selection import record_selection, source_inventory
 from app.ingestion.sources.storage import JOURNAL, fixed_path
 from tests.ingestion.support import acquired_filing, filing_document, write_selection_catalog
@@ -244,3 +244,19 @@ def test_duplicate_archive_is_rejected_without_normalization(tmp_path, copy_stat
     assert {
         p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()
     } == before
+
+
+def test_a_discovered_filing_is_recorded_once_without_artifacts(tmp_path):
+    """A reference adds a document to download later and never disturbs a known filing."""
+    catalog = write_selection_catalog(tmp_path)
+    known = catalog.documents[0]
+    found = filing_document(filing_id="0001045810-24-000030", document_id="sec-found")
+    restated = known.model_copy(update={"document_id": "another-id", "aliases": ("Other",)})
+
+    result = publish_references(tmp_path / "manifest.json", [found, restated])
+
+    assert result.documents == (*catalog.documents, found)
+    assert result.artifacts == catalog.artifacts and result.selections == catalog.selections
+    assert Manifest.read(tmp_path / "manifest.json") == result
+    assert publish_references(tmp_path / "manifest.json", [found]) == result
+    assert not (tmp_path / JOURNAL).exists()

@@ -40,7 +40,7 @@ from app.ingestion.sources.models import (
     SecMetadata,
     SourceArtifact,
 )
-from app.ingestion.sources.publication import publish_acquired
+from app.ingestion.sources.publication import publish_acquired, publish_references
 from app.ingestion.sources.selection import current_primary, selection_identity
 from app.ingestion.sources.storage import fixed_path
 
@@ -49,10 +49,10 @@ TICKERS_URL: Final[str] = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL: Final[str] = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 SUBMISSIONS_PAGE_URL: Final[str] = "https://data.sec.gov/submissions/{name}"
 ARCHIVE_URL: Final[str] = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{document}"
-# Exact match only. A 10-K/A is a second filing, with its own accession and document id,
-# for a year the original already covers. Nothing here decides which parts of the original
-# it replaces, so both would be searched as current evidence.
-ANNUAL_REPORT_FORM: Final[str] = "10-K"
+# An annual report and its amendments. A 10-K/A is a second filing, with its own accession
+# and document id, for a report period the 10-K already covers. Discovery records both;
+# which Items of the report an amendment replaces is decided by review, not here.
+ANNUAL_REPORT_FORMS: Final[frozenset[str]] = frozenset({"10-K", "10-K/A"})
 # The columns of a submissions page. SEC serves filing history column-wise, one array
 # per field, joined by position.
 FILING_COLUMNS: Final[tuple[str, ...]] = (
@@ -61,6 +61,7 @@ FILING_COLUMNS: Final[tuple[str, ...]] = (
     "filingDate",
     "reportDate",
     "primaryDocument",
+    "acceptanceDateTime",
 )
 
 DEFAULT_TIMEOUT: Final[httpx.Timeout] = httpx.Timeout(
@@ -341,6 +342,22 @@ async def fetch_filing_rows(
     return rows
 
 
+def accepted_at(row: Mapping[str, str]) -> datetime | None:
+    """Return when EDGAR accepted a filing, or ``None`` when the row does not say.
+
+    The acceptance time orders the amendments of one report. A filing date cannot: a
+    report accepted after hours and its amendment the next morning share one.
+    """
+    stamp = row.get("acceptanceDateTime", "").strip()
+    if not stamp:
+        return None
+    try:
+        accepted = datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+    return accepted if accepted.tzinfo is not None else accepted.replace(tzinfo=UTC)
+
+
 def manifest_entry(ticker: str, cik: int, row: Mapping[str, str]) -> DocumentReference:
     """Normalize an SEC discovery row into the common filing identity."""
     accession = row["accessionNumber"]
@@ -354,14 +371,17 @@ def manifest_entry(ticker: str, cik: int, row: Mapping[str, str]) -> DocumentRef
         aliases=tuple(dict.fromkeys(value for value in (ticker, company_name) if value)),
         filing_id=accession,
         fiscal_year=int(row["reportDate"][:4]),
-        form=ANNUAL_REPORT_FORM,
+        form=row["form"],
         filing_date=date.fromisoformat(row["filingDate"]),
         report_period=date.fromisoformat(row["reportDate"]),
         source_url=ARCHIVE_URL.format(
             cik=cik, accession=accession.replace("-", ""), document=row["primaryDocument"]
         ),
         sec=SecMetadata(
-            cik=f"{cik:010d}", accession=accession, primary_document=row["primaryDocument"]
+            cik=f"{cik:010d}",
+            accession=accession,
+            primary_document=row["primaryDocument"],
+            accepted_at=accepted_at(row),
         ),
     )
 
@@ -369,10 +389,14 @@ def manifest_entry(ticker: str, cik: int, row: Mapping[str, str]) -> DocumentRef
 def annual_reports(
     rows: Sequence[Mapping[str, str]], *, ticker: str, cik: int, years: Collection[int]
 ) -> list[DocumentReference]:
-    """Return manifest entries for the 10-K rows whose fiscal year is in range."""
+    """Return manifest entries for the annual reports and amendments of the given years.
+
+    An amendment states the report period of the report it amends, so one year filter
+    finds both.
+    """
     entries = []
     for row in rows:
-        if row.get("form") != ANNUAL_REPORT_FORM:
+        if row.get("form") not in ANNUAL_REPORT_FORMS:
             continue
         report_date = row.get("reportDate", "")
         year = report_date[:4]
@@ -484,6 +508,9 @@ async def acquire_edgar(
                 client, tickers=wanted, years=years, user_agent=declared, on_progress=on_progress
             )
         documents, added = merge_entries(documents, discovered)
+        # A filing is on record from the moment it is found: an amendment whose download
+        # fails must still be known, so that it can withhold the report it amends.
+        catalog = publish_references(manifest_path, added)
     selected = [
         document
         for document in documents

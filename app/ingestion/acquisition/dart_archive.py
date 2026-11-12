@@ -176,6 +176,32 @@ def canonicalize(text: str) -> tuple[str, int]:
     return normalized, exotic
 
 
+def report_reference(
+    report: AnnualReport, issuer: CorpCode, *, fiscal_year: int
+) -> DocumentReference:
+    """Describe one selected annual report as a corpus document, before it is downloaded."""
+    return DocumentReference(
+        document_id=f"dart-{report.rcept_no}",
+        registry="dart",
+        language="ko",
+        issuer=issuer.stock_code,
+        issuer_id=issuer.corp_code,
+        aliases=(issuer.corp_name, issuer.stock_code),
+        filing_id=report.rcept_no,
+        form=ANNUAL_REPORT_FORM,
+        fiscal_year=fiscal_year,
+        filing_date=date.fromisoformat(report.rcept_dt),
+        report_period=date(fiscal_year, 12, 31),
+        source_url=f"{DART_VIEWER}{report.rcept_no}",
+        dart=DartMetadata(
+            corp_code=issuer.corp_code,
+            receipt_number=report.rcept_no,
+            report_code="11011",
+            report_name=report.report_nm,
+        ),
+    )
+
+
 def archive_document(
     document: DocumentArchive,
     report: AnnualReport,
@@ -200,26 +226,7 @@ def archive_document(
     source, exotic = canonicalize(decoded)
     payload = source.encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
-    metadata = document_reference or DocumentReference(
-        document_id=f"dart-{document.rcept_no}",
-        registry="dart",
-        language="ko",
-        issuer=issuer.stock_code,
-        issuer_id=issuer.corp_code,
-        aliases=(issuer.corp_name, issuer.stock_code),
-        filing_id=document.rcept_no,
-        form=ANNUAL_REPORT_FORM,
-        fiscal_year=fiscal_year,
-        filing_date=date.fromisoformat(report.rcept_dt),
-        report_period=date(fiscal_year, 12, 31),
-        source_url=f"{DART_VIEWER}{document.rcept_no}",
-        dart=DartMetadata(
-            corp_code=issuer.corp_code,
-            receipt_number=document.rcept_no,
-            report_code="11011",
-            report_name=report.report_nm,
-        ),
-    )
+    metadata = document_reference or report_reference(report, issuer, fiscal_year=fiscal_year)
     if metadata.registry != "dart" or metadata.filing_id != document.rcept_no:
         raise ValueError("archive identity disagrees with selected DART filing")
     moment = fetched_at or datetime.now(UTC)

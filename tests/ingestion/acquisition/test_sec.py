@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import contextmanager
+from datetime import date
 import gzip
 import hashlib
 import json
@@ -358,10 +359,39 @@ def submissions_payload(rows, *, pages=()) -> dict[str, Any]:
     return {"filings": {"recent": columns, "files": [{"name": name} for name in pages]}}
 
 
-TEN_K = ("10-K", "0001045810-24-000029", "2024-02-21", "2024-01-28", "nvda-20240128.htm")
-TEN_K_OLD = ("10-K", "0001045810-19-000018", "2019-02-21", "2019-01-27", "nvda-2019.htm")
-TEN_Q = ("10-Q", "0001045810-24-000100", "2024-05-24", "2024-04-28", "nvda-q1.htm")
-AMENDED = ("10-K/A", "0001045810-24-000030", "2024-03-01", "2024-01-28", "nvda-a.htm")
+# One row per filing, in FILING_COLUMNS order; the last value is EDGAR's acceptance time.
+TEN_K = (
+    "10-K",
+    "0001045810-24-000029",
+    "2024-02-21",
+    "2024-01-28",
+    "nvda-20240128.htm",
+    "2024-02-21T21:36:57.000Z",
+)
+TEN_K_OLD = (
+    "10-K",
+    "0001045810-19-000018",
+    "2019-02-21",
+    "2019-01-27",
+    "nvda-2019.htm",
+    "2019-02-21T21:05:11.000Z",
+)
+TEN_Q = (
+    "10-Q",
+    "0001045810-24-000100",
+    "2024-05-24",
+    "2024-04-28",
+    "nvda-q1.htm",
+    "2024-05-24T20:01:00.000Z",
+)
+AMENDED = (
+    "10-K/A",
+    "0001045810-24-000030",
+    "2024-03-01",
+    "2024-01-28",
+    "nvda-a.htm",
+    "2024-03-01T22:10:05.000Z",
+)
 
 
 def test_tickers_resolve_to_the_cik_sec_files_them_under():
@@ -437,13 +467,30 @@ def test_archived_submission_pages_are_followed(monkeypatch):
     assert [row["accessionNumber"] for row in rows] == [TEN_K[1], TEN_K_OLD[1]]
 
 
-def test_only_unamended_annual_reports_inside_the_range_are_selected():
-    """A 10-Q, an amendment, and an out-of-range year are all left out."""
+def test_annual_reports_and_their_amendments_inside_the_range_are_selected():
+    """A 10-Q and an out-of-range year are left out; an amendment is found with its report."""
     columns = submissions_payload([TEN_K, TEN_Q, AMENDED, TEN_K_OLD])["filings"]["recent"]
     entries = annual_reports(
         submission_rows(columns), ticker="NVDA", cik=1045810, years=range(2024, 2025)
     )
-    assert [item.filing_id for item in entries] == [TEN_K[1]]
+    assert [(item.filing_id, item.form, item.kind) for item in entries] == [
+        (TEN_K[1], "10-K", "report"),
+        (AMENDED[1], "10-K/A", "amendment"),
+    ]
+    assert {item.report_period for item in entries} == {date(2024, 1, 28)}
+    assert entries[1].document_id == f"sec-{AMENDED[1]}"
+
+
+def test_a_discovered_entry_records_when_edgar_accepted_it():
+    """The acceptance time is what orders the amendments of one report."""
+    rows = submission_rows(submissions_payload([AMENDED])["filings"]["recent"])
+    entry = annual_reports(rows, ticker="NVDA", cik=1045810, years=(2024,))[0]
+    assert entry.sec is not None and entry.sec.accepted_at is not None
+    assert entry.sec.accepted_at.isoformat() == "2024-03-01T22:10:05+00:00"
+
+    rows[0]["acceptanceDateTime"] = "not a time"
+    undated = annual_reports(rows, ticker="NVDA", cik=1045810, years=(2024,))[0]
+    assert undated.sec is not None and undated.sec.accepted_at is None
 
 
 def test_discovered_entry_uses_common_normalized_metadata():
@@ -460,6 +507,42 @@ def test_discovered_entry_uses_common_normalized_metadata():
     assert built.fiscal_year == 2024
     assert built.sec is not None
     assert built.sec.primary_document == "nvda-20240128.htm"
+
+
+def test_an_amendment_is_on_record_even_when_its_download_fails(tmp_path, monkeypatch):
+    """A found amendment must be known before any download, so it can withhold its report."""
+    monkeypatch.setattr(edgar_api, "REQUEST_INTERVAL_SECONDS", 0.0)
+    monkeypatch.setattr(edgar_api, "RETRY_BACKOFF_SECONDS", 0.0)
+    manifest = tmp_path / "manifest.json"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """List a report and its amendment, serve the report and fail the amendment."""
+        if request.url.path.endswith("company_tickers.json"):
+            return httpx.Response(200, json={"0": {"cik_str": 1045810, "ticker": "NVDA"}})
+        if request.url.host == "data.sec.gov":
+            return httpx.Response(200, json=submissions_payload([TEN_K, AMENDED]))
+        if request.url.path.endswith(AMENDED[4]):
+            return httpx.Response(500)
+        return httpx.Response(200, content=FILING)
+
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        edgar_api.httpx,
+        "AsyncClient",
+        lambda **_kwargs: client_class(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(EdgarApiError):
+        asyncio.run(
+            acquire_edgar(manifest, tickers=("NVDA",), years=(2024,), user_agent=USER_AGENT)
+        )
+
+    catalog = read_catalog(manifest)
+    assert {(d.filing_id, d.kind) for d in catalog.documents} == {
+        (TEN_K[1], "report"),
+        (AMENDED[1], "amendment"),
+    }
+    assert [artifact.document_id for artifact in catalog.artifacts] == [f"sec-{TEN_K[1]}"]
 
 
 # --- merging ---
