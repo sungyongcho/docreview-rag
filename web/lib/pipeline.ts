@@ -521,7 +521,7 @@ interface FailureReport {
 /** Where the workflow Budget fields are edited; the label matches the Settings nav. */
 const RUN_LIMITS: FailureFix = { label: "Open run limits", category: "limits" };
 
-/** Kinds `failure_kind` in app/llm/local_diagnostics.py gives a host the app could not reach. */
+/** Kinds `failure_kind` in app/llm/local/provider.py gives a host the app could not reach. */
 const UNREACHABLE_KINDS = new Set(["refused", "dns", "connection"]);
 
 /**
