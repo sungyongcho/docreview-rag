@@ -49,8 +49,9 @@ TICKERS_URL: Final[str] = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL: Final[str] = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 SUBMISSIONS_PAGE_URL: Final[str] = "https://data.sec.gov/submissions/{name}"
 ARCHIVE_URL: Final[str] = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{document}"
-# Exact match only. A 10-K/A amends a year the original already covers, and the two
-# would land on one doc_id.
+# Exact match only. A 10-K/A is a second filing, with its own accession and document id,
+# for a year the original already covers. Nothing here decides which parts of the original
+# it replaces, so both would be searched as current evidence.
 ANNUAL_REPORT_FORM: Final[str] = "10-K"
 # The columns of a submissions page. SEC serves filing history column-wise, one array
 # per field, joined by position.
