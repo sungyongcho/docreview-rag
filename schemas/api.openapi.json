@@ -308,6 +308,54 @@
         ],
         "type": "string"
       },
+      "AmendedPeriodsResponse": {
+        "additionalProperties": false,
+        "description": "Report periods that hold an amendment or more than one filing.",
+        "properties": {
+          "report_periods": {
+            "items": {
+              "$ref": "#/components/schemas/ReportPeriodView"
+            },
+            "title": "Report Periods",
+            "type": "array"
+          }
+        },
+        "required": [
+          "report_periods"
+        ],
+        "title": "AmendedPeriodsResponse",
+        "type": "object"
+      },
+      "AmendmentReviewRequest": {
+        "additionalProperties": false,
+        "description": "One reviewer's decision for every Item of an indexed amendment.",
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ItemDecision"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "rationale": {
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "reviewer": {
+            "minLength": 1,
+            "title": "Reviewer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reviewer",
+          "rationale",
+          "decisions"
+        ],
+        "title": "AmendmentReviewRequest",
+        "type": "object"
+      },
       "ApiError": {
         "additionalProperties": false,
         "description": "Machine-readable HTTP failure shared by all routes.",
@@ -3473,6 +3521,112 @@
         "title": "FiguresWithheld",
         "type": "object"
       },
+      "FilingVersionView": {
+        "additionalProperties": false,
+        "description": "One filing of a report period, with what is indexed from it.\n\n``doc_id``, ``source_url`` and ``parse_status`` are ``None`` until the filing is\nindexed. A ``parse_status`` other than ``parsed`` means the parser could not bound\nevery Item, so the Items listed may be incomplete. ``items`` lists its Items in the\norder the filing sets them out, and ``current`` says whether any of its chunks is\nevidence right now.",
+        "properties": {
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "doc_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Id"
+          },
+          "filing_date": {
+            "minLength": 1,
+            "title": "Filing Date",
+            "type": "string"
+          },
+          "filing_id": {
+            "minLength": 1,
+            "title": "Filing Id",
+            "type": "string"
+          },
+          "form": {
+            "minLength": 1,
+            "title": "Form",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemChunks"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "report",
+              "amendment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "parse_status": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Status"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "unnumbered_chunks": {
+            "minimum": 0.0,
+            "title": "Unnumbered Chunks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filing_id",
+          "form",
+          "kind",
+          "filing_date",
+          "doc_id",
+          "source_url",
+          "parse_status",
+          "items",
+          "unnumbered_chunks",
+          "current",
+          "review"
+        ],
+        "title": "FilingVersionView",
+        "type": "object"
+      },
       "GoldenCanonicalResource": {
         "additionalProperties": false,
         "description": "Validated read-only canonical JSON for one golden suite.",
@@ -3991,6 +4145,54 @@
           "unknown"
         ],
         "type": "string"
+      },
+      "ItemChunks": {
+        "additionalProperties": false,
+        "description": "How many indexed chunks of one filing belong to one Item.",
+        "properties": {
+          "chunks": {
+            "exclusiveMinimum": 0.0,
+            "title": "Chunks",
+            "type": "integer"
+          },
+          "item": {
+            "minLength": 1,
+            "title": "Item",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "chunks"
+        ],
+        "title": "ItemChunks",
+        "type": "object"
+      },
+      "ItemDecision": {
+        "additionalProperties": false,
+        "description": "What a review decided one Item of an amendment does to the filings before it.",
+        "properties": {
+          "action": {
+            "enum": [
+              "replace",
+              "add",
+              "withhold"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "item": {
+            "minLength": 1,
+            "title": "Item",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "action"
+        ],
+        "title": "ItemDecision",
+        "type": "object"
       },
       "JobHistoryRequest": {
         "additionalProperties": false,
@@ -5780,6 +5982,67 @@
         "title": "RelevanceBelowThreshold",
         "type": "object"
       },
+      "ReportPeriodView": {
+        "additionalProperties": false,
+        "description": "Every recorded filing of one issuer's report period, oldest first.\n\n``hold`` is why the whole period is kept out of evidence, when it is.",
+        "properties": {
+          "fiscal_year": {
+            "exclusiveMinimum": 0.0,
+            "title": "Fiscal Year",
+            "type": "integer"
+          },
+          "hold": {
+            "anyOf": [
+              {
+                "enum": [
+                  "amendment_pending",
+                  "report_missing",
+                  "order_unknown",
+                  "not_indexed",
+                  "item_withheld"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold"
+          },
+          "issuer": {
+            "minLength": 1,
+            "title": "Issuer",
+            "type": "string"
+          },
+          "registry": {
+            "minLength": 1,
+            "title": "Registry",
+            "type": "string"
+          },
+          "report_period": {
+            "minLength": 1,
+            "title": "Report Period",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/FilingVersionView"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "registry",
+          "issuer",
+          "fiscal_year",
+          "report_period",
+          "hold",
+          "versions"
+        ],
+        "title": "ReportPeriodView",
+        "type": "object"
+      },
       "RerankerName": {
         "const": "cross_encoder",
         "type": "string"
@@ -6453,6 +6716,42 @@
           "run"
         ],
         "title": "ReviewPreviewResponse",
+        "type": "object"
+      },
+      "ReviewRecord": {
+        "additionalProperties": false,
+        "description": "Who reviewed an amendment, when, why, and what they decided.",
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ItemDecision"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "rationale": {
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "format": "date-time",
+            "title": "Reviewed At",
+            "type": "string"
+          },
+          "reviewer": {
+            "minLength": 1,
+            "title": "Reviewer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reviewed_at",
+          "reviewer",
+          "rationale",
+          "decisions"
+        ],
+        "title": "ReviewRecord",
         "type": "object"
       },
       "ReviewRequest": {
@@ -8248,6 +8547,202 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/admin/amendments": {
+      "get": {
+        "description": "List report periods with an amendment or correction, and what holds them.",
+        "operationId": "amended_periods_admin_amendments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AmendedPeriodsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Amended Periods",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/amendments/{doc_id}/review": {
+      "delete": {
+        "description": "Withdraw an amendment's review, which holds its report period again.",
+        "operationId": "withdraw_amendment_review_admin_amendments__doc_id__review_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportPeriodView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Withdraw Amendment Review",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Record what each Item of an indexed amendment does, replacing an earlier review.",
+        "operationId": "review_amendment_admin_amendments__doc_id__review_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendmentReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportPeriodView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Review Amendment",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/corpus": {
       "get": {
         "description": "Return live corpus, schema, index, manifest, and document state.",

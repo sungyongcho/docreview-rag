@@ -4,6 +4,50 @@
  */
 
 export interface paths {
+    "/admin/amendments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Amended Periods
+         * @description List report periods with an amendment or correction, and what holds them.
+         */
+        get: operations["amended_periods_admin_amendments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/amendments/{doc_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Review Amendment
+         * @description Record what each Item of an indexed amendment does, replacing an earlier review.
+         */
+        put: operations["review_amendment_admin_amendments__doc_id__review_put"];
+        post?: never;
+        /**
+         * Withdraw Amendment Review
+         * @description Withdraw an amendment's review, which holds its report period again.
+         */
+        delete: operations["withdraw_amendment_review_admin_amendments__doc_id__review_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/corpus": {
         parameters: {
             query?: never;
@@ -1259,6 +1303,26 @@ export interface components {
         };
         /** @enum {string} */
         AdminJobKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "ingest_selected" | "delete_sources" | "backfill_embeddings" | "rebuild_bm25";
+        /**
+         * AmendedPeriodsResponse
+         * @description Report periods that hold an amendment or more than one filing.
+         */
+        AmendedPeriodsResponse: {
+            /** Report Periods */
+            report_periods: components["schemas"]["ReportPeriodView"][];
+        };
+        /**
+         * AmendmentReviewRequest
+         * @description One reviewer's decision for every Item of an indexed amendment.
+         */
+        AmendmentReviewRequest: {
+            /** Decisions */
+            decisions: components["schemas"]["ItemDecision"][];
+            /** Rationale */
+            rationale: string;
+            /** Reviewer */
+            reviewer: string;
+        };
         /**
          * ApiError
          * @description Machine-readable HTTP failure shared by all routes.
@@ -2519,6 +2583,42 @@ export interface components {
             figures: string[];
         };
         /**
+         * FilingVersionView
+         * @description One filing of a report period, with what is indexed from it.
+         *
+         *     ``doc_id``, ``source_url`` and ``parse_status`` are ``None`` until the filing is
+         *     indexed. A ``parse_status`` other than ``parsed`` means the parser could not bound
+         *     every Item, so the Items listed may be incomplete. ``items`` lists its Items in the
+         *     order the filing sets them out, and ``current`` says whether any of its chunks is
+         *     evidence right now.
+         */
+        FilingVersionView: {
+            /** Current */
+            current: boolean;
+            /** Doc Id */
+            doc_id: string | null;
+            /** Filing Date */
+            filing_date: string;
+            /** Filing Id */
+            filing_id: string;
+            /** Form */
+            form: string;
+            /** Items */
+            items: components["schemas"]["ItemChunks"][];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "report" | "amendment";
+            /** Parse Status */
+            parse_status: string | null;
+            review: components["schemas"]["ReviewRecord"] | null;
+            /** Source Url */
+            source_url: string | null;
+            /** Unnumbered Chunks */
+            unnumbered_chunks: number;
+        };
+        /**
          * GoldenCanonicalResource
          * @description Validated read-only canonical JSON for one golden suite.
          */
@@ -2753,6 +2853,29 @@ export interface components {
         };
         /** @enum {string} */
         IngestionStatus: "not_ingested" | "current" | "stale" | "unknown";
+        /**
+         * ItemChunks
+         * @description How many indexed chunks of one filing belong to one Item.
+         */
+        ItemChunks: {
+            /** Chunks */
+            chunks: number;
+            /** Item */
+            item: string;
+        };
+        /**
+         * ItemDecision
+         * @description What a review decided one Item of an amendment does to the filings before it.
+         */
+        ItemDecision: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "replace" | "add" | "withhold";
+            /** Item */
+            item: string;
+        };
         /**
          * JobHistoryRequest
          * @description An explicit history operation against a reviewed eligible count.
@@ -3444,6 +3567,26 @@ export interface components {
             /** Relevant Count */
             relevant_count: number;
         };
+        /**
+         * ReportPeriodView
+         * @description Every recorded filing of one issuer's report period, oldest first.
+         *
+         *     ``hold`` is why the whole period is kept out of evidence, when it is.
+         */
+        ReportPeriodView: {
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Hold */
+            hold: ("amendment_pending" | "report_missing" | "order_unknown" | "not_indexed" | "item_withheld") | null;
+            /** Issuer */
+            issuer: string;
+            /** Registry */
+            registry: string;
+            /** Report Period */
+            report_period: string;
+            /** Versions */
+            versions: components["schemas"]["FilingVersionView"][];
+        };
         /** @constant */
         RerankerName: "cross_encoder";
         /**
@@ -3738,6 +3881,23 @@ export interface components {
         ReviewPreviewResponse: {
             profile: components["schemas"]["RetrievalProfile"];
             run: components["schemas"]["RunResponse"];
+        };
+        /**
+         * ReviewRecord
+         * @description Who reviewed an amendment, when, why, and what they decided.
+         */
+        ReviewRecord: {
+            /** Decisions */
+            decisions: components["schemas"]["ItemDecision"][];
+            /** Rationale */
+            rationale: string;
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+            /** Reviewer */
+            reviewer: string;
         };
         /**
          * ReviewRequest
@@ -4433,6 +4593,164 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    amended_periods_admin_amendments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AmendedPeriodsResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    review_amendment_admin_amendments__doc_id__review_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AmendmentReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportPeriodView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    withdraw_amendment_review_admin_amendments__doc_id__review_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportPeriodView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     corpus_snapshot_admin_corpus_get: {
         parameters: {
             query?: never;

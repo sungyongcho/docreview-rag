@@ -6,6 +6,7 @@ from typing import Any, Final
 from fastapi import APIRouter, FastAPI
 from fastapi.openapi.utils import get_openapi
 
+from app.api.amendments import routes as amendments
 from app.api.composition import AdminServices
 from app.api.corpus import routes as corpus
 from app.api.dependencies import (
@@ -67,6 +68,7 @@ admin_router = APIRouter()
 for feature in (
     corpus,
     document_admin,
+    amendments,
     evaluations,
     snapshot_admin,
     jobs,

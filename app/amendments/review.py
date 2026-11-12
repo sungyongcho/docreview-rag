@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,11 +62,14 @@ async def _indexed_amendment(session: AsyncSession, doc_id: str) -> tuple[Filing
 
 
 async def amendment_items(session: AsyncSession, doc_id: str) -> tuple[str, ...]:
-    """Return the Items an indexed amendment's chunks belong to, in text order."""
+    """Return the Items an indexed amendment's chunks belong to, as the filing orders them."""
     rows = await session.scalars(
-        select(Chunk.item).where(Chunk.doc_id == doc_id, Chunk.item.is_not(None)).distinct()
+        select(Chunk.item)
+        .where(Chunk.doc_id == doc_id, Chunk.item.is_not(None))
+        .group_by(Chunk.item)
+        .order_by(func.min(Chunk.ordinal))
     )
-    return tuple(sorted(rows))
+    return tuple(item for item in rows if item is not None)
 
 
 async def record_review(
