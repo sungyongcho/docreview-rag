@@ -50,7 +50,7 @@ In administrator mode, **Amended filings** appears above the document list in **
 
 Each row names the registry, company and fiscal year and is marked **On hold** or **In use**. Open a row to read why it is on hold and to see every filing of the period: its form, filing date, the Items stored from it with their chunk counts, and whether it is **Used as evidence now**.
 
-A corrected DART report replaces the earlier report without a review. An SEC `10-K/A` restates only some Items, so the whole report period stays on hold until someone decides what each Item does.
+A corrected DART report replaces the earlier report without a review. An SEC `10-K/A` restates only some Items, so the whole report period stays on hold until someone decides what each Item does. A second `10-K` filed for the period after a `10-K/A` is a whole report again: it replaces the earlier report together with that amendment, which then needs no review.
 
 1. Select **Review this amendment** on the `10-K/A`. The button appears once the amendment is downloaded and parsed.
 2. Choose one action for every Item: **Replace** uses the amendment's text instead of the report's, **Add** uses both, and **Withhold** uses neither.

@@ -79,9 +79,9 @@ An empty public catalog can be correct even with a populated development DB. [Sn
 | `amendment_pending` | A `10-K/A` of the period has not been reviewed. | Review it under [Amended filings](documents.md#amended-filings). | The period reads **In use** and the notice is gone. |
 | `report_missing` | Only an amendment is on record; the report it amends is not. | Run **Check for newer filings**, then **Parse & chunk** for that company and year. | The period lists its report. |
 | `order_unknown` | Two filings of one kind are on record without the time the registry accepted them, so they cannot be ordered. | Run **Check for newer filings**; it reads those times again. | The period is no longer on hold. If it still is, the registry states no acceptance time for those filings. |
-| `not_indexed` | A newer report is on record but not downloaded and parsed. | Download it and run **Parse & chunk**. | The newer report reads **Used as evidence now**. |
-| `item_withheld` | A review withheld the named Items. | Use **Edit review** if those Items should be used. | The notice no longer names them. |
-| `replaced` | The search named only filings that a later filing replaced. | Add the later filing to the scope or remove the document filter. | Results come from the later filing. |
+| `not_indexed` | The latest report of the period is on record but not downloaded and parsed: a newer report, or the report a parsed `10-K/A` amends. | Download it and run **Parse & chunk**. | That report reads **Used as evidence now**. |
+| `item_withheld` | A review withheld the named Items, or replaced them with an amendment that has no text for them. | Use **Edit review** if those Items should be used. | The notice no longer names them. |
+| `replaced` | The search is narrowed to documents, forms, Items or chunk kinds, and a later filing it leaves out replaced text it covers: the named Items, or everything it covers of the period when the notice names none. | Add the later filing to the scope, or remove the filter that leaves it out (for an EDGAR amendment, the form `10-K/A`). | Results for those Items come from the later filing. |
 
 After upgrading a database indexed earlier, every search returns nothing without a notice until the stored documents are recorded as filing versions; run `uv run python -m scripts.schema filings` once, as [indexing](indexing.md#amended-filings) describes.
 

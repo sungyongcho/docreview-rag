@@ -92,6 +92,19 @@ def test_search_ranks_only_current_evidence_and_names_what_is_held() -> None:
                 (AMENDMENT.document_id, "7")
             ]
 
+            # A search narrowed to the original form cannot reach the Item that replaced
+            # the report's, and is told so instead of being left with less.
+            async with factory() as session:
+                narrowed = await retrieve(
+                    session,
+                    "text of Item",
+                    plan=LEXICAL,
+                    k=10,
+                    filters=RetrievalFilters(forms=("10-K",)),
+                )
+            assert [(hit.doc_id, hit.item) for hit in narrowed.hits] == [(REPORT.document_id, "1")]
+            assert narrowed.holds == (hold("sec", "AMD", 2025, "replaced", ("7",)),)
+
     asyncio.run(scenario())
 
 

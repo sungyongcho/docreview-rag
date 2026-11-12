@@ -89,14 +89,35 @@ def filter_predicates(
 
     Notes
     -----
+    Live chunks are restricted to current evidence as well as to the scope, so a
+    replaced or withheld filing never takes a rank from a current one. A snapshot froze
+    that decision when it was created.
+    """
+    scope = scope_predicates(filters, source)
+    return (eligible_chunk(), *scope) if source is Chunk else scope
+
+
+def scope_predicates(
+    filters: RetrievalFilters, source: ChunkSource = Chunk
+) -> tuple[ColumnElement[bool], ...]:
+    """Translate the filters alone, whether or not the chunks they select are evidence.
+
+    Parameters
+    ----------
+    filters : RetrievalFilters
+        Canonical chunk and document restrictions.
+
+    Returns
+    -------
+    tuple[ColumnElement[bool], ...]
+        Predicates combined with AND by the caller.
+
+    Notes
+    -----
     Issuer, fiscal-year, and form predicates require a ``Document`` join; Item values
-    and ``None`` are alternatives within one filter dimension. Live chunks are also
-    restricted to current evidence, so a replaced or withheld filing never takes a rank
-    from a current one. A snapshot froze that decision when it was created.
+    and ``None`` are alternatives within one filter dimension.
     """
     predicates: list[ColumnElement[bool]] = []
-    if source is Chunk:
-        predicates.append(eligible_chunk())
     if filters.doc_ids:
         predicates.append(source.doc_id.in_(filters.doc_ids))
     if filters.languages:

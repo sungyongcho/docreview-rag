@@ -7,7 +7,7 @@ import type { EvidenceHold } from "./types";
 const english = (source: string, values?: Record<string, string | number>) => translate("en", source, values);
 const korean = (source: string, values?: Record<string, string | number>) => translate("ko", source, values);
 
-/** Every reason the contract names, plus the one the server adds for a document scope. */
+/** Every reason the contract names, the last being the one a narrowed search is given. */
 const REASONS = ["amendment_pending", "report_missing", "order_unknown", "not_indexed", "item_withheld", "replaced"] as const;
 
 /** Build one hold on AMD's FY2025 report period. */
@@ -34,13 +34,18 @@ describe("evidence hold wording", () => {
     expect(evidenceHoldSentence(hold("item_withheld"), english)).toContain("withheld some Items of this report period");
   });
 
+  it("names the Items a filing outside the search replaced, or says that all of it was", () => {
+    expect(evidenceHoldSentence(hold("replaced", ["7"]), english)).toContain("replaced Item 7 of this report period");
+    expect(evidenceHoldSentence(hold("replaced"), english)).toContain("Everything this search covers of this report period was replaced");
+  });
+
   it("still says that evidence is held for a reason this build does not know", () => {
     expect(evidenceHoldSentence(hold("superseded_elsewhere"), english)).toBe("A later filing keeps this report period's text out of evidence.");
     expect(evidenceHoldSentence(hold("toString"), english)).toBe("A later filing keeps this report period's text out of evidence.");
   });
 
   it("has Korean wording for every sentence", () => {
-    for (const subject of [...REASONS.map((reason) => hold(reason)), hold("item_withheld", ["7"]), hold("unknown_reason")]) {
+    for (const subject of [...REASONS.map((reason) => hold(reason)), hold("item_withheld", ["7"]), hold("replaced", ["7"]), hold("unknown_reason")]) {
       expect(evidenceHoldSentence(subject, korean), subject.reason).not.toBe(evidenceHoldSentence(subject, english));
     }
     expect(evidenceHoldSentence(hold("item_withheld", ["7"]), korean)).toContain("Item 7");

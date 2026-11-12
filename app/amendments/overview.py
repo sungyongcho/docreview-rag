@@ -83,9 +83,19 @@ class ReportPeriodView(StrictSchema):
     versions: tuple[FilingVersionView, ...]
 
 
-def _position(version: FilingVersion) -> tuple[bool, str]:
-    """Order a period's filings as the policy applies them: reports, then amendments."""
-    return (version.kind == "amendment", version.filed_key)
+def _in_policy_order(members: Sequence[IndexedFiling]) -> list[IndexedFiling]:
+    """Order a period's filings as the policy applies them.
+
+    Filings follow their order keys, and an amendment follows a report it shares a key
+    with. An amendment is never listed before the first report: it can only amend one.
+    """
+    first = min(
+        (version.filed_key for version, *_ in members if version.kind == "report"), default=""
+    )
+    return sorted(
+        members,
+        key=lambda member: (max(member[0].filed_key, first), member[0].kind == "amendment"),
+    )
 
 
 def _in_filing_order(
@@ -136,7 +146,7 @@ async def amended_report_periods(
         key = (version.filing_registry, version.issuer_id, version.report_period)
         families.setdefault(key, []).append((version, indexed_doc, source_url, parse_status))
     listed = {
-        key: sorted(members, key=lambda member: _position(member[0]))
+        key: _in_policy_order(members)
         for key, members in families.items()
         if (len(members) > 1 or any(member[0].kind == "amendment" for member in members))
         and (doc_id is None or any(member[1] == doc_id for member in members))

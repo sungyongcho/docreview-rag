@@ -1,6 +1,7 @@
 """What an operator is shown about report periods with more than one filing."""
 
 import asyncio
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -93,5 +94,31 @@ def test_a_reviewed_amendment_shows_its_decisions_and_what_is_current() -> None:
                 ItemDecision(item="15", action="withhold"),
             )
             assert await amended_report_periods(session, doc_id="unknown") == ()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.live_postgres
+def test_filings_are_listed_in_the_order_the_policy_applies_them() -> None:
+    """A refiled report is listed after the amendment it replaced, and is what is current."""
+
+    async def scenario() -> None:
+        async with isolated_session() as session:
+            refiled = sec_document(
+                40, filed=date(2026, 3, 2), accepted=datetime(2026, 3, 2, 21, 0, 0, tzinfo=UTC)
+            )
+            await persist_seed_batch(
+                session,
+                batch(parsed(REPORT, ("7",)), parsed(AMENDMENT, ("7",)), parsed(refiled, ("7",))),
+            )
+
+            (period,) = await amended_report_periods(session)
+
+            assert period.hold is None
+            assert [(version.filing_id, version.current) for version in period.versions] == [
+                (REPORT.filing_id, False),
+                (AMENDMENT.filing_id, False),
+                (refiled.filing_id, True),
+            ]
 
     asyncio.run(scenario())

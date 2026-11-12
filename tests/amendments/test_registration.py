@@ -1,12 +1,16 @@
 """How a manifest entry is recorded as a version of its report period."""
 
 import asyncio
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import select
 
-from app.amendments.registration import filed_key, register_filings
+from app.amendments.registration import (
+    filed_key,
+    register_filings,
+    register_stored_documents,
+)
 from app.amendments.review import ItemEffect, record_review
 from app.db.models import AmendmentEffect, FilingVersion
 from app.ingestion.persistence import persist_seed_batch
@@ -63,5 +67,38 @@ def test_recording_a_filing_again_keeps_its_review() -> None:
             assert (version.issuer, version.reviewer) == ("AMDX", "operator")
             assert (await session.scalars(select(AmendmentEffect.action))).all() == ["replace"]
             assert await register_filings(session, []) == 0
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.live_postgres
+def test_stored_documents_fill_missing_versions_without_changing_recorded_ones() -> None:
+    """A stored row that lacks an acceptance time does not undo one the catalog learned."""
+
+    async def scenario() -> None:
+        async with isolated_session() as session:
+            report = sec_document(18)
+            await persist_seed_batch(session, batch(parsed(report, ("7",))))
+            accepted = datetime(2026, 2, 4, 21, 30, 0, tzinfo=UTC)
+            assert report.sec is not None
+            timed = report.model_copy(
+                update={"sec": report.sec.model_copy(update={"accepted_at": accepted})}
+            )
+            await register_filings(session, [timed])
+            await session.commit()
+
+            assert await register_stored_documents(session) == 1
+            await session.commit()
+            version = await session.get(FilingVersion, ("sec", report.filing_id))
+            assert version is not None
+            assert version.filed_key == "20260204213000"
+
+            await session.delete(version)
+            await session.commit()
+            await register_stored_documents(session)
+            await session.commit()
+            restored = await session.get(FilingVersion, ("sec", report.filing_id))
+            assert restored is not None
+            assert restored.filed_key == "20260204000000"
 
     asyncio.run(scenario())

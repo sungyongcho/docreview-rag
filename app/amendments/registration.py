@@ -65,12 +65,24 @@ def stored_reference(document: Document) -> DocumentReference:
     )
 
 
-async def register_filings(session: AsyncSession, documents: Iterable[DocumentReference]) -> int:
+async def register_filings(
+    session: AsyncSession, documents: Iterable[DocumentReference], *, keep_recorded: bool = False
+) -> int:
     """Record every given filing as a version of its report period.
 
     A filing is recorded as soon as it is known, before it is downloaded or indexed: an
     amendment nobody has reviewed must already withhold the report it amends. Recording
     a filing again refreshes its description and leaves a review in place.
+
+    Parameters
+    ----------
+    session : AsyncSession
+        Open session inside the caller's transaction.
+    documents : Iterable[DocumentReference]
+        The filings to record.
+    keep_recorded : bool
+        Leave a filing that is already recorded exactly as it is. A source that may
+        know less than the record does, such as a stored document row, passes this.
 
     Returns
     -------
@@ -81,6 +93,9 @@ async def register_filings(session: AsyncSession, documents: Iterable[DocumentRe
     if not values:
         return 0
     statement = insert(FilingVersion).values(values)
+    if keep_recorded:
+        await session.execute(statement.on_conflict_do_nothing())
+        return len(values)
     described = (
         "issuer_id",
         "report_period",
@@ -105,12 +120,16 @@ async def register_stored_documents(session: AsyncSession) -> int:
 
     A database indexed before filing versions existed has documents and no versions,
     and a document without a version is not evidence. This records them from the rows
-    themselves, so it needs no source files.
+    themselves, so it needs no source files. A document row keeps what was known when
+    it was indexed, which can lack an acceptance time the catalog learned since, so a
+    version that is already recorded is left as it is.
 
     Returns
     -------
     int
-        How many stored documents were recorded.
+        How many stored documents were read.
     """
     documents = await session.scalars(select(Document).order_by(Document.doc_id))
-    return await register_filings(session, [stored_reference(document) for document in documents])
+    return await register_filings(
+        session, [stored_reference(document) for document in documents], keep_recorded=True
+    )

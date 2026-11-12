@@ -50,10 +50,11 @@ class EvidenceHold(StrictSchema):
     yet (``amendment_pending``), an amendment whose report is unknown
     (``report_missing``), filings that cannot be ordered (``order_unknown``), a newer
     report that is not indexed (``not_indexed``), or Items a review withheld
-    (``item_withheld``). ``items`` names the withheld Items; an empty tuple means the
-    whole report period. ``replaced`` answers a search that named documents: every
-    document it named for this report period was replaced by a later filing, which the
-    search did not name.
+    (``item_withheld``). ``replaced`` answers a search narrowed to documents, forms,
+    Items or chunk kinds: text it covers of this report period is stored, and a later
+    filing the search leaves out replaced it. ``items`` names the Items a hold is
+    about; an empty tuple means the whole report period, or for ``replaced`` everything
+    the search covers of it.
     """
 
     registry: NonBlank

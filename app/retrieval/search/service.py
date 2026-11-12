@@ -29,6 +29,7 @@ from app.retrieval.ranking.reranker import RerankProvider, rerank_hits
 from app.retrieval.search.bm25 import bm25_search
 from app.retrieval.search.lexical import lexical_search
 from app.retrieval.search.plan import SearchPlan
+from app.retrieval.search.sql import scope_predicates
 from app.retrieval.search.vector import vector_search
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
@@ -82,7 +83,9 @@ async def scope_holds(session: AsyncSession, filters: RetrievalFilters) -> tuple
     """Name the evidence inside a search scope that a later filing keeps out of use.
 
     A snapshot holds only the evidence that was current when it was frozen and is read
-    as it is, so nothing is withheld from a snapshot search.
+    as it is, so nothing is withheld from a snapshot search. Every restriction of the
+    search is passed on, so that text a later filing replaced is named when the search
+    leaves that filing out, by document, form, Item or chunk kind.
     """
     if filters.snapshot_id is not None:
         return ()
@@ -92,6 +95,7 @@ async def scope_holds(session: AsyncSession, filters: RetrievalFilters) -> tuple
         issuers=filters.issuers,
         fiscal_years=filters.fiscal_years,
         doc_ids=filters.doc_ids,
+        within=scope_predicates(filters),
     )
 
 

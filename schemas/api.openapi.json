@@ -2902,7 +2902,7 @@
       },
       "EvidenceHold": {
         "additionalProperties": false,
-        "description": "Evidence a search could not use for one issuer's report period, and why.\n\nA later filing of the period keeps it out of use: an amendment nobody has reviewed\nyet (``amendment_pending``), an amendment whose report is unknown\n(``report_missing``), filings that cannot be ordered (``order_unknown``), a newer\nreport that is not indexed (``not_indexed``), or Items a review withheld\n(``item_withheld``). ``items`` names the withheld Items; an empty tuple means the\nwhole report period. ``replaced`` answers a search that named documents: every\ndocument it named for this report period was replaced by a later filing, which the\nsearch did not name.",
+        "description": "Evidence a search could not use for one issuer's report period, and why.\n\nA later filing of the period keeps it out of use: an amendment nobody has reviewed\nyet (``amendment_pending``), an amendment whose report is unknown\n(``report_missing``), filings that cannot be ordered (``order_unknown``), a newer\nreport that is not indexed (``not_indexed``), or Items a review withheld\n(``item_withheld``). ``replaced`` answers a search narrowed to documents, forms,\nItems or chunk kinds: text it covers of this report period is stored, and a later\nfiling the search leaves out replaced it. ``items`` names the Items a hold is\nabout; an empty tuple means the whole report period, or for ``replaced`` everything\nthe search covers of it.",
         "properties": {
           "fiscal_year": {
             "exclusiveMinimum": 0.0,

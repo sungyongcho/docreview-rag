@@ -92,7 +92,7 @@ describe("AmendedFilings", () => {
       ],
     })]);
     renderPanel();
-    expect(await screen.findByText(/A newer report for this report period is known but not downloaded and parsed yet/)).toBeVisible();
+    expect(await screen.findByText(/The latest report for this report period is known but not downloaded and parsed yet/)).toBeVisible();
     expect(screen.getByText("Not downloaded or not parsed yet")).toBeVisible();
     expect(screen.getByText(/This report is on record but is not downloaded or not parsed yet/)).toBeVisible();
     expect(screen.getByText("Parse status: partial. The parser could not find where every Item starts and ends, so the Items listed here may be incomplete.")).toBeVisible();
