@@ -194,7 +194,7 @@ def _parser_identity(registry: str) -> str:
         "sec.py" if registry == "sec" else "dart.py",
     ]
     if registry == "sec":
-        names.append("sec_xref.py")
+        names.extend(["sec_xref.py", "sec_amendment.py"])
     return hashlib.sha256(b"".join((parsing / name).read_bytes() for name in names)).hexdigest()
 
 

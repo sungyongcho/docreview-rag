@@ -1,13 +1,19 @@
 """Publishing registries resolve only explicitly typed filing sources."""
 
 from collections.abc import MutableMapping
-from typing import cast
+from typing import Literal, cast
 
 import pytest
 
 from app.ingestion.parsing.dart import DART_PARTS, parse_dart_filing
-from app.ingestion.parsing.registry import REGISTRIES, Registry, registry_for, section_title
-from app.ingestion.parsing.sec import CANONICAL, parse_filing
+from app.ingestion.parsing.registry import (
+    REGISTRIES,
+    Registry,
+    parse_edgar_filing,
+    registry_for,
+    section_title,
+)
+from app.ingestion.parsing.sec import CANONICAL
 from tests.ingestion.support import filing_document, filing_source
 
 
@@ -15,7 +21,11 @@ def test_explicit_source_selects_the_registered_parser(tmp_path):
     """Both registries dispatch from shared document metadata."""
     path = tmp_path / "source.html"
     path.write_text("<html>source</html>")
-    for name, parser in [("sec", parse_filing), ("dart", parse_dart_filing)]:
+    parsers: tuple[tuple[Literal["sec", "dart"], object], ...] = (
+        ("sec", parse_edgar_filing),
+        ("dart", parse_dart_filing),
+    )
+    for name, parser in parsers:
         source = filing_source(path, document=filing_document(registry=name))
         assert registry_for(source.document.registry).parse is parser
         assert registry_for(source.document.registry).name == name

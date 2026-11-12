@@ -8,6 +8,7 @@ from typing import Any, Final
 from app.ingestion.parsing.dart import dart_section_label, dart_section_title, parse_dart_filing
 from app.ingestion.parsing.models import ParsedFiling
 from app.ingestion.parsing.sec import edgar_section_label, edgar_section_title, parse_filing
+from app.ingestion.parsing.sec_amendment import parse_amendment
 from app.ingestion.sources.models import FilingSource
 
 
@@ -27,10 +28,30 @@ class Registry:
     section_title: Callable[[str], str | None]
 
 
+def parse_edgar_filing(source: FilingSource) -> tuple[ParsedFiling, dict[str, Any]]:
+    """Parse one EDGAR source with the parser for its kind of filing.
+
+    Parameters
+    ----------
+    source
+        Typed selected filing and verified source artifact.
+
+    Returns
+    -------
+    tuple[ParsedFiling, dict[str, Any]]
+        Parsed filing and the profile or strategy descriptor that produced it. A whole
+        report goes through the profile-driven parser; an amendment sets out only some
+        Items, so it goes through the parser that learns and saves no profile.
+    """
+    if source.document.kind == "amendment":
+        return parse_amendment(source)
+    return parse_filing(source)
+
+
 EDGAR: Final[Registry] = Registry(
     name="sec",
     language="en",
-    parse=parse_filing,
+    parse=parse_edgar_filing,
     section_label=edgar_section_label,
     section_title=edgar_section_title,
 )

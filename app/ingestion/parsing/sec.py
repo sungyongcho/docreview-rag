@@ -6,9 +6,14 @@ cross-reference and TOC assembly, and the learned per-issuer profiles that keep
 those heuristics honest. What crosses the boundary is a ``ParsedFiling`` built
 from the neutral contract in ``app.ingestion.parsing.html`` -- the same shape the DART
 adapter produces -- so nothing downstream reads EDGAR vocabulary.
+
+This module parses whole reports. An amendment (10-K/A) sets out only some Items and
+is parsed by ``app.ingestion.parsing.sec_amendment``, which starts from the same
+``prepare_source`` and shares the Item vocabulary defined here.
 """
 
 from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -116,6 +121,11 @@ ITEM_RE = re.compile(
     r"^\s*item\s+(?P<num>1[0-6]|[1-9])(?P<suffix>[A-C])?\s*[.\-–—:]?\s*(?P<title>.*)$",
     re.I,
 )
+
+
+def item_code(match: re.Match[str]) -> str:
+    """Return the Item code an ``ITEM_RE`` match names, such as ``7A``."""
+    return (match.group("num") + (match.group("suffix") or "")).upper()
 
 
 def edgar_section_label(item: str) -> str:
@@ -245,7 +255,7 @@ def matches_any(el: Tag, rules: list[dict]) -> bool:
     return any(matches_rule(el, r) for r in rules)
 
 
-def _norm_title(s: str) -> str:
+def norm_title(s: str) -> str:
     """Return a title normalized to lowercase letters and spaces."""
     return re.sub(r"[^a-z ]", "", s.lower()).strip()
 
@@ -263,11 +273,11 @@ def match_canonical(text: str) -> str | None:
     str | None
         Matched Item number, or ``None`` if none.
     """
-    t = _norm_title(text)
+    t = norm_title(text)
     if len(t) < CANON_MIN_CHARS:  # guard 1: defer when the candidate is too short
         return None
     for item, canon in CANONICAL.items():
-        c = _norm_title(canon)
+        c = norm_title(canon)
         if t == c:
             return item
         # Guard 2: permit prefix matching only with enough characters.
@@ -299,7 +309,7 @@ def find_item(el: Tag, text: str, seg: dict) -> str | None:
     match seg["type"]:
         case "number":
             m = ITEM_RE.match(text)
-            item = (m.group("num") + (m.group("suffix") or "")).upper() if m else None
+            item = item_code(m) if m else None
         case "sec_canonical":
             item = match_canonical(text)  # compare against the canonical SEC title table
         case "custom_title":
@@ -317,7 +327,7 @@ def find_item(el: Tag, text: str, seg: dict) -> str | None:
     return item if matches_any(el, seg["rules"]) else None
 
 
-def _body_block(
+def body_block(
     el: Tag,
     text: str,
     start_char: int | None = None,
@@ -430,7 +440,7 @@ def segment_by_heading(
             )
             sections.append(current)
         elif current is not None:
-            current.blocks.append(_body_block(el, text, *source_spans[i], offsets=offsets))
+            current.blocks.append(body_block(el, text, *source_spans[i], offsets=offsets))
         # Before the first Item, discard cover and TOC blocks that belong to no section.
     if current is not None:
         current.block_range = (current.block_index or 0, len(blocks))
@@ -619,7 +629,7 @@ def segment_by_xref(
                 ):
                     continue
                 sec.blocks.append(
-                    _body_block(
+                    body_block(
                         blocks[j],
                         text,
                         *source_spans[j],
@@ -847,8 +857,55 @@ def validate(sections: list[Section], profile: dict, index: list[dict] | None = 
     return problems
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedSource:
+    """One SEC source read once, as every SEC parser starts from it."""
+
+    soup: BeautifulSoup  # normalized document tree
+    blocks: list[Tag]  # leaf content blocks in document order
+    offsets: list[int]  # line-start offsets that turn block positions into source offsets
+    filing: ParsedFiling  # carries the source identity and tagged facts; no sections yet
+
+
+def prepare_source(source: FilingSource) -> PreparedSource:
+    """Read one SEC source and build what both SEC parsers start from.
+
+    The report parser and the amendment parser must bind their sections to the same
+    source identity -- length, digest and tagged facts -- so that identity is computed
+    here once rather than in each parser.
+
+    Parameters
+    ----------
+    source
+        Typed selected filing and verified source artifact.
+
+    Returns
+    -------
+    PreparedSource
+        Normalized tree, leaf blocks, line offsets and a ``ParsedFiling`` that has its
+        source length, source digest and facts set and no sections.
+
+    Raises
+    ------
+    ValueError
+        If the source was not published by the SEC.
+    """
+    metadata = source.document
+    if metadata.registry != "sec":
+        raise ValueError("SEC parsing requires a selected SEC source")
+    raw = source.read()
+    soup = normalize(raw)
+    filing = ParsedFiling(
+        source=source,
+        source_length=len(raw),
+        source_sha256=source_digest(raw),
+        facts=sec_facts(raw, metadata),
+    )
+    return PreparedSource(soup, leaf_blocks(soup), line_offsets(raw), filing)
+
+
 def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
-    """Parse one filing with load/build/relearn validation loop.
+    """Parse one whole report with load/build/relearn validation loop.
 
     Parameters
     ----------
@@ -859,23 +916,26 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
     -------
     tuple[ParsedFiling, dict]
         Parsed filing object and effective profile.
+
+    Raises
+    ------
+    ValueError
+        If the source is an amendment. An amendment carries only some Items and shares
+        its issuer and fiscal year with the report it amends, so parsing it here would
+        judge it against that report's profile and could replace the profile with one
+        learned from a partial filing.
     """
     metadata = source.document
-    if metadata.registry != "sec":
-        raise ValueError("SEC parsing requires a selected SEC source")
+    if metadata.kind == "amendment":
+        raise ValueError(
+            f"{metadata.document_id} is an amendment ({metadata.form}); "
+            "parse it with app.ingestion.parsing.sec_amendment.parse_amendment"
+        )
+    prepared = prepare_source(source)
+    soup, blocks, offsets, out = prepared.soup, prepared.blocks, prepared.offsets, prepared.filing
     issuer, year = metadata.issuer, metadata.fiscal_year
     document = metadata.document_id
-    raw = source.read()
-    soup = normalize(raw)
-    blocks = leaf_blocks(soup)
-    offsets = line_offsets(raw)
-
-    out = ParsedFiling(
-        source=source,
-        source_length=len(raw),
-        source_sha256=source_digest(raw),
-        facts=sec_facts(raw, metadata),
-    )
+    source_end = out.source_length
 
     profile_path = source.corpus_root / "sec" / issuer / "profile.json"
     profile = load_profile(profile_path, year)
@@ -885,7 +945,7 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
         profile = build_profile(soup, blocks, document)
         out.profile_used = "bootstrap"
 
-    sections, index = segment(soup, blocks, profile["segmentation"], offsets, len(raw))
+    sections, index = segment(soup, blocks, profile["segmentation"], offsets, source_end)
     problems = validate(sections, profile, index) if sections else ["no sections"]
 
     if bootstrapped and not problems:
@@ -894,7 +954,7 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
     if problems:
         # On failure, relearn from this filing and store only this year after success (F4).
         relearned = build_profile(soup, blocks, document)
-        r_sections, r_index = segment(soup, blocks, relearned["segmentation"], offsets, len(raw))
+        r_sections, r_index = segment(soup, blocks, relearned["segmentation"], offsets, source_end)
         r_problems = validate(r_sections, relearned, r_index) if r_sections else ["no sections"]
         if not r_problems:
             save_profile(profile_path, issuer, year, relearned)  # save only a successful profile
