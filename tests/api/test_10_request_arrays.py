@@ -14,7 +14,9 @@ from pydantic import (
     BaseModel,
     BeforeValidator,
     ConfigDict,
+    Field,
     SecretStr,
+    computed_field,
     create_model,
 )
 import pytest
@@ -32,7 +34,8 @@ ACCEPTED = frozenset(
     | {"function-plain"}
 )
 # Kinds that refuse it in strict mode: an array for the first group, a string or an
-# object for the second.
+# object for the second. Of the first group only a tuple can be admitted, because the
+# admitting validator hands on a tuple, which a strict set refuses like an array.
 ARRAYS = frozenset({"tuple", "set", "frozenset"})
 OTHERS = frozenset(
     {"date", "datetime", "time", "timedelta", "uuid", "decimal", "bytes", "enum", "dataclass"}
@@ -50,6 +53,7 @@ HOLDERS = frozenset(
         "default",
         "nullable",
         "union",
+        "tagged-union",
         "definitions",
         "definition-ref",
         "function-before",
@@ -77,6 +81,8 @@ NOT_VALIDATORS = frozenset(
         "ref",
         "schema_ref",
         "discriminator",
+        # Computed fields are written out with a model and never read from a body.
+        "computed_fields",
     }
 )
 
@@ -199,7 +205,7 @@ def _refusals(
             yield f"{path} ({kind})"
         return
     if kind in ARRAYS:
-        if refuses and not admitted:
+        if refuses and not (admitted and kind == "tuple"):
             yield f"{path} ({kind})"
     elif kind in OTHERS:
         if refuses:
@@ -208,10 +214,13 @@ def _refusals(
         if not all(isinstance(value, str | int | float | None) for value in node["expected"]):
             yield f"{path} ({kind})"
     elif kind == "dict":
-        keys = node.get("keys_schema", {}).get("type", "any")
-        if refuses and keys not in {"str", "any"}:
+        keys = node.get("keys_schema", {})
+        named = keys.get("type") == "literal" and all(
+            isinstance(value, str) for value in keys["expected"]
+        )
+        if refuses and not named and keys.get("type", "any") not in {"str", "any"}:
             # A JSON object names its members with strings.
-            yield f"{path} (dict key {keys})"
+            yield f"{path} (dict key {keys['type']})"
     elif kind not in ACCEPTED | HOLDERS:
         yield f"{path} ({kind})"
     passes_on = (
@@ -330,6 +339,28 @@ def _unchanged(value: object) -> object:
     return value
 
 
+class _Cat(BaseModel):
+    """One choice of a union told apart by ``kind``, with a field it only writes out."""
+
+    model_config = ConfigDict(strict=True)
+
+    kind: typing.Literal["cat"]
+
+    @computed_field
+    @property
+    def sound(self) -> str:
+        """Name what a body never carries."""
+        return "meow"
+
+
+class _Dog(BaseModel):
+    """The other choice of that union."""
+
+    model_config = ConfigDict(strict=True)
+
+    kind: typing.Literal["dog"]
+
+
 @pytest.mark.parametrize(
     ("annotation", "value", "refusals"),
     [
@@ -343,8 +374,21 @@ def _unchanged(value: object) -> object:
             [1],
             [],
         ),
+        # The admitting validator hands on a tuple, which a strict set refuses too.
+        (
+            typing.Annotated[frozenset[int], BeforeValidator(tuple_from_json_array)],
+            [1],
+            ["Body.value (frozenset)"],
+        ),
+        (
+            typing.Annotated[set[int], BeforeValidator(tuple_from_json_array)],
+            [1],
+            ["Body.value (set)"],
+        ),
         (dict[str, int], {"a": 1}, []),
+        (dict[typing.Literal["a"], int], {"a": 1}, []),
         (dict[int, str], {"1": "a"}, ["Body.value (dict key int)"]),
+        (typing.Annotated[_Cat | _Dog, Field(discriminator="kind")], {"kind": "cat"}, []),
         (typing.Literal["a", 1], "a", []),
         (AnyUrl, "https://example.com/", []),
         (SecretStr, "secret", []),
