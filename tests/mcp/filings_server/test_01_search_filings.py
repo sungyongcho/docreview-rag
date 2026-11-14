@@ -10,7 +10,9 @@ from app.agent.tools.filings import SearchFilingsParams
 from tests.mcp.controlled_filings import PRIVATE_DETAIL, SEARCH_CHUNK_ID
 from tests.mcp.support import (
     PROTOCOL_MODE,
+    UNKNOWN_TOOLS,
     assert_internal_error,
+    assert_unknown_tool,
     call_or_error,
     controlled_filings,
     logged_events,
@@ -53,8 +55,11 @@ def observed(tmp_path_factory):
                 start = len(logged_events(log_path))
                 outcome = await call_or_error(client, "search_filings", arguments)
                 results[case] = (*outcome, logged_events(log_path, start))
-            unknown = await client.call_tool("final_answer", {"answer": "x"})
-        return listing, results, unknown
+            unknown = {
+                name: await call_or_error(client, name, {"answer": "x"}) for name in UNKNOWN_TOOLS
+            }
+            after = await call_or_error(client, "search_filings", {"query": "revenue"})
+        return listing, results, (unknown, after)
 
     return asyncio.run(exercise())
 
@@ -104,8 +109,12 @@ def test_hits_defaults_and_filters_reach_retrieval(observed):
     assert filtered["filters"]["fiscal_years"] == [2024]
 
 
-def test_the_loop_owned_final_answer_is_not_a_server_tool(observed):
-    """final_answer belongs to the agent loop, so the server rejects it."""
-    _, _, unknown = observed
-    assert unknown.is_error
-    assert "unknown tool" in text_of(unknown).lower()
+def test_an_unknown_tool_is_a_protocol_error_and_the_connection_serves_on(observed):
+    """Unpublished names, the loop-owned final_answer included, get JSON-RPC -32602."""
+    _, _, (unknown, after) = observed
+    for name, outcome in unknown.items():
+        assert_unknown_tool(outcome, name)
+    result, error = after
+    assert error is None
+    assert not result.is_error
+    assert result.structured_content["hits"]

@@ -15,7 +15,7 @@ from typing import Any, cast
 
 import httpx
 from mcp import Client
-from mcp.types import INTERNAL_ERROR
+from mcp.types import INTERNAL_ERROR, INVALID_PARAMS
 import pytest
 
 from app.agent.loop import run_agent
@@ -29,7 +29,9 @@ from tests.mcp.controlled_filings import PRIVATE_DETAIL
 from tests.mcp.support import (
     PROTOCOL_MODE,
     REPO_ROOT,
+    UNKNOWN_TOOLS,
     assert_internal_error,
+    assert_unknown_tool,
     call_or_error,
     logged_events,
     text_of,
@@ -168,7 +170,10 @@ async def exercise(url: str, log_path: Path, process: subprocess.Popen[bytes]) -
             start = len(logged_events(log_path))
             outcome = await call_or_error(client, "search_filings", arguments)
             searches[case] = (*outcome, logged_events(log_path, start))
-        unknown = await client.call_tool("final_answer", {"answer": "x"})
+        unknown = {
+            name: await call_or_error(client, name, {"answer": "x"}) for name in UNKNOWN_TOOLS
+        }
+        after_unknown = await call_or_error(client, "search_filings", {"query": "revenue"})
     alive_after_close = process.poll() is None
 
     finish = {
@@ -222,8 +227,12 @@ async def exercise(url: str, log_path: Path, process: subprocess.Popen[bytes]) -
 
         failing = {"name": "search_filings", "arguments": {"query": "fail"}}
         routed = {"Mcp-Method": "tools/call", "Mcp-Name": "search_filings"}
+        unpublished = {"name": "final_answer", "arguments": {"answer": "x"}}
         raw_results = {
             "tool failure": await post("tools/call", failing, **routed),
+            "unknown tool": await post(
+                "tools/call", unpublished, **{**routed, "Mcp-Name": "final_answer"}
+            ),
             "missing routing header": await post("tools/call", failing),
             "foreign host": await post(
                 "tools/list", {}, **{"Mcp-Method": "tools/list", "Host": "evil.example"}
@@ -234,6 +243,7 @@ async def exercise(url: str, log_path: Path, process: subprocess.Popen[bytes]) -
         listing=listing,
         searches=searches,
         unknown=unknown,
+        after_unknown=after_unknown,
         alive_after_close=alive_after_close,
         questions=questions,
         slow=slow,
@@ -277,10 +287,14 @@ def test_http_search_outcomes_match_the_stdio_contract(
         assert json.loads(text_of(result)) == result.structured_content
 
 
-def test_http_rejects_the_loop_owned_final_answer(observed):
-    """final_answer is still not a server tool; refusing it is a result, not a JSON-RPC error."""
-    assert observed.unknown.is_error
-    assert "unknown tool" in text_of(observed.unknown).lower()
+def test_http_refuses_an_unknown_tool_as_a_protocol_error(observed):
+    """Unpublished names, final_answer included, get JSON-RPC -32602; the next call works."""
+    for name, outcome in observed.unknown.items():
+        assert_unknown_tool(outcome, name)
+    result, error = observed.after_unknown
+    assert error is None
+    assert not result.is_error
+    assert result.structured_content["hits"]
 
 
 # Client lifecycle and per-question evidence
@@ -324,6 +338,16 @@ def test_a_system_failure_is_a_json_rpc_error_envelope(observed):
         "message": "RuntimeError: tool search_filings failed",
     }
     assert PRIVATE_DETAIL not in response.text
+
+
+def test_an_unknown_tool_is_a_json_rpc_error_envelope(observed):
+    """The refusal is the -32602 error for request 1, with no result, under HTTP 400."""
+    response = observed.raw["unknown tool"]
+    assert response.status_code == 400
+    message = rpc_message(response)
+    assert "result" not in message
+    assert message["id"] == 1
+    assert message["error"]["code"] == INVALID_PARAMS
 
 
 def test_a_missing_routing_header_is_refused(observed):

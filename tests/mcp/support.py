@@ -7,10 +7,12 @@ import sys
 
 from mcp import StdioServerParameters
 from mcp.shared.exceptions import MCPError
-from mcp.types import INTERNAL_ERROR
+from mcp.types import INTERNAL_ERROR, INVALID_PARAMS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROTOCOL_MODE = "2026-07-28"
+# Names no DocReview MCP server publishes: an arbitrary name and the loop-owned answer tool.
+UNKNOWN_TOOLS = ("search_everything", "final_answer")
 
 
 def module_server(module: str, *args: str, env: dict[str, str] | None = None):
@@ -67,3 +69,12 @@ def assert_internal_error(error, tool: str) -> None:
     assert error.code == INTERNAL_ERROR
     assert error.message == f"RuntimeError: tool {tool} failed"
     assert error.data is None
+
+
+def assert_unknown_tool(outcome: tuple, name: str) -> None:
+    """Require INVALID_PARAMS for ``name``, not a tool result, from :func:`call_or_error`."""
+    result, error = outcome
+    assert result is None
+    assert isinstance(error, MCPError)
+    assert error.code == INVALID_PARAMS
+    assert name in error.message

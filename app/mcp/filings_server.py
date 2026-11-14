@@ -13,6 +13,7 @@ from mcp.server.stdio import stdio_server
 from mcp.shared.exceptions import MCPError
 from mcp.types import (
     INTERNAL_ERROR,
+    INVALID_PARAMS,
     CallToolRequestParams,
     CallToolResult,
     ListToolsResult,
@@ -58,7 +59,8 @@ def build_server(registry: ToolRegistry) -> Server:
     -------
     Server
         Low-level server whose list and call handlers reuse the registry's
-        schemas, validation and error taxonomy.
+        schemas, validation and error taxonomy; calling any other name is a
+        JSON-RPC ``INVALID_PARAMS`` error.
     """
     exposed = {name: registry.get(name) for name in EXPOSED_TOOLS}
 
@@ -82,14 +84,17 @@ def build_server(registry: ToolRegistry) -> Server:
     async def call_tool(ctx: ServerRequestContext, params: CallToolRequestParams) -> CallToolResult:
         """Map existing domain results and safe errors onto MCP results or JSON-RPC errors.
 
-        A failure the model can correct is an ``isError`` result it can read. A system
-        failure, such as a database error, is raised as a JSON-RPC ``INTERNAL_ERROR``
-        instead: clients raise that rather than hand it to the model, which would
-        otherwise read a failed search as "nothing found". ``outcome.error`` is
-        already redacted by :func:`execute_tool`.
+        A name this server does not publish, the loop-owned ``final_answer`` included,
+        is a protocol error: JSON-RPC ``INVALID_PARAMS``, as the MCP tools
+        specification requires for an unknown tool. A failure of a published tool that
+        the model can correct, such as invalid arguments, is an ``isError`` result it
+        can read. A system failure, such as a database error, is raised as a JSON-RPC
+        ``INTERNAL_ERROR`` instead: clients raise that rather than hand it to the
+        model, which would otherwise read a failed search as "nothing found".
+        ``outcome.error`` is already redacted by :func:`execute_tool`.
         """
         if params.name not in exposed:
-            return error_result(f"unknown tool: {params.name}")
+            raise MCPError(code=INVALID_PARAMS, message=f"unknown tool: {params.name}")
         outcome = await execute_tool(registry, params.name, params.arguments or {})
         if outcome.error is not None:
             if outcome.system_error:
