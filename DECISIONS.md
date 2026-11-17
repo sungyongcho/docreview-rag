@@ -283,6 +283,7 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-12
 - source: user instruction in the 2026-11-12 consolidation session on mcp-and-langgraph
 - decision: A document stays in the repository only while something current reads it: the README, the paired tutorials, the deployment guides, the development story the web app serves, AGENTS.md and this ledger; docs/README_archive.md, docs/refactor-2026-09.md with its evidence appendix, docs/draft.en.md, docs/draft.ko.md, docs/draft/DEVELOPMENT_STORY_OUTLINE_draft.md, tests/RULES.md and NOTES.md are deleted, and the test-layout rules live in AGENTS.md.
+- note: 2026-11-18: ideas.md is deleted under the same rule; nothing read it, issue #29 that tracked it is closed and its one entry is built (the company search of Filings).
 
 ### D-37 — The study branch lands on main by rebase merge
 - status: active
