@@ -9,7 +9,7 @@ Edit this file only when the user asks for a rule change.
 - Preserve work that is not yours: staged, unstaged, untracked and ignored files, other worktrees and other contributors' identities. Never hide it with stash or reset.
 - Report outcomes, meaningful changes, blockers and next actions. Classify each check as passed, failed, blocked or not run, and never hide a failed one.
 - [DECISIONS.md](DECISIONS.md) records standing decisions about the code. Read the entries for the area you change. A user instruction that contradicts an active entry replaces it: mark the entry superseded, append the new one and say so in the report.
-- Personal planning and progress live in the Second Brain Vault (`Projects/docreview-rag/`). Read its TODO at task start and record verified outcomes there through the second-brain skill.
+- Personal planning and progress live in the Second Brain Vault under the owner `Projects/docreview-rag`. At task start call Second Brain's `context` with that owner and read its TODO. Record verified outcomes there through `write` or `propose` (the MCP tools, or the `second-brain` command on this machine), after `rules` for the path; never edit a Vault file directly.
 - Communicate in Korean. Write code, comments, docstrings and GitHub messages in English; preserve required Korean UI text and paired Korean/English guides.
 
 ## Authority and delivery
