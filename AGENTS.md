@@ -14,7 +14,7 @@ Edit this file only when the user asks for a rule change.
 
 ## Authority and delivery
 
-- Study and implementation happen on `mcp-and-langgraph`; study sessions run in the `gpt-6-astra` session through the docreview-study skill. When both are complete the branch lands on `main` by rebase merge. Until then `main` and the running service stay as they are.
+- Study and implementation happen on `mcp-and-langgraph`; study sessions run in a T3 Code thread on a Claude model through the docreview-study skill, which hands implementation to a separate guarded Claude Code call. When both are complete the branch lands on `main` by rebase merge. Until then `main` and the running service stay as they are.
 - Commit locally. Push, pull requests and anything that reaches `main` wait for the user's request.
 - Database writes and re-indexing, paid model calls, Auth0 tenant settings, external publication, deployment, credentials, branch-protection changes and rewriting published history each need the user's approval.
 - Commits and pull requests follow the user-authorized commit-it tracking/delivery flow, using the latest installed version of the skill. Reread its current source and references when another conversation may have updated it; these repository rules still override it.
