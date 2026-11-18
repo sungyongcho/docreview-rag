@@ -466,6 +466,23 @@ def test_invalid_model_options_are_refused_while_parsing(options):
 
 
 @pytest.mark.parametrize(
+    ("options", "question", "locale"),
+    [
+        ([], "What was revenue?", "en"),
+        ([], "매출은 얼마였나?", "ko"),
+        (["--via", "create-agent"], "매출은 얼마였나?", "ko"),
+        (["--via", "create-agent", "--locale", "en"], "매출은 얼마였나?", "en"),
+    ],
+)
+def test_both_agent_paths_report_in_the_question_language_unless_one_is_named(
+    options, question, locale
+):
+    """Resolve one report language: ``--locale`` when given, else the question's own."""
+    argv = ["r", "agent", "--issuer", "AMD", "--years", "2024", "--question", question]
+    assert live.report_locale(parser().parse_args([*argv, *options])) == locale
+
+
+@pytest.mark.parametrize(
     ("options", "message"),
     [
         (["--model", "gpt-5.6-terra"], "--model apply only with --via create-agent"),

@@ -22,11 +22,11 @@ every paid request reserves its estimated cost against a cap first.
 ``create_agent`` with ``MCPAdapter``, ``ReviewGate`` and ``StopOnSystemFailure``,
 and a Responses-API ``ChatOpenAI``. On that path the server returns each fetched
 chunk's stored table cells and the model's ``final_answer`` selects cells (section
-6.6); the application checks the selection and writes the answer, in English or,
-with ``--locale ko``, Korean. Before every model
-turn the complete request input is counted by OpenAI's input-token count endpoint
-(``POST /v1/responses/input_tokens``), and the counted input plus the turn's maximum
-output is reserved at the model's rates; a count that fails or a reservation that
+6.6); the application checks the selection and writes the answer. Both paths report
+in the question's language; ``--locale`` names another one on the create-agent path.
+Before every model turn the complete request input is counted by OpenAI's input-token
+count endpoint (``POST /v1/responses/input_tokens``), and the counted input plus the
+turn's maximum output is reserved at the model's rates; a count that fails or a reservation that
 would pass the cap sends nothing. The registry's agent models (``gpt-5.6-luna``, the
 default, and ``gpt-5.6-terra``) use their registry rates and reasoning effort. Any
 other Responses-compatible model needs both ``--input-usd-per-million`` and
@@ -83,6 +83,7 @@ from app.agent.types import AgentBudget
 from app.llm.schemas import TokenPricing
 from app.observability.redaction import sanitize_json
 from app.openai_models import POLICY_REVISION, OpenAIModelPolicyError, resolve_openai_model
+from app.query.language import QueryLanguage, detect_query_language
 from app.query.scope import QueryScopeError, issuer_names
 from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
 
@@ -1087,7 +1088,6 @@ async def run_agent_over_mcp(
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.mcp.client import mcp_tool_registry
-    from app.query.language import detect_query_language
     from app.query.periods import question_fiscal_years, utc_today
 
     model_budget = Reservation(
@@ -1150,7 +1150,7 @@ async def run_agent_over_mcp(
                 ),
                 requested_fiscal_years=question_fiscal_years(args.question, utc_today()),
                 evidence_reader=partial(read_cited_evidence, sessions),
-                locale=detect_query_language(args.question),
+                locale=report_locale(args),
             )
     finally:
         await engine.dispose()
@@ -1216,7 +1216,7 @@ async def run_review_agent_over_mcp(
                 partial(read_cited_evidence, sessions),
                 cell_answers=True,
                 requested_items=items_named(args.question, issuers=names),
-                locale=args.locale or "en",
+                locale=report_locale(args),
                 cell_reader=partial(read_selected_cells, sessions),
             )
             stage = "agent run"
@@ -1233,6 +1233,14 @@ async def run_review_agent_over_mcp(
     finally:
         await engine.dispose()
     return outcome
+
+
+def report_locale(args: argparse.Namespace) -> QueryLanguage:
+    """Return the language both agent paths write their reports in.
+
+    ``--locale`` when given, otherwise the language of the question itself.
+    """
+    return args.locale or detect_query_language(args.question)
 
 
 def tool_request(args: argparse.Namespace) -> tuple[str, dict[str, Any]] | None:
@@ -1430,7 +1438,7 @@ def parser() -> argparse.ArgumentParser:
     create_only.add_argument(
         "--locale",
         choices=("en", "ko"),
-        help="language the application writes its reports in (default en)",
+        help="language the application writes its reports in (default: the question's)",
     )
     create_only.add_argument(
         "--reasoning-effort",
