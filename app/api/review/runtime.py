@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.amendments.policy import eligible_chunk
 from app.api.documents.catalog import DocumentCatalog
 from app.api.errors import ApiProblemError, bad_request, translate_runtime_errors, unavailable
+from app.api.review.conversation import ConversationRouter, bounded_history
 from app.api.review.engines import ReviewEngines
 from app.api.review.evidence import (
     CandidateSnapshot,
@@ -32,6 +33,7 @@ from app.api.review.profiles import (
     search_plan,
 )
 from app.api.review.records import RunRecords
+from app.api.review.resolution import ScopeResolver
 from app.api.review.schemas import (
     CandidateComponentRank,
     DocumentResource,
@@ -57,10 +59,8 @@ from app.observability.stages import capture_stages, stage, stage_metadata
 from app.observability.types import JsonObject, RunReport, StepTrace, WorkflowNode, build_run_report
 from app.observability.usage import provider_identity
 from app.operator.corpus_access import CorpusAccess, CorpusUpdatingError
-from app.query.conversation import ConversationRouter, bounded_history
 from app.query.intent import ConversationDecision
 from app.query.language import detect_query_language
-from app.query.resolution import ScopeResolver
 from app.query.translation import QueryTranslationError, route_query
 from app.retrieval.embedding.provider import EmbeddingProvider
 from app.retrieval.ranking.reranker import RerankProvider, shared_cross_encoder

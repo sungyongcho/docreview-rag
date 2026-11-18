@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from app.api.errors import ApiProblemError
+from app.api.review.diagnostics import manifest_problem
 from app.api.review.profiles import (
     ResolvedRetrievalProfile,
     ReviewSessionProfile,
@@ -17,7 +18,6 @@ from app.config import get_settings
 from app.db.session_factory import SessionFactory
 from app.observability.types import JsonObject
 from app.operator.jobs.store import JobStore
-from app.query.diagnostics import manifest_problem
 from app.query.intent import CORPUS_WIDE_CUES
 from app.query.periods import question_fiscal_years, utc_today
 from app.query.scope import (

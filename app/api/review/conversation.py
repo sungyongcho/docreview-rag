@@ -11,6 +11,7 @@ from typing import cast
 
 from app.api.errors import ApiProblemError, unavailable
 from app.api.review.engines import ReviewEngines
+from app.api.review.resolution import ScopeResolver
 from app.api.review.schemas import RetrieveRequest, ReviewRequest
 from app.llm.schemas import Prompt
 from app.observability.stages import routing_cache, stage, stage_metadata
@@ -26,7 +27,6 @@ from app.query.intent import (
     is_filing_turn,
 )
 from app.query.periods import names_fiscal_year, without_fiscal_years
-from app.query.resolution import ScopeResolver
 
 _INTENT_CLASSIFIER_INSTRUCTIONS = (
     "Classify a request for DocReview, a service that analyzes company filings. "

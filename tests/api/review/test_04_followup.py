@@ -7,12 +7,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.api.review.conversation import ConversationRouter
 from app.api.review.engines import ReviewEngines
+from app.api.review.resolution import ScopeResolver
 from app.api.review.schemas import RetrieveRequest
 from app.ingestion.sources.models import CorpusIdentity, Manifest
-from app.query.conversation import ConversationRouter
 from app.query.intent import ConversationTurn
-from app.query.resolution import ScopeResolver
 from app.retrieval.search.profiles import ServerBM25
 from tests.ingestion.support import filing_document
 

@@ -9,12 +9,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.api.errors import ApiProblemError
+from app.api.review.diagnostics import manifest_problem
 from app.api.review.runtime import RuntimeApiServices
 from app.api.review.schemas import RetrieveRequest
 from app.ingestion.sources.models import CorpusIdentity, Manifest
 from app.observability.stages import record_stages
 from app.operator.jobs.store import JobStore
-from app.query.diagnostics import manifest_problem
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from tests.ingestion.support import filing_document
 

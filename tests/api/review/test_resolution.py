@@ -5,8 +5,8 @@ import os
 import pytest
 
 from app.api.errors import ApiProblemError
+from app.api.review.resolution import ScopeResolver
 from app.ingestion.sources.models import CorpusIdentity, Manifest
-from app.query.resolution import ScopeResolver
 from app.retrieval.search.profiles import ServerBM25
 from tests.ingestion.support import filing_document
 
