@@ -14,7 +14,7 @@ Edit this file only when the user asks for a rule change.
 
 ## Authority and delivery
 
-- Study and implementation happen on `mcp-and-langgraph`; study sessions run in a T3 Code thread on a Claude model through the docreview-study skill, which hands implementation to a separate guarded Claude Code call. When both are complete the branch lands on `main` by rebase merge. Until then `main` and the running service stay as they are.
+- Study and implementation happen on `mcp-and-langgraph`; study sessions run in a T3 Code thread on a Claude model through the docreview-study skill, which hands implementation to a separate guarded Claude Code call. The branch lands on `main` by rebase merge only when every part of the study plan is built and the branch is ready to deploy. Until then `main` and the running service stay as they are.
 - Commit locally. Push, pull requests and anything that reaches `main` wait for the user's request.
 - Database writes and re-indexing, paid model calls, Auth0 tenant settings, external publication, deployment, credentials, branch-protection changes and rewriting published history each need the user's approval.
 - Commits and pull requests follow the user-authorized commit-it tracking/delivery flow, using the latest installed version of the skill. Reread its current source and references when another conversation may have updated it; these repository rules still override it.
@@ -32,7 +32,7 @@ Edit this file only when the user asks for a rule change.
 
 ## Engineering and verification
 
-- Import from defining modules. Package `__init__.py` files do not re-export symbols except `app/retrieval`; do not add unnecessary package files or import compatibility shims.
+- Import from defining modules. Package `__init__.py` files do not re-export symbols; do not add unnecessary package files or import compatibility shims.
 - Mirror implementation tests: `app/X/y.py` → `tests/X/test_y.py`; a module that needs several test files gets `tests/X/y/test_NN_<feature>.py`. Multi-module behavior uses `tests/X/test_NN_<behavior>.py`, numbered per directory. Share helpers through `conftest.py` and support modules, never import one test module from another.
 - Document private/nested helpers too. Test docstrings are 1–3 lines without NumPyDoc sections. Reuse nearby fixtures; do not reproduce production logic inside tests.
 - ORM models in `app/db/models.py` precede persistence users; schema contracts live in `tests/db/test_models.py`. Preserve source, chunk, citation and selection identity.
@@ -44,7 +44,7 @@ Edit this file only when the user asks for a rule change.
 
 - Changed user flows update affected `docs/TUTORIAL/en/` and `docs/TUTORIAL/ko/`; update README/CLI guidance only when affected. If no tutorial impact, explain that in the PR.
 - Preserve screenshot assets unless the user requests captures. For missing visual evidence, add `### SCREENSHOT NEEDED` and an adjacent HTML comment naming the feature, exact state, locale and expected evidence. Never present old/synthetic images as proof. Requested captures use actual states, light mode and both locales unless narrowed.
-- Local Compose uses `docker/docker-compose.yml`; the dev/prod overlays set runtime and preview behavior. Deployment uses `deploy/gcp/docker-compose.deploy.yml`. `.env` does not choose Compose files. A changed public bundle mode needs a build.
+- Local Compose uses `docker/docker-compose.yml`; the dev/prod overlays set runtime and preview behavior. Deployment uses `deploy/gcp/docker-compose.deploy.yml`, which the Oracle path in production and the alternate GCP path share. `.env` does not choose Compose files. A changed public bundle mode needs a build.
 - `MODE` selects the OpenAI key slot (development `OPENAI_API_KEY_LOCAL`, production `OPENAI_API_KEY_PROD`); production rejects local engines. `DOCREVIEW_ADMIN_MODE` controls backend authority; `NEXT_PUBLIC_ADMIN_MODE` controls the web bundle. Keep them distinct.
 - Diagnose typed failures: workflow budget (`resource`, `limit`, `observed`, `blocked_node`), provider failure (`status`, `attempts`, `details`, optional numeric budget/source), or node error (`error_type`, `message`, `node`). Wall-clock seconds are not token counts; provider and workflow ceilings can differ. Never guess which resource failed.
 - Jobs are queued/running or succeeded/failed/cancelled/interrupted. Interrupted work does not resume automatically; failed/interrupted jobs may expose an explicit retry.

@@ -4,20 +4,22 @@
 FastAPI `app`을 제공합니다. DB 통합 테스트만 할 때는 `db`만 시작하고, 브라우저
 서비스까지 확인할 때는 두 서비스를 함께 시작합니다.
 
-여기에 overlay 두 개가 얹힙니다. `docker/docker-compose.dev.yml`은 개발 전용 기능인 로컬
-모델 엔진과 `local-llm` profile의 `ollama` 서비스를 더합니다. `.env`의
-`COMPOSE_FILE`이 이 overlay를 기본으로 잡으므로 평소에는 `docker compose --project-directory . -f docker/docker-compose.yml up`만으로
-개발 구성이 뜹니다. `docker/docker-compose.prod.yml`은 방문자가 보게 될 화면을 이 기계에서
-재현합니다. `-f`가 `COMPOSE_FILE`을 이기므로 명시적으로 지정하고, 웹 번들 성격이
-빌드 인자라 `--build`가 필요합니다.
+기본 파일만으로 개발 구성(`MODE=dev`, 관리 권한 `live`)이 뜹니다. 여기에 overlay 두 개를
+얹을 수 있습니다. `docker/docker-compose.dev.yml`은 같은 개발 값을 명시적으로 고르는 선택
+overlay입니다. `docker/docker-compose.prod.yml`은 방문자가 보게 될 화면을 이 기계에서
+재현합니다. `.env`는 Compose 파일을 고르지 않으므로 overlay는 `-f`로 직접 지정하고, 웹 번들
+성격이 빌드 인자라 `--build`가 필요합니다. `python -m scripts.stack dev|prod`는 기본 파일과
+해당 overlay를 함께 지정하고, 환경에 `COMPOSE_FILE`이 있어도 지우고 실행합니다. Ollama는 이
+Compose 구성에 들어 있지 않으며 따로 설치합니다.
 
 ```bash
 docker compose --project-directory . -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up --build -d app
 ```
 
-운영 GCP VM용 설정은 `deploy/gcp/docker-compose.deploy.yml`이며 Caddy, 비공개
-PostgreSQL, persistent host directory와 Docker secrets를 추가합니다. 배포 스크립트가
-이 파일만 VM으로 복사하므로 개발 overlay는 배포 경로에 닿지 않습니다.
+배포용 설정은 `deploy/gcp/docker-compose.deploy.yml`이며 Caddy, 비공개 PostgreSQL,
+persistent host directory와 Docker secrets를 추가합니다. 현재 운영인 Oracle Cloud A1 배포와
+대체 경로인 GCP 배포가 이 파일 하나를 함께 씁니다. 배포 스크립트가 이 파일만 서버로
+복사하므로 개발 overlay는 배포 경로에 닿지 않습니다.
 
 ## DB만 실행
 
@@ -182,23 +184,23 @@ docker compose --project-directory . -f docker/docker-compose.yml down -v
 
 `./data`는 host bind mount이므로 위 명령으로 삭제되지 않습니다.
 
-## GCP 운영 Compose
+## 배포 Compose
 
 `deploy/gcp/docker-compose.deploy.yml`은 다음 경계를 추가합니다.
 
-- PostgreSQL은 Docker network 내부에만 노출
-- FastAPI는 VM loopback `127.0.0.1:8000`에만 publish
-- Caddy만 80/443 공개
-- Caddy가 `/admin/*` 차단
+- PostgreSQL과 FastAPI는 Docker network 내부에만 노출
+- Caddy만 host port를 publish (`DOCREVIEW_ORIGIN_PORT`, 기본 `8000`; Oracle 배포는 `8880`)
+- Caddy가 `/admin*` 차단
 - corpus, eval artifact, PostgreSQL, Caddy state를 `/var/lib/docreview`에 보존
 - app container는 capability 제거와 `no-new-privileges` 적용
 
 설정 예시는 `.env.example`의 배포 섹션에 있습니다(모든 값은 `.env` 하나에).
-실제 VM 생성과 배포는 비용과 외부 상태를 변경하므로 스크립트를 검토한 후
-별도로 실행합니다.
+실제 배포는 비용과 외부 상태를 변경하므로 스크립트를 검토한 후 별도로 실행합니다.
+현재 운영 경로의 절차는 [Oracle 배포 안내](oracle/README.md)에 있습니다.
 
 ```bash
-deploy/gcp/deploy_all.sh all   # setup → vm → image → backend → origin
+bash deploy/oracle/deploy_backend.sh update   # 현재 운영: Oracle Cloud A1
+deploy/gcp/deploy_all.sh all                  # 대체 경로: setup → vm → image → backend → origin
 ```
 
 프로덕션 실관리 접속은 비활성화되어 있습니다. 관리 작업은 로컬 DEV 환경에서

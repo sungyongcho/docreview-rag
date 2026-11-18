@@ -6,7 +6,9 @@ entry replaces it: the entry is marked superseded, the new one is appended and t
 report says so.
 
 Entries are appended under `## Entries`; a superseded entry keeps its original text
-and gains `superseded-by` pointing at the replacing id.
+and gains `superseded-by` pointing at the replacing id. When a later entry replaces
+one clause only, the earlier entry stays `active` and its `note` names the later
+entry and the clause that no longer applies; every other clause still holds.
 
 ## Entries
 
@@ -286,12 +288,13 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - note: 2026-11-18: ideas.md is deleted under the same rule; nothing read it, issue #29 that tracked it is closed and its one entry is built (the company search of Filings).
 
 ### D-37 — The study branch lands on main by rebase merge
-- status: active
+- status: superseded
 - category: workflow
 - date: 2026-11-12
 - source: user instruction in the 2026-11-12 consolidation session on mcp-and-langgraph
 - decision: mcp-and-langgraph is rebase-merged into main once study and implementation are complete, and main and the running service stay unchanged until then; AGENTS.md holds only rules that apply now, in one editable-on-request file, and names no model other than the gpt-6-astra study session.
-- note: D-39 replaces the clause that names the gpt-6-astra study session.
+- superseded-by: D-40
+- note: D-39 replaced the clause that names the gpt-6-astra study session; D-40 restates the rest.
 
 ### D-38 — A later filing decides which stored text is evidence
 - status: active
@@ -307,3 +310,11 @@ Each entry is one `### D-<number> — <title>` heading followed by bullet fields
 - date: 2026-11-18
 - source: user instruction of 2026-11-16, carried out in the 2026-11-18 cleanup session on mcp-and-langgraph
 - decision: Study sessions run in a T3 Code thread on a Claude model through the docreview-study skill, which explains and observes and hands every implementation to a separate Claude Code call that cannot read .env files or credential stores; AGENTS.md names that client and no model, and the skill's calls name their own model so that a changed client default cannot redirect them.
+
+### D-40 — The study branch reaches main only when all of it is ready to deploy
+- status: active
+- category: workflow
+- date: 2026-11-18
+- source: user instruction in the 2026-11-18 planning session on mcp-and-langgraph
+- decision: mcp-and-langgraph is rebase-merged into main only after every part of the study plan is built and the branch is ready to deploy, never part by part, so main receives only a state that can be deployed as it is; main and the running service stay unchanged until then; the study plan (its units, their order and their scope) is kept in the Second Brain Vault under the owner Projects/docreview-rag and not in this repository; AGENTS.md holds only rules that apply now, in one editable-on-request file, and names the study client and no model.
+- note: Replaces D-37. D-39 still decides where study sessions run.
