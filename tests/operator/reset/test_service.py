@@ -14,7 +14,7 @@ import pytest
 from app.ingestion.sources.models import CorpusIdentity, Manifest
 from app.operator.reset.commands import WipeError
 from app.operator.reset.service import WipeService
-from tests.live_postgres import live_postgres_unavailable
+from tests.prepared import prepared
 
 
 @pytest.mark.parametrize(
@@ -84,14 +84,11 @@ def test_active_operations_block_inspection(tmp_path, state_dir):
         asyncio.run(WipeService(tmp_path, lambda: True, state_dir=state_dir).inspect())
 
 
-@pytest.mark.live_postgres
+@pytest.mark.prepared_environment
 def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch, state_dir):
     """Erase only an isolated test volume and verify a real empty pgvector schema."""
-    image = os.environ.get("DOCREVIEW_WIPE_TEST_IMAGE")
-    if not image:
-        live_postgres_unavailable(
-            "Set DOCREVIEW_WIPE_TEST_IMAGE to a freshly built application image."
-        )
+    # A freshly built application image; the test starts its own Compose project from it.
+    (image,) = prepared("DOCREVIEW_WIPE_TEST_IMAGE")
     root = tmp_path / "docreview-wipe-test"
     root.mkdir()
     (root / "docker").mkdir()

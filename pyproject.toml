@@ -95,7 +95,8 @@ dev = [
 addopts = "--import-mode=importlib"
 pythonpath = ["."]
 markers = [
-    "live_postgres: executes SQL against the configured live PostgreSQL database",
+    "live_postgres: executes SQL against the isolated disposable PostgreSQL named by DOCREVIEW_TEST_DATABASE_URL",
+    "prepared_environment: runs against an environment the caller prepared and named in the test's own variables",
 ]
 
 

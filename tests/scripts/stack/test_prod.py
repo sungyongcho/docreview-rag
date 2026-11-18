@@ -2,13 +2,13 @@
 
 import hashlib
 import json
-import os
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from scripts.stack import cli, local_http, prod
+from tests.prepared import prepared
 
 
 @pytest.fixture
@@ -289,13 +289,11 @@ def test_readiness_wait_handles_transient_non_json_proxy_response(tmp_path, monk
     assert opener.open.call_count == 2
 
 
-@pytest.mark.live_postgres
+@pytest.mark.prepared_environment
 def test_prepared_local_prod_has_verified_sources_vectors_and_foreign_keys():
     """Read the explicitly selected local PROD volume; never create, clear or modify its data."""
-    from tests.live_postgres import live_postgres_unavailable
-
-    if os.environ.get("DOCREVIEW_LOCAL_PROD_ACCEPTANCE") != "1":
-        live_postgres_unavailable("Enable explicit read-only local PROD acceptance")
+    (requested,) = prepared("DOCREVIEW_LOCAL_PROD_ACCEPTANCE")
+    assert requested == "1", "DOCREVIEW_LOCAL_PROD_ACCEPTANCE takes the value 1"
     root = Path(__file__).resolve().parents[3]
     database = prod.LocalDatabase(root)
     assert database.isolated(), "The live acceptance target must be the dedicated local PROD volume"

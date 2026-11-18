@@ -64,8 +64,9 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
             OperatorCommand(
                 "python-tests-offline",
                 "Python tests · offline",
-                "Run the suite without live PostgreSQL cases or provider requests.",
-                (".venv/bin/pytest", "-q", "-m", "not live_postgres"),
+                "Run the suite without live PostgreSQL cases, prepared environments or "
+                "provider requests.",
+                (".venv/bin/pytest", "-q", "-m", "not live_postgres and not prepared_environment"),
                 Path("."),
                 1_800,
                 "verify",
@@ -74,7 +75,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
             OperatorCommand(
                 "python-tests-postgres",
                 "Python tests · PostgreSQL",
-                "Require the live PostgreSQL marker instead of silently skipping it.",
+                "Run the cases that need the isolated test PostgreSQL; fail if it is unreachable.",
                 (
                     ".venv/bin/pytest",
                     "-q",

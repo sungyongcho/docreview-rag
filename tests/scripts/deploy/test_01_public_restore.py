@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -11,18 +10,16 @@ from urllib.parse import urlsplit
 import asyncpg
 import pytest
 
-from tests.live_postgres import live_postgres_unavailable
+from tests.prepared import prepared
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
-@pytest.mark.live_postgres
+@pytest.mark.prepared_environment
 def test_restored_public_portfolio_matches_checked_artifacts(tmp_path):
     """Verify the real restore without touching schema, corpus, vectors or runtime records."""
-    dsn = os.environ.get("DOCREVIEW_RESTORE_TEST_DSN")
-    artifact_dir = os.environ.get("DOCREVIEW_PUBLIC_ARTIFACT_DIR")
-    if not dsn or not artifact_dir:
-        live_postgres_unavailable("Set the disposable restore DSN and public artifact directory")
+    # A disposable database restored from the public artifacts, and those artifacts.
+    dsn, artifact_dir = prepared("DOCREVIEW_RESTORE_TEST_DSN", "DOCREVIEW_PUBLIC_ARTIFACT_DIR")
     parsed = urlsplit(dsn)
     assert parsed.hostname in {"127.0.0.1", "localhost"}
     assert parsed.path.startswith("/pipeline_test_")

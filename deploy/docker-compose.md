@@ -1,7 +1,7 @@
 # Docker Compose 로컬 운영
 
 루트 `docker/docker-compose.yml`은 PostgreSQL/pgvector `db`와 Next 정적 서비스가 포함된
-FastAPI `app`을 제공합니다. DB 통합 테스트만 할 때는 `db`만 시작하고, 브라우저
+FastAPI `app`을 제공합니다. DB만 필요할 때는 `db`만 시작하고, 브라우저
 서비스까지 확인할 때는 두 서비스를 함께 시작합니다.
 
 기본 파일만으로 개발 구성(`MODE=dev`, 관리 권한 `live`)이 뜹니다. 여기에 overlay 두 개를
@@ -31,16 +31,27 @@ docker compose --project-directory . -f docker/docker-compose.yml ps db
 빠른 테스트는 DB가 필요 없습니다.
 
 ```bash
-uv run pytest -m "not live_postgres"
+uv run pytest -m "not live_postgres and not prepared_environment"
 ```
 
-실제 PostgreSQL/pgvector 동작을 요구하는 테스트:
+실제 PostgreSQL/pgvector 동작을 요구하는 테스트는 이 Compose의 `db`가 아니라 버려도 되는
+별도 PostgreSQL에서 실행합니다. 테스트는 `DATABASE_URL`을 읽지 않고
+`DOCREVIEW_TEST_DATABASE_URL`만 읽으며, 스키마를 만들고 지웁니다.
 
 ```bash
-uv run pytest -m live_postgres --require-live-postgres
+docker run --rm -d --name docreview-test-db -e POSTGRES_PASSWORD=test \
+  --tmpfs /var/lib/postgresql/data -p 127.0.0.1:55433:5432 pgvector/pgvector:pg16
+
+DOCREVIEW_TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@127.0.0.1:55433/postgres \
+  uv run pytest -m live_postgres --require-live-postgres
+
+docker stop docreview-test-db
 ```
 
-`--require-live-postgres`를 사용하면 연결 실패를 skip하지 않고 실패로 처리합니다.
+`--require-live-postgres`를 사용하면 그 DB에 연결하지 못할 때 skip하지 않고 실패로 처리합니다.
+`prepared_environment` 표지의 테스트는 새로 빌드한 이미지, 공개 산출물로 복원한 DB, 로컬
+PROD 볼륨처럼 호출자가 미리 준비한 환경을 대상으로 합니다. 테스트가 기다리는 변수로 그
+환경을 알려 줄 때만 실행하고, 그 전에는 변수 이름과 함께 skip됩니다.
 
 ## 전체 서비스 실행
 
@@ -111,9 +122,6 @@ Corpus Lab의 실제 실행 API를 호출하지 않습니다.
 
 ```bash
 DB_PORT=55432 docker compose --project-directory . -f docker/docker-compose.yml up -d db
-
-DATABASE_URL=postgresql+asyncpg://filing:filing@127.0.0.1:55432/filing \
-  uv run pytest -m live_postgres --require-live-postgres
 ```
 
 app 포트 변경:
