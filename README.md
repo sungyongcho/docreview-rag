@@ -28,7 +28,7 @@ An evidence-first bilingual RAG service for SEC 10-K and Korean DART filings. An
 
 ## Project planning
 
-Personal plans, TODOs and progress are maintained in the maintainer's local Second Brain project hub and project TODO. Its MCP and LangGraph learning plan contains the migrated exercises and acceptance criteria. Product guides, deployment procedures, decisions and verification evidence remain in this repository.
+Personal plans, TODOs and progress are maintained in the maintainer's local Second Brain project hub and project TODO. Its MCP and LangGraph learning plan contains the migrated exercises and acceptance criteria. Product guides and deployment procedures remain in this repository. Product decisions are recorded in that Second Brain project, and each commit states how it was verified.
 
 ## Local Development
 
