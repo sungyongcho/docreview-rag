@@ -14,8 +14,8 @@ from app.corpus_admin.operations import CorpusOperations
 from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand
 from app.db.session_factory import SessionFactory
+from app.indexing.embeddings import EmbeddingBackfillResult
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from app.retrieval.indexing.embeddings import EmbeddingBackfillResult
 from tests.corpus_admin.support import write_manifest
 
 
@@ -240,7 +240,7 @@ def test_acquisition_records_listed_filings_even_when_a_download_fails(
     from sqlalchemy import select
 
     from app.db.models import FilingVersion
-    from app.ingestion.persistence import persist_seed_batch
+    from app.indexing.persistence import persist_seed_batch
     from app.ingestion.sources.models import CorpusIdentity, Manifest
     from tests.amendments.support import amendment_document, batch, eligible, parsed, sec_document
     from tests.live_postgres import isolated_session_factory

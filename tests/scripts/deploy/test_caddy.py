@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request
 import pytest
 from starlette.requests import ClientDisconnect
 
-from app.release.ai_allowance import SharedAIAllowance
+from app.llm.allowance import SharedAIAllowance
 from app.release.middleware import ReleaseGuardMiddleware, client_key
 
 ROOT = Path(__file__).resolve().parents[3]

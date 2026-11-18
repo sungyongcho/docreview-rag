@@ -6,9 +6,9 @@ from pydantic import Field, StrictStr
 from pydantic.functional_validators import model_validator
 
 from app.contracts.validation import StrictSchema
+from app.language import QueryLanguage, detect_query_language, detect_query_languages
 from app.llm.completion import LLMProvider
 from app.llm.schemas import Prompt, ProviderBudget
-from app.query.language import QueryLanguage, detect_query_language, detect_query_languages
 
 # One prompt per corpus language: a translated arm always translates INTO the
 # language the target corpus is written in.

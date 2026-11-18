@@ -9,6 +9,7 @@ import time
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
+from app.llm.allowance import active_allowance, reserve_openai
 from app.llm.completion import (
     Clock,
     LLMProvider,
@@ -17,9 +18,8 @@ from app.llm.completion import (
 )
 from app.llm.decoding import strict_response_format
 from app.llm.estimate import estimate_prompt_tokens
+from app.llm.openai_models import OpenAIModelRole, ReasoningEffort, resolve_openai_model
 from app.llm.schemas import BudgetExceeded, Prompt, ProviderBudget, RawProviderResponse
-from app.openai_models import OpenAIModelRole, ReasoningEffort, resolve_openai_model
-from app.release.ai_allowance import active_allowance, reserve_openai
 
 
 def _openai_refusal(response: object) -> str | None:

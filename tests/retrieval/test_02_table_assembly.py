@@ -16,7 +16,7 @@ from app.db.models import (
     TableSourceCell,
 )
 from app.figures.tables import TableCellReading
-from app.ingestion.persistence import reading_columns
+from app.indexing.persistence import reading_columns
 from app.retrieval.tables import assemble_tables, catalog_cells
 
 TABLE = "t" * 64

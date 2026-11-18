@@ -7,8 +7,8 @@ from typing import cast
 from pydantic import ValidationError
 import pytest
 
+from app.language import QueryLanguage
 from app.llm.schemas import ProviderBudget, TokenPricing
-from app.query.language import QueryLanguage
 from app.query.translation import (
     QueryTranslation,
     QueryTranslationError,

@@ -25,10 +25,10 @@ from app.db.models import (
     SnapshotChunkTerm,
     SnapshotLexemeStat,
 )
-from app.ingestion.persistence import persist_seed_batch_with_stats
+from app.indexing import bm25 as bm25_index
+from app.indexing.persistence import persist_seed_batch_with_stats
 from app.ingestion.pipeline import build_seed_batch_from_filings
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from app.retrieval.indexing import bm25 as bm25_index
 from app.retrieval.search import bm25, lexical, vector
 from app.retrieval.types import RetrievalFilters
 from tests.live_postgres import isolated_session

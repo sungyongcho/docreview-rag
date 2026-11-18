@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from app.api.documents.catalog import DocumentCatalog
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from tests.ingestion.seed.support import sample_batch
 from tests.live_postgres import isolated_session_factory

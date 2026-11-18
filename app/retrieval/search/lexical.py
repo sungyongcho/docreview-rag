@@ -12,8 +12,8 @@ from sqlalchemy import Select, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Chunk, SnapshotChunk
+from app.language import ENGLISH_TEXT_SEARCH_CONFIG
 from app.retrieval.search.sql import (
-    TEXT_SEARCH_CONFIG,
     apply_filters,
     hit_columns,
     hit_order_by,
@@ -29,7 +29,7 @@ def lexical_statement(
     k: int,
     filters: RetrievalFilters | None = None,
     *,
-    text_search_config: str = TEXT_SEARCH_CONFIG,
+    text_search_config: str = ENGLISH_TEXT_SEARCH_CONFIG,
 ) -> Select[*tuple[Any, ...]]:
     """Build a safe PostgreSQL FTS statement ranked by cover density.
 
@@ -90,7 +90,7 @@ async def lexical_search(
     k: int = 5,
     filters: RetrievalFilters | None = None,
     *,
-    text_search_config: str = TEXT_SEARCH_CONFIG,
+    text_search_config: str = ENGLISH_TEXT_SEARCH_CONFIG,
 ) -> list[ChunkHit]:
     """Run the PostgreSQL FTS baseline and return typed hits.
 
@@ -123,3 +123,24 @@ async def lexical_search(
         lexical_statement(query, k, filters, text_search_config=text_search_config)
     )
     return [ChunkHit.model_validate(row) for row in result.mappings().all()]
+
+
+def lexical_corpus_language(filters: RetrievalFilters | None) -> str:
+    """Return the corpus language the lexical component must tokenize for.
+
+    An absent or empty language filter keeps the committed English behavior; a
+    filter naming exactly one language selects that language's plan. A filter
+    mixing corpus languages is refused rather than guessed.
+
+    Raises
+    ------
+    ValueError
+        If ``filters.languages`` names more than one language — the corpora are
+        tokenized differently, so one lexical statement cannot serve both.
+    """
+    languages = set(filters.languages) if filters is not None else set()
+    if not languages:
+        return "en"
+    if len(languages) > 1:
+        raise ValueError("lexical retrieval cannot span corpus languages; filter to exactly one")
+    return next(iter(languages))

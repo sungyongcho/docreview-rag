@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import EMBEDDING_DIMENSIONS
 from app.db.models import Chunk, ChunkEmbedding, SnapshotChunk
 from app.retrieval.embedding.provider import EmbeddingIdentity
-from app.retrieval.indexing.embeddings import matching_embedding, matching_snapshot_embedding
+from app.retrieval.embedding.stored import matching_embedding, matching_snapshot_embedding
 from app.retrieval.search.sql import apply_filters, hit_columns, hit_order_by
 from app.retrieval.types import ChunkHit, RetrievalFilters, finite_float
 

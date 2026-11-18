@@ -46,12 +46,12 @@ from app.evals.experiments.diagnostics import (
 from app.evals.golden.bilingual import KO_GOLDEN_PATH, load_bilingual_suites
 from app.evals.golden.loading import DEFAULT_GOLDEN_PATH
 from app.ingestion.parsing.registry import registry_for
-from app.ingestion.pipeline import DEFAULT_MANIFEST_NAME, embedding_chunk_config
+from app.ingestion.pipeline import DEFAULT_MANIFEST_NAME
 from app.ingestion.progress import OperationProgress, OperationProgressCallback, operation_bar
 from app.ingestion.tokens import TARGET_INPUT_TOKENS
 from app.llm.completion import LLMProvider
 from app.llm.schemas import ProviderBudget
-from app.retrieval.embedding.provider import get_embedding_provider
+from app.retrieval.embedding.provider import embedding_chunk_config, get_embedding_provider
 from app.retrieval.ranking.fusion import DEFAULT_RRF_K
 from app.retrieval.types import RetrievalFilters
 
@@ -239,7 +239,7 @@ def translation_boundary(model_name: str, settings: Settings) -> tuple[LLMProvid
     keeps every paid boundary in this command sourced the same way.
     """
     from app.llm.openai import OpenAILLMProvider
-    from app.openai_models import resolve_openai_model
+    from app.llm.openai_models import resolve_openai_model
 
     selection = resolve_openai_model("translation", model_name)
     provider = OpenAILLMProvider(

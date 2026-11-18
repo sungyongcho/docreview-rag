@@ -20,8 +20,8 @@ from app.db.models import (
     TableSourceCell,
     TableSourceFact,
 )
+from app.indexing.persistence import persist_seed_batch
 from app.ingestion.parsing.facts import FilingFacts, PeriodTerm, StatementDeclaration
-from app.ingestion.persistence import persist_seed_batch
 from app.ingestion.pipeline import SeedBatch
 from tests.ingestion.seed.support import sample_batch, table_batch, tagged_table_batch
 from tests.live_postgres import isolated_session_factory

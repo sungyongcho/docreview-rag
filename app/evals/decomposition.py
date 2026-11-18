@@ -60,8 +60,8 @@ def decomposition_boundary(
     """
     from app.config import get_settings
     from app.llm.openai import OpenAILLMProvider
+    from app.llm.openai_models import resolve_openai_model
     from app.llm.schemas import ProviderBudget
-    from app.openai_models import resolve_openai_model
 
     settings = get_settings()
     selection = resolve_openai_model("decomposition", model_name)

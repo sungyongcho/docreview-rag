@@ -8,7 +8,7 @@ from typing import Final, Literal, Self
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from app.openai_models import resolve_openai_model
+from app.llm.openai_models import resolve_openai_model
 from app.settings_sources import ProviderSettings
 
 EmbeddingProviderName = Literal["openai", "deterministic", "sbert"]

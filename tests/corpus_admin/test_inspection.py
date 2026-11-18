@@ -11,7 +11,7 @@ from app.config import Settings
 import app.corpus_admin.inspection as inspection
 from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.db.models import ParsedTable
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from tests.corpus_admin.support import write_manifest
 from tests.ingestion.seed.support import table_batch
 from tests.live_postgres import isolated_session_factory

@@ -11,6 +11,7 @@ import re
 import unicodedata
 
 from app.config import Settings, get_settings
+from app.ingestion.tokens import InputBudget
 from app.retrieval.types import finite_float
 
 
@@ -188,6 +189,19 @@ class DeterministicEmbeddingProvider(EmbeddingProvider):
             self.dimensions,
             "unicode-alnum:nfkc:casefold:v1",
         )
+
+
+def embedding_chunk_config(
+    provider: EmbeddingProvider, *, target_tokens: int = 2_048
+) -> InputBudget:
+    """Plan complete inputs using the selected embedding model's actual tokenizer."""
+    maximum = min(8_192, provider.max_input_tokens)
+    return InputBudget(
+        target_tokens=min(target_tokens, maximum),
+        max_tokens=maximum,
+        model=provider.identity.model,
+        token_counter=provider.count_input_tokens,
+    )
 
 
 def get_embedding_provider(settings: Settings | None = None) -> EmbeddingProvider:

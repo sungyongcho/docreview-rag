@@ -9,7 +9,7 @@ import pytest
 from app.api.corpus.routes import _corpus_snapshot
 from app.config import Settings
 from app.corpus_admin.service import RuntimeCorpusAdminService
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from app.ingestion.pipeline import SeedBatch, filing_records
 from app.ingestion.sources.deletion import SourceDeletion
 from app.ingestion.sources.models import Manifest

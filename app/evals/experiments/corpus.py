@@ -13,19 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 from app.config import Settings, get_settings
 from app.db.models import Base
 from app.evals.execution.measurement import Clock, IndexingBudgetMeasurement, assess_indexing_budget
+from app.indexing.embeddings import EmbeddingBackfillResult, embed_missing_chunks
+from app.indexing.persistence import persist_seed_batch_with_stats
 from app.ingestion.parsing.models import ParsedFiling
-from app.ingestion.persistence import persist_seed_batch_with_stats
 from app.ingestion.pipeline import (
     DEFAULT_MANIFEST_NAME,
     SeedBatch,
     build_seed_batch_from_filings,
-    embedding_chunk_config,
     load_manifest,
     parse_seed_filings,
 )
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
-from app.retrieval.embedding.provider import EmbeddingProvider
-from app.retrieval.indexing.embeddings import EmbeddingBackfillResult, embed_missing_chunks
+from app.retrieval.embedding.provider import EmbeddingProvider, embedding_chunk_config
 
 
 def load_chunking_filings(

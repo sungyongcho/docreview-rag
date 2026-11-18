@@ -12,7 +12,7 @@ from app.api.amendments.routes import (
     withdraw_amendment_review,
 )
 from app.api.errors import ApiProblemError
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from tests.amendments.support import amendment_document, batch, eligible, parsed, sec_document
 from tests.api.support import _admin
 from tests.live_postgres import isolated_session_factory

@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import func, select, text
 
 from app.db.models import FilingVersion
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from scripts.schema.filings import record_filings
 from tests.amendments.support import batch, dart_document, eligible, parsed, sec_document
 from tests.live_postgres import isolated_session

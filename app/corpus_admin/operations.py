@@ -22,22 +22,19 @@ from app.corpus_admin.inspection import CorpusInspector
 from app.corpus_admin.types import AdminCommand, OperationOutcome
 from app.db.bootstrap import bootstrap_schema
 from app.db.models import Chunk, ChunkEmbedding
+from app.indexing.bm25 import backfill_term_stats
+from app.indexing.embeddings import EmbeddingBackfillResult, embed_missing_chunks
+from app.indexing.persistence import persist_seed_batch
 from app.ingestion.acquisition.dart import acquire_dart
 from app.ingestion.acquisition.sec import DEFAULT_MANIFEST, acquire_edgar
-from app.ingestion.persistence import persist_seed_batch
-from app.ingestion.pipeline import load_seed_batch
+from app.ingestion.pipeline import SeedBatch, load_seed_batch
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
 from app.ingestion.sources.catalog import acquired_catalog
 from app.ingestion.sources.deletion import SourceDeletion
 from app.ingestion.sources.models import Manifest
 from app.observability.usage import UsageSink
-from app.retrieval.embedding.provider import EmbeddingProvider
-from app.retrieval.indexing.bm25 import backfill_term_stats
-from app.retrieval.indexing.embeddings import (
-    EmbeddingBackfillResult,
-    embed_missing_chunks,
-    matching_embedding,
-)
+from app.retrieval.embedding.provider import EmbeddingProvider, embedding_chunk_config
+from app.retrieval.embedding.stored import matching_embedding
 
 
 async def _embedding_state(
@@ -204,14 +201,20 @@ class CorpusOperations:
             """Move parser-thread progress safely onto the queue's event loop."""
             loop.call_soon_threadsafe(publish, progress)
 
-        batch = await asyncio.to_thread(
-            load_seed_batch,
-            manifest,
-            selection_id=command.selection_id,
-            embedding_provider=self._service.embedding_provider,
-            expected_documents=command.expected_documents,
-            on_progress=publish_from_parser,
-        )
+        provider = self._service.embedding_provider
+        selection_id = command.selection_id
+
+        def load() -> SeedBatch:
+            """Size chunks for the embedding model and parse off the event loop."""
+            return load_seed_batch(
+                manifest,
+                selection_id=selection_id,
+                budget=embedding_chunk_config(provider),
+                expected_documents=command.expected_documents,
+                on_progress=publish_from_parser,
+            )
+
+        batch = await asyncio.to_thread(load)
         # Let the parser's queued progress land before the next stage is published.
         await asyncio.sleep(0)
         publish(OperationProgress("schema", 0, 1, "Checking schema compatibility"))

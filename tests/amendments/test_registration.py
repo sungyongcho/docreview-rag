@@ -13,7 +13,7 @@ from app.amendments.registration import (
 )
 from app.amendments.review import ItemEffect, record_review
 from app.db.models import AmendmentEffect, FilingVersion
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from tests.amendments.support import (
     amendment_document,
     batch,

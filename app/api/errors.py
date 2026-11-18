@@ -14,9 +14,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.review.schemas import ApiError, ErrorResponse, ValidationIssue
 from app.evals.snapshots.evidence import SnapshotEvidenceError
+from app.llm.allowance import AIAllowanceError
 from app.observability.types import JsonObject
 from app.operator.jobs.execution import JobPersistenceError
-from app.release.ai_allowance import AIAllowanceError
 
 logger = logging.getLogger(__name__)
 

@@ -9,8 +9,8 @@ from sqlalchemy import select, update
 
 from app.contracts.figures import FiguresUnverified
 from app.db.models import Chunk, ParsedTable
+from app.indexing.persistence import persist_seed_batch
 from app.ingestion.chunking import ChunkKind, compose_index_text
-from app.ingestion.persistence import persist_seed_batch
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
 from app.retrieval.tables import load_table_readings
 from app.retrieval.types import ChunkHit

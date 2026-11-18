@@ -8,8 +8,8 @@ from typing import Literal, Self
 from pydantic import Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from app.llm.openai_models import resolve_openai_model
 from app.llm.schemas import ProviderBudget
-from app.openai_models import resolve_openai_model
 from app.settings_sources import ProviderSettings
 
 type AdminMode = Literal["off", "readonly", "live"]

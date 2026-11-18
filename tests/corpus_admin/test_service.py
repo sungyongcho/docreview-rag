@@ -13,11 +13,11 @@ from app.corpus_admin.operations import CorpusOperations
 from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import AdminCommand
 from app.db.session_factory import SessionFactory
+from app.indexing.bm25 import TermStatCounts
 from app.ingestion.progress import OperationProgress
 from app.operator.jobs.progress import stored_progress
 from app.operator.jobs.store import JobStore
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from app.retrieval.indexing.bm25 import TermStatCounts
 from tests.corpus_admin.support import LedgerStore, write_manifest
 from tests.support.settings import load_settings
 

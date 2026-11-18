@@ -513,7 +513,7 @@ def test_provider_failure_is_recorded_and_redacted_before_http_response(tmp_path
 def test_allowance_denial_after_a_billed_call_keeps_the_run_on_record(tmp_path, hit):
     """A check call the shared allowance denies after the grade call was billed still
     persists the billed run, and the caller still receives the denial for its 429."""
-    from app.release.ai_allowance import AIAllowanceError
+    from app.llm.allowance import AIAllowanceError
     from app.workflow.runner import BilledRunAllowanceError
 
     grade = json.dumps(

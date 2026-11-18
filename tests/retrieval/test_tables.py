@@ -11,7 +11,7 @@ from sqlalchemy import delete, select, update
 from app.db.models import Chunk, ChunkTableCell, ParsedTable
 from app.figures.answers import EvidenceText
 from app.figures.tables import TableCellReading
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from app.ingestion.revisions import BUILDER_REVISION, RESOLVER_REVISION
 from app.retrieval.tables import (
     figure_evidence,

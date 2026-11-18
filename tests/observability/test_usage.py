@@ -243,7 +243,7 @@ def test_direct_backfill_keeps_charged_cli_usage_when_vector_storage_fails(monke
     """The CLI's shared backfill path commits response usage before a later vector-write failure."""
     import hashlib
 
-    from app.retrieval.indexing import embeddings
+    from app.indexing import embeddings
 
     url = disposable_database_url()
 

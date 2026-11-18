@@ -17,8 +17,8 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.indexing import embeddings as embedding_index
 from app.retrieval.embedding import openai as openai_embeddings, provider as embeddings
-from app.retrieval.indexing import embeddings as embedding_index
 from tests.retrieval.support import RecordingSession
 from tests.support.settings import load_settings
 

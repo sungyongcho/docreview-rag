@@ -21,9 +21,9 @@ from uuid import uuid4
 import httpx
 import tiktoken
 
+from app.language import detect_query_language
 from app.llm.estimate import estimate_prompt_tokens
 from app.llm.schemas import Prompt, RelevanceJudgment
-from app.query.language import detect_query_language
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.workflow.prompts import build_grade_prompt
 from app.workflow.types import DEFAULT_SYSTEM_PROMPT, WorkflowState

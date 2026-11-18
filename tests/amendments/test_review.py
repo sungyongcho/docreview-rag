@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.amendments.registration import register_filings
 from app.amendments.review import ItemEffect, ReviewError, clear_review, record_review
 from app.db.models import FilingVersion
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from tests.amendments.support import amendment_document, batch, eligible, parsed, sec_document
 from tests.live_postgres import isolated_session
 

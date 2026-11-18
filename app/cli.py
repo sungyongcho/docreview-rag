@@ -200,10 +200,10 @@ def _evidence_payload(hit: ChunkHit) -> dict[str, object]:
 async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
     """Retrieve cited evidence with the same ranking plan the configuration measured."""
     from app.db.session import Session
+    from app.indexing.embeddings import EmbeddingBackfillResult, embed_missing_chunks
     from app.ingestion.progress import OperationProgress, operation_bar
     from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
     from app.retrieval.embedding.provider import get_embedding_provider
-    from app.retrieval.indexing.embeddings import EmbeddingBackfillResult, embed_missing_chunks
     from app.retrieval.search.plan import SearchPlan
     from app.retrieval.search.service import retrieve
 

@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import select, text
 
 from app.db.models import Chunk, SnapshotChunkTableCell, SnapshotTableSourceCell
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from app.retrieval.tables import load_table_readings
 from scripts.schema.tables import comparable, migrate_tables, snapshot_rows
 from tests.ingestion.seed.support import table_batch, tagged_table_batch

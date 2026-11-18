@@ -11,6 +11,7 @@ from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
+from app.llm.allowance import AIAllowanceError, SharedAIAllowance, active_allowance
 from app.llm.completion import BilledAttemptAllowanceError
 from app.llm.decoding import strict_response_format
 import app.llm.openai as provider_module
@@ -26,7 +27,6 @@ from app.llm.schemas import (
     SchemaRejected,
     TokenPricing,
 )
-from app.release.ai_allowance import AIAllowanceError, SharedAIAllowance, active_allowance
 from tests.llm.support import DeterministicLLMProvider, TickClock, raw
 
 

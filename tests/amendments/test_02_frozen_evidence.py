@@ -16,7 +16,7 @@ from app.evals.results.identity import (
     index_fingerprint,
 )
 from app.evals.snapshots.service import SnapshotService
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from app.retrieval.embedding.provider import EmbeddingIdentity
 from app.retrieval.search.plan import SearchPlan
 from app.retrieval.search.service import retrieve

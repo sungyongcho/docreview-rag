@@ -38,7 +38,7 @@ from app.evals.contracts import GoldenEvidenceChunk, GoldenEvidencePage
 from app.ingestion.sources.catalog import CompanyNames
 from app.observability.redaction import redact_sensitive_text
 from app.retrieval.embedding.provider import EmbeddingIdentity
-from app.retrieval.indexing.embeddings import matching_embedding
+from app.retrieval.embedding.stored import matching_embedding
 
 
 def public_source_url(value: str) -> str:

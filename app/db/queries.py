@@ -1,4 +1,6 @@
-"""Explicit read joins for current filing parses."""
+"""Query helpers shared by readers and writers: current-parse joins and statement batches."""
+
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import contains_eager
@@ -45,3 +47,9 @@ def document_chunk_counts() -> Select[Document, int]:
         .group_by(Document.doc_id)
     )
     return join_current_parse(statement, load=True, grouped=True)
+
+
+def slices[T](rows: Sequence[T], size: int = 1000) -> Iterable[Sequence[T]]:
+    """Split rows or ids so one statement stays under PostgreSQL's bind-parameter limit."""
+    for start in range(0, len(rows), size):
+        yield rows[start : start + size]

@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from app.ingestion.parsing.registry import registry_for
 from app.ingestion.sources.catalog import catalog_aliases
 from app.ingestion.sources.models import DocumentReference, Manifest
-from app.query.language import detect_query_languages
+from app.language import detect_query_languages
 from app.retrieval.types import RetrievalFilters
 
 CorpusScope = Literal["auto", "sec", "dart"]

@@ -1,4 +1,4 @@
-"""Incremental immutable embedding storage and indexing progress."""
+"""Fill in the vectors the index lacks, in resumable batches."""
 
 from __future__ import annotations
 
@@ -12,10 +12,9 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import and_, column, literal, select, values
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.elements import ColumnElement
 
 from app.config import get_settings
-from app.db.models import Chunk, ChunkEmbedding, SnapshotChunk
+from app.db.models import Chunk, ChunkEmbedding
 from app.observability.usage import (
     UsageSink,
     observe_embedding_usage,
@@ -29,6 +28,7 @@ from app.retrieval.embedding.provider import (
     EmbeddingProvider,
     validate_embeddings,
 )
+from app.retrieval.embedding.stored import matching_embedding
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,32 +53,6 @@ class EmbeddingBackfillResult:
     embedded: int
     skipped_stale: int
     batches: int
-
-
-def matching_embedding(identity: EmbeddingIdentity) -> ColumnElement[bool]:
-    """Bind reusable vectors to the current input hash and exact configuration."""
-    return and_(
-        ChunkEmbedding.chunk_id == Chunk.id,
-        ChunkEmbedding.input_sha256 == Chunk.index_text_sha256,
-        ChunkEmbedding.provider == identity.provider,
-        ChunkEmbedding.model == identity.model,
-        ChunkEmbedding.dimensions == identity.dimensions,
-        ChunkEmbedding.tokenizer == identity.tokenizer,
-    )
-
-
-def matching_snapshot_embedding(identity: EmbeddingIdentity) -> ColumnElement[bool]:
-    """Bind a snapshot's frozen vector to the exact configuration that must read it.
-
-    A snapshot row stores its vector inline, so a row frozen without one never matches.
-    """
-    return and_(
-        SnapshotChunk.embedding_provider == identity.provider,
-        SnapshotChunk.embedding_model == identity.model,
-        SnapshotChunk.embedding_dimensions == identity.dimensions,
-        SnapshotChunk.embedding_tokenizer == identity.tokenizer,
-        SnapshotChunk.embedding.is_not(None),
-    )
 
 
 async def _missing_batch(

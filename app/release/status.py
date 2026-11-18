@@ -18,10 +18,10 @@ from app.api.review.runtime import RuntimeApiServices
 from app.api.system.jobs import READINESS_STATUS_MAX_AGE_S, _readiness_status
 from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import CorpusStatus
+from app.llm.allowance import SharedAIAllowance
 from app.llm.local.connection import LocalConnectionManager
 from app.llm.openai_limits import OpenAICallLimits, OpenAILimitsManager
-from app.openai_models import POLICY_REVISION, openai_policy_snapshot
-from app.release.ai_allowance import SharedAIAllowance
+from app.llm.openai_models import POLICY_REVISION, openai_policy_snapshot
 from app.release.config import AdminMode, ReleaseSettings
 from app.release.middleware import client_key
 from app.settings_sources import Environment

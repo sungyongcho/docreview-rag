@@ -7,10 +7,10 @@ import pytest
 
 from app.contracts.evidence import EvidenceHold
 from app.figures.tables import read_table_cells
+from app.llm.allowance import AIAllowanceError
 from app.observability.persistence import records_to_report, report_to_records
 from app.observability.stages import record_stages, stage_metadata
 from app.observability.types import Budget, RunReport
-from app.release.ai_allowance import AIAllowanceError
 from app.retrieval.search.service import ComponentRankings, RetrievalResult
 from app.workflow.runner import BilledRunAllowanceError, Retriever, run_workflow
 from app.workflow.types import ProviderFailure, WorkflowRequest

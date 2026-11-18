@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import ValidationError
 import pytest
 
+from app.llm.openai_models import resolve_openai_model
 from app.llm.schemas import (
     GRADE_REASON_MAX_CHARS,
     AnswerDecision,
@@ -19,7 +20,6 @@ from app.llm.schemas import (
     SchemaRejected,
     TokenPricing,
 )
-from app.openai_models import resolve_openai_model
 
 
 def metadata():

@@ -18,7 +18,7 @@ from app.evals.golden.models import GoldenCase
 from app.evals.results.identity import EVALUATED_GOLDEN_KEY, STRATEGY_ORDER
 from app.evals.results.regression import HIGHER_IS_BETTER_METRICS, MetricName, RegressionTolerances
 from app.evals.results.reporting import markdown_table
-from app.query.language import QueryLanguage
+from app.language import QueryLanguage
 from app.retrieval.embedding.provider import EmbeddingProvider
 
 DEFAULT_MIN_RECALL_RATIO: Final[float] = 0.85

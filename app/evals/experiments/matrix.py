@@ -58,9 +58,8 @@ from app.evals.results.identity import (
     artifact_filename,
 )
 from app.evals.results.reporting import markdown_table
-from app.ingestion.pipeline import embedding_chunk_config
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
-from app.retrieval.embedding.provider import get_embedding_provider
+from app.retrieval.embedding.provider import embedding_chunk_config, get_embedding_provider
 from app.retrieval.ranking.fusion import DEFAULT_RRF_K
 from app.retrieval.search.plan import RetrievalStrategy
 

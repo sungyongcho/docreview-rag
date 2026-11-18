@@ -16,7 +16,7 @@ from app.api.documents.portfolio import PublicPortfolioReader
 from app.api.review.runtime import RuntimeApiServices
 from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.evals.snapshots.evidence import PublicSnapshotDetails
-from app.release.ai_allowance import SharedAIAllowance
+from app.llm.allowance import SharedAIAllowance
 from app.release.config import ReleaseSettings
 from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware
 from app.release.runtime import build_runtime_services

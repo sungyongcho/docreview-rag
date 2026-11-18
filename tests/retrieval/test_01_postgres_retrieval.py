@@ -9,10 +9,10 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.db.models import Chunk, ChunkEmbedding
-from app.ingestion.persistence import persist_seed_batch_with_stats
+from app.indexing.embeddings import PendingEmbedding, _store_batch, embed_missing_chunks
+from app.indexing.persistence import persist_seed_batch_with_stats
 from app.ingestion.pipeline import build_seed_batch_from_filings
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from app.retrieval.indexing.embeddings import PendingEmbedding, _store_batch, embed_missing_chunks
 from app.retrieval.search.lexical import lexical_search
 from app.retrieval.search.plan import SearchPlan
 from app.retrieval.search.service import retrieve

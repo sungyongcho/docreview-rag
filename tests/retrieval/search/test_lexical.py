@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.retrieval.search import lexical
+from app.retrieval.types import RetrievalFilters
 from tests.retrieval.support import RecordingSession, hit_values, normalized_sql
 
 
@@ -67,3 +68,13 @@ def test_search_executes_once_and_validates_database_mappings():
 
     assert len(session.statements) == 1
     assert [hit.model_dump() for hit in hits] == [mapping]
+
+
+def test_lexical_corpus_language_reads_the_filter():
+    """No language filter keeps English; one language selects it; two are refused."""
+    assert lexical.lexical_corpus_language(None) == "en"
+    assert lexical.lexical_corpus_language(RetrievalFilters()) == "en"
+    assert lexical.lexical_corpus_language(RetrievalFilters(languages=("ko",))) == "ko"
+
+    with pytest.raises(ValueError, match="cannot span corpus languages"):
+        lexical.lexical_corpus_language(RetrievalFilters(languages=("en", "ko")))

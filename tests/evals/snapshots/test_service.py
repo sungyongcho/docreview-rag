@@ -19,10 +19,10 @@ from app.evals.results.identity import (
     index_fingerprint,
 )
 from app.evals.snapshots.service import SnapshotService, _evaluated_embedding
+from app.indexing.bm25 import backfill_term_stats
+from app.indexing.persistence import persist_seed_batch
 from app.ingestion.chunking import compose_index_text
-from app.ingestion.persistence import persist_seed_batch
 from app.retrieval.embedding.provider import EmbeddingIdentity
-from app.retrieval.indexing.bm25 import backfill_term_stats
 from app.retrieval.search.bm25 import bm25_search
 from app.retrieval.search.lexical import lexical_search
 from app.retrieval.search.vector import vector_search

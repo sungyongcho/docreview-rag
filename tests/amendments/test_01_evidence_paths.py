@@ -14,9 +14,9 @@ from app.api.errors import ApiProblemError
 from app.api.review.evidence import CandidateSnapshot, EvidenceSelection, SnapshotCandidate
 from app.api.review.runtime import RuntimeApiServices
 from app.db.models import Chunk
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.embeddings import embed_missing_chunks
+from app.indexing.persistence import persist_seed_batch
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from app.retrieval.indexing.embeddings import embed_missing_chunks
 from app.retrieval.search.plan import SearchPlan
 from app.retrieval.search.service import retrieve
 from app.retrieval.tables import cell_ref

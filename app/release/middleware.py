@@ -14,7 +14,7 @@ from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.review.profiles import PromptPolicy, public_custom_retrieval_violation
-from app.release.ai_allowance import (
+from app.llm.allowance import (
     AIAllowanceError,
     SharedAIAllowance,
     active_allowance,

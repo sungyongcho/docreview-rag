@@ -1,18 +1,16 @@
-"""Hangul-scan query-language detection."""
+"""Corpus-language detection and the lexical plans the index and its queries share."""
 
 import pytest
 
 from app.ingestion.parsing.registry import REGISTRIES
-from app.query.language import (
+from app.language import (
     HANGUL_RANGES,
     KOREAN_TEXT_SEARCH_CONFIG,
     contains_hangul,
     detect_query_language,
-    lexical_corpus_language,
     lexical_plan,
     tokenize_korean_text,
 )
-from app.retrieval.types import RetrievalFilters
 
 
 @pytest.mark.parametrize(
@@ -84,13 +82,3 @@ def test_lexical_plans_pin_the_committed_index_contracts():
     assert english.text_search_config == "english"
     assert korean.index_transform is korean.query_transform is tokenize_korean_text
     assert korean.text_search_config == KOREAN_TEXT_SEARCH_CONFIG
-
-
-def test_lexical_corpus_language_reads_the_filter():
-    """No language filter keeps English; one language selects it; two are refused."""
-    assert lexical_corpus_language(None) == "en"
-    assert lexical_corpus_language(RetrievalFilters()) == "en"
-    assert lexical_corpus_language(RetrievalFilters(languages=("ko",))) == "ko"
-
-    with pytest.raises(ValueError, match="cannot span corpus languages"):
-        lexical_corpus_language(RetrievalFilters(languages=("en", "ko")))

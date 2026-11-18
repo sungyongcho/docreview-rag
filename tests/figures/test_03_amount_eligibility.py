@@ -114,7 +114,7 @@ def test_one_matching_monetary_tag_establishes_the_sign(notation, sign, expected
     from decimal import Decimal
 
     from app.db.models import TableSourceCell
-    from app.ingestion.persistence import reading_columns
+    from app.indexing.persistence import reading_columns
     from app.retrieval.tables import _reading
 
     ev = fragment_evidence("Revenue", notation)

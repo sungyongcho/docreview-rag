@@ -8,7 +8,7 @@ import pytest
 from app.amendments.overview import ItemChunks, ItemDecision, amended_report_periods
 from app.amendments.registration import register_filings
 from app.amendments.review import ItemEffect, record_review
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from tests.amendments.support import (
     amendment_document,
     batch,

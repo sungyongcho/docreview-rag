@@ -10,7 +10,6 @@ from app.db.models import Chunk, Document, SnapshotChunk
 from app.retrieval.types import RetrievalFilters
 
 TIE_BREAK_COLLATION = "C"
-TEXT_SEARCH_CONFIG = "english"
 type ChunkSource = type[Chunk] | type[SnapshotChunk]
 
 

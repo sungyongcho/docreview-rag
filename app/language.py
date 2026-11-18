@@ -1,13 +1,15 @@
-"""Query-language detection for the cross-lingual retrieval path."""
+"""Recognize the corpus languages in text and tokenize them for the lexical index.
+
+The index writer and the search reader both follow the plans here: a chunk is stored
+under its language's ``index_transform`` and a query reaches it through the same
+language's ``query_transform`` and text-search configuration.
+"""
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import re
 from types import MappingProxyType
 from typing import Final, Literal
-
-from app.retrieval.search.sql import TEXT_SEARCH_CONFIG
-from app.retrieval.types import RetrievalFilters
 
 QueryLanguage = Literal["en", "ko"]
 
@@ -55,6 +57,10 @@ def detect_query_languages(query: str) -> tuple[QueryLanguage, ...]:
         languages.append("ko")
     return tuple(languages or ["en"])
 
+
+# The English corpus is indexed under PostgreSQL's ``english`` configuration, whose
+# stemming and stop words apply to both stored text and queries.
+ENGLISH_TEXT_SEARCH_CONFIG: Final[str] = "english"
 
 # The Korean corpus is indexed under PostgreSQL's ``simple`` configuration: the
 # n-grams are the lexemes, so no stemming or stop-word list may rewrite them.
@@ -141,7 +147,7 @@ LEXICAL_PLANS: Final[Mapping[str, LexicalPlan]] = MappingProxyType(
         "en": LexicalPlan(
             index_transform=None,
             query_transform=_identity,
-            text_search_config=TEXT_SEARCH_CONFIG,
+            text_search_config=ENGLISH_TEXT_SEARCH_CONFIG,
         ),
         "ko": LexicalPlan(
             index_transform=tokenize_korean_text,
@@ -166,24 +172,3 @@ def lexical_plan(language: str) -> LexicalPlan:
         known = ", ".join(sorted(LEXICAL_PLANS))
         raise ValueError(f"no lexical plan for language {language!r}; known: {known}")
     return plan
-
-
-def lexical_corpus_language(filters: RetrievalFilters | None) -> str:
-    """Return the corpus language the lexical component must tokenize for.
-
-    An absent or empty language filter keeps the committed English behavior; a
-    filter naming exactly one language selects that language's plan. A filter
-    mixing corpus languages is refused rather than guessed.
-
-    Raises
-    ------
-    ValueError
-        If ``filters.languages`` names more than one language — the corpora are
-        tokenized differently, so one lexical statement cannot serve both.
-    """
-    languages = set(filters.languages) if filters is not None else set()
-    if not languages:
-        return "en"
-    if len(languages) > 1:
-        raise ValueError("lexical retrieval cannot span corpus languages; filter to exactly one")
-    return next(iter(languages))

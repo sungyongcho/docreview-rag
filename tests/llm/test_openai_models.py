@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.openai_models import (
+from app.llm.openai_models import (
     _ALLOWED,
     _DEFAULTS,
     POLICY_REVISION,

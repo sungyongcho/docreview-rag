@@ -17,7 +17,7 @@ from app.amendments.policy import (
 from app.amendments.registration import register_filings
 from app.amendments.review import ItemEffect, record_review
 from app.db.models import Chunk, Document, FilingVersion
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from app.ingestion.sources.models import DocumentReference
 from tests.amendments.support import (
     amendment_document,

@@ -8,7 +8,7 @@ from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.models import ParsedTable
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from app.ingestion.revisions import BUILDER_REVISION, RESOLVER_REVISION
 from scripts.schema.status import schema_status
 from tests.ingestion.seed.support import table_batch, tagged_table_batch

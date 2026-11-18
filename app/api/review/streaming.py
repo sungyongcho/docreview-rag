@@ -23,9 +23,9 @@ from app.api.review.schemas import (
     RunResponse,
     StreamNodeEvent,
 )
+from app.llm.allowance import AIAllowanceError
 from app.observability.stages import StageEvent, record_stages
 from app.observability.types import WorkflowNode
-from app.release.ai_allowance import AIAllowanceError
 from app.workflow.types import WorkflowState
 
 router = APIRouter(tags=["review"])

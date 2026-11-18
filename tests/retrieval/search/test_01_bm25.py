@@ -21,12 +21,12 @@ from app.amendments.registration import register_filings
 from app.config import Settings
 from app.db.bootstrap import ensure_bm25_stats_invalidation
 from app.db.models import Base, Chunk as ChunkModel, ChunkEmbedding
+from app.indexing import bm25 as bm25_index
+from app.indexing.persistence import _persist_sources, document_upsert_statement
 from app.ingestion.chunking import Chunk
 from app.ingestion.parsing.models import Block, ParsedFiling, Section
-from app.ingestion.persistence import _persist_sources, document_upsert_statement
 from app.ingestion.pipeline import SeedBatch, filing_records
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from app.retrieval.indexing import bm25 as bm25_index
 from app.retrieval.search import bm25, service
 from app.retrieval.search.plan import SearchPlan
 from app.retrieval.types import RetrievalFilters

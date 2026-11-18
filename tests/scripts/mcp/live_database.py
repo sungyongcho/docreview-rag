@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.db.models import Chunk, ChunkEmbedding
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from scripts.schema.status import schema_status
 from tests.ingestion.seed.support import table_batch
 from tests.live_postgres import disposable_database_url, live_postgres_unavailable

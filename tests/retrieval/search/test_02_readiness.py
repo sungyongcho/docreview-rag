@@ -9,9 +9,9 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Chunk
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.bm25 import backfill_term_stats
+from app.indexing.persistence import persist_seed_batch
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from app.retrieval.indexing.bm25 import backfill_term_stats
 from app.retrieval.search.plan import SearchPlan
 from app.retrieval.search.service import SearchNotReadyError, prepare_search
 from app.retrieval.types import RetrievalFilters

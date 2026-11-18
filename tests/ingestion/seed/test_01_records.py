@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from app.ingestion.persistence import document_values
+from app.indexing.persistence import document_values
 import app.ingestion.pipeline as seed
 from tests.ingestion.edgar.support import build_numbered_body
 from tests.ingestion.seed.support import sample_chunks, sample_filing, sample_source

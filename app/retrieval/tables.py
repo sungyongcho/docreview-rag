@@ -30,9 +30,9 @@ from app.db.models import (
     TableCellSource,
     TableSourceCell,
 )
+from app.db.queries import slices
 from app.figures.answers import EvidenceText
 from app.figures.tables import TableCellReading, complete_cell
-from app.ingestion.persistence import slices
 from app.ingestion.revisions import BUILDER_REVISION, RESOLVER_REVISION
 
 type _GridCell = TableSourceCell | SnapshotTableSourceCell

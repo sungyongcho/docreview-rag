@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import Field
 
 from app.contracts.validation import NonNegativeFloat, StrictSchema
+from app.llm.completion import observe_model_calls
 from app.llm.schemas import ProviderMetadata
 from app.observability.types import JsonObject, WorkflowNode
 from app.observability.usage import provider_identity
@@ -70,7 +71,9 @@ def record_stages(observer: StageObserver | None = None) -> Iterator[StageRecord
     recorder = StageRecorder(observer=observer)
     token = _ACTIVE.set(recorder)
     try:
-        yield recorder
+        # The call layer reports each completed provider call to this request's recorder.
+        with observe_model_calls(_record_model_call):
+            yield recorder
     finally:
         _ACTIVE.reset(token)
 
@@ -93,7 +96,7 @@ def stage_metadata() -> JsonObject:
     }
 
 
-def record_model_call(metadata: ProviderMetadata) -> None:
+def _record_model_call(metadata: ProviderMetadata) -> None:
     """Retain safe provider timing for gate and routing calls as well as traced calls."""
     recorder = _ACTIVE.get()
     if recorder is None:

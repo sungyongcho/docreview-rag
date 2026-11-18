@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from app.ingestion.chunking import Chunk, chunk_filing
 from app.ingestion.parsing.models import ParsedFiling
@@ -17,10 +17,7 @@ from app.ingestion.progress import OperationProgress, OperationProgressCallback
 from app.ingestion.revisions import PARSER_REVISIONS
 from app.ingestion.sources.models import DocumentReference, FilingSource, Manifest
 from app.ingestion.tokens import InputBudget
-from app.query.language import lexical_plan
-
-if TYPE_CHECKING:
-    from app.retrieval.embedding.provider import EmbeddingProvider
+from app.language import lexical_plan
 
 # One manifest describes one corpus, so the count belongs to the manifest a caller
 # names rather than to this module. There is no default count: the corpus is widened
@@ -167,19 +164,6 @@ def _require_sha256(value: str, *, owner: str) -> None:
     """Require one canonical lowercase SHA-256 identity."""
     if SHA256_RE.fullmatch(value) is None:
         raise ValueError(f"{owner} must have a lowercase hexadecimal SHA-256")
-
-
-def embedding_chunk_config(
-    provider: EmbeddingProvider, *, target_tokens: int = 2_048
-) -> InputBudget:
-    """Plan complete inputs using the selected embedding model's actual tokenizer."""
-    maximum = min(8_192, provider.max_input_tokens)
-    return InputBudget(
-        target_tokens=min(target_tokens, maximum),
-        max_tokens=maximum,
-        model=provider.identity.model,
-        token_counter=provider.count_input_tokens,
-    )
 
 
 def structure_values(filing: ParsedFiling) -> dict[str, Any]:
@@ -408,7 +392,7 @@ def load_seed_batch(
     manifest_path: Path,
     *,
     selection_id: str,
-    embedding_provider: EmbeddingProvider | None = None,
+    budget: InputBudget | None = None,
     expected_documents: int | None = None,
     on_progress: OperationProgressCallback | None = None,
 ) -> SeedBatch:
@@ -418,6 +402,8 @@ def load_seed_batch(
     ----------
     manifest_path : Path
         Explicit manifest file location.
+    budget : InputBudget | None
+        Token budget of one chunk, or ``None`` for the chunker's default.
     expected_documents : int | None
         Required document count, or ``None`` to accept any nonempty corpus.
 
@@ -438,9 +424,6 @@ def load_seed_batch(
             f"Manifest file was not found: {manifest_path}",
         )
     try:
-        budget = (
-            embedding_chunk_config(embedding_provider) if embedding_provider is not None else None
-        )
         return replace(
             build_seed_batch(
                 load_manifest(manifest_path, selection_id=selection_id),

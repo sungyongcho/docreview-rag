@@ -50,6 +50,7 @@ from app.db.session_factory import SessionFactory, default_session_factory
 from app.evals.contracts import EvalResultResource, SnapshotComparisonResponse, SnapshotResource
 from app.evals.snapshots.service import SnapshotService
 from app.ingestion.sources.catalog import CompanyNames, read_company_names
+from app.language import detect_query_language
 from app.llm.completion import LLMProvider
 from app.llm.local.connection import LocalConnectionManager
 from app.llm.openai_limits import OpenAILimitsManager
@@ -60,7 +61,6 @@ from app.observability.types import JsonObject, RunReport, StepTrace, WorkflowNo
 from app.observability.usage import provider_identity
 from app.operator.corpus_access import CorpusAccess, CorpusUpdatingError
 from app.query.intent import ConversationDecision
-from app.query.language import detect_query_language
 from app.query.translation import QueryTranslationError, route_query
 from app.retrieval.embedding.provider import EmbeddingProvider
 from app.retrieval.ranking.reranker import RerankProvider, shared_cross_encoder

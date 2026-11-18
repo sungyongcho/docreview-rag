@@ -26,8 +26,9 @@ from app.db.models import (
     SnapshotTableCellSource,
     SnapshotTableSourceCell,
 )
+from app.db.queries import slices
 from app.figures.tables import interpret_table_cell, read_table_cells, read_table_unit
-from app.ingestion.persistence import reading_columns, slices
+from app.indexing.persistence import reading_columns
 from app.ingestion.revisions import RESOLVER_REVISION
 from app.retrieval.tables import load_table_fragments
 

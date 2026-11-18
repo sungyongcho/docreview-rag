@@ -7,7 +7,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from app.db.models import TableCell, TableSourceCell
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from scripts.schema.facts import (
     READING_COLUMNS,
     SOURCE_CELL_TABLES,

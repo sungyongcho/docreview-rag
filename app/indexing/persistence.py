@@ -31,7 +31,9 @@ from app.db.models import (
     TableSourceCell,
     TableSourceFact,
 )
+from app.db.queries import slices
 from app.figures.tables import TableCellReading
+from app.indexing.bm25 import backfill_term_stats
 from app.ingestion.parsing.facts import FilingFacts
 from app.ingestion.pipeline import ChunkRecord, SeedBatch, structure_values
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
@@ -376,12 +378,6 @@ def _declared_facts(rows: list[dict[str, Any]], facts: FilingFacts) -> list[dict
     ]
 
 
-def slices[T](rows: Sequence[T], size: int = 1000) -> Iterable[Sequence[T]]:
-    """Split rows or ids so one statement stays under PostgreSQL's bind-parameter limit."""
-    for start in range(0, len(rows), size):
-        yield rows[start : start + size]
-
-
 async def _persist_tables(session: AsyncSession, batch: SeedBatch) -> None:
     """Replace every stored table of the batch's documents and link it to its chunks."""
     facts = {filing.source.document.document_id: filing.facts for filing in batch.filings}
@@ -525,8 +521,6 @@ async def persist_seed_batch_with_stats(
     on_progress: OperationProgressCallback | None = None,
 ) -> SeedResult:
     """Persist one corpus batch, then rebuild its invalidated BM25 statistics."""
-    from app.retrieval.indexing.bm25 import backfill_term_stats
-
     result = await persist_seed_batch(
         session,
         batch,

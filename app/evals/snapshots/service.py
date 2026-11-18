@@ -54,7 +54,7 @@ from app.evals.results.comparison import compare_ranks
 from app.evals.results.identity import EVALUATED_GOLDEN_KEY, index_fingerprint
 from app.evals.snapshots.evidence import SnapshotEvidenceError
 from app.retrieval.embedding.provider import EmbeddingIdentity
-from app.retrieval.indexing.embeddings import matching_embedding
+from app.retrieval.embedding.stored import matching_embedding
 
 PUBLIC_COMPARE_MAX_ARTIFACT_BYTES = 16 * 1024 * 1024
 PUBLIC_COMPARE_MAX_CASES = 1000

@@ -25,9 +25,9 @@ from app.evals.results.scoring import GroupScore, breakdown_by_category
 from app.ingestion.parsing.registry import REGISTRIES, registry_for
 from app.ingestion.progress import OperationProgressCallback
 from app.ingestion.tokens import TARGET_INPUT_TOKENS
+from app.language import QueryLanguage
 from app.llm.completion import LLMProvider
 from app.llm.schemas import ProviderBudget
-from app.query.language import QueryLanguage
 from app.query.translation import QueryTranslation, translate_query
 from app.retrieval.embedding.provider import EmbeddingProvider
 from app.retrieval.embedding.sbert import MULTILINGUAL_SBERT_MODEL

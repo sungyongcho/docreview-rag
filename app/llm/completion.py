@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 import time
 
 from pydantic import BaseModel
 
+from app.llm.allowance import AIAllowanceError
 from app.llm.decoding import _parse_output, _repair_prompt
 from app.llm.estimate import estimate_prompt_tokens
 from app.llm.schemas import (
@@ -22,10 +25,27 @@ from app.llm.schemas import (
     RawProviderResponse,
     SchemaRejected,
 )
-from app.observability.stages import record_model_call
-from app.release.ai_allowance import AIAllowanceError
 
 type Clock = Callable[[], int]
+type ModelCallObserver = Callable[[ProviderMetadata], None]
+
+_CALL_OBSERVER: ContextVar[ModelCallObserver | None] = ContextVar(
+    "model_call_observer", default=None
+)
+
+
+@contextmanager
+def observe_model_calls(observer: ModelCallObserver) -> Iterator[None]:
+    """Report every provider call completed in this context to ``observer``.
+
+    The call layer does not know who records it. A request's recorder registers itself
+    here for as long as the request runs.
+    """
+    token = _CALL_OBSERVER.set(observer)
+    try:
+        yield
+    finally:
+        _CALL_OBSERVER.reset(token)
 
 
 class BilledAttemptAllowanceError(AIAllowanceError):
@@ -349,5 +369,7 @@ class LLMProvider(ABC):
             projected_input_tokens=projected_input_tokens,
         )
 
-        record_model_call(metadata)
+        observer = _CALL_OBSERVER.get()
+        if observer is not None:
+            observer(metadata)
         return metadata

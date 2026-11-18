@@ -33,8 +33,8 @@ from app.db.models import (
     TableSourceFact,
 )
 from app.figures.tables import CellStatus, TableUnit
-from app.ingestion.persistence import persist_seed_batch
-from app.retrieval.indexing.bm25 import backfill_term_stats
+from app.indexing.bm25 import backfill_term_stats
+from app.indexing.persistence import persist_seed_batch
 from tests.ingestion.seed.support import sample_batch, table_batch, tagged_table_batch
 from tests.live_postgres import isolated_session
 

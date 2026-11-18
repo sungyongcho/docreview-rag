@@ -11,7 +11,7 @@ from app.evals.golden.loading import (
     load_golden_cases,
 )
 from app.evals.golden.models import GoldenCase, normalized_question
-from app.query.language import contains_hangul
+from app.language import contains_hangul
 
 KO_GOLDEN_PATH = REPO_ROOT / "data" / "golden" / "retrieval_ko.json"
 

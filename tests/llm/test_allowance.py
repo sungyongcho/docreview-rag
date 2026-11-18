@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 from openai import AsyncOpenAI
 import pytest
 
-from app.release.ai_allowance import (
+from app.llm.allowance import (
     SharedAIAllowance,
     active_allowance,
 )
@@ -42,7 +42,7 @@ def test_atomic_reservations_survive_recreation(tmp_path):
 def test_rolling_windows_are_persistent_and_independent(tmp_path, monkeypatch):
     """Rate windows survive restart and recover independently from the UTC budget."""
     now = [100000.0]
-    monkeypatch.setattr("app.release.ai_allowance.time.time", lambda: now[0])
+    monkeypatch.setattr("app.llm.allowance.time.time", lambda: now[0])
 
     async def scenario():
         """Move the clock through both rolling windows."""
@@ -72,7 +72,7 @@ def test_utc_reset_does_not_reset_ip_window(tmp_path, monkeypatch):
     """Previous-day spend is excluded, while recent request timestamps remain."""
 
     now = [datetime(2026, 9, 27, 23, 59, 59, tzinfo=UTC).timestamp()]
-    monkeypatch.setattr("app.release.ai_allowance.time.time", lambda: now[0])
+    monkeypatch.setattr("app.llm.allowance.time.time", lambda: now[0])
 
     async def scenario():
         """Cross midnight with both a spent cost cap and a live request window."""
@@ -142,7 +142,7 @@ def test_middleware_charges_lexical_requests_but_reserves_only_actual_ai_cost(tm
     from fastapi import FastAPI, Request
     from fastapi.testclient import TestClient
 
-    from app.release.ai_allowance import reserve_openai
+    from app.llm.allowance import reserve_openai
     from app.release.middleware import ReleaseGuardMiddleware
 
     ledger = SharedAIAllowance(tmp_path / "limits.sqlite3", Decimal("1"), 10, 25)
@@ -388,7 +388,7 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call, 
 
     from app.api.app import create_api_app
     from app.api.dependencies import get_api_services
-    from app.release.ai_allowance import reserve_openai
+    from app.llm.allowance import reserve_openai
     from app.release.middleware import ReleaseGuardMiddleware
 
     ledger = SharedAIAllowance(tmp_path / "stream.sqlite3", Decimal("0.1"), 5, 25)

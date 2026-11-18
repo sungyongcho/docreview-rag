@@ -14,7 +14,7 @@ import pytest
 from uvicorn.logging import AccessFormatter
 
 from app.api.errors import install_error_handlers
-from app.release.ai_allowance import SharedAIAllowance, reserve_openai
+from app.llm.allowance import SharedAIAllowance, reserve_openai
 from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware, client_host
 from app.release.secrets import REDACTION, SecretRedactor, install_secret_redaction
 

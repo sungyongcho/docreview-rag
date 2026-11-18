@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 
 from app.db.models import Chunk, ParsedTable
 from app.figures.answers import EvidenceText, check_figures
-from app.ingestion.persistence import persist_seed_batch
+from app.indexing.persistence import persist_seed_batch
 from app.review.evidence import read_cited_evidence
 from tests.ingestion.seed.support import sample_batch, table_batch
 from tests.live_postgres import isolated_session_factory

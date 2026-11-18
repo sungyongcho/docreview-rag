@@ -8,9 +8,9 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from app.ingestion.tokens import MAX_REQUEST_INPUTS, MAX_REQUEST_TOKENS, tokenizer, validate_request
+from app.llm.allowance import reserve_openai
+from app.llm.openai_models import resolve_openai_model
 from app.observability.usage import emit_embedding_usage, provider_identity, usage_record
-from app.openai_models import resolve_openai_model
-from app.release.ai_allowance import reserve_openai
 from app.retrieval.embedding.provider import (
     EmbeddingIdentity,
     EmbeddingProvider,

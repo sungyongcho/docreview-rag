@@ -36,7 +36,7 @@ from app.db.queries import document_chunk_counts
 from app.ingestion.sources.catalog import acquired_catalog
 from app.ingestion.sources.models import Manifest
 from app.ingestion.sources.selection import acquisition_draft, catalog_inventory
-from app.retrieval.indexing.embeddings import matching_embedding
+from app.retrieval.embedding.stored import matching_embedding
 from app.retrieval.tables import stored_table_counts
 
 

@@ -13,8 +13,8 @@ from pydantic.functional_validators import model_validator
 from app.agent.types import ToolCall
 from app.contracts.validation import NonBlank, NonNegativeInt
 from app.llm.openai import openai_usage
+from app.llm.openai_models import ReasoningEffort, resolve_openai_model
 from app.llm.schemas import TokenPricing, TokenUsageDetails
-from app.openai_models import ReasoningEffort, resolve_openai_model
 
 
 class BudgetExhaustedError(RuntimeError):

@@ -8,6 +8,7 @@ import time
 from pydantic import BaseModel, JsonValue
 
 from app.figures.tables import TableCellReading
+from app.llm.allowance import AIAllowanceError
 from app.llm.completion import BilledAttemptAllowanceError, LLMProvider
 from app.llm.schemas import (
     AnswerDecision,
@@ -30,7 +31,6 @@ from app.observability.types import (
     derived_totals,
     validate_elapsed_seconds,
 )
-from app.release.ai_allowance import AIAllowanceError
 from app.retrieval.search.service import RetrievalResult
 from app.retrieval.types import RetrievalFilters
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node

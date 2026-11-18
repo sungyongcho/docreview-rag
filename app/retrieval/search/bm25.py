@@ -32,8 +32,8 @@ from app.db.models import (
     SnapshotChunkTerm,
     SnapshotLexemeStat,
 )
+from app.language import ENGLISH_TEXT_SEARCH_CONFIG
 from app.retrieval.search.sql import (
-    TEXT_SEARCH_CONFIG,
     apply_filters,
     hit_columns,
     hit_order_by,
@@ -137,7 +137,7 @@ def bm25_statement(
     k1: float = DEFAULT_BM25_K1,
     b: float = DEFAULT_BM25_B,
     idf: BM25Idf = DEFAULT_BM25_IDF,
-    text_search_config: str = TEXT_SEARCH_CONFIG,
+    text_search_config: str = ENGLISH_TEXT_SEARCH_CONFIG,
 ) -> Select[*tuple[Any, ...]]:
     """Build a bound BM25 query with shared filters and deterministic ordering.
 
@@ -302,7 +302,7 @@ async def bm25_search(
     k1: float = DEFAULT_BM25_K1,
     b: float = DEFAULT_BM25_B,
     idf: BM25Idf = DEFAULT_BM25_IDF,
-    text_search_config: str = TEXT_SEARCH_CONFIG,
+    text_search_config: str = ENGLISH_TEXT_SEARCH_CONFIG,
 ) -> list[ChunkHit]:
     """Rank chunks with BM25 and return complete typed evidence.
 

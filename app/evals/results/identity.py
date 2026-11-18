@@ -15,7 +15,7 @@ from app.canonical_json import canonical_json
 from app.db.models import Chunk, ChunkEmbedding, Document, ParsedStructure
 from app.db.queries import join_current_parse
 from app.retrieval.embedding.provider import EmbeddingIdentity
-from app.retrieval.indexing.embeddings import matching_embedding
+from app.retrieval.embedding.stored import matching_embedding
 from app.retrieval.tables import load_table_fragments
 
 # Every evaluation command names its arms in lowercase kebab-case, orders them by the

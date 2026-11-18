@@ -13,9 +13,9 @@ from app.api.review.profiles import PromptPolicy
 from app.api.review.runtime import RuntimeApiServices
 from app.corpus_admin.service import RuntimeCorpusAdminService
 from app.corpus_admin.types import CorpusStatus
+from app.llm.allowance import reserve_openai
 from app.llm.schemas import RawProviderResponse
 from app.observability.types import RunReport, build_run_report
-from app.release.ai_allowance import reserve_openai
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
 from app.release.runtime import build_runtime_services

@@ -21,9 +21,9 @@ from app.db.models import (
     SnapshotBM25CorpusStat,
     SnapshotChunk,
 )
-from app.query.language import LEXICAL_PLANS, detect_query_languages, lexical_plan
+from app.language import LEXICAL_PLANS, detect_query_languages, lexical_plan
 from app.retrieval.embedding.provider import EmbeddingProvider, get_embedding_provider
-from app.retrieval.indexing.embeddings import matching_embedding, matching_snapshot_embedding
+from app.retrieval.embedding.stored import matching_embedding, matching_snapshot_embedding
 from app.retrieval.ranking.fusion import fuse_ranked_lists
 from app.retrieval.ranking.reranker import RerankProvider, rerank_hits
 from app.retrieval.search.bm25 import bm25_search

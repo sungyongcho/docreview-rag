@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.ingestion.persistence as persistence
+import app.indexing.persistence as persistence
 from tests.ingestion.seed.support import sample_batch
 
 
@@ -120,7 +120,7 @@ def test_persistence_rebuilds_statistics_after_chunks(monkeypatch: pytest.Monkey
     persist = AsyncMock(return_value=expected)
     rebuild = AsyncMock()
     monkeypatch.setattr(persistence, "persist_seed_batch", persist)
-    monkeypatch.setattr("app.retrieval.indexing.bm25.backfill_term_stats", rebuild)
+    monkeypatch.setattr(persistence, "backfill_term_stats", rebuild)
     session = cast(AsyncSession, object())
 
     result = asyncio.run(

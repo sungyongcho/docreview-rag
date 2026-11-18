@@ -166,7 +166,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.db.session import Session, engine
-    from app.query.language import detect_query_language
+    from app.language import detect_query_language
     from app.query.periods import question_fiscal_years, utc_today
     from app.retrieval.embedding.provider import get_embedding_provider
     from app.review.evidence import read_cited_evidence

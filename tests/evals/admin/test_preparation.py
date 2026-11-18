@@ -210,7 +210,7 @@ def test_golden_evidence_a_review_replaced_is_named_per_span():
     """Name a document only when one of its cited spans has no current chunk left."""
     from app.amendments.review import ItemEffect, record_review
     from app.evals.golden.loading import GOLDEN_CASES
-    from app.ingestion.persistence import persist_seed_batch
+    from app.indexing.persistence import persist_seed_batch
     from tests.amendments.support import amendment_document, batch, parsed, sec_document
     from tests.live_postgres import isolated_session_factory
 
