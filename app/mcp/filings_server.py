@@ -185,11 +185,6 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def parse_http_port(argv: Sequence[str]) -> int | None:
-    """Return the ``--http`` port, or None for the default stdio transport."""
-    return parse_arguments(argv).http
-
-
 async def main(http_port: int | None = None, *, include_cells: bool = False) -> None:
     """Use the product database configuration and release its pool on shutdown.
 

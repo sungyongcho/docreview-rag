@@ -385,7 +385,7 @@ def test_a_stop_signal_ends_the_server_after_its_finally_block(tmp_path, stop, e
 @pytest.mark.parametrize(("argv", "port"), [([], None), (["--http", "8765"], 8765)])
 def test_stdio_is_the_default_and_http_needs_a_port(argv, port):
     """Without --http the server keeps stdio; --http PORT selects HTTP."""
-    assert filings_server.parse_http_port(argv) == port
+    assert filings_server.parse_arguments(argv).http == port
 
 
 @pytest.mark.parametrize(
@@ -395,7 +395,7 @@ def test_stdio_is_the_default_and_http_needs_a_port(argv, port):
 def test_invalid_transport_arguments_exit_with_usage(argv, capsys):
     """Bad ports and unsupported options exit with code 2 and a stderr message."""
     with pytest.raises(SystemExit) as stopped:
-        filings_server.parse_http_port(argv)
+        filings_server.parse_arguments(argv)
     assert stopped.value.code == 2
     captured = capsys.readouterr()
     assert captured.out == ""
