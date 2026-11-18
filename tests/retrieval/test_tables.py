@@ -12,7 +12,7 @@ from app.db.models import Chunk, ChunkTableCell, ParsedTable
 from app.figures.answers import EvidenceText
 from app.figures.tables import TableCellReading
 from app.ingestion.persistence import persist_seed_batch
-from app.ingestion.table_records import builder_identity, resolver_identity
+from app.ingestion.revisions import BUILDER_REVISION, RESOLVER_REVISION
 from app.retrieval.tables import (
     figure_evidence,
     load_cell_catalog,
@@ -158,7 +158,7 @@ def test_a_table_from_other_code_has_no_catalog_and_no_usable_readings(identity)
             assert chunk_id is not None
             catalog = await load_cell_catalog(session, chunk_id)
             assert catalog["status"] == "available"
-            assert catalog["resolver_identity"] == resolver_identity()
+            assert catalog["resolver_identity"] == RESOLVER_REVISION
             current = (await load_table_readings(session, [chunk_id]))[chunk_id]
             assert {reading.item for reading in current} == {"revenue", "net income"}
             await session.execute(update(ParsedTable).values({identity: "0" * 64}))
@@ -166,13 +166,13 @@ def test_a_table_from_other_code_has_no_catalog_and_no_usable_readings(identity)
             assert stale == {
                 "status": "stale_reading",
                 "stored_identity": {
-                    "builder_identity": builder_identity(),
-                    "resolver_identity": resolver_identity(),
+                    "builder_identity": BUILDER_REVISION,
+                    "resolver_identity": RESOLVER_REVISION,
                     identity: "0" * 64,
                 },
                 "running_identity": {
-                    "builder_identity": builder_identity(),
-                    "resolver_identity": resolver_identity(),
+                    "builder_identity": BUILDER_REVISION,
+                    "resolver_identity": RESOLVER_REVISION,
                 },
             }
             assert set(await load_chunk_tables(session, [chunk_id])) == {chunk_id}
@@ -207,7 +207,7 @@ def test_catalog_distinguishes_missing_records_from_stale_identities_without_db(
 
     from app.tools.filings import CellCatalog
 
-    stored = {"builder_identity": builder_identity(), "resolver_identity": resolver_identity()}
+    stored = {"builder_identity": BUILDER_REVISION, "resolver_identity": RESOLVER_REVISION}
     if changed == "both":
         stored = {key: "old" for key in stored}
     elif changed is not None:
@@ -227,7 +227,7 @@ def test_catalog_distinguishes_missing_records_from_stale_identities_without_db(
             "status": "stale_reading",
             "stored_identity": stored,
             "running_identity": {
-                "builder_identity": builder_identity(),
-                "resolver_identity": resolver_identity(),
+                "builder_identity": BUILDER_REVISION,
+                "resolver_identity": RESOLVER_REVISION,
             },
         }

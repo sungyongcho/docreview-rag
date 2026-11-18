@@ -33,7 +33,7 @@ from app.db.models import (
 from app.figures.answers import EvidenceText
 from app.figures.tables import TableCellReading, complete_cell
 from app.ingestion.persistence import slices
-from app.ingestion.table_records import builder_identity, resolver_identity
+from app.ingestion.revisions import BUILDER_REVISION, RESOLVER_REVISION
 
 type _GridCell = TableSourceCell | SnapshotTableSourceCell
 type _Member = ChunkTableCell | SnapshotChunkTableCell
@@ -56,21 +56,21 @@ class StoredTable:
 
 
 def stored_table_counts() -> Select[int, int]:
-    """Count the live stored tables, and those not built and read by the running code."""
+    """Count the live stored tables, and those stored under other rule revisions."""
     return select(
         func.count(),
         func.count().filter(
-            (ParsedTable.resolver_identity != resolver_identity())
-            | (ParsedTable.builder_identity != builder_identity())
+            (ParsedTable.resolver_identity != RESOLVER_REVISION)
+            | (ParsedTable.builder_identity != BUILDER_REVISION)
         ),
     ).select_from(ParsedTable)
 
 
 def current_table(table: _Table) -> bool:
-    """Whether a stored table was built and read by the running builder and interpreter."""
+    """Whether a stored table carries the builder and reader revisions the running code names."""
     return (table.builder_identity, table.resolver_identity) == (
-        builder_identity(),
-        resolver_identity(),
+        BUILDER_REVISION,
+        RESOLVER_REVISION,
     )
 
 
@@ -232,8 +232,8 @@ async def load_chunk_tables(
     """Return the stored table of each table chunk, from the index it was retrieved from.
 
     Text chunks, and table chunks stored without their table, are left out; so is a
-    live table built or read by code other than the running code when ``current_only``
-    is set (see ``current_table``). A snapshot is frozen by design and kept whole.
+    live table stored under other rule revisions than the running ones when
+    ``current_only`` is set (see ``current_table``). A snapshot is frozen by design and kept whole.
     """
     ids = sorted(set(chunk_ids))
     if not ids:
@@ -324,7 +324,7 @@ async def load_table_readings(
     """Return the usable stored figure readings of each table chunk, for the figure check.
 
     A table chunk is left out when its readings are not usable: stored without its
-    table, or a live table from code other than the running code. A snapshot's
+    table, or a live table stored under other rule revisions. A snapshot's
     readings are returned as frozen. See ``figure_evidence`` for what a left-out
     table chunk gives the check.
     """
@@ -434,7 +434,7 @@ async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, o
 
     ``status`` is ``not_table`` for running text, ``missing_records`` for a table
     chunk stored without rows, and ``stale_reading`` with both identities when its
-    table was built or read by other code (see ``current_table``);
+    table was stored under other rule revisions (see ``current_table``);
     neither means the documents lack an answer. Blank and
     non-numeric cells are left out; every other cell is listed with its own status, so a
     cell whose unit, currency, period or item is unknown is visible but not certified.
@@ -462,8 +462,8 @@ async def load_cell_catalog(session: AsyncSession, chunk_id: int) -> dict[str, o
                 "resolver_identity": table.resolver_identity,
             },
             "running_identity": {
-                "builder_identity": builder_identity(),
-                "resolver_identity": resolver_identity(),
+                "builder_identity": BUILDER_REVISION,
+                "resolver_identity": RESOLVER_REVISION,
             },
         }
     normalized = {

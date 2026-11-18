@@ -3,13 +3,10 @@
 from dataclasses import asdict, replace
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
-import re
 
 import pytest
 
 from app.figures.tables import read_table_cells
-from app.ingestion import table_records as table_records_module
 from app.ingestion.chunking import CellFragment, TableFragment, chunk_filing
 from app.ingestion.parsing.facts import (
     FilingFacts,
@@ -18,13 +15,7 @@ from app.ingestion.parsing.facts import (
     StatementDeclaration,
 )
 from app.ingestion.parsing.models import Block
-from app.ingestion.table_records import (
-    RESOLVER_FILES,
-    _joined,
-    builder_identity,
-    resolver_identity,
-    table_records,
-)
+from app.ingestion.table_records import _joined, table_records
 from app.ingestion.tokens import InputBudget
 from tests.ingestion.chunk.support import build_filing
 from tests.ingestion.seed.support import TAGGED_TABLE_HTML, table_batch, tagged_table_batch
@@ -283,12 +274,6 @@ def test_a_filing_of_one_scope_declares_no_statement():
     assert record.statement is None and record.statement_basis is None
 
 
-def test_code_identities_are_sha256_hex_digests():
-    """Fingerprint the builder and resolver code as 64 lowercase hex characters."""
-    for identity in (builder_identity(), resolver_identity()):
-        assert re.fullmatch(r"[0-9a-f]{64}", identity)
-
-
 def test_an_inline_xbrl_sign_reaches_the_cells_value():
     """A negating tag on an unsigned figure makes the stored value negative, recorded."""
     html = TAGGED_TABLE_HTML.replace(
@@ -320,32 +305,6 @@ def test_only_an_inline_xbrl_tag_states_a_sign():
     assert _joined(fact, FilingFacts("ixbrl", facts=(fact,))).sign == "+"
     negated = replace(fact, sign="-")
     assert _joined(negated, FilingFacts("ixbrl", facts=(negated,))).sign == "-"
-
-
-def test_the_resolver_identity_covers_the_fact_reader(tmp_path, monkeypatch):
-    """Readings change with the figure rules and with facts.py, so both are hashed."""
-    assert RESOLVER_FILES == (
-        "figures/currency.py",
-        "figures/items.py",
-        "figures/periods.py",
-        "figures/vocabulary.py",
-        "figures/text.py",
-        "figures/tables.py",
-        "ingestion/parsing/facts.py",
-    )
-    app = Path(table_records_module.__file__).resolve().parents[1]
-    for name in RESOLVER_FILES:
-        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / name).write_bytes((app / name).read_bytes())
-    monkeypatch.setattr(table_records_module, "_APP", tmp_path)
-    resolver_identity.cache_clear()
-    try:
-        copied = resolver_identity()
-        (tmp_path / "ingestion/parsing/facts.py").write_bytes(b"# changed\n")
-        resolver_identity.cache_clear()
-        assert resolver_identity() != copied
-    finally:
-        resolver_identity.cache_clear()
 
 
 def test_joined_facts_keep_existing_context_period_dates():

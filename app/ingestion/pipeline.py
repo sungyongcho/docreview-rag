@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, replace
-from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
@@ -15,6 +14,7 @@ from app.ingestion.chunking import Chunk, chunk_filing
 from app.ingestion.parsing.models import ParsedFiling
 from app.ingestion.parsing.registry import REGISTRIES, registry_for
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
+from app.ingestion.revisions import PARSER_REVISIONS
 from app.ingestion.sources.models import DocumentReference, FilingSource, Manifest
 from app.ingestion.tokens import InputBudget
 from app.query.language import lexical_plan
@@ -182,22 +182,6 @@ def embedding_chunk_config(
     )
 
 
-@lru_cache(maxsize=2)
-def _parser_identity(registry: str) -> str:
-    """Fingerprint the source parser and its structural processing dependencies."""
-    parsing = Path(__file__).with_name("parsing")
-    names = [
-        "models.py",
-        "html.py",
-        "tables.py",
-        "facts.py",
-        "sec.py" if registry == "sec" else "dart.py",
-    ]
-    if registry == "sec":
-        names.extend(["sec_xref.py", "sec_amendment.py"])
-    return hashlib.sha256(b"".join((parsing / name).read_bytes() for name in names)).hexdigest()
-
-
 def structure_values(filing: ParsedFiling) -> dict[str, Any]:
     """Capture source-anchored parsed structures independently of retrieval chunks."""
     document_id = filing.source.document.document_id
@@ -225,7 +209,7 @@ def structure_values(filing: ParsedFiling) -> dict[str, Any]:
         "profile_used": filing.profile_used,
         "segment_type": filing.segment_type,
     }
-    identity = _parser_identity(filing.source.document.registry)
+    identity = PARSER_REVISIONS[filing.source.document.registry]
     source = filing.source
     serialized = json.dumps(
         [

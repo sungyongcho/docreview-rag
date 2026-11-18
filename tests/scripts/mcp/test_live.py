@@ -1596,7 +1596,7 @@ def test_require_indexed_checks_embeddings_and_current_tables(monkeypatch):
                 .values(resolver_identity="0" * 64),
             )
             await live.require_indexed("AMD", [2024])
-            with pytest.raises(SystemExit, match=r"\[2024\] built or read by other code"):
+            with pytest.raises(SystemExit, match=r"\[2024\] under other rule revisions"):
                 await live.require_indexed("AMD", [2024], current_tables=True)
 
     asyncio.run(scenario())

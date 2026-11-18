@@ -983,7 +983,7 @@ async def require_indexed(
         raise SystemExit(f"{issuer} has no matching indexed chunks for {missing}")
     if stale:
         raise SystemExit(
-            f"{issuer} has stored tables for {sorted(stale)} built or read by other code; "
+            f"{issuer} has stored tables for {sorted(stale)} under other rule revisions; "
             "rebuild the index (ingest those filings again) before an agent run"
         )
 

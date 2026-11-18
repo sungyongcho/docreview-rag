@@ -7,12 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from app.db.bootstrap import SchemaDriftError, ensure_schema_compatibility
 from app.db.models import Base
 from app.db.startup import prepare as prepare_schema
-from app.ingestion.table_records import builder_identity, resolver_identity
+from app.ingestion.revisions import BUILDER_REVISION, RESOLVER_REVISION
 from app.retrieval.tables import stored_table_counts
 
 
 async def stored_tables(connection: AsyncConnection) -> dict[str, object]:
-    """Count the stored tables and those built or read by code other than the running code.
+    """Count the stored tables and those stored under other rule revisions than the running ones.
 
     A stale table serves no cell catalog and confirms no figure until its document is
     ingested again.
@@ -21,8 +21,8 @@ async def stored_tables(connection: AsyncConnection) -> dict[str, object]:
     return {
         "total": total,
         "stale": stale,
-        "resolver_identity": resolver_identity(),
-        "builder_identity": builder_identity(),
+        "resolver_identity": RESOLVER_REVISION,
+        "builder_identity": BUILDER_REVISION,
     }
 
 

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.models import ParsedTable
 from app.ingestion.persistence import persist_seed_batch
-from app.ingestion.table_records import builder_identity, resolver_identity
+from app.ingestion.revisions import BUILDER_REVISION, RESOLVER_REVISION
 from scripts.schema.status import schema_status
 from tests.ingestion.seed.support import table_batch, tagged_table_batch
 from tests.live_postgres import disposable_database_url
@@ -55,8 +55,8 @@ def test_schema_preparation_preserves_incompatible_database():
 
 
 @pytest.mark.live_postgres
-def test_schema_check_counts_tables_built_or_read_by_other_code():
-    """Report every stored table, and as stale those built or read by other code."""
+def test_schema_check_counts_tables_stored_under_other_revisions():
+    """Report every stored table, and as stale those stored under other rule revisions."""
     admin_url = disposable_database_url()
     database = "schema_stale_" + uuid4().hex
     url = admin_url.rsplit("/", 1)[0] + "/" + database
@@ -70,8 +70,8 @@ def test_schema_check_counts_tables_built_or_read_by_other_code():
             assert (await schema_status(url, prepare=True))["stored_tables"] == {
                 "total": 0,
                 "stale": 0,
-                "resolver_identity": resolver_identity(),
-                "builder_identity": builder_identity(),
+                "resolver_identity": RESOLVER_REVISION,
+                "builder_identity": BUILDER_REVISION,
             }
             engine = create_async_engine(url)
             try:
@@ -84,8 +84,8 @@ def test_schema_check_counts_tables_built_or_read_by_other_code():
                 assert current["stored_tables"] == {
                     "total": 2,
                     "stale": 0,
-                    "resolver_identity": resolver_identity(),
-                    "builder_identity": builder_identity(),
+                    "resolver_identity": RESOLVER_REVISION,
+                    "builder_identity": BUILDER_REVISION,
                 }
                 for doc_id, identity, expected in (
                     ("AMD-FY2023", "resolver_identity", 1),

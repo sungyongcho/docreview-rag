@@ -192,8 +192,8 @@ def test_live_postgres_admin_status_matches_snapshot_status(tmp_path) -> None:
 
 
 @pytest.mark.live_postgres
-def test_live_postgres_status_counts_tables_built_or_read_by_other_code(tmp_path) -> None:
-    """Report no stale tables while identities match, and each one marked as older code."""
+def test_live_postgres_status_counts_tables_stored_under_other_revisions(tmp_path) -> None:
+    """Report no stale tables while revisions match, and each one marked with another."""
 
     async def scenario():
         """Store one table, read the status, mark the table stale, read it again."""

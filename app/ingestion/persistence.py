@@ -35,13 +35,9 @@ from app.figures.tables import TableCellReading
 from app.ingestion.parsing.facts import FilingFacts
 from app.ingestion.pipeline import ChunkRecord, SeedBatch, structure_values
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
+from app.ingestion.revisions import BUILDER_REVISION, RESOLVER_REVISION
 from app.ingestion.sources.models import DocumentReference
-from app.ingestion.table_records import (
-    TableRecord,
-    builder_identity,
-    resolver_identity,
-    table_records,
-)
+from app.ingestion.table_records import TableRecord, table_records
 
 DEFAULT_CHUNK_BATCH_SIZE = 500
 
@@ -334,8 +330,8 @@ def table_rows(record: TableRecord) -> dict[type, list[dict[str, Any]]]:
                 "start_char": record.start_char,
                 "end_char": record.end_char,
                 "header_rows": list(record.header_rows),
-                "builder_identity": builder_identity(),
-                "resolver_identity": resolver_identity(),
+                "builder_identity": BUILDER_REVISION,
+                "resolver_identity": RESOLVER_REVISION,
                 "unit_status": unit.status,
                 "unit_scale": unit.scale,
                 "unit_percent": unit.percent,

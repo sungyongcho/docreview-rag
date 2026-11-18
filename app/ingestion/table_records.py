@@ -9,10 +9,8 @@ at every check.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from functools import lru_cache
 import hashlib
 import json
-from pathlib import Path
 
 from app.figures.tables import (
     CellFact,
@@ -27,41 +25,6 @@ from app.figures.tables import (
 from app.ingestion.chunking import CaptionSource, CellFragment, Chunk, TableFragment
 from app.ingestion.parsing.facts import FilingFacts, SourceFact
 from app.ingestion.parsing.tables import SourceCell, StructuredTable
-
-_APP = Path(__file__).resolve().parents[1]
-
-
-@lru_cache(maxsize=1)
-def builder_identity() -> str:
-    """Fingerprint the code that turns a parsed table into normalized cells and pieces."""
-    names = ("ingestion/parsing/tables.py", "ingestion/chunking.py", "ingestion/table_records.py")
-    return hashlib.sha256(b"".join((_APP / name).read_bytes() for name in names)).hexdigest()
-
-
-# The code that decides a stored reading: the figure rules, and the fact reader whose
-# contexts, period terms and statement declarations give tagged and untagged cells
-# their years and scopes.
-RESOLVER_FILES = (
-    "figures/currency.py",
-    "figures/items.py",
-    "figures/periods.py",
-    "figures/vocabulary.py",
-    "figures/text.py",
-    "figures/tables.py",
-    "ingestion/parsing/facts.py",
-)
-
-
-@lru_cache(maxsize=1)
-def resolver_identity() -> str:
-    """Fingerprint the code that reads units, currencies, years, scopes and items.
-
-    Besides the figure rules this includes the fact reader (``RESOLVER_FILES``),
-    since its contexts, period terms and statement declarations change readings.
-    """
-    return hashlib.sha256(
-        b"".join((_APP / name).read_bytes() for name in RESOLVER_FILES)
-    ).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
