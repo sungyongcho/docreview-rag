@@ -40,7 +40,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import Command
 from mcp.shared.exceptions import MCPError
 from mcp.types import INTERNAL_ERROR
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from app.agent.cell_answers import StoredCell, cell_digest, review_cell_selection
 from app.agent.final_answer import (
@@ -52,8 +52,14 @@ from app.agent.final_answer import (
     validate_final_answer,
 )
 from app.agent.ledger import citation_records, ledger_failure, merge_identities
-from app.agent.tools.filings import FetchChunkParams
-from app.agent.tools.registry import FINAL_ANSWER_NAME, Tool, ToolRegistry, safe_runtime_error
+from app.agent.tools.filings import FetchChunkParams, unretrieved_fetch
+from app.agent.tools.registry import (
+    FINAL_ANSWER_NAME,
+    Tool,
+    ToolRegistry,
+    safe_runtime_error,
+    validate_arguments,
+)
 from app.agent.types import AgentReportAnswer, CellSelectionAnswer, ToolCall
 from app.contracts.evidence import EvidenceCitation
 from app.llm.decoding import validation_errors
@@ -255,16 +261,6 @@ def _accepted(
     return ExtendedModelResponse(model_response=response, command=Command(update=records))
 
 
-def _validate(tool: Tool[Any], arguments: dict[str, Any]) -> BaseModel | str:
-    """Validate arguments as strict JSON like ``execute_tool``; return the error text if invalid."""
-    try:
-        return tool.parameters.model_validate_json(json.dumps(arguments), strict=True)
-    except ValidationError as error:
-        return f"invalid arguments for {tool.name}: {'; '.join(validation_errors(error))}"
-    except ValueError as error:
-        return f"invalid arguments for {tool.name}: {error}"
-
-
 def _returned_identities(tool: Tool[Any], message: ToolMessage) -> tuple[EvidenceCitation, ...]:
     """Extract the complete source identities from a successful tool result.
 
@@ -388,15 +384,13 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
                 return await handler(request)
             raise ValueError(f"tool {name} is bound to the agent but has no app contract")
         tool = self.contracts.get(name)
-        parameters = _validate(tool, request.tool_call["args"])
+        parameters = validate_arguments(tool, request.tool_call["args"])
         if isinstance(parameters, str):
             return _error(request.tool_call, parameters)
         evidence: EvidenceLedger = request.state.get("evidence") or {}
-        if isinstance(parameters, FetchChunkParams) and parameters.chunk_id not in evidence:
-            return _error(
-                request.tool_call,
-                f"chunk {parameters.chunk_id} was not retrieved in this question; search first",
-            )
+        unretrieved = unretrieved_fetch(parameters, evidence)
+        if unretrieved is not None:
+            return _error(request.tool_call, unretrieved)
 
         result = await handler(request)
         if not isinstance(result, ToolMessage) or result.status == "error":
@@ -410,7 +404,13 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
             ) from error
         cells: CellLedger = {}
         if isinstance(parameters, FetchChunkParams):
-            cells = _returned_cells(result, parameters.chunk_id)
+            try:
+                cells = _returned_cells(result, parameters.chunk_id)
+            except Exception as error:
+                raise MCPError(
+                    code=INTERNAL_ERROR,
+                    message=safe_runtime_error(error, f"tool {tool.name} cell catalog extraction"),
+                ) from error
         failure = ledger_failure(merge_identities(evidence, found)) or ledger_failure(
             merge_identities(request.state.get("cells"), cells), cells=True
         )

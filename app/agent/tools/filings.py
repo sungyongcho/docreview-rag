@@ -1,6 +1,6 @@
 """Filing search, chunk inspection, and fiscal-year comparison tools."""
 
-from collections.abc import Sequence
+from collections.abc import Container, Sequence
 from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -95,6 +95,17 @@ class FetchChunkParams(ToolParams):
     """Arguments for reading one retrieved chunk in full."""
 
     chunk_id: Annotated[int, Field(gt=0)]
+
+
+def unretrieved_fetch(parameters: BaseModel, retrieved: Container[int]) -> str | None:
+    """Return the refusal for a fetch of a chunk this question has not retrieved.
+
+    Both agent paths apply it before any tool I/O, so the model reads one wording.
+    ``retrieved`` holds the chunk ids the question's searches returned.
+    """
+    if isinstance(parameters, FetchChunkParams) and parameters.chunk_id not in retrieved:
+        return f"chunk {parameters.chunk_id} was not retrieved in this question; search first"
+    return None
 
 
 class CompareYearsParams(ToolParams):

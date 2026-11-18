@@ -178,6 +178,22 @@ class ToolOutcome:
     system_error: bool = False
 
 
+def validate_arguments(tool: Tool[Any], arguments: Mapping[str, Any]) -> BaseModel | str:
+    """Validate arguments as strict JSON against a tool's schema, or return the error text.
+
+    Strict JSON makes a call honour the published schema: lax Python validation would
+    coerce true or "7" into an integer argument. The error text is authored against the
+    caller's own input, so it is safe to show the model. Both agent paths call this, so
+    the model reads one wording for one mistake.
+    """
+    try:
+        return tool.parameters.model_validate_json(json.dumps(dict(arguments)), strict=True)
+    except ValidationError as error:
+        return f"invalid arguments for {tool.name}: {'; '.join(validation_errors(error))}"
+    except ValueError as error:
+        return f"invalid arguments for {tool.name}: {error}"
+
+
 async def execute_tool(
     registry: ToolRegistry,
     name: str,
@@ -216,15 +232,9 @@ async def execute_tool(
         tool = registry.get(name)
     except ValueError as error:
         return ToolOutcome(error=str(error))
-    try:
-        # Validate as strict JSON so the call honours the published schema: lax
-        # Python validation would coerce true or "7" into an integer argument.
-        parameters = tool.parameters.model_validate_json(json.dumps(dict(arguments)), strict=True)
-    except ValidationError as error:
-        details = "; ".join(validation_errors(error))
-        return ToolOutcome(error=f"invalid arguments for {name}: {details}")
-    except ValueError as error:
-        return ToolOutcome(error=f"invalid arguments for {name}: {error}")
+    parameters = validate_arguments(tool, arguments)
+    if isinstance(parameters, str):
+        return ToolOutcome(error=parameters)
     try:
         if before_run is not None:
             before_run(parameters)

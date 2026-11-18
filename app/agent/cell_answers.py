@@ -112,11 +112,12 @@ def _scale_words(scale: Decimal, locale: Locale) -> str | None:
 
 
 def _amount(cell: StoredCell, locale: Locale) -> str:
-    """Write a stored value with its sign, written decimals, scale and currency."""
+    """Write a stored amount with its sign, written decimals, scale and currency.
+
+    Only an accepted cell reaches this; ``_cell_problem`` returns every percentage.
+    """
     assert cell.value is not None
     number = f"{cell.value:,}"
-    if cell.cell["percent"]:
-        return f"{number}%"
     scale = Decimal(cell.cell["scale"])
     words = _scale_words(scale, locale)
     unit = words if words is not None else f"× {scale:f}"

@@ -59,11 +59,14 @@ def catalog(cell: dict[str, Any]) -> dict[str, Any]:
 
 
 def tools(
-    cell: dict[str, Any], search: Literal["hit", "none", "fail"] = "hit"
+    cell: dict[str, Any],
+    search: Literal["hit", "none", "fail"] = "hit",
+    table: dict[str, Any] | None = None,
 ) -> list[StructuredTool]:
     """Stand-ins for the MCP tools that return structured content like the adapter does.
 
-    ``search`` makes the search return chunk 2024, no hits, or a tool error.
+    ``search`` makes the search return chunk 2024, no hits, or a tool error; ``table``
+    replaces the whole catalog the fetch serves.
     """
 
     def search_filings(**_: Any) -> tuple[str, dict[str, Any]]:
@@ -77,7 +80,8 @@ def tools(
     def fetch_chunk(chunk_id: int) -> tuple[str, dict[str, Any]]:
         """Return chunk 2024 with its stored cells."""
         assert chunk_id == 2024
-        payload = {**IDENTITY, "context_header": "", "body": "| x |", "table": catalog(cell)}
+        served = table if table is not None else catalog(cell)
+        payload = {**IDENTITY, "context_header": "", "body": "| x |", "table": served}
         return json.dumps(payload), {"structured_content": payload}
 
     contracts = build_default_registry(cast(SessionFactory, object), include_cells=True)
@@ -124,12 +128,13 @@ def ask(
     replies: list[AIMessage] | None = None,
     reader_configured: bool = True,
     search: Literal["hit", "none", "fail"] = "hit",
+    table: dict[str, Any] | None = None,
 ):
     """Search, fetch, then answer with each final in turn; return the state and model.
 
     ``reads`` collects the refs of every stored-cell read; ``replies`` replaces the
     whole scripted conversation; ``reader_configured`` False leaves out the reader;
-    ``search`` is passed to :func:`tools`.
+    ``search`` and ``table`` are passed to :func:`tools`.
     """
     model = ScriptedChatModel.from_replies(
         *(
@@ -159,7 +164,7 @@ def ask(
     middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(contracts)]
     agent = create_agent(
         model,
-        tools(cell, search),
+        tools(cell, search, table),
         middleware=middleware,
         response_format=final_answer_format(cells=True),
         context_schema=ReviewContext,
@@ -234,6 +239,24 @@ def test_a_cell_changed_after_its_fetch_ends_the_run_without_another_request():
     assert len(model.requests) == 3
     assert state.get("structured_response") is None
     assert state["failure"] == "StaleCellError: stored cell read failed"
+
+
+@pytest.mark.parametrize(
+    ("served", "failure"),
+    [
+        ({"status": "unreadable"}, "ValueError"),
+        (
+            {"status": "available", "stable_key": "k" * 64, "resolver_identity": "r" * 64},
+            "KeyError",
+        ),
+    ],
+)
+def test_a_cell_catalog_the_gate_cannot_read_ends_the_run_as_a_failure(served, failure):
+    """An unknown catalog status or a missing field stops the run before another model call."""
+    state, model = ask([selection()], table=served)
+    assert len(model.requests) == 2
+    assert state.get("structured_response") is None
+    assert state["failure"] == f"{failure}: tool fetch_chunk cell catalog extraction failed"
 
 
 def test_a_missing_stored_cell_reader_ends_the_run_as_a_failure():

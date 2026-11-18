@@ -17,7 +17,7 @@ from app.agent.final_answer import (
 )
 from app.agent.ledger import citation_records, ledger_failure, merge_identities
 from app.agent.provider import BudgetExhaustedError, ProviderTurn, ToolCallingProvider
-from app.agent.tools.filings import FetchChunkParams
+from app.agent.tools.filings import unretrieved_fetch
 from app.agent.tools.registry import (
     FINAL_ANSWER_NAME,
     ToolError,
@@ -248,10 +248,9 @@ async def run_agent(
 
     def require_retrieved_chunk(parameters: BaseModel) -> None:
         """Reject fetches outside this run's accepted evidence before any tool I/O."""
-        if isinstance(parameters, FetchChunkParams) and parameters.chunk_id not in evidence:
-            raise ToolError(
-                f"chunk {parameters.chunk_id} was not retrieved in this question; search first"
-            )
+        unretrieved = unretrieved_fetch(parameters, evidence)
+        if unretrieved is not None:
+            raise ToolError(unretrieved)
 
     total_input = 0
     total_output = 0
