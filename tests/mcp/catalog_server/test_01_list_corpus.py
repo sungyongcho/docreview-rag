@@ -7,7 +7,8 @@ from mcp import Client
 import pytest
 
 from app.mcp.catalog_server import read_corpus_catalog
-from tests.mcp.support import PROTOCOL_MODE, module_server, write_catalog
+from tests.mcp.support import write_catalog
+from tests.support.transport import PROTOCOL_MODE, module_server
 
 
 def test_catalog_is_ordered_by_document_id(tmp_path):

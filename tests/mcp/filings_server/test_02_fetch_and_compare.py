@@ -8,15 +8,13 @@ from mcp import Client
 import pytest
 
 from app.tools.filings import CompareYearsParams, FetchedChunk
-from tests.mcp.controlled_filings import FAILING_CHUNK_ID, PRIVATE_DETAIL, fixture_hit
 from tests.mcp.support import (
-    PROTOCOL_MODE,
     assert_internal_error,
     call_or_error,
-    controlled_filings,
-    logged_events,
     text_of,
 )
+from tests.support.controlled_filings import FAILING_CHUNK_ID, PRIVATE_DETAIL, fixture_hit
+from tests.support.transport import PROTOCOL_MODE, ControlledServer
 
 BASE = {"query": "revenue", "issuer": "TEST", "fiscal_years": [2024, 2023]}
 # (case, arguments, failed, system failure, years retrieved)
@@ -51,20 +49,20 @@ FETCH_CASES = [
 @pytest.fixture(scope="module")
 def observed(tmp_path_factory):
     """Run every comparison and read on one connection with their data-layer events."""
-    log_path = tmp_path_factory.mktemp("compare") / "events.jsonl"
+    server = ControlledServer(tmp_path_factory.mktemp("compare"))
 
     async def call_all(client, name, cases, arguments_of):
         """Call ``name`` once per case, keeping its result or JSON-RPC error and its events."""
         results = {}
         for case in cases:
-            start = len(logged_events(log_path))
+            start = len(server.events())
             outcome = await call_or_error(client, name, arguments_of(case))
-            results[case[0]] = (*outcome, logged_events(log_path, start))
+            results[case[0]] = (*outcome, server.events(start))
         return results
 
     async def exercise():
         """List tools, then run every comparison and every read on one connection."""
-        async with Client(controlled_filings(log_path), mode=PROTOCOL_MODE) as client:
+        async with Client(server.params, mode=PROTOCOL_MODE) as client:
             listing = await client.list_tools()
             compare = await call_all(client, "compare_years", COMPARE_CASES, lambda c: c[1])
             fetch = await call_all(client, "fetch_chunk", FETCH_CASES, lambda c: {"chunk_id": c[1]})
@@ -142,13 +140,13 @@ def test_fetch_returns_full_identity_or_a_typed_failure(observed, case, chunk_id
 
 def test_only_cell_mode_publishes_the_fetch_output_schema_and_its_catalog(tmp_path):
     """Keep the default listing, and in cell mode publish FetchedChunk and a catalog."""
-    log_path = tmp_path / "events.jsonl"
 
     async def exercise():
         """List tools and fetch one running-text chunk in each mode."""
         results = {}
         for mode, args in (("legacy", ()), ("cells", ("--include-cells",))):
-            async with Client(controlled_filings(log_path, *args), mode=PROTOCOL_MODE) as client:
+            server = ControlledServer(tmp_path, *args)
+            async with Client(server.params, mode=PROTOCOL_MODE) as client:
                 listing = await client.list_tools()
                 fetched = await client.call_tool("fetch_chunk", {"chunk_id": 2024})
             results[mode] = ({tool.name: tool for tool in listing.tools}, fetched)

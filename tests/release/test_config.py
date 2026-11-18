@@ -6,7 +6,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.release.config import ReleaseSettings
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> None:

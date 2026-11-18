@@ -9,7 +9,7 @@ import pytest
 from app.release import status as browser_reset
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 def test_marker_is_absent_until_fresh_start_writes_it(tmp_path, monkeypatch):

@@ -7,8 +7,8 @@ import pytest
 
 from app import config
 from scripts.mcp.scope_check import check, questions
-from tests.mcp.support import REPO_ROOT
 from tests.scripts.mcp.live_database import seeded_database
+from tests.support import REPO_ROOT
 
 
 def test_questions_expect_reads_only_after_retrieval():

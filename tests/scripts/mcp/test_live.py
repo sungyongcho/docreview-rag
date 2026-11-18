@@ -13,9 +13,8 @@ import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
-from fastmcp.client.transports import StdioTransport
 import httpx2
 from langchain.mcp import MCPAdapter
 from langchain_core.messages import AIMessage, ToolMessage
@@ -26,7 +25,7 @@ from pydantic import SecretStr
 import pytest
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app import config
@@ -34,7 +33,6 @@ from app.agent.provider import BudgetExhaustedError
 from app.agent.review_middleware import ReviewContext
 from app.contracts.evidence import EvidenceCitation
 from app.db.models import Chunk, ParsedTable
-from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.mcp import filings_server
@@ -60,20 +58,24 @@ from scripts.mcp.live import (
     review_agent,
     tool_request,
 )
-from tests.mcp.controlled_filings import ControlledSession, fixture_hit
-from tests.mcp.support import REPO_ROOT, logged_events, module_server
-from tests.scripts.mcp.cell_filings import (
-    RESOLVER_IDENTITY,
-    REVENUE_CELL,
-    STABLE_KEY,
-)
 from tests.scripts.mcp.live_database import EMBEDDING_MODEL, seeded_database
+from tests.support import REPO_ROOT
+from tests.support.cell_filings import RESOLVER_IDENTITY, REVENUE_CELL, STABLE_KEY
+from tests.support.controlled_filings import controlled_sessions, fixture_hit
+from tests.support.database import FakeEngine, no_session
+from tests.support.models import (
+    COUNT_PATH,
+    EMBEDDINGS_PATH,
+    RESPONSES_PATH,
+    FakeOpenAIEndpoint,
+    OpenAIClientFactory,
+    response_with_usage,
+)
+from tests.support.transport import CELL_FILINGS, ControlledServer, ScriptedMCPClient
 from tests.workflow.support import USD_INCOME_TABLE, income_table_hit
 
 AGENT_ARGV = ["r", "agent", "--issuer", "AMD", "--years", "2023", "2024", "--question", "Q?"]
 FAKE_KEY = "sk-test-offline-only"
-COUNT_PATH = "/v1/responses/input_tokens"
-RESPONSES_PATH = "/v1/responses"
 QUESTION = "What was TestCo's FY2024 revenue?"
 SEARCH = {"query": "revenue", "issuers": ["TEST"], "fiscal_years": [2024]}
 REVENUE = "2024 net revenue was $25,785 million."
@@ -103,16 +105,6 @@ def keyed_settings() -> SimpleNamespace:
 def development_mode(monkeypatch):
     """Run every test in development mode without reading any environment file."""
     monkeypatch.setattr(config, "get_settings", offline_settings)
-
-
-class FakeEngine:
-    """Stands in for the read-only engine of a test that never queries the database."""
-
-    disposed = False
-
-    async def dispose(self) -> None:
-        """Record that the pool was released."""
-        self.disposed = True
 
 
 def serve_offline(monkeypatch, *, include_cells: bool) -> tuple[list[Any], FakeEngine]:
@@ -177,39 +169,14 @@ def test_development_mode_serves_the_registry_and_releases_the_pool(monkeypatch)
 
 
 # The capped query embedder the server uses on the OpenAI embedding path
-def embedding_client(sent: list[dict[str, Any]], billed: list[int]) -> openai.AsyncOpenAI:
-    """An SDK client whose embeddings endpoint is served offline and records each body.
-
-    Each reply bills the next of ``billed`` input tokens, or one token once they run out.
-    """
-
-    def respond(request: httpx2.Request) -> httpx2.Response:
-        """Answer one embedding request with a unit vector and its billed tokens."""
-        sent.append(json.loads(request.content))
-        tokens = billed.pop(0) if billed else 1
-        return httpx2.Response(
-            200,
-            json={
-                "object": "list",
-                "model": "text-embedding-3-large",
-                "data": [{"object": "embedding", "index": 0, "embedding": [1.0] * 384}],
-                "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
-            },
-        )
-
-    return openai.AsyncOpenAI(
-        api_key=FAKE_KEY,
-        max_retries=0,
-        http_client=openai.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(respond)),
-    )
+def capped(budget: Reservation, endpoint: FakeOpenAIEndpoint) -> CappedEmbedding:
+    """The capped embedder over the offline endpoint."""
+    return CappedEmbedding(budget, client=endpoint.sdk(), credential_slot="dev")
 
 
-def capped(
-    budget: Reservation, sent: list[dict[str, Any]], billed: tuple[int, ...] = ()
-) -> CappedEmbedding:
-    """The capped embedder over the offline endpoint billing ``billed`` tokens in turn."""
-    client = embedding_client(sent, list(billed))
-    return CappedEmbedding(budget, client=client, credential_slot="dev")
+def embeddings_sent(endpoint: FakeOpenAIEndpoint) -> list[dict[str, Any]]:
+    """The embedding request bodies the endpoint received, in order."""
+    return endpoint.bodies(EMBEDDINGS_PATH)
 
 
 EMBEDDING_TOKEN_USD = Decimal("0.13") / Decimal(1_000_000)  # USD per embedding input token
@@ -219,23 +186,24 @@ def embed_twice(
     cap: str, billed: tuple[int, ...]
 ) -> tuple[Reservation, list[Any], Exception | None]:
     """Embed two queries under ``cap``; return the budget, the bodies sent and any refusal."""
-    sent: list[dict[str, Any]] = []
+    endpoint = FakeOpenAIEndpoint(api_key=FAKE_KEY, embedding_tokens=billed)
     budget = Reservation(Decimal(cap), 8)
-    provider = capped(budget, sent, billed)
+    provider = capped(budget, endpoint)
     asyncio.run(provider.embed_query("revenue"))
     try:
         asyncio.run(provider.embed_query("revenue 2024"))
     except BudgetExhaustedError as error:
-        return budget, sent, error
-    return budget, sent, None
+        return budget, embeddings_sent(endpoint), error
+    return budget, embeddings_sent(endpoint), None
 
 
 def test_a_query_embedding_is_reserved_then_sent_once():
     """An ordinary query reserves its estimate, sends one request and reports its usage."""
-    sent: list[dict[str, Any]] = []
+    endpoint = FakeOpenAIEndpoint(api_key=FAKE_KEY)
     budget = Reservation(Decimal("0.01"), 8)
-    provider = capped(budget, sent)
+    provider = capped(budget, endpoint)
     vector = asyncio.run(provider.embed_query("revenue"))
+    sent = embeddings_sent(endpoint)
     assert len(vector) == 384 and [body["input"] for body in sent] == [["revenue"]]
     tokens = provider.count_input_tokens("revenue")
     assert budget.attempts == 1
@@ -261,17 +229,18 @@ def test_a_billed_excess_that_still_fits_lets_the_next_query_run():
     """The excess is added and the next query is reserved and sent as usual."""
     budget, sent, refused = embed_twice("0.01", (50_000,))
     assert refused is None and len(sent) == 2
-    tokens = capped(Reservation(Decimal(1), 1), []).count_input_tokens("revenue 2024")
+    unused = FakeOpenAIEndpoint(api_key=FAKE_KEY)
+    tokens = capped(Reservation(Decimal(1), 1), unused).count_input_tokens("revenue 2024")
     assert budget.accounted_usd == Decimal("0.0065") + tokens * EMBEDDING_TOKEN_USD
 
 
 def test_an_exhausted_embedding_budget_is_not_a_correctable_tool_error():
     """Over the attempt count nothing is sent and the refusal is not a ToolError."""
-    sent: list[dict[str, Any]] = []
+    endpoint = FakeOpenAIEndpoint(api_key=FAKE_KEY)
     with pytest.raises(BudgetExhaustedError) as refused:
-        asyncio.run(capped(Reservation(Decimal("0.01"), 0), sent).embed_query("revenue"))
+        asyncio.run(capped(Reservation(Decimal("0.01"), 0), endpoint).embed_query("revenue"))
     assert not isinstance(refused.value, ToolError)
-    assert sent == []
+    assert embeddings_sent(endpoint) == []
 
 
 @pytest.mark.parametrize(("attempts", "system_error"), [(8, False), (0, True)])
@@ -286,12 +255,13 @@ def test_a_search_over_the_embedding_cap_is_a_system_failure(
         return SimpleNamespace(hits=(), holds=())
 
     monkeypatch.setattr(filings, "retrieve", retrieve)
-    sent: list[dict[str, Any]] = []
+    endpoint = FakeOpenAIEndpoint(api_key=FAKE_KEY)
     registry = build_default_registry(
-        lambda: cast(AsyncSession, ControlledSession(tmp_path / "events.jsonl")),
-        embedding_provider=capped(Reservation(Decimal("0.01"), attempts), sent),
+        controlled_sessions(tmp_path / "events.jsonl"),
+        embedding_provider=capped(Reservation(Decimal("0.01"), attempts), endpoint),
     )
     outcome = asyncio.run(execute_tool(registry, "search_filings", {"query": "revenue"}))
+    sent = embeddings_sent(endpoint)
     assert outcome.system_error is system_error
     if system_error:
         assert outcome.error == "BudgetExhaustedError: tool search_filings failed"
@@ -566,46 +536,6 @@ def response(call_id: str, name: str, arguments: dict[str, Any], usage: tuple[in
     }
 
 
-class FakeOpenAI:
-    """Serve scripted counts and responses over HTTP and record every request body.
-
-    ``failures`` maps ``(path, n)``, the n-th request to a path, to an HTTP response
-    or an exception raised in place of the scripted answer.
-    """
-
-    def __init__(self, counts=(), replies=(), failures=None) -> None:
-        self.counts = list(counts)
-        self.replies = list(replies)
-        self.failures = failures or {}
-        self.requests: list[tuple[str, dict[str, Any]]] = []
-
-    def __call__(self, request: httpx2.Request) -> httpx2.Response:
-        """Record the request, then fail it or answer it from the script."""
-        path = request.url.path
-        assert request.headers["authorization"] == f"Bearer {FAKE_KEY}"
-        self.requests.append((path, json.loads(request.content)))
-        failure = self.failures.get((path, len(self.bodies(path))))
-        if isinstance(failure, Exception):
-            raise failure
-        if failure is not None:
-            return failure
-        if path == COUNT_PATH:
-            tokens = self.counts.pop(0)
-            return httpx2.Response(
-                200, json={"object": "response.input_tokens", "input_tokens": tokens}
-            )
-        assert path == RESPONSES_PATH
-        return httpx2.Response(200, json=self.replies.pop(0))
-
-    def bodies(self, path: str) -> list[dict[str, Any]]:
-        """Bodies sent to one endpoint, in order."""
-        return [body for sent, body in self.requests if sent == path]
-
-    def client(self) -> Any:
-        """An SDK HTTP client whose transport is this fake."""
-        return openai.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(self))
-
-
 def identity(chunk_id: int) -> dict[str, Any]:
     """The complete source identity the controlled server returns for one chunk."""
     hit = fixture_hit(chunk_id)
@@ -635,7 +565,7 @@ async def usd_table(chunk_ids: tuple[int, ...]) -> dict[int, EvidenceText]:
 
 def contracts():
     """The app's tool contracts; their run functions must never be needed."""
-    return build_default_registry(cast(SessionFactory, object))
+    return build_default_registry(no_session)
 
 
 def journal(path: Path) -> list[tuple[str, str]]:
@@ -649,7 +579,8 @@ def asked(request, tmp_path_factory) -> SimpleNamespace:
     """Search, read the result, then answer: two counted, reserved turns over real stdio."""
     settings: ModelSettings = request.param
     work = tmp_path_factory.mktemp("create_agent")
-    fake = FakeOpenAI(
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY,
         counts=[1200, 1500],
         replies=[
             response("call_search", "search_filings", SEARCH, (1190, 40)),
@@ -659,23 +590,18 @@ def asked(request, tmp_path_factory) -> SimpleNamespace:
     budget = Reservation(Decimal("0.09"), 8, journal=work / "budget.jsonl")
     gate = ModelGate(budget, settings, 60_000)
     model = counted_model(settings, gate, api_key=FAKE_KEY, http_async_client=fake.client())
-    log = work / "events.jsonl"
-    log.touch()
-    server = module_server("tests.mcp.controlled_filings", str(log))
-    transport = StdioTransport(
-        server.command, server.args, env=server.env, cwd=str(server.cwd), keep_alive=False
-    )
+    server = ControlledServer(work)
 
     async def ask() -> dict[str, Any]:
         """Run the question through the experiment's own agent composition."""
-        async with MCPAdapter(transport) as adapter:
+        async with MCPAdapter(server.transport()) as adapter:
             agent = review_agent(model, await adapter.list_tools(), contracts(), gate)
             return await ask_reporting_spend(
                 agent, QUESTION, ReviewContext((2024,), usd_table, locale="en"), gate
             )
 
     outcome = asyncio.run(ask())
-    return SimpleNamespace(settings=settings, fake=fake, outcome=outcome, work=work, log=log)
+    return SimpleNamespace(settings=settings, fake=fake, outcome=outcome, work=work, server=server)
 
 
 def test_the_question_ends_on_the_reviewed_answer(asked):
@@ -683,7 +609,7 @@ def test_the_question_ends_on_the_reviewed_answer(asked):
     outcome = asked.outcome
     assert (outcome["status"], outcome["failure"]) == ("ok", None)
     assert outcome["answer"] == {**FINAL, "citations": [CITED]}
-    events = logged_events(asked.log)
+    events = asked.server.events()
     assert [e["event"] for e in events if e["event"] in {"retrieval", "body_load"}] == ["retrieval"]
 
 
@@ -792,7 +718,9 @@ def test_trace_distinguishes_mcp_dispatch_and_final_review(asked):
 
 def test_trace_keeps_gate_rejections_before_attempt_exhaustion(tmp_path):
     """A failed run still explains each refused final and the unsent next turn."""
-    fake = FakeOpenAI(counts=[1000, 1000], replies=[uncited(1), uncited(2)])
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY, counts=[1000, 1000], replies=[uncited(1), uncited(2)]
+    )
     outcome, _ = ask_offline(tmp_path, fake, attempts=2)
     assert outcome["status"] == "budget_exceeded"
     events = trace_events(tmp_path)
@@ -810,7 +738,8 @@ def test_trace_keeps_gate_rejections_before_attempt_exhaustion(tmp_path):
 
 def test_trace_does_not_call_a_gate_rejected_fetch_an_execution(tmp_path):
     """The evidence guard's rejection is visible without a false MCP dispatch event."""
-    fake = FakeOpenAI(
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY,
         counts=[1000],
         replies=[response("fetch_unseen", "fetch_chunk", {"chunk_id": 2024}, (900, 30))],
     )
@@ -825,8 +754,10 @@ def test_trace_does_not_call_a_gate_rejected_fetch_an_execution(tmp_path):
 
 def ask_with_search(tmp_path: Path, search_filings: BaseTool) -> dict[str, Any]:
     """Ask once with ``search_filings`` as the only tool; the model calls it, then stops."""
-    fake = FakeOpenAI(
-        counts=[1000], replies=[response("search_fail", "search_filings", SEARCH, (900, 30))]
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY,
+        counts=[1000],
+        replies=[response("search_fail", "search_filings", SEARCH, (900, 30))],
     )
     gate = ModelGate(
         Reservation(Decimal("0.09"), 2, journal=tmp_path / "budget.jsonl"), LUNA, 60_000
@@ -898,7 +829,7 @@ def test_trace_excludes_model_reasoning_and_redacts_credentials(tmp_path):
 
 # Budget and count boundaries, without tools: an uncited final answer is refused
 def ask_offline(
-    tmp_path: Path, fake: FakeOpenAI, *, cap="0.09", attempts=8, max_input=60_000
+    tmp_path: Path, fake: FakeOpenAIEndpoint, *, cap="0.09", attempts=8, max_input=60_000
 ) -> tuple[dict[str, Any], Reservation]:
     """Ask once with no tools, so each final answer is refused and the model asked again."""
     budget = Reservation(Decimal(cap), attempts, journal=tmp_path / "budget.jsonl")
@@ -976,7 +907,7 @@ TEXT_ONLY = [
 )
 def test_a_turn_without_an_answer_reports_why(tmp_path, reply, status, failure):
     """A cut-off, filtered, text-only or empty turn ends with the loop's typed reason."""
-    fake = FakeOpenAI(counts=[1000], replies=[reply])
+    fake = FakeOpenAIEndpoint(api_key=FAKE_KEY, counts=[1000], replies=[reply])
     outcome, budget = ask_offline(tmp_path, fake)
     assert (outcome["status"], outcome["answer"], outcome["failure"]) == (status, None, failure)
     assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH]
@@ -985,7 +916,7 @@ def test_a_turn_without_an_answer_reports_why(tmp_path, reply, status, failure):
 
 def test_observed_cost_includes_cache_writes_without_refunding_the_reservation(tmp_path):
     """SDK usage categories reach the journal and cost estimate; reservation stays whole."""
-    fake = FakeOpenAI(counts=[1000], replies=[absent_response()])
+    fake = FakeOpenAIEndpoint(api_key=FAKE_KEY, counts=[1000], replies=[absent_response()])
     outcome, budget = ask_offline(tmp_path, fake)
     assert outcome["status"] == "ok"
     event = outcome["budget"]["observed"][0]
@@ -1013,7 +944,7 @@ def test_unavailable_usage_is_not_reported_as_zero_or_a_lost_response(tmp_path, 
         reply["usage"] = None
     else:
         reply["usage"]["input_tokens_details"]["cached_tokens"] = 900
-    fake = FakeOpenAI(counts=[1000], replies=[reply])
+    fake = FakeOpenAIEndpoint(api_key=FAKE_KEY, counts=[1000], replies=[reply])
     outcome, budget = ask_offline(tmp_path, fake)
     assert outcome["status"] == "ok"
     event = outcome["budget"]["observed"][0]
@@ -1033,7 +964,7 @@ def test_zero_model_cap_is_valid_but_never_admits_a_generation(tmp_path):
     """A zero cap remains a supported no-generation budget, unlike negative or infinite caps."""
     args = parser().parse_args([*AGENT_ARGV, "--via", "create-agent", "--model-cap", "0"])
     assert live.agent_model_settings(args) is not None
-    fake = FakeOpenAI(counts=[1000])
+    fake = FakeOpenAIEndpoint(api_key=FAKE_KEY, counts=[1000])
     outcome, budget = ask_offline(tmp_path, fake, cap="0")
     assert (outcome["status"], budget.attempts, budget.accounted_usd) == (
         "budget_exceeded",
@@ -1054,7 +985,9 @@ def test_zero_model_cap_is_valid_but_never_admits_a_generation(tmp_path):
 )
 def test_a_failed_count_sends_no_generation(tmp_path, failure):
     """No count, no generation: nothing is reserved and nothing is retried."""
-    fake = FakeOpenAI(replies=[uncited(1)], failures={(COUNT_PATH, 1): failure})
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY, replies=[uncited(1)], failures={(COUNT_PATH, 1): failure}
+    )
     outcome, budget = ask_offline(tmp_path, fake)
     assert (outcome["status"], outcome["answer"]) == ("count_error", None)
     assert outcome["failure"].endswith("input token count failed")
@@ -1065,7 +998,9 @@ def test_a_failed_count_sends_no_generation(tmp_path, failure):
 
 def test_the_usd_cap_is_checked_after_the_count_and_blocks_the_next_turn(tmp_path):
     """The second turn is counted, found over the cap, and never generated."""
-    fake = FakeOpenAI(counts=[1000, 1000], replies=[uncited(1), uncited(2)])
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY, counts=[1000, 1000], replies=[uncited(1), uncited(2)]
+    )
     cap = LUNA.reservation(1000) + Decimal("0.001")
     outcome, budget = ask_offline(tmp_path, fake, cap=str(cap))
     assert (outcome["status"], outcome["answer"]) == ("budget_exceeded", None)
@@ -1081,7 +1016,9 @@ def overrun(n: int, input_tokens: int) -> dict[str, Any]:
 
 def test_observed_usage_past_the_cap_is_spent_and_stops_the_next_turn(tmp_path):
     """$0.100012 observed against $0.0051652 reserved under $0.09: no further count or send."""
-    fake = FakeOpenAI(counts=[1000, 1000], replies=[overrun(1, 500_000), uncited(2)])
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY, counts=[1000, 1000], replies=[overrun(1, 500_000), uncited(2)]
+    )
     outcome, budget = ask_offline(tmp_path, fake, attempts=2)
     assert (outcome["status"], outcome["failure"]) == (
         "budget_exceeded",
@@ -1098,7 +1035,9 @@ def test_observed_usage_past_the_cap_is_spent_and_stops_the_next_turn(tmp_path):
 
 def test_an_observed_excess_shrinks_the_room_for_later_turns(tmp_path):
     """After an excess, the next turn is counted, no longer fits under the cap, and is not sent."""
-    fake = FakeOpenAI(counts=[1000, 1000], replies=[overrun(1, 30_000), absent_response()])
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY, counts=[1000, 1000], replies=[overrun(1, 30_000), absent_response()]
+    )
     cap = LUNA.reservation(1000) * 2
     outcome, budget = ask_offline(tmp_path, fake, cap=str(cap))
     assert outcome["status"] == "budget_exceeded"
@@ -1109,7 +1048,9 @@ def test_an_observed_excess_shrinks_the_room_for_later_turns(tmp_path):
 
 def test_an_excess_that_still_fits_lets_the_question_finish(tmp_path):
     """The excess is added to the reservations and the next turn still runs to its answer."""
-    fake = FakeOpenAI(counts=[1000, 1000], replies=[overrun(1, 30_000), absent_response()])
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY, counts=[1000, 1000], replies=[overrun(1, 30_000), absent_response()]
+    )
     outcome, budget = ask_offline(tmp_path, fake)
     assert outcome["status"] == "ok"
     assert budget.accounted_usd == Decimal("0.006012") + LUNA.reservation(1000)
@@ -1121,7 +1062,7 @@ def test_an_excess_that_still_fits_lets_the_question_finish(tmp_path):
 
 def test_used_attempts_block_the_next_turn_before_its_count(tmp_path):
     """The attempt limit is shared by all turns of the question and stops even counting."""
-    fake = FakeOpenAI(counts=[1000], replies=[uncited(1), uncited(2)])
+    fake = FakeOpenAIEndpoint(api_key=FAKE_KEY, counts=[1000], replies=[uncited(1), uncited(2)])
     outcome, budget = ask_offline(tmp_path, fake, attempts=1)
     assert outcome["status"] == "budget_exceeded"
     assert [path for path, _ in fake.requests] == [COUNT_PATH, RESPONSES_PATH]
@@ -1130,7 +1071,9 @@ def test_used_attempts_block_the_next_turn_before_its_count(tmp_path):
 
 def test_the_question_input_threshold_spans_turns(tmp_path):
     """Counted input accumulates; the turn that would pass the threshold is not generated."""
-    fake = FakeOpenAI(counts=[1000, 600], replies=[uncited(1), uncited(2)])
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY, counts=[1000, 600], replies=[uncited(1), uncited(2)]
+    )
     outcome, budget = ask_offline(tmp_path, fake, max_input=1500)
     assert outcome["status"] == "budget_exceeded"
     assert outcome["budget"]["admitted_input_tokens"] == 1000
@@ -1140,7 +1083,8 @@ def test_the_question_input_threshold_spans_turns(tmp_path):
 
 def test_a_lost_response_keeps_its_reservation_and_reports_no_answer(tmp_path):
     """A timed-out generation may have been billed: its reservation stays and is unknown."""
-    fake = FakeOpenAI(
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY,
         counts=[1000],
         replies=[uncited(1)],
         failures={(RESPONSES_PATH, 1): httpx2.ReadTimeout("response lost")},
@@ -1158,7 +1102,7 @@ def test_a_lost_response_keeps_its_reservation_and_reports_no_answer(tmp_path):
 
 def test_a_model_call_outside_the_middleware_sends_nothing(tmp_path):
     """Without a turn opened by ReserveBeforeSend the model refuses before counting."""
-    fake = FakeOpenAI(counts=[1000], replies=[uncited(1)])
+    fake = FakeOpenAIEndpoint(api_key=FAKE_KEY, counts=[1000], replies=[uncited(1)])
     gate = ModelGate(Reservation(Decimal("0.09"), 8), LUNA, 60_000)
     model = counted_model(LUNA, gate, api_key=FAKE_KEY, http_async_client=fake.client())
     with pytest.raises(RuntimeError, match="outside a ReserveBeforeSend turn"):
@@ -1194,7 +1138,9 @@ def run_cell_question(
     re-read returns the cell the server served. ``server`` replaces the cell server.
     The issuer's names come from the repository manifest, as ``run`` reads them.
     """
-    fake = FakeOpenAI(counts=[1000, 1200, 1400][: len(replies)], replies=replies)
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY, counts=[1000, 1200, 1400][: len(replies)], replies=replies
+    )
     monkeypatch.setattr(
         config,
         "get_settings",
@@ -1224,12 +1170,11 @@ def run_cell_question(
         }
 
     monkeypatch.setattr(evidence, "read_selected_cells", read_selected_cells)
-    log = tmp_path / "events.jsonl"
-    log.touch()
+    cell_server = ControlledServer(
+        tmp_path, module=CELL_FILINGS, env={"PYTHONPATH": str(REPO_ROOT)}
+    )
     if server is None:
-        server = module_server(
-            "tests.scripts.mcp.cell_filings", str(log), env={"PYTHONPATH": str(REPO_ROOT)}
-        )
+        server = cell_server.params
     argv = ["r", "agent", "--issuer", "AMD", "--years", "2024", "--question", question]
     args = parser().parse_args([*argv, "--via", "create-agent", "--model-attempts", "3"])
     args.issuer = issuer
@@ -1239,7 +1184,9 @@ def run_cell_question(
     outcome = asyncio.run(
         live.run_review_agent_over_mcp(server, tmp_path, args, settings, names=names)
     )
-    return SimpleNamespace(outcome=outcome, fake=fake, reads=reads, log=log, contexts=contexts)
+    return SimpleNamespace(
+        outcome=outcome, fake=fake, reads=reads, server=cell_server, contexts=contexts
+    )
 
 
 def test_the_script_answers_a_cell_question_end_to_end(tmp_path, monkeypatch):
@@ -1269,7 +1216,7 @@ def test_the_script_answers_a_cell_question_end_to_end(tmp_path, monkeypatch):
     )
     assert "contract_version" in final["parameters"]["properties"]
     assert "2024:r1c1" in json.dumps(asked.fake.bodies(COUNT_PATH)[2]["input"])
-    events = [e["event"] for e in logged_events(asked.log)]
+    events = [e["event"] for e in asked.server.events()]
     assert events[:2] == ["retrieval", "body_load"]
 
 
@@ -1362,48 +1309,33 @@ def test_a_setup_failure_after_the_server_started_is_reported(
     assert FAKE_KEY not in json.dumps(asked.outcome) and asked.fake.requests == []
 
 
-class FakeClient:
-    """Stands in for the MCP client of ``run``; fails where the test chooses."""
-
-    start_error: BaseException | None = None
-    call_error: BaseException | None = None
-    stop_error: BaseException | None = None
-
-    def __init__(self, server: object, **_: object) -> None:
-        self.server = server
-
-    async def __aenter__(self) -> FakeClient:
-        """Start, or fail to start, the server."""
-        if self.start_error is not None:
-            raise self.start_error
-        return self
-
-    async def __aexit__(self, *_: object) -> None:
-        """Stop the server, or fail to."""
-        if self.stop_error is not None:
-            raise self.stop_error
-
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> SimpleNamespace:
-        """Return an empty search result, or fail."""
-        if self.call_error is not None:
-            raise self.call_error
-        return SimpleNamespace(
-            is_error=False, structured_content=None, model_dump=lambda **_: {"hits": []}
-        )
-
-
 SEARCH_ARGV = ["r", "search", "--issuer", "AMD", "--year", "2024", "--query", "revenue"]
 
 
-def run_claimed(tmp_path: Path, monkeypatch, argv: list[str], **client: Any) -> Path:
-    """Run ``run`` offline with a fake MCP client; return its run directory."""
+def run_claimed(
+    tmp_path: Path,
+    monkeypatch,
+    argv: list[str],
+    *,
+    start_error: BaseException | None = None,
+    call_error: BaseException | None = None,
+    stop_error: BaseException | None = None,
+) -> Path:
+    """Run ``run`` offline with a scripted MCP client; return its run directory.
+
+    The client answers every tool call with an empty search result and fails at the
+    stage whose error is given: server start, the tool call or server stop.
+    """
 
     async def require_indexed(issuer, years, **_) -> None:
         """Stand in for the database index check."""
 
     monkeypatch.setattr(config, "get_settings", keyed_settings)
     monkeypatch.setattr(live, "require_indexed", require_indexed)
-    monkeypatch.setattr(mcp, "Client", type("Client", (FakeClient,), client))
+    client = ScriptedMCPClient(
+        start_error=start_error, call_error=call_error, stop_error=stop_error
+    )
+    monkeypatch.setattr(mcp, "Client", client)
     asyncio.run(live.run(parser().parse_args([argv[0], "--out", str(tmp_path), *argv[1:]])))
     return tmp_path / argv[0]
 
@@ -1416,7 +1348,7 @@ def result_of(run_dir: Path) -> dict[str, Any]:
 def test_an_ordinary_tool_run_records_its_result(tmp_path, monkeypatch):
     """A search that succeeds writes its normal record, without a status or failure."""
     run_dir = run_claimed(tmp_path, monkeypatch, SEARCH_ARGV)
-    assert result_of(run_dir)["result"] == {"hits": []}
+    assert result_of(run_dir)["result"]["structuredContent"] == {"hits": []}
     assert "failure" not in result_of(run_dir)
 
 
@@ -1424,7 +1356,7 @@ def test_a_server_stop_failure_keeps_the_finished_tool_result(tmp_path, monkeypa
     """The search result is kept and the stop failure added beside it."""
     run_dir = run_claimed(tmp_path, monkeypatch, SEARCH_ARGV, stop_error=RuntimeError(FAKE_KEY))
     record = result_of(run_dir)
-    assert record["result"] == {"hits": []}
+    assert record["result"]["structuredContent"] == {"hits": []}
     assert record["server_stop_failure"] == "RuntimeError: server stop failed"
 
 
@@ -1726,7 +1658,9 @@ def test_accounted_budget_reports_each_requests_maximum_not_its_reservation(
 
 def test_a_refused_token_count_is_a_projection_not_admitted_input(tmp_path):
     """The result counts admitted input, while the blocked event names its prospective total."""
-    fake = FakeOpenAI(counts=[1000, 600], replies=[uncited(1), uncited(2)])
+    fake = FakeOpenAIEndpoint(
+        api_key=FAKE_KEY, counts=[1000, 600], replies=[uncited(1), uncited(2)]
+    )
     outcome, budget = ask_offline(tmp_path, fake, max_input=1500)
     assert outcome["budget"]["admitted_input_tokens"] == 1000
     events = [json.loads(line) for line in (tmp_path / "budget.jsonl").read_text().splitlines()]
@@ -1740,22 +1674,14 @@ def test_sequential_live_adapter_accounts_observed_overruns_or_unknown_requests(
     tmp_path, monkeypatch, lost
 ):
     """The sequential adapter keeps the same per-request max rule, including a lost response."""
-    from app.agent import loop, provider
+    from app.agent import loop
     from app.llm.schemas import TokenPricing
-    from app.mcp import client
-    from app.tools.registry import ToolRegistry
 
-    async def bridge(*args):
-        """No server or tools are needed to inspect the capped provider."""
-        return ToolRegistry()
-
-    async def observed_turn(self, *args, **kwargs):
-        """Return overestimated usage or lose the response before usage is known."""
-        if lost:
-            raise RuntimeError("lost response")
-        return provider.ProviderTurn(
-            output_text="", tool_calls=(), input_tokens=1_000_000, output_tokens=1000
-        )
+    # The model reports overestimated usage, or the response is lost before usage is known.
+    openai_clients = OpenAIClientFactory(
+        response_with_usage(1_000_000, 1000),
+        failures={1: RuntimeError("lost response")} if lost else None,
+    )
 
     async def run_agent(question, *, provider, **kwargs):
         """Run precisely the script's nested capped model without a paid request."""
@@ -1770,8 +1696,7 @@ def test_sequential_live_adapter_accounts_observed_overruns_or_unknown_requests(
 
     monkeypatch.setattr(config, "get_settings", keyed_settings)
     monkeypatch.setattr(live, "read_only_engine", FakeEngine)
-    monkeypatch.setattr(client, "mcp_tool_registry", bridge)
-    monkeypatch.setattr(provider.OpenAIToolProvider, "turn", observed_turn)
+    monkeypatch.setattr(openai, "AsyncOpenAI", openai_clients)
     monkeypatch.setattr(loop, "run_agent", run_agent)
     args = parser().parse_args(
         [
@@ -1787,7 +1712,11 @@ def test_sequential_live_adapter_accounts_observed_overruns_or_unknown_requests(
             "100",
         ]
     )
-    outcome = asyncio.run(live.run_agent_over_mcp(cast(mcp.Client, object()), tmp_path, args))
+    # A server listing no tools: the capped provider is inspected without any tool.
+    server = ScriptedMCPClient()
+    outcome = asyncio.run(live.run_agent_over_mcp(server, tmp_path, args))
+    (client,) = openai_clients.clients
+    assert len(client.responses.calls) == 1
     events = [json.loads(line) for line in (tmp_path / "budget.jsonl").read_text().splitlines()]
     assert events[-1]["status"] == ("unknown" if lost else "observed")
     assert outcome["budget"]["accounted_usd"] == events[-1]["accounted_usd"]
@@ -1798,22 +1727,10 @@ def test_sequential_reservation_refusal_reports_budget_exceeded_before_any_reque
     tmp_path, monkeypatch
 ):
     """The sequential adapter's reservation cap is a budget ending, not a provider failure."""
-    from app.agent import provider
-    from app.mcp import client
-    from app.tools.registry import ToolRegistry
-
-    async def bridge(*args):
-        """No tools or server are needed for a pre-send budget refusal."""
-        return ToolRegistry()
-
-    async def must_not_send(self, *args, **kwargs):
-        """A refused reservation must stop before the actual model request."""
-        pytest.fail("a generation was sent after the budget refusal")
-
+    openai_clients = OpenAIClientFactory()
     monkeypatch.setattr(config, "get_settings", keyed_settings)
     monkeypatch.setattr(live, "read_only_engine", FakeEngine)
-    monkeypatch.setattr(client, "mcp_tool_registry", bridge)
-    monkeypatch.setattr(provider.OpenAIToolProvider, "turn", must_not_send)
+    monkeypatch.setattr(openai, "AsyncOpenAI", openai_clients)
     args = parser().parse_args(
         [
             "r",
@@ -1828,7 +1745,10 @@ def test_sequential_reservation_refusal_reports_budget_exceeded_before_any_reque
             "0.000000001",
         ]
     )
-    outcome = asyncio.run(live.run_agent_over_mcp(cast(mcp.Client, object()), tmp_path, args))
+    # No tools or server are needed for a pre-send budget refusal.
+    outcome = asyncio.run(live.run_agent_over_mcp(ScriptedMCPClient(), tmp_path, args))
+    (client,) = openai_clients.clients
+    assert client.responses.calls == [], "a generation was sent after the budget refusal"
     assert outcome["status"] == "budget_exceeded"
     assert outcome["failure"] == "approved model budget exhausted"
     assert outcome["budget"]["attempts"] == 0

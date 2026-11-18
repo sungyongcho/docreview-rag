@@ -38,7 +38,7 @@ from app.workflow.types import (
     WorkflowRequest,
     initial_state,
 )
-from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
+from tests.support.models import ScriptedChatModel, ScriptedToolProvider, turn
 from tests.workflow.support import USD_INCOME_TABLE, income_table_hit, ok_result, provider_budget
 
 HIT, FRAGMENT = income_table_hit(html=USD_INCOME_TABLE)
@@ -184,7 +184,7 @@ def agent_calls(*finals: dict[str, Any]) -> list[dict[str, Any]]:
 def run_loop(*finals: dict[str, Any], reader: Callable[..., Any] = read_retrieved) -> AgentResult:
     """Run ``run_agent`` on a search and the proposed final answers."""
     registry, _ = registry_and_tool()
-    provider = RecordingToolProvider(
+    provider = ScriptedToolProvider(
         [
             turn(
                 tool_calls=(

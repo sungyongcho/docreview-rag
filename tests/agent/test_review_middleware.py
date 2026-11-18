@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from fastmcp.client.transports import StdioTransport
 from langchain.mcp import MCPAdapter
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
@@ -31,12 +30,12 @@ from app.agent.review_middleware import (
     retrieval_returned,
 )
 from app.contracts.evidence import EvidenceCitation
-from app.db.session_factory import SessionFactory
 from app.review.ledger import cell_record, merge_identities
 from app.tools.filings import build_default_registry
-from tests.agent.support import ScriptedChatModel
-from tests.mcp.controlled_filings import fixture_hit
-from tests.mcp.support import logged_events, module_server
+from tests.support.controlled_filings import fixture_hit
+from tests.support.database import no_session
+from tests.support.models import ScriptedChatModel
+from tests.support.transport import ControlledServer
 
 USAGE = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
 COMPARE = {"query": "revenue", "issuer": "TEST", "fiscal_years": [2023, 2024]}
@@ -47,7 +46,7 @@ NOT_RETRIEVED = "was not retrieved in this question; search first"
 
 def contracts():
     """The app's tool contracts; their run functions must never be needed."""
-    return build_default_registry(cast(SessionFactory, object))
+    return build_default_registry(no_session)
 
 
 def identity(chunk_id: int) -> dict[str, Any]:
@@ -96,7 +95,7 @@ class Run:
 
     def sent(self, name: str) -> list[dict[str, Any]]:
         """Arguments of every tools/call for ``name`` that crossed stdio, in any order."""
-        return [c["params"]["arguments"] for c in self.tool_calls if c["params"]["name"] == name]
+        return [c["arguments"] for c in self.tool_calls if c["name"] == name]
 
     def body_loads(self) -> list[int]:
         """Chunk ids whose body the controlled data layer read, sorted."""
@@ -105,14 +104,7 @@ class Run:
 
 def run_questions(work: Path, replies: Sequence[AIMessage], questions: Sequence[str]) -> Run:
     """Ask each question in turn on one checkpointed thread through one middleware stack."""
-    log_path = work / "events.jsonl"
-    log_path.touch()
-    relay = module_server(
-        "tests.mcp.stdio_relay", str(work), "tests.mcp.controlled_filings", str(log_path)
-    )
-    transport = StdioTransport(
-        relay.command, relay.args, env=relay.env, cwd=str(relay.cwd), keep_alive=False
-    )
+    server = ControlledServer(work, relayed=True)
     model = ScriptedChatModel.from_replies(*replies)
     config: Any = {"configurable": {"thread_id": "one thread"}}
 
@@ -120,7 +112,7 @@ def run_questions(work: Path, replies: Sequence[AIMessage], questions: Sequence[
         """Run every question on the same thread, keeping each final and checkpointed state."""
         states, checkpoints = [], []
         # The stop wraps the gate; the two declare different state schemas the agent merges.
-        async with MCPAdapter(transport) as adapter:
+        async with MCPAdapter(server.transport()) as adapter:
             agent = build_review_agent(
                 model, await adapter.list_tools(), contracts(), checkpointer=InMemorySaver()
             )
@@ -135,13 +127,12 @@ def run_questions(work: Path, replies: Sequence[AIMessage], questions: Sequence[
         return states, checkpoints
 
     states, checkpoints = asyncio.run(ask())
-    requests = [json.loads(line) for line in (work / "requests.jsonl").read_text().splitlines()]
     return Run(
         states=states,
         model=model,
         checkpoints=checkpoints,
-        tool_calls=[r for r in requests if r.get("method") == "tools/call"],
-        events=logged_events(log_path),
+        tool_calls=server.tool_calls(),
+        events=server.events(),
     )
 
 

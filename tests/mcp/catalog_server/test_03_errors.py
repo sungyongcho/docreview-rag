@@ -10,15 +10,14 @@ from mcp import Client
 from mcp.types import INVALID_PARAMS
 
 from tests.mcp.support import (
-    PROTOCOL_MODE,
-    REPO_ROOT,
     UNKNOWN_TOOLS,
     assert_unknown_tool,
     call_or_error,
-    module_server,
     text_of,
     write_catalog,
 )
+from tests.support import REPO_ROOT
+from tests.support.transport import PROTOCOL_MODE, module_server
 
 META = {
     "io.modelcontextprotocol/protocolVersion": PROTOCOL_MODE,

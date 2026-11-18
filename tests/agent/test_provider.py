@@ -3,40 +3,20 @@
 import asyncio
 import sys
 from types import SimpleNamespace
-from typing import cast
 
-from openai import AsyncOpenAI
 from pydantic import ValidationError
 import pytest
 
 from app.agent.provider import DeterministicToolProvider, OpenAIToolProvider
 from app.agent.types import ToolCall
-from tests.agent.support import turn
-
-
-class FakeResponses:
-    """Responses endpoint returning one staged reply and recording each call."""
-
-    def __init__(self, response):
-        self.response = response
-        self.calls = []
-
-    async def create(self, **kwargs):
-        """Return the staged response, recording the arguments it was called with."""
-        self.calls.append(kwargs)
-        return self.response
+from tests.support.models import FakeOpenAIClient, OpenAIClientFactory, turn
 
 
 def openai_provider(response):
-    """Build the OpenAI adapter around one staged response."""
-    responses = FakeResponses(response)
-    provider = OpenAIToolProvider(
-        model_name="gpt-5.6-terra",
-        client=cast(
-            AsyncOpenAI, SimpleNamespace(responses=responses, base_url="https://api.openai.com/v1")
-        ),
-    )
-    return provider, responses
+    """Build the OpenAI adapter around a client that answers with one staged response."""
+    client = FakeOpenAIClient(response)
+    provider = OpenAIToolProvider(model_name="gpt-5.6-terra", client=client)
+    return provider, client.responses
 
 
 def test_deterministic_provider_replays_turns_and_stops_at_exhaustion():
@@ -159,42 +139,24 @@ def test_provider_turn_rejects_inconsistent_fields(changes, error):
 def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
     """Build the owned client with retries off, record its resolved URL as provenance,
     close it on aclose, and leave an injected client alone."""
-    captured = {}
-    closed = []
-
-    class FakeClient:
-        """SDK stand-in capturing its constructor arguments, with an observable close."""
-
-        base_url = "https://api.openai.com/v1"
-
-        def __init__(self, **kwargs):
-            """Record the constructor arguments and expose an empty responses namespace."""
-            captured.update(kwargs)
-            self.responses = SimpleNamespace()
-
-        async def close(self):
-            """Record that the pool was shut down."""
-            closed.append(True)
-
+    factory = OpenAIClientFactory()
     module = sys.modules[OpenAIToolProvider.__module__]
-    monkeypatch.setattr(module, "AsyncOpenAI", FakeClient)
+    monkeypatch.setattr(module, "AsyncOpenAI", factory)
 
     owned = OpenAIToolProvider(model_name="gpt-5.6-terra", api_key="sk-test")
+    (captured,) = factory.constructed
     assert captured["max_retries"] == 0
     assert "base_url" not in captured
     assert owned.api_url == "https://api.openai.com/v1/responses"
     asyncio.run(owned.aclose())
-    assert closed == [True]
+    (client,) = factory.clients
+    assert client.close_count == 1
 
-    injected = OpenAIToolProvider(
-        model_name="gpt-5.6-terra",
-        client=cast(
-            AsyncOpenAI,
-            SimpleNamespace(responses=SimpleNamespace(), base_url="https://api.openai.com/v1"),
-        ),
-    )
+    injected_client = FakeOpenAIClient()
+    injected = OpenAIToolProvider(model_name="gpt-5.6-terra", client=injected_client)
     asyncio.run(injected.aclose())
-    assert closed == [True]
+    assert injected_client.close_count == 0
+    assert client.close_count == 1
 
 
 def test_openai_adapter_reports_a_failed_response_as_a_provider_failure():

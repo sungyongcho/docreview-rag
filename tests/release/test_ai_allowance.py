@@ -15,7 +15,7 @@ from app.release.ai_allowance import (
     active_allowance,
 )
 from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 def test_atomic_reservations_survive_recreation(tmp_path):

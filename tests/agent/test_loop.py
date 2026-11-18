@@ -9,13 +9,13 @@ from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
 from app.agent.loop import COMPACTED_OUTPUT, run_agent
-from app.agent.provider import BudgetExhaustedError, ToolCallingProvider
+from app.agent.provider import BudgetExhaustedError
 from app.agent.types import AgentBudget, ToolCall
 from app.contracts.evidence import EvidenceCitation
 from app.llm.schemas import TokenPricing
 from app.tools.filings import FetchChunkParams
 from app.tools.registry import EvidenceExtractor, Tool, ToolRegistry
-from tests.agent.support import RecordingToolProvider, turn
+from tests.support.models import ScriptedToolProvider, turn
 
 SOURCE_SHA256 = "a" * 64
 
@@ -106,7 +106,7 @@ def answer_arguments(chunk_id=7, *, label="SUPPORTED"):
 
 def run_loop(turns, *, registry=None, budget=None):
     """Run the agent over a queue of staged turns and return the result and provider."""
-    provider = RecordingToolProvider(turns)
+    provider = ScriptedToolProvider(turns)
     result = asyncio.run(
         run_agent(
             "How much did revenue increase?",
@@ -142,7 +142,7 @@ def test_search_then_cited_answer_succeeds_with_full_provenance():
     assert result.total_input_tokens == 22
     assert result.total_output_tokens == 11
     assert result.steps[0].observations[0].error is None
-    replayed = provider.requests[1][1]
+    replayed = provider.requests[1].input_items
     kinds = [item.get("type") or item.get("role") for item in replayed]
     assert kinds == ["user", "assistant", "function_call", "function_call_output"]
     assert json.loads(replayed[3]["output"])["hits"][0]["chunk_id"] == 7
@@ -192,7 +192,7 @@ def test_correctable_tool_failures_become_explicit_observations():
     assert "unknown tool: missing_tool" in (observations[0].error or "")
     assert "invalid arguments for search_notes" in (observations[1].error or "")
     assert "wrong" in (observations[1].error or "")
-    replay = provider.requests[1][1]
+    replay = provider.requests[1].input_items
     outputs = [item["output"] for item in replay if item.get("type") == "function_call_output"]
     assert all(output.startswith("ERROR:") for output in outputs)
     # No search ran, so the cited final answer is rejected and the exhausted turn
@@ -263,7 +263,7 @@ def test_no_tool_call_gets_an_explicit_nudge():
 
     assert result.status == "ok"
     assert result.steps[0].tool_calls == ()
-    nudge = provider.requests[1][1][-1]
+    nudge = provider.requests[1].input_items[-1]
     assert nudge["role"] == "user" and "final_answer" in nudge["content"]
 
 
@@ -349,7 +349,7 @@ def test_exhausted_budget_stops_before_a_futile_request(
         turn(tool_calls=(call("final_answer", answer_arguments(), call_id="call-2"),)),
     ]
 
-    provider = RecordingToolProvider(turns)
+    provider = ScriptedToolProvider(turns)
     provider.pricing = TokenPricing(
         input_per_million_usd=input_price, output_per_million_usd=Decimal("0")
     )
@@ -388,31 +388,10 @@ def test_provider_failure_does_not_expose_exception_secrets():
     """Report a provider failure as a typed result naming the exception type, and keep a
     credential inside the exception message out of it."""
 
-    class SecretProvider(ToolCallingProvider):
-        """Provider whose failure carries a secret that must not escape."""
-
-        provider_name = "test"
-        model_name = "test-model"
-        api_url = "test://provider"
-        pricing = TokenPricing(
-            input_per_million_usd=Decimal("1"), output_per_million_usd=Decimal("1")
-        )
-
-        async def turn(
-            self,
-            instructions,
-            input_items,
-            tools,
-            *,
-            max_output_tokens,
-        ):
-            """Fail with a message containing a credential."""
-            raise RuntimeError("api_key=sk-super-secret")
+    provider = ScriptedToolProvider(failures={1: RuntimeError("api_key=sk-super-secret")})
 
     result = asyncio.run(
-        run_agent(
-            "question", registry=registry_with_search(), provider=SecretProvider(), locale="en"
-        )
+        run_agent("question", registry=registry_with_search(), provider=provider, locale="en")
     )
 
     assert result.status == "provider_error"
@@ -491,7 +470,7 @@ def test_old_observations_are_compacted_out_of_the_replay():
     assert result.status == "ok"
     outputs_by_call = {
         item["call_id"]: item["output"]
-        for item in provider.requests[3][1]
+        for item in provider.requests[3].input_items
         if item.get("type") == "function_call_output"
     }
     assert outputs_by_call["call-1"] == COMPACTED_OUTPUT
@@ -500,7 +479,7 @@ def test_old_observations_are_compacted_out_of_the_replay():
     # The request one turn earlier still carried every payload verbatim.
     third_request = {
         item["call_id"]: item["output"]
-        for item in provider.requests[2][1]
+        for item in provider.requests[2].input_items
         if item.get("type") == "function_call_output"
     }
     assert COMPACTED_OUTPUT not in third_request.values()
@@ -572,7 +551,7 @@ def _figures_run(answer_text, *, reader, then=None):
     ]
     if then is not None:
         turns.append(turn(tool_calls=(call("final_answer", then, call_id="call-3"),)))
-    provider = RecordingToolProvider(turns)
+    provider = ScriptedToolProvider(turns)
     result = asyncio.run(
         run_agent(
             "What was AMD's 2024 net revenue?",
@@ -898,7 +877,7 @@ def test_observed_budget_failure_names_the_resource_that_exceeded_its_cap(
     input_tokens, cost_cap, expected
 ):
     """A monetary overrun is never described as a token-count overrun."""
-    provider = RecordingToolProvider([turn(input_tokens=input_tokens)])
+    provider = ScriptedToolProvider([turn(input_tokens=input_tokens)])
     provider.pricing = TokenPricing(
         input_per_million_usd=Decimal("1"), output_per_million_usd=Decimal("0")
     )
@@ -918,17 +897,12 @@ def test_observed_budget_failure_names_the_resource_that_exceeded_its_cap(
 def test_provider_side_budget_refusal_keeps_its_reason_and_never_dispatches_tools():
     """An application budget boundary is distinct from a failing provider request."""
 
-    class RefusedProvider(RecordingToolProvider):
-        """Provider whose application-owned pre-send boundary refuses the request."""
-
-        async def turn(self, *args, **kwargs):
-            """Refuse before a model or tool can run."""
-            raise BudgetExhaustedError("approved model budget exhausted")
+    refused = ScriptedToolProvider(
+        failures={1: BudgetExhaustedError("approved model budget exhausted")}
+    )
 
     result = asyncio.run(
-        run_agent(
-            "Question", registry=registry_with_search(), provider=RefusedProvider([]), locale="en"
-        )
+        run_agent("Question", registry=registry_with_search(), provider=refused, locale="en")
     )
     assert result.status == "budget_exceeded"
     assert result.failure == "approved model budget exhausted"

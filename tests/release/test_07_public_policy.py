@@ -10,7 +10,7 @@ from app.llm.openai_limits import OpenAILimitsManager
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 def test_limits_expose_effective_runtime_call_caps(tmp_path) -> None:

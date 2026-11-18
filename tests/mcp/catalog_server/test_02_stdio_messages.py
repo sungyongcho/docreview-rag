@@ -1,16 +1,11 @@
 """Section 3.3: what actually crosses stdio between the client and the server."""
 
 import asyncio
-import json
 
 from mcp import Client
 
-from tests.mcp.support import PROTOCOL_MODE, module_server, write_catalog
-
-
-def read_lines(path):
-    """Parse one recorded JSONL direction."""
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+from tests.mcp.support import write_catalog
+from tests.support.transport import PROTOCOL_MODE, STDIO_RELAY, module_server, read_jsonl
 
 
 def test_each_request_carries_the_version_and_gets_one_matching_response(tmp_path):
@@ -22,7 +17,7 @@ def test_each_request_carries_the_version_and_gets_one_matching_response(tmp_pat
     async def exercise():
         """Discover, list tools and call list_corpus through the recording relay."""
         relay = module_server(
-            "tests.mcp.stdio_relay",
+            STDIO_RELAY,
             str(trace),
             "app.mcp.catalog_server",
             env={"CORPUS_DIR": str(tmp_path)},
@@ -34,8 +29,8 @@ def test_each_request_carries_the_version_and_gets_one_matching_response(tmp_pat
             assert not result.is_error
 
     asyncio.run(exercise())
-    requests = read_lines(trace / "requests.jsonl")
-    responses = read_lines(trace / "responses.jsonl")
+    requests = read_jsonl(trace / "requests.jsonl")
+    responses = read_jsonl(trace / "responses.jsonl")
     calls = [request for request in requests if "id" in request]
     assert {"server/discover", "tools/list", "tools/call"} <= {call["method"] for call in calls}
     for call in calls:

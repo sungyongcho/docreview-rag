@@ -24,21 +24,23 @@ from tests.live_postgres import live_postgres_unavailable
         {"result": None, "lease": None, "lease_instance": None, "lease_daemon": None},
     ],
 )
-def test_old_or_invalid_audit_never_becomes_idle_state(tmp_path, recorded):
+def test_old_or_invalid_audit_never_becomes_idle_state(tmp_path, recorded, state_dir):
     """Reject unsupported audit shapes without changing evidence or starting reset work."""
-    service = WipeService(tmp_path, lambda: False)
+    service = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     service._audit.write_text(json.dumps(recorded))
     before = service._audit.read_bytes()
 
     with pytest.raises(WipeError):
-        WipeService(tmp_path, lambda: False)
+        WipeService(tmp_path, lambda: False, state_dir=state_dir)
 
     assert service._audit.read_bytes() == before
 
 
-def test_confirmation_rejects_changed_expired_and_duplicate_previews(tmp_path, monkeypatch):
+def test_confirmation_rejects_changed_expired_and_duplicate_previews(
+    tmp_path, monkeypatch, state_dir
+):
     """A preview cannot authorize another state or be consumed twice."""
-    service = WipeService(tmp_path, lambda: False)
+    service = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     target = {"version": 1}
 
     async def inspect():
@@ -76,14 +78,14 @@ def test_confirmation_rejects_changed_expired_and_duplicate_previews(tmp_path, m
     asyncio.run(scenario())
 
 
-def test_active_operations_block_inspection(tmp_path):
+def test_active_operations_block_inspection(tmp_path, state_dir):
     """No Docker inspection or reset begins while a managed command runs."""
     with pytest.raises(WipeError, match="active local operations"):
-        asyncio.run(WipeService(tmp_path, lambda: True).inspect())
+        asyncio.run(WipeService(tmp_path, lambda: True, state_dir=state_dir).inspect())
 
 
 @pytest.mark.live_postgres
-def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
+def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch, state_dir):
     """Erase only an isolated test volume and verify a real empty pgvector schema."""
     image = os.environ.get("DOCREVIEW_WIPE_TEST_IMAGE")
     if not image:
@@ -196,7 +198,7 @@ volumes:
   pg_data:
 """)
     (root / "docker/docker-compose.dev.yml").write_text("services: {}\n")
-    service = WipeService(root, lambda: False)
+    service = WipeService(root, lambda: False, state_dir=state_dir)
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
     async def scenario():
@@ -289,10 +291,10 @@ volumes:
     ],
 )
 def test_preview_refuses_production_and_external_database(
-    tmp_path, monkeypatch, mode, database_url
+    tmp_path, monkeypatch, mode, database_url, state_dir
 ):
     """Reject a dangerous runtime identity before any database or filesystem writes."""
-    service = WipeService(tmp_path, lambda: False)
+    service = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     calls = []
 
     async def run(*args, **_kwargs):
@@ -332,9 +334,9 @@ def test_preview_refuses_production_and_external_database(
 
 
 @pytest.mark.parametrize("endpoint", ["ssh://remote", "tcp://127.0.0.1:2375", "tcp://remote:2375"])
-def test_docker_context_refuses_non_unix_targets(tmp_path, monkeypatch, endpoint):
+def test_docker_context_refuses_non_unix_targets(tmp_path, monkeypatch, endpoint, state_dir):
     """Reject remote or forwarded Docker endpoints before inspecting any containers."""
-    service = WipeService(tmp_path, lambda: False)
+    service = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     monkeypatch.setenv("DOCKER_CONTEXT", "isolated-context")
     calls = []
 
@@ -350,10 +352,10 @@ def test_docker_context_refuses_non_unix_targets(tmp_path, monkeypatch, endpoint
     assert len(calls) == 1
 
 
-def test_operation_lock_serializes_other_operator_processes(tmp_path):
+def test_operation_lock_serializes_other_operator_processes(tmp_path, state_dir):
     """A second service cannot execute reset while another service owns the checkout lock."""
-    first = WipeService(tmp_path, lambda: False)
-    second = WipeService(tmp_path, lambda: False)
+    first = WipeService(tmp_path, lambda: False, state_dir=state_dir)
+    second = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     first._acquire_operation()
     try:
         with pytest.raises(WipeError, match="Another operator"):
@@ -364,9 +366,11 @@ def test_operation_lock_serializes_other_operator_processes(tmp_path):
     second._release_operation()
 
 
-def test_failed_hold_is_released_before_any_stop_and_restart_keeps_evidence(tmp_path, monkeypatch):
+def test_failed_hold_is_released_before_any_stop_and_restart_keeps_evidence(
+    tmp_path, monkeypatch, state_dir
+):
     """Reject a changed worker after hold and preserve a durable failed result without deletion."""
-    service = WipeService(tmp_path, lambda: False)
+    service = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     target = {"app_container": "test-app", "gate_instance": "old-worker", "daemon": {"id": "local"}}
     events = []
 
@@ -389,12 +393,12 @@ def test_failed_hold_is_released_before_any_stop_and_restart_keeps_evidence(tmp_
     assert service.result()["status"] == "failed"
     assert service.result()["completed"] == []
     assert service.result()["recovery_required"] is False
-    assert WipeService(tmp_path, lambda: False).result()["status"] == "failed"
+    assert WipeService(tmp_path, lambda: False, state_dir=state_dir).result()["status"] == "failed"
 
 
-def test_close_terminates_child_and_persists_interrupted_status(tmp_path, monkeypatch):
+def test_close_terminates_child_and_persists_interrupted_status(tmp_path, monkeypatch, state_dir):
     """Shutdown joins the running reset and leaves terminal evidence outside the database."""
-    service = WipeService(tmp_path, lambda: False)
+    service = WipeService(tmp_path, lambda: False, state_dir=state_dir)
 
     async def exercise():
         """Cancel a harmless disposable sleeping child through the production close path."""
@@ -426,22 +430,25 @@ def test_close_terminates_child_and_persists_interrupted_status(tmp_path, monkey
         assert not Path(f"/proc/{pid}").exists()
 
     asyncio.run(exercise())
-    assert WipeService(tmp_path, lambda: False).result()["status"] == "interrupted"
+    assert (
+        WipeService(tmp_path, lambda: False, state_dir=state_dir).result()["status"]
+        == "interrupted"
+    )
 
 
 @pytest.mark.parametrize("same_daemon,present", [(True, True), (True, False), (False, True)])
 def test_explicit_recovery_releases_only_the_recorded_daemon_and_lease(
-    tmp_path, monkeypatch, same_daemon, present
+    tmp_path, monkeypatch, same_daemon, present, state_dir
 ):
     """An operator restart never resumes deletion and releases only its own authenticated hold."""
-    service = WipeService(tmp_path, lambda: False)
+    service = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     daemon = {"id": "local-daemon", "endpoint": "unix:///tmp/recorded.sock"}
     service._lease = ("app-id", "recorded-lease")
     service._lease_instance = "recorded-worker"
     service._lease_daemon = daemon
     service._result = {"status": "running", "stage": "hold_requests", "completed": []}
     service._persist()
-    recovered = WipeService(tmp_path, lambda: False)
+    recovered = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     assert recovered.result()["status"] == "interrupted"
     assert recovered.result()["recovery_required"] is True
     assert "recorded-lease" not in json.dumps(recovered.result())
@@ -476,7 +483,10 @@ def test_explicit_recovery_releases_only_the_recorded_daemon_and_lease(
         result = asyncio.run(recovered.recover())
         assert result["recovery_required"] is False
         assert calls == (["activity", "release"] if present else [])
-        assert WipeService(tmp_path, lambda: False).result()["recovery_required"] is False
+        assert (
+            WipeService(tmp_path, lambda: False, state_dir=state_dir).result()["recovery_required"]
+            is False
+        )
     else:
         with pytest.raises(WipeError, match="Docker target changed"):
             asyncio.run(recovered.recover())
@@ -485,10 +495,10 @@ def test_explicit_recovery_releases_only_the_recorded_daemon_and_lease(
 
 
 def test_partial_volume_failure_never_deletes_files_or_automatically_restarts(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, state_dir
 ):
     """Report the exact destructive stage and leave subsequent steps untouched after failure."""
-    service = WipeService(tmp_path, lambda: False)
+    service = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     compose_json = '{"services": {}}'
     target = {
         "app_container": "app-id",
@@ -533,10 +543,10 @@ def test_partial_volume_failure_never_deletes_files_or_automatically_restarts(
 
 @pytest.mark.parametrize("blocker", [None, "permissions", "queued_jobs"])
 def test_capability_checks_complete_preview_prerequisites_without_writes(
-    tmp_path, monkeypatch, blocker
+    tmp_path, monkeypatch, blocker, state_dir
 ):
     """Availability includes real file checks and job activity without tokens, holds, or deletes."""
-    service = WipeService(tmp_path, lambda: False)
+    service = WipeService(tmp_path, lambda: False, state_dir=state_dir)
     runtime = tmp_path / "data/local-settings/local-llm.json"
     runtime.parent.mkdir(parents=True)
     runtime.write_text("preserve runtime")

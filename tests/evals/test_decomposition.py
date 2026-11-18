@@ -21,9 +21,9 @@ from app.evals.experiments.decomposition import (
 from app.evals.results.scoring import CaseScore
 from app.llm.local.connection import local_provider_budget
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from tests.agent.support import FakeSessionFactory
 from tests.evals.support import EVALUATION_RECORDED_AT, absent_case, positive_case, relevant_hit
 from tests.llm.support import DeterministicLLMProvider, raw
+from tests.support.database import FakeSessionFactory
 
 
 def test_category_metrics_slices_scored_cases_only():

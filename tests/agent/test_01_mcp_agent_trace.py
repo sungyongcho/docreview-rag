@@ -10,10 +10,8 @@ import asyncio
 from collections import Counter
 from dataclasses import dataclass
 import json
-from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from fastmcp.client.transports import StdioTransport
 from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -21,12 +19,12 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 import pytest
 
-from app.db.session_factory import SessionFactory
 from app.mcp.filings_server import EXPOSED_TOOLS
 from app.tools.filings import build_default_registry
-from tests.agent.support import ModelRequest, ScriptedChatModel
-from tests.mcp.controlled_filings import fixture_hit
-from tests.mcp.support import logged_events, module_server
+from tests.support.controlled_filings import fixture_hit
+from tests.support.database import no_session
+from tests.support.models import ModelRequest, ScriptedChatModel
+from tests.support.transport import ControlledServer
 
 QUESTION = "What was TestCo revenue in FY2023 and FY2024?"
 COMPARE = {"query": "revenue", "issuer": "TEST", "fiscal_years": [2023, 2024]}
@@ -58,11 +56,6 @@ def calls(*requested: tuple[str, str, dict[str, Any]]) -> AIMessage:
     )
 
 
-def read_lines(path: Path) -> list[dict[str, Any]]:
-    """Parse one JSONL direction recorded by the relay."""
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
-
-
 def tool_messages(messages: list[BaseMessage]) -> dict[str, ToolMessage]:
     """Index a model input's tool results by the call id each one answers."""
     return {m.tool_call_id: m for m in messages if isinstance(m, ToolMessage)}
@@ -86,15 +79,7 @@ def model_visible_json(message: ToolMessage) -> Any:
 @pytest.fixture(scope="module")
 def trace(tmp_path_factory) -> Trace:
     """Run one question through create_agent over a recorded stdio relay to the server."""
-    work = tmp_path_factory.mktemp("mcp_agent_trace")
-    log_path = work / "events.jsonl"
-    log_path.touch()
-    relay = module_server(
-        "tests.mcp.stdio_relay", str(work), "tests.mcp.controlled_filings", str(log_path)
-    )
-    transport = StdioTransport(
-        relay.command, relay.args, env=relay.env, cwd=str(relay.cwd), keep_alive=False
-    )
+    server = ControlledServer(tmp_path_factory.mktemp("mcp_agent_trace"), relayed=True)
     model = ScriptedChatModel.from_replies(
         calls(("call_compare", "compare_years", COMPARE)),
         calls(*((call_id, "fetch_chunk", args) for call_id, args in FETCHES.items())),
@@ -103,7 +88,7 @@ def trace(tmp_path_factory) -> Trace:
 
     async def run() -> tuple[list[BaseTool], dict[str, Any]]:
         """Discover the server's tools, then answer the question with a middleware-free agent."""
-        async with MCPAdapter(transport) as adapter:
+        async with MCPAdapter(server.transport()) as adapter:
             tools = await adapter.list_tools()
             agent = create_agent(model, tools)
             state = await agent.ainvoke({"messages": [HumanMessage(QUESTION)]})
@@ -114,9 +99,9 @@ def trace(tmp_path_factory) -> Trace:
         tools=tools,
         requests=model.requests,
         messages=state["messages"],
-        wire_requests=read_lines(work / "requests.jsonl"),
-        wire_responses=read_lines(work / "responses.jsonl"),
-        events=logged_events(log_path),
+        wire_requests=server.requests(),
+        wire_responses=server.responses(),
+        events=server.events(),
     )
 
 
@@ -125,7 +110,7 @@ def test_discovered_tools_reach_the_model_with_the_published_schemas(trace):
     # LangChain's conversion for the model is not key-for-key identical to the published
     # schema (in this run it dropped at least some title and description keys), so the
     # bound parameters are pinned to that conversion and to the published field contract.
-    contracts = build_default_registry(cast(SessionFactory, object))
+    contracts = build_default_registry(no_session)
     published = {name: contracts.get(name).parameters.model_json_schema() for name in EXPOSED_TOOLS}
     assert {tool.name: tool.args_schema for tool in trace.tools} == published
     expected = [convert_to_openai_tool(tool) for tool in trace.tools]

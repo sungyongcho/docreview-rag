@@ -1,6 +1,6 @@
 """Relay stdio between a client and a real server module, recording each direction.
 
-Run as ``python -m tests.mcp.stdio_relay <directory> <server module> [server args...]``;
+Run as ``python -m tests.support.stdio_relay <directory> <server module> [server args...]``;
 any further arguments are passed to the server module unchanged. Bytes pass through
 unchanged, so the SDK still owns every protocol decision.
 """

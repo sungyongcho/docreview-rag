@@ -27,7 +27,7 @@ from app.review.reports import withheld_text
 from app.tools.registry import Tool, ToolRegistry
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
 from app.workflow.types import WorkflowRequest, initial_state
-from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
+from tests.support.models import ScriptedChatModel, ScriptedToolProvider, turn
 from tests.workflow.support import (
     INCOME_TABLE,
     USD_INCOME_TABLE,
@@ -114,7 +114,7 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
         dict(name="final_answer", args=proposed, id="final", type="tool_call"),
     ]
     model = ScriptedChatModel.from_replies(*(AIMessage(content="", tool_calls=[c]) for c in calls))
-    provider = RecordingToolProvider(
+    provider = ScriptedToolProvider(
         [
             turn(
                 tool_calls=(

@@ -21,7 +21,8 @@ from app.agent.types import ToolCall
 from app.llm.decoding import strict_json_loads
 from app.tools.filings import build_default_registry
 from scripts.mcp.live import Reservation
-from tests.agent.support import FakeSessionFactory, ScriptedChatModel, turn
+from tests.support.database import FakeSessionFactory
+from tests.support.models import ScriptedChatModel, turn
 
 CALL_ID = "call_1"
 SEARCH = {"query": "revenue", "issuers": ["TEST"], "fiscal_years": [2024]}

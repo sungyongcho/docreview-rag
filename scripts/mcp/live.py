@@ -82,8 +82,10 @@ from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
 from app.tools.registry import ToolRegistry, safe_runtime_error
 
 if TYPE_CHECKING:
-    from mcp import Client, StdioServerParameters
+    from mcp import StdioServerParameters
     from sqlalchemy.ext.asyncio import AsyncEngine
+
+    from app.mcp.client import ToolServerClient
 
 DEFAULT_OUT = Path.home() / ".local/share/docreview/mcp-experiments"
 SERVER_TIMEOUT_SECONDS = 30
@@ -1012,7 +1014,7 @@ async def fetch_matches_database(payload: dict[str, Any]) -> bool:
 
 
 async def run_agent_over_mcp(
-    client: Client, run_dir: Path, args: argparse.Namespace
+    client: ToolServerClient, run_dir: Path, args: argparse.Namespace
 ) -> dict[str, Any]:
     """Let the configured model choose tools while all filing work crosses MCP."""
     from openai import AsyncOpenAI

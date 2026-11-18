@@ -1,28 +1,18 @@
-"""Builders shared by the MCP tests: real stdio subprocesses and small catalogs."""
+"""Catalog builders and protocol assertions shared by the MCP server tests.
+
+The servers these tests connect to come from :mod:`tests.support.transport`.
+"""
 
 import json
-import os
 from pathlib import Path
-import sys
 
-from mcp import StdioServerParameters
 from mcp.shared.exceptions import MCPError
 from mcp.types import INTERNAL_ERROR, INVALID_PARAMS
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-PROTOCOL_MODE = "2026-07-28"
+from tests.support import REPO_ROOT
+
 # Names no DocReview MCP server publishes: an arbitrary name and the loop-owned answer tool.
 UNKNOWN_TOOLS = ("search_everything", "final_answer")
-
-
-def module_server(module: str, *args: str, env: dict[str, str] | None = None):
-    """Launch ``python -m module`` from the repository root as a stdio server."""
-    return StdioServerParameters(
-        command=sys.executable,
-        args=["-m", module, *args],
-        env={**os.environ, **(env or {})},
-        cwd=REPO_ROOT,
-    )
 
 
 def write_catalog(directory: Path, document_count: int) -> list[str]:
@@ -37,18 +27,6 @@ def write_catalog(directory: Path, document_count: int) -> list[str]:
 def text_of(result) -> str:
     """Join the text blocks of one tool result."""
     return "".join(item.text for item in result.content if item.type == "text")
-
-
-def controlled_filings(log_path: Path, *args: str):
-    """Launch the filings server with controlled retrieval logging to ``log_path``."""
-    log_path.touch()
-    return module_server("tests.mcp.controlled_filings", str(log_path), *args)
-
-
-def logged_events(log_path: Path, start: int = 0) -> list[dict]:
-    """Read data-layer events recorded after line ``start``."""
-    lines = log_path.read_text(encoding="utf-8").splitlines()
-    return [json.loads(line) for line in lines[start:]]
 
 
 async def call_or_error(client, name: str, arguments: dict):

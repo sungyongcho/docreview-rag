@@ -11,7 +11,7 @@ from app.agent.prebuilt import ask_review_agent, build_review_agent, unanswered
 from app.agent.provider import BudgetExhaustedError
 from app.agent.review_middleware import ReviewContext
 from app.tools.registry import ToolRegistry
-from tests.agent.support import ScriptedChatModel
+from tests.support.models import ScriptedChatModel
 
 QUESTION = "What was revenue?"
 

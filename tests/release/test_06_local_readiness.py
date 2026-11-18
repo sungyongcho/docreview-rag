@@ -8,7 +8,7 @@ import pytest
 from app.llm.local.connection import LocalConnectionManager
 from app.release.config import ReleaseSettings
 from app.release.status import _local_engine_readiness
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 def settings_for(monkeypatch: pytest.MonkeyPatch, environment: str) -> ReleaseSettings:

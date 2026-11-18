@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from app.release.config import ReleaseSettings
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 ROOT = Path(__file__).resolve().parents[2]
 

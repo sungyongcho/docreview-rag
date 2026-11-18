@@ -3,7 +3,7 @@
 import asyncio
 from decimal import Decimal
 import json
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool, ToolException
@@ -11,10 +11,10 @@ import pytest
 
 from app.agent.prebuilt import build_review_agent
 from app.agent.review_middleware import ReviewContext
-from app.db.session_factory import SessionFactory
 from app.review.evidence import StoredCell
 from app.tools.filings import build_default_registry
-from tests.agent.support import ScriptedChatModel
+from tests.support.database import no_session
+from tests.support.models import ScriptedChatModel
 
 USAGE = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
 IDENTITY = {
@@ -78,7 +78,7 @@ def tools(
         payload = {**IDENTITY, "context_header": "", "body": "| x |", "table": served}
         return json.dumps(payload), {"structured_content": payload}
 
-    contracts = build_default_registry(cast(SessionFactory, object), include_cells=True)
+    contracts = build_default_registry(no_session, include_cells=True)
     return [
         StructuredTool.from_function(
             function,
@@ -154,7 +154,7 @@ def ask(
             ref: StoredCell(ref, 2024, current, "k" * 64, "r" * 64, Decimal(25785)) for ref in refs
         }
 
-    contracts = build_default_registry(cast(SessionFactory, object), include_cells=True)
+    contracts = build_default_registry(no_session, include_cells=True)
     agent = build_review_agent(model, tools(cell, search, table), contracts, cells=True)
     context = ReviewContext(
         (2024,),

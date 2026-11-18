@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-from typing import cast
 
 from mcp import Client
 from mcp.shared.exceptions import MCPError
@@ -12,11 +11,11 @@ import pytest
 from app.agent.loop import run_agent
 from app.agent.provider import DeterministicToolProvider, ProviderTurn
 from app.agent.types import ToolCall
-from app.db.session_factory import SessionFactory
 from app.mcp.client import MCPSystemError, mcp_runner, mcp_tool_registry
 from app.tools.filings import FetchChunkParams, build_default_registry
 from app.tools.registry import ToolError
-from tests.mcp.support import PROTOCOL_MODE, controlled_filings, logged_events
+from tests.support.database import no_session
+from tests.support.transport import PROTOCOL_MODE, ControlledServer, ScriptedMCPClient
 
 SEARCH_2023 = {"query": "revenue", "issuers": ["TEST"], "fiscal_years": [2023]}
 SEARCH_2024 = {**SEARCH_2023, "fiscal_years": [2024]}
@@ -96,23 +95,23 @@ QUESTIONS = [
 @pytest.fixture(scope="module")
 def runs(tmp_path_factory):
     """Run every question in order through one MCP connection and one bridge."""
-    log_path = tmp_path_factory.mktemp("client") / "events.jsonl"
-    contracts = build_default_registry(cast(SessionFactory, object))
+    server = ControlledServer(tmp_path_factory.mktemp("client"))
+    contracts = build_default_registry(no_session)
 
     async def exercise():
         """Run each question through the bridged registry, keeping its result and events."""
-        async with Client(controlled_filings(log_path), mode=PROTOCOL_MODE) as client:
+        async with Client(server.params, mode=PROTOCOL_MODE) as client:
             bridge = await mcp_tool_registry(client, contracts)
             observed = {}
             for case, steps, *_ in QUESTIONS:
-                start = len(logged_events(log_path))
+                start = len(server.events())
                 result = await run_agent(
                     case,
                     registry=bridge,
                     provider=DeterministicToolProvider([*steps, step("final_answer", FINISH)]),
                     locale="en",
                 )
-                observed[case] = (result, logged_events(log_path, start))
+                observed[case] = (result, server.events(start))
         return bridge, observed
 
     return asyncio.run(exercise())
@@ -145,23 +144,9 @@ def test_question_scope_over_mcp(runs, case, steps, status, reads, rejected):
         assert result.failure == "MCPError: tool compare_years failed"
 
 
-class StubClient:
-    """Answer every call with one fixed result, or raise one fixed error."""
-
-    def __init__(self, result=None, error=None):
-        """Keep the result to return, or the error to raise, for every later call."""
-        self.result, self.error = result, error
-
-    async def call_tool(self, name, arguments):
-        """Return the fixed result or raise the fixed error, ignoring the request."""
-        if self.error is not None:
-            raise self.error
-        return self.result
-
-
-def run_fetch(client):
+def run_fetch(client: ScriptedMCPClient):
     """Call fetch_chunk through the bridge's runner with a valid argument."""
-    runner = mcp_runner(cast(Client, client), "fetch_chunk")
+    runner = mcp_runner(client, "fetch_chunk")
     return asyncio.run(runner(FetchChunkParams(chunk_id=2024)))
 
 
@@ -169,7 +154,7 @@ def test_a_json_rpc_error_passes_through_the_bridge_unchanged():
     """The bridge neither wraps nor downgrades a JSON-RPC error into a tool error."""
     error = MCPError(code=INTERNAL_ERROR, message="RuntimeError: tool fetch_chunk failed")
     with pytest.raises(MCPError) as raised:
-        run_fetch(StubClient(error=error))
+        run_fetch(ScriptedMCPClient(call_error=error))
     assert raised.value is error
     assert not isinstance(raised.value, ToolError)
 
@@ -178,7 +163,7 @@ def test_a_success_without_structured_content_is_a_system_error():
     """A malformed success cannot be read as evidence, so the bridge refuses it."""
     malformed = CallToolResult(content=[TextContent(type="text", text="{}")])
     with pytest.raises(MCPSystemError, match="tool fetch_chunk returned no structured content"):
-        run_fetch(StubClient(result=malformed))
+        run_fetch(ScriptedMCPClient(malformed))
 
 
 def test_a_correctable_error_result_stays_a_tool_error():
@@ -187,4 +172,4 @@ def test_a_correctable_error_result_stays_a_tool_error():
         is_error=True, content=[TextContent(type="text", text="chunk 2024 does not exist")]
     )
     with pytest.raises(ToolError, match="chunk 2024 does not exist"):
-        run_fetch(StubClient(result=refused))
+        run_fetch(ScriptedMCPClient(refused))

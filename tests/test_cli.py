@@ -23,7 +23,7 @@ from app.retrieval.search import service
 from app.retrieval.search.service import ComponentRankings, RetrievalResult
 from tests.api.support import MemorySession
 from tests.retrieval.support import hit
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 class ErrorDetail(TypedDict):

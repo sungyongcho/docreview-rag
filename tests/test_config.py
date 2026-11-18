@@ -4,7 +4,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.config import Settings
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 def test_compose_embedding_dimension_accepts_the_fixed_environment_value(monkeypatch):

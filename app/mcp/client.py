@@ -6,9 +6,9 @@ citations against the registry's own contracts; only execution travels over MCP.
 
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import Any
+from typing import Any, Protocol
 
-from mcp import Client
+from mcp.types import CallToolResult, ListToolsResult
 from pydantic import BaseModel
 
 from app.tools.registry import ToolError, ToolRegistry
@@ -24,7 +24,26 @@ class MCPSystemError(RuntimeError):
     """
 
 
-def mcp_runner(client: Client, name: str) -> Callable[[BaseModel], Awaitable[dict[str, Any]]]:
+class ToolCaller(Protocol):
+    """The one MCP client call a bridged tool makes."""
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> CallToolResult:
+        """Call one server tool with JSON arguments."""
+        ...
+
+
+class ToolServerClient(ToolCaller, Protocol):
+    """What the bridge needs from a connected MCP client: listing and calling tools.
+
+    ``mcp.Client`` satisfies it; the bridge depends on nothing else of the client.
+    """
+
+    async def list_tools(self) -> ListToolsResult:
+        """List the server's tools."""
+        ...
+
+
+def mcp_runner(client: ToolCaller, name: str) -> Callable[[BaseModel], Awaitable[dict[str, Any]]]:
     """Bind one discovered tool name to a call over the shared MCP client."""
 
     async def run(params: BaseModel) -> dict[str, Any]:
@@ -43,12 +62,12 @@ def mcp_runner(client: Client, name: str) -> Callable[[BaseModel], Awaitable[dic
     return run
 
 
-async def mcp_tool_registry(client: Client, contracts: ToolRegistry) -> ToolRegistry:
+async def mcp_tool_registry(client: ToolServerClient, contracts: ToolRegistry) -> ToolRegistry:
     """Register every tool the server lists, executing each one over MCP.
 
     Parameters
     ----------
-    client : Client
+    client : ToolServerClient
         Connected MCP client; every call of every question shares it.
     contracts : ToolRegistry
         The app's own tools, which supply parameter models, descriptions and

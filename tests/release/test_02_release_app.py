@@ -24,7 +24,7 @@ from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from app.retrieval.search.profiles import ServerBM25
 from app.workflow.types import WorkflowReport
 from tests.llm.support import DeterministicLLMProvider
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 def _run_report() -> RunReport:

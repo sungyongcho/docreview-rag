@@ -10,7 +10,7 @@ import sys
 from mcp import Client, StdioServerParameters
 import pytest
 
-from tests.mcp.support import PROTOCOL_MODE
+from tests.support.transport import PROTOCOL_MODE
 
 SERVER_SOURCE = '''"""Temporary asynchronous server for a cancellation experiment."""
 import json

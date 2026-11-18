@@ -17,7 +17,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-from fastmcp.client.transports import StdioTransport
 from langchain.agents.middleware import (
     AgentMiddleware,
     ExtendedModelResponse,
@@ -41,7 +40,6 @@ from app.agent.review_middleware import (
 from app.agent.types import AgentResult, ToolCall
 from app.contracts.answers import AgentReportAnswer
 from app.contracts.evidence import EvidenceCitation
-from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.mcp.client import mcp_tool_registry
@@ -49,9 +47,10 @@ from app.review.final_answer import FINAL_NOT_ALONE
 from app.review.reports import withheld_text
 from app.tools.filings import build_default_registry
 from app.tools.registry import ToolRegistry
-from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
-from tests.mcp.controlled_filings import PRIVATE_DETAIL, fixture_hit
-from tests.mcp.support import PROTOCOL_MODE, logged_events, module_server
+from tests.support.controlled_filings import PRIVATE_DETAIL, fixture_hit
+from tests.support.database import no_session
+from tests.support.models import ScriptedChatModel, ScriptedToolProvider, turn
+from tests.support.transport import PROTOCOL_MODE, ControlledServer
 from tests.workflow.support import INCOME_TABLE, USD_INCOME_TABLE, income_table_hit
 
 QUESTION = "What was TestCo's FY2024 revenue?"
@@ -89,7 +88,7 @@ def supported(text: str, citation: dict[str, Any] = CITED) -> dict[str, Any]:
 
 def contracts() -> ToolRegistry:
     """The app's tool contracts; their run functions must never be needed."""
-    return build_default_registry(cast(SessionFactory, object))
+    return build_default_registry(no_session)
 
 
 class Reader:
@@ -227,44 +226,14 @@ HELD = {"code": "figures_withheld", "figures": ["25,785"], "causes": ["currency"
 RECORDS = {"currency unknown": (None, HELD), "other-period figure": (MISMATCH, None)}
 
 
-class Wire:
-    """One relayed controlled server: tool calls on the wire and data-layer body reads."""
+def mark(wire: ControlledServer) -> tuple[int, int]:
+    """Positions in both recordings of a relayed server before a case starts."""
+    return len(wire.requests()), len(wire.events())
 
-    def __init__(self, work: Path) -> None:
-        work.mkdir()
-        self.work = work
-        self.log = work / "events.jsonl"
-        self.log.touch()
-        self.params = module_server(
-            "tests.mcp.stdio_relay", str(work), "tests.mcp.controlled_filings", str(self.log)
-        )
 
-    def transport(self) -> StdioTransport:
-        """The same relayed server as a FastMCP transport for MCPAdapter."""
-        return StdioTransport(
-            self.params.command,
-            self.params.args,
-            env=self.params.env,
-            cwd=str(self.params.cwd),
-            keep_alive=False,
-        )
-
-    def requests(self) -> list[dict[str, Any]]:
-        """Every JSON-RPC request the client has sent so far."""
-        path = self.work / "requests.jsonl"
-        if not path.exists():
-            return []
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
-
-    def mark(self) -> tuple[int, int]:
-        """Positions in both recordings before a case starts."""
-        return len(self.requests()), len(logged_events(self.log))
-
-    def since(self, mark: tuple[int, int]) -> tuple[list[dict[str, Any]], list[int]]:
-        """The tools/call params sent and the chunk bodies loaded after ``mark``."""
-        sent = [r["params"] for r in self.requests()[mark[0] :] if r.get("method") == "tools/call"]
-        events = logged_events(self.log, mark[1])
-        return sent, [e["chunk_id"] for e in events if e["event"] == "body_load"]
+def since(wire: ControlledServer, start: tuple[int, int]) -> tuple[list[dict[str, Any]], list[int]]:
+    """The tools/call params sent and the chunk bodies loaded after ``start``."""
+    return wire.tool_calls(start[0]), wire.body_loads(start[1])
 
 
 @dataclass
@@ -272,7 +241,7 @@ class Direct:
     """One run_agent run: its result, model requests, wire calls, body loads and reads."""
 
     result: AgentResult
-    provider: RecordingToolProvider
+    provider: ScriptedToolProvider
     sent: list[dict[str, Any]]
     loads: list[int]
     reads: list[tuple[int, ...]]
@@ -350,11 +319,11 @@ def replies(turns: list[tuple[Call, ...]]) -> list[AIMessage]:
     ]
 
 
-async def run_direct(bridge: ToolRegistry, case: Case, wire: Wire) -> Direct:
+async def run_direct(bridge: ToolRegistry, case: Case, wire: ControlledServer) -> Direct:
     """Run one case through run_agent over the MCP bridge."""
-    provider = RecordingToolProvider(provider_turns(case))
+    provider = ScriptedToolProvider(provider_turns(case))
     reader = Reader(case.reader) if case.reader else None
-    mark = wire.mark()
+    start = mark(wire)
     result = await run_agent(
         QUESTION,
         registry=bridge,
@@ -363,19 +332,19 @@ async def run_direct(bridge: ToolRegistry, case: Case, wire: Wire) -> Direct:
         evidence_reader=reader,
         locale="en",
     )
-    sent, loads = wire.since(mark)
+    sent, loads = since(wire, start)
     return Direct(result, provider, sent, loads, reader.reads if reader else [])
 
 
-async def run_through_agent(tools: list[BaseTool], case: Case, wire: Wire) -> Agent:
+async def run_through_agent(tools: list[BaseTool], case: Case, wire: ControlledServer) -> Agent:
     """Run one case through create_agent with the review middleware."""
     model = ScriptedChatModel.from_replies(*replies(case.turns()))
     reader = Reader(case.reader) if case.reader else None
-    mark = wire.mark()
+    start = mark(wire)
     state = await build_review_agent(model, tools, contracts()).ainvoke(
         {"messages": [HumanMessage(QUESTION)]}, context=ReviewContext(YEARS, reader, locale="en")
     )
-    sent, loads = wire.since(mark)
+    sent, loads = since(wire, start)
     return Agent(dict(state), model, sent, loads, reader.reads if reader else [])
 
 
@@ -383,7 +352,8 @@ async def run_through_agent(tools: list[BaseTool], case: Case, wire: Wire) -> Ag
 def outcomes(tmp_path_factory) -> dict[str, tuple[Direct, Agent]]:
     """Every case through both paths, each path on its own relayed server."""
     root = tmp_path_factory.mktemp("final_gate")
-    direct_wire, agent_wire = Wire(root / "direct"), Wire(root / "agent")
+    direct_wire = ControlledServer(root / "direct", relayed=True)
+    agent_wire = ControlledServer(root / "agent", relayed=True)
 
     async def run_all() -> dict[str, tuple[Direct, Agent]]:
         """Run the baseline first, then the agent, case by case."""
@@ -440,7 +410,7 @@ def test_rejections_answer_the_same_calls_for_the_same_reason(case, outcomes):
     assert direct.errors() == errors
     replayed = {
         item["call_id"]: item["output"]
-        for item in direct.provider.requests[-1][1]
+        for item in direct.provider.requests[-1].input_items
         if item.get("type") == "function_call_output"
     }
     fed = {
@@ -498,7 +468,7 @@ def test_a_failure_ends_without_an_answer_or_private_detail(case, outcomes):
 # One checkpointed thread, several new questions
 def ask_on_one_thread(work: Path, questions: list[tuple[list[tuple[Call, ...]], Reader]]):
     """Ask each question on one checkpointed thread; return its states and the model."""
-    wire = Wire(work)
+    wire = ControlledServer(work, relayed=True)
     model = ScriptedChatModel.from_replies(*replies([t for turns, _ in questions for t in turns]))
     config: Any = {"configurable": {"thread_id": "one thread"}}
 

@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 import secrets
+import tempfile
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -70,7 +71,11 @@ def create_operator_app(
         raise ValueError("operator origin must be the local Next development server")
     allowed_origins = {f"http://{host}:{parsed_origin.port}" for host in ("127.0.0.1", "localhost")}
     active_manager = manager or OperatorJobManager(root)
-    wipe = WipeService(root, lambda: any(job.status == "running" for job in active_manager.jobs()))
+    wipe = WipeService(
+        root,
+        lambda: any(job.status == "running" for job in active_manager.jobs()),
+        state_dir=Path(tempfile.gettempdir()),
+    )
 
     @asynccontextmanager
     async def lifespan(_application: FastAPI) -> AsyncIterator[None]:

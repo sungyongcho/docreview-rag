@@ -20,7 +20,7 @@ from app.ingestion.sources.models import Manifest, ProcessingSelection
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from tests.ingestion.edgar.support import build_numbered_body
 from tests.ingestion.support import filing_document, filing_source
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 def test_load_chunking_filings_reads_only_verified_selected_sources(tmp_path):

@@ -8,6 +8,9 @@ import sys
 
 import pytest
 
+from tests.support.database import FakeEngine
+from tests.support.models import OpenAIClientFactory
+
 
 def test_cli_arguments_default_to_the_offline_demo():
     """Default to the deterministic provider and the documented limits."""
@@ -141,46 +144,19 @@ def test_openai_provider_receives_the_mode_selected_key_and_the_engine_is_releas
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr("app.config.get_settings", lambda: _slot_settings("sk-local-slot-test"))
-    disposed = []
-
-    class FakeEngine:
-        """Engine stand-in recording the pool release."""
-
-        async def dispose(self):
-            """Record that the pool was released."""
-            disposed.append(True)
-
-    monkeypatch.setattr(session_module, "engine", FakeEngine())
-    captured = {}
-
-    class FakeClient:
-        """SDK stand-in recording its constructor arguments and failing every request."""
-
-        base_url = "https://api.openai.com/v1"
-
-        def __init__(self, **kwargs):
-            """Record the constructor arguments and expose a responses.create that fails offline."""
-            captured.update(kwargs)
-
-            async def create(**request):
-                """Record the effective model before the simulated provider failure."""
-                captured["model"] = request["model"]
-                raise RuntimeError("offline")
-
-            self.responses = type("Responses", (), {"create": staticmethod(create)})()
-
-        async def close(self):
-            """Nothing to release."""
-
-    monkeypatch.setattr(provider_module, "AsyncOpenAI", FakeClient)
+    engine = FakeEngine()
+    monkeypatch.setattr(session_module, "engine", engine)
+    factory = OpenAIClientFactory(failures={1: RuntimeError("offline")})
+    monkeypatch.setattr(provider_module, "AsyncOpenAI", factory)
 
     args = entrypoint.arguments(["--question", "q", "--provider", "openai"])
     result = asyncio.run(entrypoint._run(args))
 
     assert result["status"] == "provider_error"
+    ((captured,), (client,)) = factory.constructed, factory.clients
     assert captured.get("api_key") == "sk-local-slot-test"
-    assert captured["model"] == "gpt-5.6-luna"
-    assert disposed == [True]
+    assert client.responses.calls[0]["model"] == "gpt-5.6-luna"
+    assert engine.dispose_count == 1
 
 
 def test_openai_provider_requires_the_mode_selected_key_slot(monkeypatch):

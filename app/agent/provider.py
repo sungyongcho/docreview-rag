@@ -3,10 +3,11 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from decimal import Decimal
-from typing import Any, Self, cast
+from typing import Any, Protocol, Self, cast
 
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseInputParam, ToolParam
+from openai.types.shared_params import Reasoning
 from pydantic.functional_validators import model_validator
 
 from app.agent.types import ToolCall
@@ -150,6 +151,41 @@ def _turn_tool_calls(response: object) -> tuple[ToolCall, ...]:
     return tuple(calls)
 
 
+class ResponsesEndpoint(Protocol):
+    """The one Responses API call the adapter makes."""
+
+    async def create(
+        self,
+        *,
+        model: str,
+        instructions: str,
+        input: ResponseInputParam,
+        tools: list[ToolParam],
+        max_output_tokens: int,
+        reasoning: Reasoning,
+        store: bool,
+    ) -> object:
+        """Create one response; the adapter reads it by attribute."""
+        ...
+
+
+class ResponsesClient(Protocol):
+    """What the adapter needs from an injected OpenAI client: its URL and Responses API.
+
+    ``AsyncOpenAI`` satisfies it; so does any client a caller or test supplies.
+    """
+
+    @property
+    def base_url(self) -> object:
+        """The API root the client sends requests to."""
+        ...
+
+    @property
+    def responses(self) -> ResponsesEndpoint:
+        """The Responses API."""
+        ...
+
+
 class OpenAIToolProvider(ToolCallingProvider):
     """OpenAI Responses API adapter with strict function tools and injected clients."""
 
@@ -159,7 +195,7 @@ class OpenAIToolProvider(ToolCallingProvider):
         self,
         *,
         model_name: str | None = None,
-        client: AsyncOpenAI | None = None,
+        client: ResponsesClient | None = None,
         api_key: str | None = None,
     ) -> None:
         selection = resolve_openai_model("agent", model_name)
@@ -169,7 +205,7 @@ class OpenAIToolProvider(ToolCallingProvider):
         if client is None:
             owned = AsyncOpenAI(api_key=api_key, max_retries=0)
             self._owned_client: AsyncOpenAI | None = owned
-            self._client: AsyncOpenAI = owned
+            self._client: ResponsesClient = owned
         else:
             self._owned_client = None
             self._client = client

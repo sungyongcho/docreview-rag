@@ -15,7 +15,7 @@ from app.evals.results.comparison import compatible_baseline
 from app.evals.results.regression import SCORING_CONFIG_KEY
 from app.evals.results.scoring import TABLE_SCORING
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 class _Row:

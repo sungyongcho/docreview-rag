@@ -7,17 +7,15 @@ from mcp import Client
 import pytest
 
 from app.tools.filings import SearchFilingsParams
-from tests.mcp.controlled_filings import PRIVATE_DETAIL, SEARCH_CHUNK_ID
 from tests.mcp.support import (
-    PROTOCOL_MODE,
     UNKNOWN_TOOLS,
     assert_internal_error,
     assert_unknown_tool,
     call_or_error,
-    controlled_filings,
-    logged_events,
     text_of,
 )
+from tests.support.controlled_filings import PRIVATE_DETAIL, SEARCH_CHUNK_ID
+from tests.support.transport import PROTOCOL_MODE, ControlledServer
 
 # (case, arguments, failed, system failure, retrievals reached); a correctable failure
 # is an isError result, a system failure a JSON-RPC error, and the connection serves on.
@@ -45,17 +43,17 @@ CASES = [
 @pytest.fixture(scope="module")
 def observed(tmp_path_factory):
     """Run every case on one connection and keep each result with its data-layer events."""
-    log_path = tmp_path_factory.mktemp("search") / "events.jsonl"
+    server = ControlledServer(tmp_path_factory.mktemp("search"))
 
     async def exercise():
         """List tools, run each search case with its events, then unknown names and a search."""
-        async with Client(controlled_filings(log_path), mode=PROTOCOL_MODE) as client:
+        async with Client(server.params, mode=PROTOCOL_MODE) as client:
             listing = await client.list_tools()
             results = {}
             for case, arguments, *_ in CASES:
-                start = len(logged_events(log_path))
+                start = len(server.events())
                 outcome = await call_or_error(client, "search_filings", arguments)
-                results[case] = (*outcome, logged_events(log_path, start))
+                results[case] = (*outcome, server.events(start))
             unknown = {
                 name: await call_or_error(client, name, {"answer": "x"}) for name in UNKNOWN_TOOLS
             }

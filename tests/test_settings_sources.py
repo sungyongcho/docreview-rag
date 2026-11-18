@@ -4,7 +4,7 @@ import pytest
 
 from app.config import Settings
 from app.release.config import ReleaseSettings
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 @pytest.mark.parametrize("settings_type", [Settings, ReleaseSettings])

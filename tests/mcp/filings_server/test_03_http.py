@@ -1,17 +1,12 @@
 """Section 4.5: the filings server over loopback Streamable HTTP keeps the stdio contract."""
 
 import asyncio
-from collections.abc import Iterator
-from contextlib import contextmanager
 import json
-from pathlib import Path
 import signal
-import socket
 import subprocess
 import sys
-import time
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import httpx
 from mcp import Client
@@ -21,24 +16,21 @@ import pytest
 from app.agent.loop import run_agent
 from app.agent.provider import DeterministicToolProvider, ProviderTurn
 from app.agent.types import ToolCall
-from app.db.session_factory import SessionFactory
 from app.mcp import filings_server
 from app.mcp.client import mcp_tool_registry
 from app.tools.filings import build_default_registry
-from tests.mcp.controlled_filings import PRIVATE_DETAIL
 from tests.mcp.support import (
-    PROTOCOL_MODE,
-    REPO_ROOT,
     UNKNOWN_TOOLS,
     assert_internal_error,
     assert_unknown_tool,
     call_or_error,
-    logged_events,
     text_of,
 )
+from tests.support import REPO_ROOT
+from tests.support.controlled_filings import PRIVATE_DETAIL
+from tests.support.database import no_session
+from tests.support.transport import PROTOCOL_MODE, ControlledServer
 
-STARTUP_SECONDS = 15
-EVENT_SECONDS = 5
 # Request _meta a 2026-07-28 client sends with every call.
 META = {
     "io.modelcontextprotocol/protocolVersion": PROTOCOL_MODE,
@@ -52,63 +44,6 @@ RAW_HEADERS = {
 }
 # JSON-RPC code for a routing header that disagrees with the body (HEADER_MISMATCH).
 HEADER_MISMATCH = -32020
-
-
-def free_port() -> int:
-    """Ask the OS for a loopback port that is free right now."""
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def wait_listening(port: int, process: subprocess.Popen[bytes]) -> None:
-    """Wait until the port accepts connections; fail instead of hanging."""
-    deadline = time.monotonic() + STARTUP_SECONDS
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise AssertionError(f"server exited early with code {process.returncode}")
-        try:
-            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
-            return
-        except OSError:
-            time.sleep(0.1)
-    raise AssertionError(f"server did not listen on port {port}")
-
-
-@contextmanager
-def http_server(log_path: Path) -> Iterator[tuple[str, subprocess.Popen[bytes]]]:
-    """Run the controlled filings server over HTTP and always stop it afterwards."""
-    log_path.touch()
-    port = free_port()
-    process = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "tests.mcp.controlled_filings",
-            str(log_path),
-            "--http",
-            str(port),
-        ],
-        cwd=REPO_ROOT,
-    )
-    try:
-        wait_listening(port, process)
-        yield f"http://127.0.0.1:{port}/mcp", process
-    finally:
-        if process.poll() is None:
-            process.terminate()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-
-
-async def wait_for_event(log_path: Path, name: str) -> None:
-    """Wait until the data layer logs ``name``; fail instead of hanging."""
-    async with asyncio.timeout(EVENT_SECONDS):
-        while not any(event["event"] == name for event in logged_events(log_path)):
-            await asyncio.sleep(0.02)
 
 
 # (case, arguments, failed, system failure, retrievals reached)
@@ -160,16 +95,18 @@ def rpc_message(response: httpx.Response) -> dict[str, Any]:
     return response.json()
 
 
-async def exercise(url: str, log_path: Path, process: subprocess.Popen[bytes]) -> SimpleNamespace:
+async def exercise(
+    url: str, server: ControlledServer, process: subprocess.Popen[bytes]
+) -> SimpleNamespace:
     """Drive every client-visible behavior against one running server."""
-    contracts = build_default_registry(cast(SessionFactory, object))
+    contracts = build_default_registry(no_session)
     async with Client(url, mode=PROTOCOL_MODE) as client:
         listing = await client.list_tools()
         searches = {}
         for case, arguments, *_ in SEARCHES:
-            start = len(logged_events(log_path))
+            start = len(server.events())
             outcome = await call_or_error(client, "search_filings", arguments)
-            searches[case] = (*outcome, logged_events(log_path, start))
+            searches[case] = (*outcome, server.events(start))
         unknown = {
             name: await call_or_error(client, name, {"answer": "x"}) for name in UNKNOWN_TOOLS
         }
@@ -186,7 +123,7 @@ async def exercise(url: str, log_path: Path, process: subprocess.Popen[bytes]) -
         bridge = await mcp_tool_registry(client, contracts)
         questions = {}
         for case, actions, *_ in QUESTIONS:
-            start = len(logged_events(log_path))
+            start = len(server.events())
             # Only the model's decisions are scripted; every tool call runs over HTTP.
             turns = [
                 ProviderTurn(
@@ -202,16 +139,16 @@ async def exercise(url: str, log_path: Path, process: subprocess.Popen[bytes]) -
             result = await run_agent(
                 case, registry=bridge, provider=DeterministicToolProvider(turns), locale="en"
             )
-            questions[case] = (result, logged_events(log_path, start))
+            questions[case] = (result, server.events(start))
 
     async with Client(url, mode=PROTOCOL_MODE) as client:
         call = asyncio.create_task(client.call_tool("search_filings", {"query": "slow"}))
-        await wait_for_event(log_path, "slow_started")
+        await server.wait_for_event("slow_started")
         call.cancel()
         with pytest.raises(asyncio.CancelledError):
             await call
-        await wait_for_event(log_path, "slow_finally")
-    slow = [e["event"] for e in logged_events(log_path) if e["event"].startswith("slow_")]
+        await server.wait_for_event("slow_finally")
+    slow = [e["event"] for e in server.events() if e["event"].startswith("slow_")]
 
     async with httpx.AsyncClient(headers=RAW_HEADERS) as raw:
 
@@ -254,9 +191,9 @@ async def exercise(url: str, log_path: Path, process: subprocess.Popen[bytes]) -
 @pytest.fixture(scope="module")
 def observed(tmp_path_factory) -> SimpleNamespace:
     """Run all client scenarios against one controlled HTTP server."""
-    log_path = tmp_path_factory.mktemp("http") / "events.jsonl"
-    with http_server(log_path) as (url, process):
-        return asyncio.run(exercise(url, log_path, process))
+    server = ControlledServer(tmp_path_factory.mktemp("http"))
+    with server.http() as (url, process):
+        return asyncio.run(exercise(url, server, process))
 
 
 # The stdio tool contract, unchanged over HTTP
@@ -375,11 +312,11 @@ def test_a_foreign_host_is_refused_before_mcp(observed):
 )
 def test_a_stop_signal_ends_the_server_after_its_finally_block(tmp_path, stop, exit_code):
     """SIGTERM and SIGINT stop the server only after the caller's finally block ran."""
-    log_path = tmp_path / "events.jsonl"
-    with http_server(log_path) as (_, process):
+    server = ControlledServer(tmp_path)
+    with server.http() as (_, process):
         process.send_signal(stop)
         assert process.wait(timeout=10) == exit_code
-    assert [event["event"] for event in logged_events(log_path)] == ["server_stopped"]
+    assert [event["event"] for event in server.events()] == ["server_stopped"]
 
 
 @pytest.mark.parametrize(("argv", "port"), [([], None), (["--http", "8765"], 8765)])

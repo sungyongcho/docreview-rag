@@ -1,7 +1,7 @@
 """Serve the real filings MCP server with controlled retrieval and chunk reads.
 
-Run as ``python -m tests.mcp.controlled_filings <log path> [--http PORT]``. Only the
-retrieval boundary and the database session are replaced; the registry, validation,
+Run as ``python -m tests.support.controlled_filings <log path> [--http PORT]``. Only
+the retrieval boundary and the database session are replaced; the registry, validation,
 error taxonomy, serialization, argument parsing and the stdio or HTTP transport are
 the production code. Every retrieval and body read is appended to the log so a test
 can tell which requests reached the data layer; the query ``slow`` blocks until
@@ -14,15 +14,13 @@ import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
-from typing import cast
 from unittest.mock import patch
-
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.filings_server import parse_arguments, serve, serve_http
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.tools.filings import build_default_registry
+from tests.support.database import FakeSessionFactory
 
 SEARCH_CHUNK_ID = 7
 FAILING_CHUNK_ID = 13
@@ -49,44 +47,33 @@ def fixture_hit(chunk_id: int) -> ChunkHit:
     )
 
 
-class ControlledSession:
-    """Async session double that serves fixture chunks and logs each body read."""
+def fixture_row(chunk_id: int) -> SimpleNamespace:
+    """The stored chunk row behind :func:`fixture_hit`, as a session's ``get`` returns it."""
+    hit = fixture_hit(chunk_id)
+    return SimpleNamespace(
+        id=hit.chunk_id,
+        doc_id=hit.doc_id,
+        citation=hit.citation,
+        start_char=hit.start_char,
+        end_char=hit.end_char,
+        source_sha256=hit.source_sha256,
+        context_header=hit.context_header,
+        body=hit.body,
+        kind=hit.kind,
+    )
 
-    def __init__(self, log_path: Path) -> None:
-        self.log_path = log_path
 
-    async def __aenter__(self) -> ControlledSession:
-        """Enter the context the way an AsyncSession does."""
-        return self
+def controlled_sessions(log_path: Path) -> FakeSessionFactory:
+    """Sessions serving the fixture chunks, logging each body read before answering it.
 
-    async def __aexit__(self, *exc_info: object) -> None:
-        """Nothing to roll back; reads have no transaction here."""
-
-    async def get(self, model: object, chunk_id: int) -> SimpleNamespace | None:
-        """Return a fixture chunk, nothing for unknown ids, or a database failure."""
-        del model
-        record(self.log_path, {"event": "body_load", "chunk_id": chunk_id})
-        if chunk_id == FAILING_CHUNK_ID:
-            raise RuntimeError(PRIVATE_DETAIL)
-        if chunk_id not in (SEARCH_CHUNK_ID, 2023, 2024):
-            return None
-        hit = fixture_hit(chunk_id)
-        return SimpleNamespace(
-            id=hit.chunk_id,
-            doc_id=hit.doc_id,
-            citation=hit.citation,
-            start_char=hit.start_char,
-            end_char=hit.end_char,
-            source_sha256=hit.source_sha256,
-            context_header=hit.context_header,
-            body=hit.body,
-            kind=hit.kind,
-        )
-
-    async def scalars(self, statement: object) -> list[int]:
-        """Answer the current-evidence check: every fixture chunk is current evidence."""
-        del statement
-        return [SEARCH_CHUNK_ID, 2023, 2024]
+    Chunks 7, 2023 and 2024 exist and are current evidence; reading
+    :data:`FAILING_CHUNK_ID` is a database failure carrying :data:`PRIVATE_DETAIL`.
+    """
+    return FakeSessionFactory(
+        *(fixture_row(chunk_id) for chunk_id in (SEARCH_CHUNK_ID, 2023, 2024)),
+        failures={FAILING_CHUNK_ID: RuntimeError(PRIVATE_DETAIL)},
+        on_get=lambda chunk_id: record(log_path, {"event": "body_load", "chunk_id": chunk_id}),
+    )
 
 
 def record(log_path: Path, event: dict[str, object]) -> None:
@@ -143,7 +130,7 @@ async def main(
     ``finally`` block stands in for its database cleanup.
     """
     registry = build_default_registry(
-        lambda: cast(AsyncSession, ControlledSession(log_path)),
+        controlled_sessions(log_path),
         embedding_provider=DeterministicEmbeddingProvider(),
         include_cells=include_cells,
     )

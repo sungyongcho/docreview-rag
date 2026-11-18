@@ -19,7 +19,7 @@ from app.operator.jobs.store import JobStore
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from app.retrieval.indexing.bm25 import TermStatCounts
 from tests.corpus_admin.support import LedgerStore, write_manifest
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 @pytest.mark.parametrize("fails", [False, True], ids=["success", "failure"])

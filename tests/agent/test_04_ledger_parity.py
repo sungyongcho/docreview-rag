@@ -16,7 +16,7 @@ from app.agent.review_middleware import ReviewContext
 from app.agent.types import ToolCall
 from app.contracts.evidence import EvidenceCitation
 from app.tools.registry import Tool, ToolRegistry
-from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
+from tests.support.models import ScriptedChatModel, ScriptedToolProvider, turn
 
 
 class ReadParams(BaseModel):
@@ -98,7 +98,7 @@ def test_stored_identity_changes_end_both_agents_before_final(versions, candidat
         )
     model = ScriptedChatModel.from_replies(*replies)
     agent = build_review_agent(model, [read_chunk], registry, checkpointer=InMemorySaver())
-    provider = RecordingToolProvider(
+    provider = ScriptedToolProvider(
         [
             turn(
                 tool_calls=tuple(
@@ -175,7 +175,7 @@ def test_unexpected_evidence_extraction_errors_are_system_failures_on_both_paths
     )
     model = ScriptedChatModel.from_replies(AIMessage(content="", tool_calls=calls("a")))
     agent = build_review_agent(model, [read_chunk], registry)
-    provider = RecordingToolProvider(
+    provider = ScriptedToolProvider(
         [
             turn(
                 tool_calls=(

@@ -11,7 +11,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import tempfile
 import time
 from typing import Any
 from uuid import uuid4
@@ -31,8 +30,15 @@ from app.operator.reset.inspection import (
 class WipeService:
     """Bind a short-lived preview to local Docker identity and exact runtime files."""
 
-    def __init__(self, root: Path, busy: Callable[[], bool]) -> None:
-        """Keep confirmation state outside the database being reset."""
+    def __init__(self, root: Path, busy: Callable[[], bool], *, state_dir: Path) -> None:
+        """Keep confirmation state outside the database being reset.
+
+        ``state_dir`` holds the reset audit and the writer lock for this checkout,
+        named by the user id and the checkout's identity. It lies outside ``root`` so
+        the confirmation state survives the reset it records; the operator passes the
+        system temporary directory, and every service built for the same checkout and
+        directory shares one audit and one lock.
+        """
         self.root = root.resolve()
         self.busy = busy
         self._preview: dict[str, Any] | None = None
@@ -46,7 +52,7 @@ class WipeService:
         self._compose_json: str | None = None
         self._result: dict[str, Any] = {"status": "idle", "completed": []}
         identity = hashlib.sha256(str(self.root).encode()).hexdigest()[:16]
-        self._audit = Path(tempfile.gettempdir()) / f"docreview-wipe-{os.getuid()}-{identity}.json"
+        self._audit = state_dir / f"docreview-wipe-{os.getuid()}-{identity}.json"
         self._operation_path = self._audit.with_suffix(".lock")
         if self._audit.is_symlink():
             raise WipeError("Reset audit path must not be a symbolic link")

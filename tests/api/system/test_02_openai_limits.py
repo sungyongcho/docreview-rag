@@ -16,7 +16,7 @@ from app.llm.schemas import Prompt, ProviderBudget, RawProviderResponse, TokenPr
 from app.release.app import create_release_app
 from app.release.config import AdminMode, ReleaseSettings
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from tests.support import load_settings
+from tests.support.settings import load_settings
 
 
 class _StubProvider(LLMProvider):

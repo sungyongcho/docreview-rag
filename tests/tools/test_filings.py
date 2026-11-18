@@ -9,31 +9,11 @@ from pydantic import ValidationError
 import pytest
 
 from app.figures.tables import CellStatus
-from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from app.tools.filings import CatalogCell, build_default_registry
 from app.tools.registry import ToolError
-from tests.agent.support import FakeSessionFactory
 from tests.retrieval.support import hit
-
-
-class CountingEmbeddings(DeterministicEmbeddingProvider):
-    """Deterministic provider that counts every real embedding request."""
-
-    def __init__(self):
-        self.dimensions = 4
-        self.query_calls = 0
-        self.document_calls = 0
-
-    async def embed_documents(self, texts):
-        """Return one constant vector per text, counting the batch."""
-        self.document_calls += 1
-        return [[0.0] * self.dimensions for _ in texts]
-
-    async def embed_query(self, text):
-        """Return one constant vector, counting the call."""
-        del text
-        self.query_calls += 1
-        return [0.0] * self.dimensions
+from tests.support.database import FakeSessionFactory
+from tests.support.models import CountingEmbeddings
 
 
 def patch_retrieve(monkeypatch, responses):

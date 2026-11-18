@@ -93,7 +93,7 @@ def test_a_table_chunk_stored_without_its_table_is_not_read_as_prose():
 def test_selected_cell_reader_does_not_read_unavailable_catalog_payloads(monkeypatch, status):
     """Every nonselectable state returns no cells without querying stored values."""
     from app.review import evidence
-    from tests.agent.support import FakeSessionFactory
+    from tests.support.database import FakeSessionFactory
 
     async def catalog(session, chunk_id):
         """Stand in for the catalog; the fake session cannot execute a value query."""
@@ -106,7 +106,7 @@ def test_selected_cell_reader_does_not_read_unavailable_catalog_payloads(monkeyp
 def test_selected_cell_reader_refuses_an_unknown_catalog_state(monkeypatch):
     """A new unhandled state cannot silently masquerade as an empty catalog."""
     from app.review import evidence
-    from tests.agent.support import FakeSessionFactory
+    from tests.support.database import FakeSessionFactory
 
     async def catalog(session, chunk_id):
         """Return an unrecognized wire value."""

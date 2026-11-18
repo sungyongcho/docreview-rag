@@ -14,9 +14,9 @@ from app.evals.execution.models import Decomposition
 from app.evals.experiments.decomposition import QueryDecomposition, make_decomposed_retriever
 from app.llm.schemas import ProviderBudget, TokenPricing
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
-from tests.agent.support import FakeSessionFactory
 from tests.llm.support import DeterministicLLMProvider, raw
 from tests.retrieval.support import hit
+from tests.support.database import FakeSessionFactory
 
 
 def budget():

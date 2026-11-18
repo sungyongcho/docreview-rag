@@ -1,7 +1,7 @@
 """Serve the controlled filings server with stored table cells for chunk 2024.
 
-Run as ``python -m tests.scripts.mcp.cell_filings <log path>``. It is
-``tests.mcp.controlled_filings`` with ``include_cells`` on and only the stored-cell
+Run as ``python -m tests.support.cell_filings <log path>``. It is
+``tests.support.controlled_filings`` with ``include_cells`` on and only the stored-cell
 catalog read replaced, so ``fetch_chunk`` returns chunk 2024 with one known revenue
 cell through the production registry, validation and stdio transport.
 """
@@ -12,7 +12,7 @@ import sys
 from typing import Any
 from unittest.mock import patch
 
-from tests.mcp.controlled_filings import main
+from tests.support.controlled_filings import main
 
 STABLE_KEY = "k" * 64
 RESOLVER_IDENTITY = "r" * 64
