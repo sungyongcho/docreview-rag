@@ -4,8 +4,6 @@ import asyncio
 import json
 from typing import Any
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
@@ -13,12 +11,8 @@ from pydantic import BaseModel
 import pytest
 
 from app.agent.loop import run_agent
-from app.agent.review_middleware import (
-    ReviewContext,
-    ReviewGate,
-    StopOnSystemFailure,
-    final_answer_format,
-)
+from app.agent.prebuilt import build_review_agent
+from app.agent.review_middleware import ReviewContext
 from app.agent.types import ToolCall
 from app.contracts.evidence import EvidenceCitation
 from app.tools.registry import Tool, ToolRegistry
@@ -103,14 +97,7 @@ def test_stored_identity_changes_end_both_agents_before_final(versions, candidat
             ]
         )
     model = ScriptedChatModel.from_replies(*replies)
-    middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(registry)]
-    agent = create_agent(
-        model,
-        [read_chunk],
-        middleware=middleware,
-        response_format=final_answer_format(),
-        checkpointer=InMemorySaver(),
-    )
+    agent = build_review_agent(model, [read_chunk], registry, checkpointer=InMemorySaver())
     provider = RecordingToolProvider(
         [
             turn(
@@ -187,8 +174,7 @@ def test_unexpected_evidence_extraction_errors_are_system_failures_on_both_paths
         )
     )
     model = ScriptedChatModel.from_replies(AIMessage(content="", tool_calls=calls("a")))
-    middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(registry)]
-    agent = create_agent(model, [read_chunk], middleware=middleware)
+    agent = build_review_agent(model, [read_chunk], registry)
     provider = RecordingToolProvider(
         [
             turn(
@@ -201,7 +187,9 @@ def test_unexpected_evidence_extraction_errors_are_system_failures_on_both_paths
 
     async def run():
         """Observe both terminal failures from the public entry points."""
-        state = await agent.ainvoke({"messages": [HumanMessage("Read source")]})
+        state = await agent.ainvoke(
+            {"messages": [HumanMessage("Read source")]}, context=ReviewContext(locale="en")
+        )
         result = await run_agent("Read source", registry=registry, provider=provider, locale="en")
         return state, result
 

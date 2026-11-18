@@ -1,8 +1,8 @@
 """Sections 6.2 A and C: question-scoped tool rules and system-failure stops on the MCP agent path.
 
 Acceptance runs use the real stdio filings server (controlled data layer), MCPAdapter
-and create_agent with ``[StopOnSystemFailure(), ReviewGate(...)]``; only the model is
-scripted. Chunk ids equal fiscal years only in the fixture.
+and ``build_review_agent``, whose stack is ``[StopOnSystemFailure(), ReviewGate(...)]``;
+only the model is scripted. Chunk ids equal fiscal years only in the fixture.
 """
 
 import asyncio
@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastmcp.client.transports import StdioTransport
-from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware
 from langchain.mcp import MCPAdapter
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
@@ -25,7 +23,9 @@ from mcp.types import INTERNAL_ERROR, INVALID_PARAMS
 import pytest
 
 from app.agent.ledger import merge_identities
+from app.agent.prebuilt import build_review_agent
 from app.agent.review_middleware import (
+    ReviewContext,
     ReviewGate,
     StopOnSystemFailure,
     cell_record,
@@ -121,19 +121,17 @@ def run_questions(work: Path, replies: Sequence[AIMessage], questions: Sequence[
         """Run every question on the same thread, keeping each final and checkpointed state."""
         states, checkpoints = [], []
         # The stop wraps the gate; the two declare different state schemas the agent merges.
-        middleware: list[AgentMiddleware[Any, Any]] = [
-            StopOnSystemFailure(),
-            ReviewGate(contracts()),
-        ]
         async with MCPAdapter(transport) as adapter:
-            agent = create_agent(
-                model,
-                await adapter.list_tools(),
-                middleware=middleware,
-                checkpointer=InMemorySaver(),
+            agent = build_review_agent(
+                model, await adapter.list_tools(), contracts(), checkpointer=InMemorySaver()
             )
             for question in questions:
-                states.append(await agent.ainvoke({"messages": [HumanMessage(question)]}, config))
+                state = await agent.ainvoke(
+                    {"messages": [HumanMessage(question)]},
+                    config,
+                    context=ReviewContext(locale="en"),
+                )
+                states.append(state)
                 checkpoints.append(dict((await agent.aget_state(config)).values))
         return states, checkpoints
 

@@ -5,19 +5,13 @@ from decimal import Decimal
 import json
 from typing import Any, Literal, cast
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool, ToolException
 import pytest
 
 from app.agent.cell_answers import StoredCell
-from app.agent.review_middleware import (
-    ReviewContext,
-    ReviewGate,
-    StopOnSystemFailure,
-    final_answer_format,
-)
+from app.agent.prebuilt import build_review_agent
+from app.agent.review_middleware import ReviewContext
 from app.db.session_factory import SessionFactory
 from app.tools.filings import build_default_registry
 from tests.agent.support import ScriptedChatModel
@@ -161,14 +155,7 @@ def ask(
         }
 
     contracts = build_default_registry(cast(SessionFactory, object), include_cells=True)
-    middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(contracts)]
-    agent = create_agent(
-        model,
-        tools(cell, search, table),
-        middleware=middleware,
-        response_format=final_answer_format(cells=True),
-        context_schema=ReviewContext,
-    )
+    agent = build_review_agent(model, tools(cell, search, table), contracts, cells=True)
     context = ReviewContext(
         (2024,),
         cell_answers=True,

@@ -52,7 +52,7 @@ from scripts.mcp.live import (
     ModelGate,
     ModelSettings,
     Reservation,
-    ask_review_agent,
+    ask_reporting_spend,
     claim_attempt,
     counted_model,
     parser,
@@ -670,7 +670,7 @@ def asked(request, tmp_path_factory) -> SimpleNamespace:
         """Run the question through the experiment's own agent composition."""
         async with MCPAdapter(transport) as adapter:
             agent = review_agent(model, await adapter.list_tools(), contracts(), gate)
-            return await ask_review_agent(
+            return await ask_reporting_spend(
                 agent, QUESTION, ReviewContext((2024,), usd_table, locale="en"), gate
             )
 
@@ -833,7 +833,9 @@ def ask_with_search(tmp_path: Path, search_filings: BaseTool) -> dict[str, Any]:
     )
     model = counted_model(LUNA, gate, api_key=FAKE_KEY, http_async_client=fake.client())
     agent = review_agent(model, [search_filings], contracts(), gate)
-    return asyncio.run(ask_review_agent(agent, QUESTION, ReviewContext((2024,), locale="en"), gate))
+    return asyncio.run(
+        ask_reporting_spend(agent, QUESTION, ReviewContext((2024,), locale="en"), gate)
+    )
 
 
 def test_trace_retains_tool_exception_without_private_details(tmp_path):
@@ -904,7 +906,7 @@ def ask_offline(
     model = counted_model(LUNA, gate, api_key=FAKE_KEY, http_async_client=fake.client())
     agent = review_agent(model, [], contracts(), gate)
     outcome = asyncio.run(
-        ask_review_agent(agent, QUESTION, ReviewContext((2024,), locale="en"), gate)
+        ask_reporting_spend(agent, QUESTION, ReviewContext((2024,), locale="en"), gate)
     )
     return outcome, budget
 
@@ -1199,14 +1201,14 @@ def run_cell_question(
         lambda: SimpleNamespace(environment="dev", openai_api_key=SecretStr(FAKE_KEY)),
     )
     contexts: list[ReviewContext] = []
-    ask = live.ask_review_agent
+    ask = live.ask_reporting_spend
 
     async def ask_keeping_context(agent: Any, question: str, context: ReviewContext, gate: Any):
         """Ask as the script does, keeping the review context the gate receives."""
         contexts.append(context)
         return await ask(agent, question, context, gate)
 
-    monkeypatch.setattr(live, "ask_review_agent", ask_keeping_context)
+    monkeypatch.setattr(live, "ask_reporting_spend", ask_keeping_context)
     monkeypatch.setattr(live, "read_only_engine", FakeEngine)
     monkeypatch.setattr(
         live, "counted_model", partial(counted_model, http_async_client=fake.client())
@@ -1428,7 +1430,7 @@ def test_a_server_stop_failure_keeps_the_finished_tool_result(tmp_path, monkeypa
 
 def test_a_server_stop_failure_keeps_the_answered_cell_question(tmp_path, monkeypatch):
     """A question answered before its server failed to stop still reports ok."""
-    stop, ask = MCPAdapter.__aexit__, live.ask_review_agent
+    stop, ask = MCPAdapter.__aexit__, live.ask_reporting_spend
     answered: list[dict[str, Any]] = []
 
     async def asked_once(*args: Any) -> dict[str, Any]:
@@ -1442,7 +1444,7 @@ def test_a_server_stop_failure_keeps_the_answered_cell_question(tmp_path, monkey
         if answered:  # the adapter also exits inner sessions while listing tools
             raise RuntimeError(FAKE_KEY)
 
-    monkeypatch.setattr(live, "ask_review_agent", asked_once)
+    monkeypatch.setattr(live, "ask_reporting_spend", asked_once)
     monkeypatch.setattr(MCPAdapter, "__aexit__", failing_stop)
     asked = run_cell_question(
         tmp_path,

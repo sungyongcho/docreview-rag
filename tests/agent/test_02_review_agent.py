@@ -2,9 +2,10 @@
 
 Each case runs twice with the same search, scripted replies, citations and evidence
 reader: once through ``run_agent`` over the official MCP client bridge, once through
-``create_agent`` with ``MCPAdapter``, ``StopOnSystemFailure``, ``ReviewGate`` and
-``final_answer_format()``. Both reach the real stdio filings server through a recording
-relay; only retrieval, the database, the evidence reader and the model are synthetic.
+``build_review_agent`` (``create_agent`` with ``StopOnSystemFailure``, ``ReviewGate``
+and ``final_answer_format()``) over ``MCPAdapter``. Both reach the real stdio filings
+server through a recording relay; only retrieval, the database, the evidence reader
+and the model are synthetic.
 ``USD_INCOME_TABLE`` adds an explicit currency to AMD's layout for these checks; it is
 not evidence that a filing states one. Chunk 2024 holds that table only in the reader.
 """
@@ -17,7 +18,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from fastmcp.client.transports import StdioTransport
-from langchain.agents import create_agent
 from langchain.agents.middleware import (
     AgentMiddleware,
     ExtendedModelResponse,
@@ -32,12 +32,12 @@ import pytest
 
 from app.agent.final_answer import FINAL_NOT_ALONE
 from app.agent.loop import run_agent
+from app.agent.prebuilt import build_review_agent
 from app.agent.review_middleware import (
     CitedEvidenceReadError,
     ReviewContext,
     ReviewGate,
     StopOnSystemFailure,
-    final_answer_format,
 )
 from app.agent.types import AgentReportAnswer, AgentResult, ToolCall
 from app.contracts.evidence import EvidenceCitation
@@ -348,19 +348,6 @@ def replies(turns: list[tuple[Call, ...]]) -> list[AIMessage]:
     ]
 
 
-def review_agent(model: ScriptedChatModel, tools: list[BaseTool], checkpointer=None):
-    """The section's composition: the stop wraps the gate, final_answer is the response."""
-    middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(contracts())]
-    return create_agent(
-        model,
-        tools,
-        middleware=middleware,
-        response_format=final_answer_format(),
-        context_schema=ReviewContext,
-        checkpointer=checkpointer,
-    )
-
-
 async def run_direct(bridge: ToolRegistry, case: Case, wire: Wire) -> Direct:
     """Run one case through run_agent over the MCP bridge."""
     provider = RecordingToolProvider(provider_turns(case))
@@ -383,7 +370,7 @@ async def run_through_agent(tools: list[BaseTool], case: Case, wire: Wire) -> Ag
     model = ScriptedChatModel.from_replies(*replies(case.turns()))
     reader = Reader(case.reader) if case.reader else None
     mark = wire.mark()
-    state = await review_agent(model, tools).ainvoke(
+    state = await build_review_agent(model, tools, contracts()).ainvoke(
         {"messages": [HumanMessage(QUESTION)]}, context=ReviewContext(YEARS, reader, locale="en")
     )
     sent, loads = wire.since(mark)
@@ -517,7 +504,9 @@ def ask_on_one_thread(work: Path, questions: list[tuple[list[tuple[Call, ...]], 
         """Invoke each question with its own context and keep the checkpointed values."""
         states = []
         async with MCPAdapter(wire.transport()) as adapter:
-            agent = review_agent(model, await adapter.list_tools(), InMemorySaver())
+            agent = build_review_agent(
+                model, await adapter.list_tools(), contracts(), checkpointer=InMemorySaver()
+            )
             for number, (_, reader) in enumerate(questions, 1):
                 await agent.ainvoke(
                     {"messages": [HumanMessage(f"Question {number}")]},

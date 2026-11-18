@@ -5,8 +5,6 @@ from decimal import Decimal
 import json
 from typing import Any
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel
@@ -14,12 +12,8 @@ import pytest
 
 from app.agent.cell_answers import StoredCell, cell_digest, review_cell_selection
 from app.agent.loop import run_agent
-from app.agent.review_middleware import (
-    ReviewContext,
-    ReviewGate,
-    StopOnSystemFailure,
-    final_answer_format,
-)
+from app.agent.prebuilt import build_review_agent
+from app.agent.review_middleware import ReviewContext
 from app.agent.types import CellSelection, CellSelectionAnswer, ToolCall
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.report_text import withheld_text
@@ -126,14 +120,7 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
             for c in calls
         ]
     )
-    middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(registry)]
-    agent = create_agent(
-        model,
-        [search_notes],
-        middleware=middleware,
-        response_format=final_answer_format(),
-        context_schema=ReviewContext,
-    )
+    agent = build_review_agent(model, [search_notes], registry)
     question = "매출은?" if locale == "ko" else "What was revenue?"
 
     async def run():
