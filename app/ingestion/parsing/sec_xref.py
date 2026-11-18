@@ -94,6 +94,7 @@ def _spans(text: str) -> list[tuple[int, int]]:
     """Return page spans parsed from tokens such as `53-67` or `70`."""
 
     def rejoin(match: re.Match[str]) -> str:
+        """Join a page number split by whitespace when it still fits three digits."""
         digits = re.sub(r"\s+", "", match.group())
         return digits if len(digits) <= 3 else match.group()
 
