@@ -1,9 +1,38 @@
-"""Localized application reports limited to the evidence each check established."""
+"""The reports the application writes itself when a check qualifies an answer.
+
+Every path reports a qualified answer with the same sentences, built here from the
+typed record of :mod:`app.contracts.figures`: :func:`withheld_report` for figures whose
+unit, currency or direction is uncertain, :func:`period_mismatch_report` for figures of
+another fiscal period and :func:`figures_unverified_report` for an answer reported as
+absent because its figures were not confirmed. The sentences state only what the check
+established, in the resolved application language, never a withheld figure.
+"""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Literal
 
-from app.figures.withholding import WithholdingCause, ordered_causes
+from app.contracts.figures import (
+    FiguresWithheld,
+    PeriodMismatch,
+    WithholdingCause,
+    ordered_causes,
+)
+
+type Locale = Literal["en", "ko"]
+
+
+@dataclass(frozen=True, slots=True)
+class QualifiedReport:
+    """The label, answer and rationale of a report the application writes itself.
+
+    The caller adds the citations: a withheld or period-mismatch report keeps the
+    answer's citations, and an absent one cites nothing.
+    """
+
+    label: Literal["NOT_IN_DOCS", "PERIOD_MISMATCH", "UNVERIFIED"]
+    answer: str
+    rationale: str
 
 
 def period_mismatch_text(
@@ -11,7 +40,7 @@ def period_mismatch_text(
     evidenced: Sequence[int],
     figures: Sequence[str] = (),
     *,
-    locale: Literal["en", "ko"],
+    locale: Locale,
     selection: bool = False,
 ) -> str:
     """Describe only the mismatched written figures or selected cells, never filing absence."""
@@ -33,7 +62,7 @@ def period_mismatch_text(
     )
 
 
-def period_mismatch_rationale(*, locale: Literal["en", "ko"], selection: bool = False) -> str:
+def period_mismatch_rationale(*, locale: Locale, selection: bool = False) -> str:
     """Explain the mismatched subset without claiming that every answer figure is misdated."""
     if selection:
         return (
@@ -48,9 +77,7 @@ def period_mismatch_rationale(*, locale: Literal["en", "ko"], selection: bool = 
     )
 
 
-def withheld_text(
-    causes: Sequence[WithholdingCause], *, locale: Literal["en", "ko"]
-) -> tuple[str, str]:
+def withheld_text(causes: Sequence[WithholdingCause], *, locale: Locale) -> tuple[str, str]:
     """Build the withholding answer and rationale from only the established causes.
 
     Scale includes whether the figure is a percentage, matching ``scale_unknown``
@@ -84,3 +111,48 @@ def withheld_text(
         f"The check did not establish the {detail} needed to report a figure "
         "from the cited evidence.",
     )
+
+
+def withheld_report(held: FiguresWithheld, *, locale: Locale) -> QualifiedReport:
+    """Report ``UNVERIFIED`` for withheld figures, stating no number.
+
+    The withheld figures travel only in the typed record, so nothing unconfirmed is
+    presented as fact.
+    """
+    answer, rationale = withheld_text(held.causes, locale=locale)
+    return QualifiedReport("UNVERIFIED", answer, rationale)
+
+
+def period_mismatch_report(
+    mismatch: PeriodMismatch, *, locale: Locale, selection: bool = False
+) -> QualifiedReport:
+    """Report the period the mismatched figures, or selected cells, belong to instead.
+
+    ``selection`` words the report for selected table cells, whose figures the model
+    never wrote, instead of for figures stated in a written answer.
+    """
+    answer = period_mismatch_text(
+        mismatch.requested_fiscal_years,
+        mismatch.evidenced_fiscal_years,
+        () if selection else mismatch.figures,
+        locale=locale,
+        selection=selection,
+    )
+    return QualifiedReport(
+        "PERIOD_MISMATCH", answer, period_mismatch_rationale(locale=locale, selection=selection)
+    )
+
+
+def figures_unverified_report(*, locale: Locale) -> QualifiedReport:
+    """Report a written answer as absent because its figures were not confirmed.
+
+    Only a path whose policy reports unconfirmed figures as ``NOT_IN_DOCS`` writes this
+    report (``unverified_figures`` in :mod:`app.review.policy`).
+    """
+    rationale = (
+        "답변의 수치를 인용 근거에서 요청한 기간의 값으로 확인하지 못했습니다."
+        if locale == "ko"
+        else "The answer stated figures its cited evidence could not confirm for the "
+        "requested period."
+    )
+    return QualifiedReport("NOT_IN_DOCS", "NOT_IN_DOCS", rationale)

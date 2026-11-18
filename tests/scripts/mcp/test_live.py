@@ -30,8 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app import config
-from app.agent import stored_evidence
-from app.agent.cell_answers import StoredCell
 from app.agent.provider import BudgetExhaustedError
 from app.agent.review_middleware import ReviewContext
 from app.contracts.evidence import EvidenceCitation
@@ -41,6 +39,8 @@ from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.mcp import filings_server
 from app.query.scope import issuer_names
+from app.review import evidence
+from app.review.evidence import StoredCell
 from app.tools import filings
 from app.tools.filings import FetchedChunk, build_default_registry
 from app.tools.registry import ToolError, execute_tool
@@ -1223,7 +1223,7 @@ def run_cell_question(
             for ref in refs
         }
 
-    monkeypatch.setattr(stored_evidence, "read_selected_cells", read_selected_cells)
+    monkeypatch.setattr(evidence, "read_selected_cells", read_selected_cells)
     log = tmp_path / "events.jsonl"
     log.touch()
     if server is None:

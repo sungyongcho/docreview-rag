@@ -4,21 +4,31 @@ import inspect
 
 import pytest
 
-from app.agent.cell_answers import review_cell_selection
-from app.agent.final_answer import judge_written_answer, period_mismatch_report, withheld_report
 from app.agent.loop import run_agent
 from app.agent.review_middleware import ReviewContext
-from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text, withheld_text
-from app.figures.withholding import WithholdingCause
+from app.contracts.figures import WithholdingCause
+from app.review.cell_answer import review_cell_answer, review_cell_selection
+from app.review.reports import (
+    figures_unverified_report,
+    period_mismatch_rationale,
+    period_mismatch_report,
+    period_mismatch_text,
+    withheld_report,
+    withheld_text,
+)
+from app.review.written_answer import judge_written_answer, review_written_answer
 
 
 @pytest.mark.parametrize(
     "producer",
     [
         review_cell_selection,
+        review_cell_answer,
         judge_written_answer,
+        review_written_answer,
         period_mismatch_report,
         withheld_report,
+        figures_unverified_report,
         run_agent,
         ReviewContext,
         period_mismatch_text,

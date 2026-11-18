@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.agent.ledger import citation_records, ledger_failure, merge_identities
 from app.contracts.evidence import EvidenceCitation
+from app.review.ledger import citation_records, ledger_failure, merge_identities
 
 
 @pytest.mark.parametrize("key", [1, "1:r1c1"])

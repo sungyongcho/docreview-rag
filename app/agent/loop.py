@@ -2,35 +2,30 @@
 
 from collections.abc import Callable, Sequence
 from decimal import Decimal
+import functools
 import time
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from app.agent.final_answer import (
-    FINAL_NOT_ALONE,
-    EvidenceReader,
-    as_report,
-    final_answer_spec,
-    judge_written_answer,
-    validate_final_answer,
-)
-from app.agent.ledger import citation_records, ledger_failure, merge_identities
 from app.agent.provider import BudgetExhaustedError, ProviderTurn, ToolCallingProvider
 from app.agent.types import (
-    AgentAnswer,
     AgentBudget,
-    AgentPeriodMismatch,
-    AgentReportAnswer,
     AgentResult,
     AgentStatus,
     AgentStep,
-    AgentWithheld,
     Observation,
     StepUsage,
     ToolCall,
 )
+from app.contracts.answers import AgentAnswer
 from app.contracts.evidence import EvidenceCitation
+from app.llm.decoding import strict_response_format
+from app.review.evidence import EvidenceReader
+from app.review.final_answer import FINAL_NOT_ALONE, EvidenceReadError, FinalReview
+from app.review.ledger import citation_records, ledger_failure, merge_identities
+from app.review.policy import POLICIES
+from app.review.written_answer import review_written_answer
 from app.tools.filings import unretrieved_fetch
 from app.tools.registry import (
     FINAL_ANSWER_NAME,
@@ -73,6 +68,23 @@ A new question starts with no retrieved IDs, even when the connection is reused.
 
 Call final_answer exactly once, only after the evidence in hand actually
 supports the answer."""
+
+
+@functools.cache
+def final_answer_spec() -> dict[str, Any]:
+    """Return the strict function spec for the loop-owned final_answer tool.
+
+    The spec is a pure function of :class:`AgentAnswer`, so it is generated once
+    per process instead of once per run.
+    """
+    payload = strict_response_format(AgentAnswer)
+    return {
+        "type": "function",
+        "name": FINAL_ANSWER_NAME,
+        "description": "Finish the run with a structured, citation-checked answer.",
+        "parameters": payload["schema"],
+        "strict": True,
+    }
 
 
 def build_instructions(registry: ToolRegistry) -> str:
@@ -265,24 +277,16 @@ async def run_agent(
         return time.perf_counter() - started
 
     def finish(
-        status: AgentStatus,
-        *,
-        answer: AgentAnswer | None = None,
-        failure: str | None = None,
-        period_mismatch: AgentPeriodMismatch | None = None,
-        withheld: AgentWithheld | None = None,
+        status: AgentStatus, *, review: FinalReview | None = None, failure: str | None = None
     ) -> AgentResult:
         """Build the terminal result, letting the model reject impossible success states."""
-        report = (
-            answer if answer is None or isinstance(answer, AgentReportAnswer) else as_report(answer)
-        )
         return AgentResult.model_validate(
             {
                 "status": status,
-                "answer": report,
+                "answer": None if review is None else review.report,
                 "failure": failure,
-                "period_mismatch": period_mismatch,
-                "withheld": withheld,
+                "period_mismatch": None if review is None else review.period_mismatch,
+                "withheld": None if review is None else review.withheld,
                 "iterations": len(steps),
                 "total_input_tokens": total_input,
                 "total_output_tokens": total_output,
@@ -434,37 +438,29 @@ async def run_agent(
             mark_exchange()
             continue
         if final_call is not None:
-            answer, problem = validate_final_answer(final_call, evidence)
-            if answer is not None and answer.label == "SUPPORTED":
-                cited = tuple(citation.chunk_id for citation in answer.citations)
-                try:
-                    texts = await evidence_reader(cited) if evidence_reader is not None else {}
-                except Exception as error:
-                    record_step(turn, (), usage)
-                    return finish(
-                        "tool_error", failure=safe_runtime_error(error, "cited evidence read")
-                    )
-                judged = judge_written_answer(answer, texts, requested_fiscal_years, locale=locale)
-                if judged.report is None:
-                    answer, problem = None, judged.problem
-                else:
-                    record_step(turn, (), usage)
-                    return finish(
-                        "ok",
-                        answer=judged.report,
-                        period_mismatch=judged.period_mismatch,
-                        withheld=judged.withheld,
-                    )
-            if answer is not None:
+            try:
+                review = await review_written_answer(
+                    final_call.arguments_json,
+                    evidence,
+                    evidence_reader=evidence_reader,
+                    requested_fiscal_years=requested_fiscal_years,
+                    locale=locale,
+                    policy=POLICIES["loop"],
+                )
+            except EvidenceReadError as error:
                 record_step(turn, (), usage)
-                return finish("ok", answer=answer)
+                return finish("tool_error", failure=error.failure)
+            if review.report is not None:
+                record_step(turn, (), usage)
+                return finish("ok", review=review)
+            assert review.problem is not None
             rejection = Observation(
                 call_id=final_call.call_id,
                 name=final_call.name,
-                error=problem,
+                error=review.problem,
             )
             record_step(turn, (rejection,), usage)
-            _append_exchange(input_items, turn, {final_call.call_id: f"ERROR: {problem}"})
+            _append_exchange(input_items, turn, {final_call.call_id: f"ERROR: {review.problem}"})
             mark_exchange()
             continue
 

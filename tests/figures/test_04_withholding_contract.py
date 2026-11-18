@@ -4,11 +4,11 @@ import json
 
 import pytest
 
-from app.agent.types import AgentWithheld
+from app.contracts.figures import FiguresWithheld
 from app.figures.answers import FigureCheck
 from app.figures.currency import same_currency
 from app.figures.withholding import UncertainComparison
-from app.workflow.types import FiguresWithheld, WorkflowReport
+from app.workflow.types import WorkflowReport
 
 
 @pytest.mark.parametrize("causes", [(), ("unknown",)])
@@ -29,9 +29,9 @@ def test_a_confirmed_figure_cannot_carry_a_withholding_cause():
     assert same_currency("EUR", "USD") == "no"
 
 
-@pytest.mark.parametrize("schema", [AgentWithheld, FiguresWithheld])
-def test_wire_causes_are_required_closed_nonempty_and_canonical(schema):
+def test_wire_causes_are_required_closed_nonempty_and_canonical():
     """JSON records reject absent/unknown causes and normalize duplicates and ordering."""
+    schema = FiguresWithheld
     for payload in (
         {"figures": ["25"]},
         {"figures": ["25"], "causes": []},

@@ -1020,11 +1020,11 @@ async def run_agent_over_mcp(
 
     from app.agent.loop import run_agent
     from app.agent.provider import OpenAIToolProvider, ProviderTurn
-    from app.agent.stored_evidence import read_cited_evidence
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.mcp.client import mcp_tool_registry
     from app.query.periods import question_fiscal_years, utc_today
+    from app.review.evidence import read_cited_evidence
     from app.tools.filings import build_default_registry
 
     model_budget = Reservation(
@@ -1122,11 +1122,11 @@ async def run_review_agent_over_mcp(
     from langchain.mcp import MCPAdapter
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from app.agent.stored_evidence import read_cited_evidence, read_selected_cells
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.figures.vocabulary import items_named
     from app.query.periods import question_fiscal_years, utc_today
+    from app.review.evidence import read_cited_evidence, read_selected_cells
     from app.tools.filings import build_default_registry
 
     config = get_settings()

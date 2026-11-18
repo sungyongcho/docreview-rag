@@ -1,13 +1,19 @@
 """Read cited evidence and selected cells as stored now, for the final-answer review.
 
-These readers are app-internal, not tools: the review calls them after the model
+These readers are app-internal, not tools: the agent paths call them after the model
 proposes a final answer, so the figure check and the cell selection judge what the
-database stores, never what the model wrote.
+database stores, never what the model wrote. A chunk a later filing replaced or holds
+back since it was retrieved is refused here (see ``cited_evidence`` in
+:mod:`app.review.policy`).
 """
+
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 
-from app.agent.cell_answers import StoredCell
 from app.amendments.policy import require_eligible
 from app.db.models import Chunk, ChunkTableCell, TableCell
 from app.db.session_factory import SessionFactory
@@ -19,6 +25,22 @@ from app.retrieval.tables import (
     load_cell_catalog,
     load_table_readings,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class StoredCell:
+    """One fetched cell as stored now: its catalog record, source version and value."""
+
+    ref: str
+    chunk_id: int
+    cell: Mapping[str, Any]
+    stable_key: str
+    resolver_identity: str
+    value: Decimal | None
+
+
+type EvidenceReader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, EvidenceText]]]
+type CellReader = Callable[[tuple[str, ...]], Awaitable[Mapping[str, StoredCell]]]
 
 
 async def read_cited_evidence(
@@ -53,8 +75,8 @@ async def read_selected_cells(
 ) -> dict[str, StoredCell]:
     """Read selected cells as stored now, with the signed value the answer is written from.
 
-    A ref whose chunk no longer stores that cell is left out, so the gate treats it as a
-    changed source instead of answering from it.
+    A ref whose chunk no longer stores that cell is left out, so the review treats it as
+    a changed source instead of answering from it.
 
     Raises
     ------

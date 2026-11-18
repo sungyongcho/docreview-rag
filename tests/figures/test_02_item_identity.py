@@ -4,11 +4,12 @@ from decimal import Decimal
 
 import pytest
 
-from app.agent.cell_answers import StoredCell, _line
 from app.figures.answers import _claims
 from app.figures.items import ITEMS
 from app.figures.tables import _label_item
 from app.figures.vocabulary import items_named
+from app.review.cell_answer import _line
+from app.review.evidence import StoredCell
 
 
 @pytest.mark.parametrize("item,phrase", [(k, p) for k, d in ITEMS.items() for p in d.phrases])

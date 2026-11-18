@@ -13,8 +13,8 @@ from app.contracts.evidence import (
     ReportLabel,
     validate_answer_citations,
 )
+from app.contracts.figures import FiguresUnverified, FiguresWithheld, PeriodMismatch
 from app.contracts.validation import NonBlank, NonNegativeInt, PositiveInt, StrictSchema
-from app.figures.withholding import WithholdingCauses
 from app.llm.schemas import AnswerDecision, BudgetExceeded, ProviderBudget
 from app.observability.types import Budget, RunId, RunStatus, StepTrace, WorkflowNode
 from app.retrieval.types import ChunkHit, RetrievalFilters
@@ -158,36 +158,6 @@ class SupportDowngraded(StrictSchema):
     code: Literal["support_downgraded"] = "support_downgraded"
     requested_chunk_ids: tuple[PositiveInt, ...]
     kept_chunk_ids: tuple[PositiveInt, ...]
-
-
-class FiguresUnverified(StrictSchema):
-    """A supported answer stated figures its cited evidence contradicts or cannot hold.
-
-    A figure is confirmed only by a cited table cell whose row is the item the answer
-    names, whose column is the requested (or stated) period, and whose value matches in
-    units both sides state. Running text cannot show which period a figure belongs to,
-    so it confirms a figure only when no period is asked or stated.
-    """
-
-    code: Literal["figures_unverified"] = "figures_unverified"
-    figures: tuple[NonBlank, ...]
-
-
-class FiguresWithheld(StrictSchema):
-    """Figures withheld for the established scale, currency or direction causes."""
-
-    code: Literal["figures_withheld"] = "figures_withheld"
-    causes: WithholdingCauses
-    figures: tuple[NonBlank, ...]
-
-
-class PeriodMismatch(StrictSchema):
-    """Figures of the answer matched only a different known fiscal period."""
-
-    code: Literal["period_mismatch"] = "period_mismatch"
-    requested_fiscal_years: tuple[PositiveInt, ...]
-    evidenced_fiscal_years: tuple[PositiveInt, ...]
-    figures: tuple[NonBlank, ...]
 
 
 class ProviderFailure(StrictSchema):

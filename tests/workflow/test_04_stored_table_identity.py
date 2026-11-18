@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 from sqlalchemy import select, update
 
+from app.contracts.figures import FiguresUnverified
 from app.db.models import Chunk, ParsedTable
 from app.ingestion.chunking import ChunkKind, compose_index_text
 from app.ingestion.persistence import persist_seed_batch
@@ -14,7 +15,7 @@ from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
 from app.retrieval.tables import load_table_readings
 from app.retrieval.types import ChunkHit
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
-from app.workflow.types import FiguresUnverified, WorkflowRequest, initial_state
+from app.workflow.types import WorkflowRequest, initial_state
 from tests.ingestion.seed.support import sample_batch, table_batch
 from tests.live_postgres import isolated_session
 from tests.workflow.support import ok_result, provider_budget

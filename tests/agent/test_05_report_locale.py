@@ -10,19 +10,23 @@ from langchain_core.tools import tool
 from pydantic import BaseModel
 import pytest
 
-from app.agent.cell_answers import StoredCell, cell_digest, review_cell_selection
 from app.agent.loop import run_agent
 from app.agent.prebuilt import build_review_agent
 from app.agent.review_middleware import ReviewContext
-from app.agent.types import CellSelection, CellSelectionAnswer, ToolCall
+from app.agent.types import ToolCall
+from app.contracts.answers import CellSelection, CellSelectionAnswer
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.report_text import withheld_text
+from app.contracts.figures import FiguresWithheld
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
+from app.review.cell_answer import review_cell_selection
+from app.review.evidence import StoredCell
+from app.review.ledger import cell_digest
+from app.review.reports import withheld_text
 from app.tools.registry import Tool, ToolRegistry
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
-from app.workflow.types import FiguresWithheld, WorkflowRequest, initial_state
+from app.workflow.types import WorkflowRequest, initial_state
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
 from tests.workflow.support import (
     INCOME_TABLE,

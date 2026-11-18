@@ -22,18 +22,17 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import INTERNAL_ERROR, INVALID_PARAMS
 import pytest
 
-from app.agent.ledger import merge_identities
 from app.agent.prebuilt import build_review_agent
 from app.agent.review_middleware import (
     ReviewContext,
     ReviewGate,
     StopOnSystemFailure,
-    cell_record,
     keep_first_failure,
     retrieval_returned,
 )
 from app.contracts.evidence import EvidenceCitation
 from app.db.session_factory import SessionFactory
+from app.review.ledger import cell_record, merge_identities
 from app.tools.filings import build_default_registry
 from tests.agent.support import ScriptedChatModel
 from tests.mcp.controlled_filings import fixture_hit

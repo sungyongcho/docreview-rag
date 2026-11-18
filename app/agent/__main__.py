@@ -91,7 +91,8 @@ def _demo_provider(question: str, k: int) -> DeterministicToolProvider:
     a silent runtime rejection.
     """
     from app.agent.provider import DeterministicToolProvider, ProviderTurn
-    from app.agent.types import AgentAnswer, ToolCall
+    from app.agent.types import ToolCall
+    from app.contracts.answers import AgentAnswer
     from app.tools.filings import SearchFilingsParams
 
     search_arguments = SearchFilingsParams(query=question, k=k).model_dump_json()
@@ -162,13 +163,13 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     """
     from app.agent.loop import run_agent
     from app.agent.provider import OpenAIToolProvider, ToolCallingProvider
-    from app.agent.stored_evidence import read_cited_evidence
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.db.session import Session, engine
     from app.query.language import detect_query_language
     from app.query.periods import question_fiscal_years, utc_today
     from app.retrieval.embedding.provider import get_embedding_provider
+    from app.review.evidence import read_cited_evidence
     from app.tools.filings import build_default_registry
 
     openai_provider: OpenAIToolProvider | None = None

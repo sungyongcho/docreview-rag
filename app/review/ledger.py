@@ -1,8 +1,17 @@
-"""Question-scoped immutable identity merging for every agent execution path."""
+"""The question's evidence ledger: every identity a tool returned, merged immutably.
+
+A final answer may cite only what this ledger recorded in the current question. Chunks
+are keyed by id with their complete :class:`~app.contracts.evidence.EvidenceCitation`;
+table cells are keyed by ref with the identity their content and source version fix.
+A key returned twice with different records is marked as a conflict that never heals,
+and every path ends the run on it with the wording of :func:`ledger_failure`.
+"""
 
 from collections.abc import Iterable, Mapping
+import hashlib
 from typing import Any
 
+from app.canonical_json import canonical_json
 from app.contracts.evidence import EvidenceCitation
 
 
@@ -25,6 +34,21 @@ def citation_records(citations: Iterable[EvidenceCitation]) -> dict[int, dict[st
     for citation in citations:
         records = merge_identities(records, {citation.chunk_id: citation.model_dump(mode="json")})
     return records
+
+
+def cell_digest(cell: Mapping[str, Any]) -> str:
+    """Identify one catalog cell's content, as the question's ledger records it."""
+    return hashlib.sha256(canonical_json(dict(cell)).encode()).hexdigest()
+
+
+def cell_record(cell: dict[str, Any], catalog: dict[str, Any], chunk_id: int) -> dict[str, Any]:
+    """Record one returned cell by the identity its content and source version fix."""
+    return {
+        "chunk_id": chunk_id,
+        "stable_key": catalog["stable_key"],
+        "resolver_identity": catalog["resolver_identity"],
+        "digest": cell_digest(cell),
+    }
 
 
 def ledger_failure[K](ledger: Mapping[K, dict[str, Any]], *, cells: bool = False) -> str | None:

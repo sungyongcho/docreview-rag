@@ -8,17 +8,14 @@ from typing import Any
 from pydantic import ValidationError
 import pytest
 
-from app.agent.cell_answers import (
-    StaleCellError,
-    StoredCell,
-    cell_digest,
-    review_cell_selection,
-)
-from app.agent.types import CellSelectionAnswer
-from app.contracts.report_text import withheld_text
+from app.contracts.answers import CellSelectionAnswer
 from app.figures.items import ITEMS
 from app.figures.vocabulary import PHRASE_ITEMS, items_named
 from app.retrieval.tables import cell_ref_chunk
+from app.review.cell_answer import StaleCellError, review_cell_selection
+from app.review.evidence import StoredCell
+from app.review.ledger import cell_digest
+from app.review.reports import withheld_text
 
 SOURCE = "a" * 64
 STABLE = "k" * 64
@@ -288,7 +285,7 @@ def test_a_held_cell_that_matches_is_withheld_even_for_another_period():
     )
     assert both.report is not None and both.report.label == "UNVERIFIED"
     assert both.withheld is not None and both.withheld.figures == ("$ 25785",)
-    assert [check["decision"] for check in both.checks] == ["held", "held"]
+    assert [check["decision"] for check in both.cell_checks] == ["held", "held"]
 
 
 def test_two_cells_for_one_item_and_year_are_returned_for_correction():

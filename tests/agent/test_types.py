@@ -2,21 +2,19 @@
 
 import json
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 import pytest
 
 from app.agent.types import (
-    AgentAnswer,
     AgentBudget,
     AgentResult,
     AgentStep,
-    CellRef,
     Observation,
     StepUsage,
     ToolCall,
 )
+from app.contracts.answers import AgentAnswer
 from app.contracts.evidence import EvidenceCitation
-from app.retrieval.tables import cell_ref, cell_ref_chunk
 
 
 def usage(**changes):
@@ -101,32 +99,6 @@ def test_agent_step_rejects_observations_for_unknown_calls():
         )
 
 
-def test_answer_label_contract_mirrors_the_m4_rules():
-    """Require citations for a supported answer and forbid them for an absent one."""
-    supported_answer()
-    AgentAnswer(
-        label="NOT_IN_DOCS",
-        answer="NOT_IN_DOCS",
-        citations=(),
-        rationale="The filings do not discuss this topic.",
-    )
-
-    with pytest.raises(ValidationError):
-        AgentAnswer(
-            label="SUPPORTED",
-            answer="Revenue increased.",
-            citations=(),
-            rationale="No evidence attached.",
-        )
-    with pytest.raises(ValidationError):
-        AgentAnswer(
-            label="NOT_IN_DOCS",
-            answer="NOT_IN_DOCS",
-            citations=supported_answer().citations,
-            rationale="Absent answers must not cite.",
-        )
-
-
 def test_result_keeps_success_and_failure_mutually_exclusive():
     """Require the status to agree with whether a failure is present."""
     values = {
@@ -154,10 +126,3 @@ def test_budget_rejects_unbounded_iterations():
         AgentBudget(max_iterations=0)
     with pytest.raises(ValidationError):
         AgentBudget(max_iterations=1_000)
-
-
-def test_a_selection_accepts_the_refs_the_catalog_builds():
-    """Accept the ref the stored-cell catalog builds and read its chunk back."""
-    ref = cell_ref(1, 0, 0)
-    assert TypeAdapter(CellRef).validate_python(ref) == ref
-    assert cell_ref_chunk(cell_ref(42, 3, 1)) == 42

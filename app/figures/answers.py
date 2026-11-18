@@ -36,6 +36,7 @@ from decimal import Decimal
 import re
 from typing import Literal
 
+from app.contracts.figures import WithholdingCause, ordered_causes
 from app.figures.currency import same_currency
 from app.figures.periods import (
     PeriodKind,
@@ -64,12 +65,7 @@ from app.figures.vocabulary import (
     TOKEN,
     phrase_key,
 )
-from app.figures.withholding import (
-    Comparison,
-    UncertainComparison,
-    WithholdingCause,
-    ordered_causes,
-)
+from app.figures.withholding import Comparison, UncertainComparison
 
 # Rounding is accepted only for figures stated with at least this many significant digits.
 _MIN_ROUNDED_DIGITS = 3

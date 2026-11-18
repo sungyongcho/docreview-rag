@@ -1,33 +1,33 @@
-"""Check a model's table cell selection and assemble the answer from the stored cells.
+"""Review a model's table cell selection and assemble the answer from the stored cells.
 
 The model proposes only cell refs with the item and fiscal year it claims for each; it
-never writes an amount. This module checks the proposal against the cells fetched in
-this question, re-reads them to catch changed sources, checks the question's items and
-periods and each cell's established unit and currency, and then writes the answer in
-English or Korean from the stored values, keeping sign, decimals and the table scale.
-A missing unit or currency withholds the answer; another known period is reported as
-a period mismatch; anything the model can correct is returned to it.
+never writes an amount. :func:`review_cell_answer` validates the proposal and re-reads
+the selected cells to catch changed sources; :func:`review_cell_selection` checks the
+proposal against the cells fetched in this question, the question's items and periods
+and each cell's established unit and currency, and then writes the answer in English or
+Korean from the stored values, keeping sign, decimals and the table scale. A missing
+unit or currency withholds the answer; another known period is reported as a period
+mismatch; anything the model can correct is returned to it. Only the prebuilt agent
+offers this mode (``cell_answers`` in :mod:`app.review.policy`).
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from decimal import Decimal
-import hashlib
 from typing import Any, Literal
 
-from app.agent.types import (
-    AgentPeriodMismatch,
-    AgentReportAnswer,
-    AgentWithheld,
-    CellSelection,
-    CellSelectionAnswer,
-)
-from app.canonical_json import canonical_json
+from pydantic import ValidationError
+
+from app.contracts.answers import AgentReportAnswer, CellSelection, CellSelectionAnswer
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text, withheld_text
+from app.contracts.figures import FiguresWithheld, PeriodMismatch, ordered_causes
 from app.figures.items import ITEMS
 from app.figures.tables import WITHHOLDING_CAUSES
-from app.figures.withholding import ordered_causes
+from app.llm.decoding import validation_errors
+from app.review.evidence import CellReader, StoredCell
+from app.review.final_answer import EvidenceReadError, FinalReview
+from app.review.ledger import cell_digest
+from app.review.reports import QualifiedReport, period_mismatch_report, withheld_report
+from app.tools.registry import safe_runtime_error
 
 type Locale = Literal["en", "ko"]
 
@@ -67,40 +67,8 @@ ASSEMBLED = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class StoredCell:
-    """One fetched cell as stored now: its catalog record, source version and value."""
-
-    ref: str
-    chunk_id: int
-    cell: Mapping[str, Any]
-    stable_key: str
-    resolver_identity: str
-    value: Decimal | None
-
-
 class StaleCellError(RuntimeError):
     """A selected cell's stored content or source version changed within the question."""
-
-
-@dataclass(frozen=True, slots=True)
-class CellVerdict:
-    """The decision on one proposal: an accepted or qualified report, or a problem.
-
-    ``report`` is None exactly when ``problem`` is set; ``checks`` are the private
-    per-cell records kept in graph state, never shown to the model or the public.
-    """
-
-    report: AgentReportAnswer | None = None
-    problem: str | None = None
-    period_mismatch: AgentPeriodMismatch | None = None
-    withheld: AgentWithheld | None = None
-    checks: tuple[dict[str, Any], ...] = field(default=())
-
-
-def cell_digest(cell: Mapping[str, Any]) -> str:
-    """Identify one catalog cell's content, as the question's ledger records it."""
-    return hashlib.sha256(canonical_json(dict(cell)).encode()).hexdigest()
 
 
 def _scale_words(scale: Decimal, locale: Locale) -> str | None:
@@ -141,6 +109,18 @@ def _citations(
     """Cite each chunk once, in order, with the identity this question recorded."""
     return tuple(
         EvidenceCitation.model_validate(evidence[chunk_id]) for chunk_id in dict.fromkeys(chunk_ids)
+    )
+
+
+def _report(
+    qualified: QualifiedReport, citations: tuple[EvidenceCitation, ...]
+) -> AgentReportAnswer:
+    """Give a report the application wrote the citations of its selected cells."""
+    return AgentReportAnswer(
+        label=qualified.label,
+        answer=qualified.answer,
+        citations=citations,
+        rationale=qualified.rationale,
     )
 
 
@@ -233,7 +213,7 @@ def review_cell_selection(
     requested_years: Sequence[int],
     searched: bool,
     locale: Locale,
-) -> CellVerdict:
+) -> FinalReview:
     """Decide on one cell-selecting final answer.
 
     Parameters
@@ -241,7 +221,7 @@ def review_cell_selection(
     proposal : CellSelectionAnswer
         The model's validated proposal.
     ledger : Mapping[str, Mapping[str, Any]]
-        Cells fetched in this question, by ref, as :class:`ReviewGate` recorded them.
+        Cells fetched in this question, by ref, as the question's ledger recorded them.
     evidence : Mapping[int, Mapping[str, Any]]
         Source identities retrieved in this question, by chunk id.
     stored : Mapping[str, StoredCell]
@@ -262,14 +242,14 @@ def review_cell_selection(
     """
     problem = _combination_problem(proposal)
     if problem is not None:
-        return CellVerdict(problem=problem)
+        return FinalReview(problem=problem)
     if proposal.reason == "not_found":
         if not searched:
-            return CellVerdict(
+            return FinalReview(
                 problem="no search has returned in this question; search the filings before "
                 "reporting not_found"
             )
-        return CellVerdict(
+        return FinalReview(
             AgentReportAnswer(
                 label="NOT_IN_DOCS",
                 answer="NOT_IN_DOCS",
@@ -282,8 +262,8 @@ def review_cell_selection(
             chunk_id for chunk_id in proposal.unresolved_chunk_ids if chunk_id not in evidence
         ]
         if unknown:
-            return CellVerdict(problem=f"chunk {unknown[0]} was not retrieved in this question")
-        return CellVerdict(
+            return FinalReview(problem=f"chunk {unknown[0]} was not retrieved in this question")
+        return FinalReview(
             AgentReportAnswer(
                 label="UNVERIFIED",
                 answer=CANNOT_RESOLVE[locale],
@@ -294,10 +274,10 @@ def review_cell_selection(
 
     refs = [selection.cell_id for selection in proposal.selections]
     if len(set(refs)) != len(refs):
-        return CellVerdict(problem="each cell may be selected once")
+        return FinalReview(problem="each cell may be selected once")
     missing = next((ref for ref in refs if ref not in ledger), None)
     if missing is not None:
-        return CellVerdict(
+        return FinalReview(
             problem=f"cell {missing} was not returned by a fetch in this question; fetch its chunk"
         )
     cells: list[StoredCell] = []
@@ -315,30 +295,30 @@ def review_cell_selection(
     for selection, cell in zip(proposal.selections, cells, strict=True):
         problem = _cell_problem(selection, cell)
         if problem is not None:
-            return CellVerdict(problem=problem)
+            return FinalReview(problem=problem)
     first: dict[tuple[str, int], str] = {}
     for cell in cells:
         pair = (cell.cell["item"], cell.cell["fiscal_years"][0])
         if pair in first:
-            return CellVerdict(
+            return FinalReview(
                 problem=f"cells {first[pair]} and {cell.ref} both answer {pair[0]} for fiscal "
                 f"{pair[1]}; select one cell for each item and fiscal year"
             )
         first[pair] = cell.ref
     if not requested_items:
-        return CellVerdict(
+        return FinalReview(
             AgentReportAnswer(
                 label="UNVERIFIED",
                 answer=QUESTION_ITEM_UNREAD[locale],
                 citations=_citations(chunk_ids, evidence),
                 rationale=QUESTION_ITEM_UNREAD[locale],
             ),
-            checks=tuple(_check(cell, "question item unknown") for cell in cells),
+            cell_checks=tuple(_check(cell, "question item unknown") for cell in cells),
         )
     off_item = next((cell for cell in cells if cell.cell["item"] not in requested_items), None)
     if off_item is not None:
         asked = ", ".join(sorted(requested_items))
-        return CellVerdict(
+        return FinalReview(
             problem=f"cell {off_item.ref} is {off_item.cell['item']}; the question asks for {asked}"
         )
     # Like an unasked item, a cell of an unasked year is returned once another selected
@@ -351,7 +331,7 @@ def review_cell_selection(
         )
         if off_year is not None:
             asked = ", ".join(str(year) for year in sorted(requested))
-            return CellVerdict(
+            return FinalReview(
                 problem=f"cell {off_year.ref} is fiscal {off_year.cell['fiscal_years'][0]}; "
                 f"the question asks for fiscal {asked}"
             )
@@ -361,41 +341,26 @@ def review_cell_selection(
     # of an asked year a held cell still withholds rather than names another period.
     held = [cell for cell in cells if cell.cell["status"] in WITHHOLDING_CAUSES]
     if held:
-        causes = ordered_causes(WITHHOLDING_CAUSES[cell.cell["status"]] for cell in held)
-        text, rationale = withheld_text(causes, locale=locale)
-        return CellVerdict(
-            AgentReportAnswer(
-                label="UNVERIFIED",
-                answer=text,
-                citations=_citations(chunk_ids, evidence),
-                rationale=rationale,
-            ),
-            withheld=AgentWithheld(
-                causes=causes, figures=tuple(cell.cell["raw_text"] for cell in held)
-            ),
-            checks=tuple(_check(cell, "held") for cell in cells),
+        withheld = FiguresWithheld(
+            causes=ordered_causes(WITHHOLDING_CAUSES[cell.cell["status"]] for cell in held),
+            figures=tuple(cell.cell["raw_text"] for cell in held),
+        )
+        return FinalReview(
+            _report(withheld_report(withheld, locale=locale), _citations(chunk_ids, evidence)),
+            withheld=withheld,
+            cell_checks=tuple(_check(cell, "held") for cell in cells),
         )
     if requested and not years & requested:
-        mismatch = AgentPeriodMismatch(
+        mismatch = PeriodMismatch(
             requested_fiscal_years=tuple(sorted(requested)),
             evidenced_fiscal_years=tuple(sorted(years)),
             figures=tuple(cell.cell["raw_text"] for cell in cells),
         )
-        answer = period_mismatch_text(
-            mismatch.requested_fiscal_years,
-            mismatch.evidenced_fiscal_years,
-            locale=locale,
-            selection=True,
-        )
-        return CellVerdict(
-            AgentReportAnswer(
-                label="PERIOD_MISMATCH",
-                answer=answer,
-                citations=_citations(chunk_ids, evidence),
-                rationale=period_mismatch_rationale(locale=locale, selection=True),
-            ),
+        qualified = period_mismatch_report(mismatch, locale=locale, selection=True)
+        return FinalReview(
+            _report(qualified, _citations(chunk_ids, evidence)),
             period_mismatch=mismatch,
-            checks=tuple(_check(cell, "other period") for cell in cells),
+            cell_checks=tuple(_check(cell, "other period") for cell in cells),
         )
     covered = {(cell.cell["item"], cell.cell["fiscal_years"][0]) for cell in cells}
     wanted = [(item, year) for item in sorted(requested_items) for year in sorted(requested)]
@@ -412,13 +377,81 @@ def review_cell_selection(
     if gap is not None:
         item, year = gap
         period = "" if year is None else f" for fiscal {year}"
-        return CellVerdict(problem=f"no selected cell answers {item}{period}")
-    return CellVerdict(
+        return FinalReview(problem=f"no selected cell answers {item}{period}")
+    return FinalReview(
         AgentReportAnswer(
             label="SUPPORTED",
             answer=" ".join(_line(cell, locale) for cell in cells),
             citations=_citations(chunk_ids, evidence),
             rationale=ASSEMBLED[locale],
         ),
-        checks=tuple(_check(cell, "accepted") for cell in cells),
+        cell_checks=tuple(_check(cell, "accepted") for cell in cells),
     )
+
+
+async def review_cell_answer(
+    arguments_json: str,
+    *,
+    ledger: Mapping[str, Mapping[str, Any]],
+    evidence: Mapping[int, Mapping[str, Any]],
+    cell_reader: CellReader | None,
+    requested_items: frozenset[str],
+    requested_years: Sequence[int],
+    searched: bool,
+    locale: Locale,
+    passthrough: tuple[type[Exception], ...] = (),
+) -> FinalReview:
+    """Review one lone cell-selecting ``final_answer`` call.
+
+    The proposal is validated strictly, the selected cells are read again as stored now
+    and :func:`review_cell_selection` decides. A ref this question did not fetch is
+    refused by that review, so it is never read: only fetched cells are read again.
+
+    Parameters
+    ----------
+    arguments_json : str
+        The raw JSON arguments of the ``final_answer`` call.
+    ledger, evidence : Mapping[str, Mapping[str, Any]], Mapping[int, Mapping[str, Any]]
+        Cells fetched and source identities retrieved in this question.
+    cell_reader : CellReader | None
+        Reads the selected cells as stored now; required.
+    requested_items, requested_years : frozenset[str], Sequence[int]
+        What the question asks for, read from the question by the application.
+    searched : bool
+        Whether a retrieval tool call returned a result in this question.
+    locale : Locale
+        Language the answer is written in.
+    passthrough : tuple[type[Exception], ...]
+        Exceptions that are the caller's control flow, raised unchanged.
+
+    Raises
+    ------
+    EvidenceReadError
+        If no reader is configured, the stored cells cannot be read or a selected cell
+        changed since it was fetched (:class:`StaleCellError`), which the model cannot
+        correct.
+    """
+    try:
+        proposal = CellSelectionAnswer.model_validate_json(arguments_json, strict=True)
+    except ValidationError as error:
+        return FinalReview(problem=f"invalid final_answer: {'; '.join(validation_errors(error))}")
+    refs = tuple(selection.cell_id for selection in proposal.selections)
+    try:
+        if cell_reader is None:
+            raise RuntimeError("no stored cell reader is configured")
+        fetched = bool(refs) and all(ref in ledger for ref in refs)
+        stored = await cell_reader(refs) if fetched else {}
+        return review_cell_selection(
+            proposal,
+            ledger=ledger,
+            evidence=evidence,
+            stored=stored,
+            requested_items=requested_items,
+            requested_years=requested_years,
+            searched=searched,
+            locale=locale,
+        )
+    except passthrough:
+        raise
+    except Exception as error:
+        raise EvidenceReadError(safe_runtime_error(error, "stored cell read")) from error

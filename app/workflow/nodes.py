@@ -7,10 +7,7 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel
 
 from app.contracts.evidence import EvidenceCitation, EvidenceHold
-from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text, withheld_text
-from app.figures.answers import (
-    check_figures,
-)
+from app.contracts.figures import FiguresWithheld, PeriodMismatch
 from app.figures.tables import TableCellReading
 from app.llm.schemas import (
     AnswerDecision,
@@ -22,6 +19,9 @@ from app.llm.schemas import (
 )
 from app.retrieval.tables import figure_evidence
 from app.retrieval.types import ChunkHit
+from app.review.policy import POLICIES
+from app.review.reports import figures_unverified_report, period_mismatch_report, withheld_report
+from app.review.written_answer import judge_figures
 from app.workflow.prompts import evidence_budget_chars, evidence_chars
 from app.workflow.types import (
     CitationsFiltered,
@@ -30,12 +30,9 @@ from app.workflow.types import (
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
     EvidenceHeld,
-    FiguresUnverified,
-    FiguresWithheld,
     GradeCoverageIncomplete,
     GradeOrCheckNode,
     GradeReferencesFiltered,
-    PeriodMismatch,
     ProviderFailure,
     RelevanceBelowThreshold,
     RetrievalEmpty,
@@ -46,9 +43,6 @@ from app.workflow.types import (
 
 DOWNGRADE_REASON = (
     "The supported answer was downgraded because a cited chunk did not survive validation."
-)
-FIGURES_REASON = (
-    "The answer stated figures its cited evidence could not confirm for the requested period."
 )
 
 
@@ -433,12 +427,14 @@ def check_node(
     against a reduced set would publish a claim whose surviving evidence may not
     contain it, and no check available here can tell whether it still does.
 
-    A supported decision then has every figure of its answer checked against its cited
-    evidence. Any figure whose cited item unit, or own unit, cannot be established
-    withholds the whole answer, which the report states as ``UNVERIFIED`` with the
-    citations kept, even beside other failing figures. Otherwise a figure the evidence
-    contradicts or cannot hold downgrades it to absence, and mismatched figures that come from
-    other periods record a period mismatch, which the report states instead of the answer.
+    A supported decision then has its figures judged against its cited evidence by
+    :func:`~app.review.written_answer.judge_figures` under the workflow's policy
+    (:mod:`app.review.policy`). Any figure whose cited item unit, or own unit, cannot be
+    established withholds the whole answer, which the report states as ``UNVERIFIED``
+    with the citations kept, even beside other failing figures. Otherwise a figure the
+    evidence contradicts or cannot hold downgrades it to absence, and mismatched figures
+    that come from other periods record a period mismatch, which the report states
+    instead of the answer.
     """
     if result.status != "ok":
         return _refused(state, "check", result)
@@ -478,7 +474,7 @@ def check_node(
     if guarded.label == "SUPPORTED":
         evidence_by_id = {hit.chunk_id: hit for hit in state.evidence}
         readings = table_cells or {}
-        figures = check_figures(
+        judged = judge_figures(
             guarded.answer,
             [
                 figure_evidence(hit.chunk_id, hit.kind, hit.body, hit.context_header, readings)
@@ -486,39 +482,30 @@ def check_node(
                 if (hit := evidence_by_id.get(chunk_id)) is not None
             ],
             state.requested_fiscal_years,
+            policy=POLICIES["workflow"],
         )
-        if figures.verdict == "unverified":
-            reasons.append(
-                FiguresUnverified(
-                    figures=tuple(c.figure for c in figures.checks if c.verdict == "unverified")
+        match judged.verdict:
+            case "not_in_docs":
+                assert judged.unverified is not None
+                reasons.append(judged.unverified)
+                guarded = AnswerDecision(
+                    label="NOT_IN_DOCS",
+                    answer="NOT_IN_DOCS",
+                    citation_chunk_ids=(),
+                    reason=figures_unverified_report(locale=state.locale).rationale,
                 )
-            )
-            guarded = AnswerDecision(
-                label="NOT_IN_DOCS",
-                answer="NOT_IN_DOCS",
-                citation_chunk_ids=(),
-                reason=_fixed_rationale(
-                    state,
-                    FIGURES_REASON,
-                    "답변의 수치를 인용 근거에서 요청한 기간의 값으로 확인하지 못했습니다.",
-                ),
-            )
-        elif figures.verdict == "withheld":
-            held = FiguresWithheld(
-                causes=figures.causes,
-                figures=tuple(c.figure for c in figures.checks if c.verdict == "withheld"),
-            )
-            reasons.append(held)
-        elif figures.verdict == "period_mismatch":
-            mismatched = [c for c in figures.checks if c.verdict == "period_mismatch"]
-            mismatch = PeriodMismatch(
-                requested_fiscal_years=state.requested_fiscal_years,
-                evidenced_fiscal_years=tuple(
-                    sorted({year for check in mismatched for year in check.evidenced_years})
-                ),
-                figures=tuple(check.figure for check in mismatched),
-            )
-            reasons.append(mismatch)
+            case "withheld":
+                held = judged.withheld
+                assert held is not None
+                reasons.append(held)
+            case "period_mismatch":
+                mismatch = judged.period_mismatch
+                assert mismatch is not None
+                reasons.append(mismatch)
+            case "returned":
+                raise ValueError("the workflow has no model to return an unconfirmed answer to")
+            case "accepted":
+                pass
     return state.model_copy(
         update={
             "decision": guarded,
@@ -554,16 +541,6 @@ def _absence_rationale(state: WorkflowState) -> str:
         state,
         "The guarded decision did not establish supported evidence.",
         "검증 결과 답변을 뒷받침할 근거가 확인되지 않았습니다.",
-    )
-
-
-def _mismatch_answer(state: WorkflowState, mismatch: PeriodMismatch) -> str:
-    """State which period the cited figures belong to instead of the requested one."""
-    return period_mismatch_text(
-        mismatch.requested_fiscal_years,
-        mismatch.evidenced_fiscal_years,
-        mismatch.figures,
-        locale=state.locale,
     )
 
 
@@ -613,34 +590,22 @@ def report_node(state: WorkflowState) -> WorkflowState:
             )
             for hit in (evidence_by_id[chunk_id] for chunk_id in state.decision.citation_chunk_ids)
         )
-        mismatch = state.period_mismatch
-        if state.withheld is not None:
-            # Withhold the figures: the answer text would assert numbers whose unit or
-            # direction the evidence cannot confirm, so the report states only that.
-            text, rationale = withheld_text(state.withheld.causes, locale=state.locale)
-            report = WorkflowReport(
-                label="UNVERIFIED",
-                answer=text,
-                citations=citations,
-                rationale=rationale,
-                reasons=state.reasons,
-            )
-        else:
-            report = WorkflowReport(
-                label="SUPPORTED" if mismatch is None else "PERIOD_MISMATCH",
-                answer=state.decision.answer
-                if mismatch is None
-                else _mismatch_answer(state, mismatch),
-                citations=citations,
-                rationale=state.decision.reason
-                if mismatch is None
-                else _fixed_rationale(
-                    state,
-                    period_mismatch_rationale(locale="en"),
-                    period_mismatch_rationale(locale="ko"),
-                ),
-                reasons=state.reasons,
-            )
+        # A withheld answer would assert numbers whose unit or direction the evidence
+        # cannot confirm, so its report states only that; a mismatch states the period.
+        qualified = (
+            withheld_report(state.withheld, locale=state.locale)
+            if state.withheld is not None
+            else period_mismatch_report(state.period_mismatch, locale=state.locale)
+            if state.period_mismatch is not None
+            else None
+        )
+        report = WorkflowReport(
+            label="SUPPORTED" if qualified is None else qualified.label,
+            answer=state.decision.answer if qualified is None else qualified.answer,
+            citations=citations,
+            rationale=state.decision.reason if qualified is None else qualified.rationale,
+            reasons=state.reasons,
+        )
     else:
         rationale = (
             state.decision.reason if state.decision is not None else _absence_rationale(state)

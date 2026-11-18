@@ -9,10 +9,10 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool, ToolException
 import pytest
 
-from app.agent.cell_answers import StoredCell
 from app.agent.prebuilt import build_review_agent
 from app.agent.review_middleware import ReviewContext
 from app.db.session_factory import SessionFactory
+from app.review.evidence import StoredCell
 from app.tools.filings import build_default_registry
 from tests.agent.support import ScriptedChatModel
 
@@ -204,7 +204,11 @@ def test_an_unconfirmed_currency_is_withheld_without_the_amount():
     report = state["structured_response"]
     assert report.label == "UNVERIFIED"
     assert "25,785" not in report.answer + report.rationale
-    assert state["withheld"] == {"figures": ["$ 25,785"], "causes": ["currency"]}
+    assert state["withheld"] == {
+        "code": "figures_withheld",
+        "figures": ["$ 25,785"],
+        "causes": ["currency"],
+    }
 
 
 def test_a_held_cell_claimed_as_another_item_is_returned_before_it_is_withheld():
@@ -263,6 +267,7 @@ def test_a_selected_cell_of_another_year_is_reported_as_a_period_mismatch():
     assert report.label == "PERIOD_MISMATCH"
     assert report.answer == "The selected table cells are for fiscal 2023, not fiscal 2024."
     assert state["period_mismatch"] == {
+        "code": "period_mismatch",
         "requested_fiscal_years": [2024],
         "evidenced_fiscal_years": [2023],
         "figures": ["$ 25,785"],

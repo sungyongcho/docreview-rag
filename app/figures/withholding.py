@@ -1,26 +1,9 @@
-"""Closed causes shared by figure comparisons, cell selection and report contracts."""
+"""Uncertain comparisons, which withhold a figure for the closed causes of the contracts."""
 
-from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import AfterValidator, Field
-
-type WithholdingCause = Literal["scale", "currency", "direction"]
-_CAUSE_ORDER: tuple[WithholdingCause, ...] = ("scale", "currency", "direction")
-
-
-def ordered_causes(causes: Iterable[WithholdingCause]) -> tuple[WithholdingCause, ...]:
-    """Deduplicate established causes in a fixed order, rejecting unknown causes."""
-    found = set(causes)
-    if found - set(_CAUSE_ORDER):
-        raise ValueError("unknown withholding cause")
-    return tuple(cause for cause in _CAUSE_ORDER if cause in found)
-
-
-type WithholdingCauses = Annotated[
-    tuple[WithholdingCause, ...], Field(min_length=1), AfterValidator(ordered_causes)
-]
+from app.contracts.figures import WithholdingCause, ordered_causes
 
 
 @dataclass(frozen=True, slots=True)

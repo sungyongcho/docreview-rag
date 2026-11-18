@@ -7,6 +7,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.contracts.evidence import EvidenceHold
+from app.contracts.figures import FiguresUnverified, FiguresWithheld, PeriodMismatch
 from app.figures.tables import read_table_cells
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
 from app.retrieval.types import ChunkHit
@@ -19,11 +20,8 @@ from app.workflow.types import (
     DuplicateEvidenceText,
     DuplicateRetrievedChunks,
     EvidenceHeld,
-    FiguresUnverified,
-    FiguresWithheld,
     GradeCoverageIncomplete,
     GradeReferencesFiltered,
-    PeriodMismatch,
     RetrievalEmpty,
     SupportDowngraded,
     WorkflowRequest,

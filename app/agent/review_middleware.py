@@ -4,16 +4,17 @@
 question retrieved and records the complete source identity of each result. Under
 ``create_agent`` the tools node runs the tools, so :class:`ReviewGate` applies the
 same rules as tool-call middleware while execution itself stays with the bound tool,
-such as an MCP adapter tool. Its model-call hook applies the loop's final-answer
-policy to the structured ``final_answer`` the model proposes: the answer stands alone,
-its citations match the ledger, and its figures pass the same figure check, so it is
-accepted, reported as a period mismatch or withheld as ``UNVERIFIED``, or returned to
-the model for revision. :class:`StopOnSystemFailure` keeps the loop's other rule: a
+such as an MCP adapter tool. Its model-call hook hands the structured ``final_answer``
+the model proposes to the same review as the loop (:mod:`app.review`): the answer
+stands alone, its citations match the ledger, and its figures pass the same figure
+check, so it is accepted, reported as a period mismatch or withheld as ``UNVERIFIED``,
+or returned to the model for revision; this module only turns that decision into
+LangChain messages and state updates. :class:`StopOnSystemFailure` keeps the loop's other rule: a
 system failure the model cannot correct ends the run instead of reaching the model as
 though nothing were found.
 """
 
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 import json
 from typing import Annotated, Any, Literal, NotRequired
@@ -40,21 +41,16 @@ from langgraph.runtime import Runtime
 from langgraph.types import Command
 from mcp.shared.exceptions import MCPError
 from mcp.types import INTERNAL_ERROR
-from pydantic import ValidationError
 
-from app.agent.cell_answers import StoredCell, cell_digest, review_cell_selection
-from app.agent.final_answer import (
-    FINAL_NOT_ALONE,
-    EvidenceReader,
-    as_report,
-    final_answer_spec,
-    judge_written_answer,
-    validate_final_answer,
-)
-from app.agent.ledger import citation_records, ledger_failure, merge_identities
-from app.agent.types import AgentReportAnswer, CellSelectionAnswer, ToolCall
+from app.agent.loop import final_answer_spec
+from app.contracts.answers import CellSelectionAnswer
 from app.contracts.evidence import EvidenceCitation
-from app.llm.decoding import validation_errors
+from app.review.cell_answer import review_cell_answer
+from app.review.evidence import CellReader, EvidenceReader
+from app.review.final_answer import FINAL_NOT_ALONE, EvidenceReadError, FinalReview
+from app.review.ledger import cell_record, citation_records, ledger_failure, merge_identities
+from app.review.policy import POLICIES
+from app.review.written_answer import review_written_answer
 from app.tools.filings import FetchChunkParams, unretrieved_fetch
 from app.tools.registry import (
     FINAL_ANSWER_NAME,
@@ -69,8 +65,6 @@ type CellLedger = dict[str, dict[str, Any]]
 type ToolHandler = Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]]
 type ModelHandler = Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]]
 type ModelResult = ModelResponse[Any] | AIMessage | ExtendedModelResponse[Any]
-
-type CellReader = Callable[[tuple[str, ...]], Awaitable[Mapping[str, StoredCell]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,16 +144,6 @@ def final_answer_format(*, cells: bool = False) -> ToolStrategy[dict[str, Any]]:
     )
 
 
-def cell_record(cell: dict[str, Any], catalog: dict[str, Any], chunk_id: int) -> dict[str, Any]:
-    """Record one returned cell by the identity its content and source version fix."""
-    return {
-        "chunk_id": chunk_id,
-        "stable_key": catalog["stable_key"],
-        "resolver_identity": catalog["resolver_identity"],
-        "digest": cell_digest(cell),
-    }
-
-
 def _returned_cells(message: ToolMessage, chunk_id: int) -> CellLedger:
     """Return the ledger records of the stored cells one fetch result carries."""
     artifact = message.artifact if isinstance(message.artifact, dict) else {}
@@ -205,9 +189,9 @@ def keep_first_failure(left: str | None, right: str | None) -> str | None:
 class ReviewState(AgentState[Any]):
     """Agent state with this question's evidence identities and report records.
 
-    ``period_mismatch`` and ``withheld`` hold the JSON form of the loop's
-    :class:`~app.agent.types.AgentPeriodMismatch` and
-    :class:`~app.agent.types.AgentWithheld` when the accepted report is a period
+    ``period_mismatch`` and ``withheld`` hold the JSON form of
+    :class:`~app.contracts.figures.PeriodMismatch` and
+    :class:`~app.contracts.figures.FiguresWithheld` when the accepted report is a period
     mismatch or withholds its figures; otherwise they are ``None``.
     """
 
@@ -238,18 +222,27 @@ def _rejected(message: AIMessage, calls: Sequence[MessageToolCall], text: str) -
     )
 
 
-def _accepted(
-    message: AIMessage,
-    call: MessageToolCall,
-    report: AgentReportAnswer,
-    **records: dict[str, Any] | list[dict[str, Any]],
+def _decided(
+    message: AIMessage, call: MessageToolCall, review: FinalReview, *, cells: bool
 ) -> ModelResponse | ExtendedModelResponse:
-    """Acknowledge the final call under its id and end on ``report`` with its records.
+    """Return a rejected final call to the model, or end on the accepted report.
 
-    ``records`` are the ``period_mismatch``/``withheld`` state updates of a
-    report the loop qualifies; a plain answer needs none, because each question
-    starts with both cleared.
+    An accepted call is acknowledged under its id, with the ``period_mismatch`` and
+    ``withheld`` records of a report the review qualified as state updates, and with
+    ``cell_checks`` whenever the answer selected cells. A plain written answer needs no
+    update, because each question starts with all of them cleared.
     """
+    report = review.report
+    if report is None:
+        assert review.problem is not None
+        return _rejected(message, [call], review.problem)
+    records: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
+    if cells:
+        records["cell_checks"] = list(review.cell_checks)
+    if review.period_mismatch is not None:
+        records["period_mismatch"] = review.period_mismatch.model_dump(mode="json")
+    if review.withheld is not None:
+        records["withheld"] = review.withheld.model_dump(mode="json")
     acknowledgement = ToolMessage(
         content=f"final_answer accepted as {report.label}",
         tool_call_id=call["id"],
@@ -464,120 +457,39 @@ class ReviewGate(AgentMiddleware[ReviewState, ReviewContext]):
         context = request.runtime.context
         if not isinstance(context, ReviewContext):
             raise ValueError("review context with resolved locale is required")
-        evidence = request.state.get("evidence") or {}
-        if context.cell_answers:
-            cells = request.state.get("cells") or {}
-            searched = retrieval_returned(request.state.get("messages") or [], self.contracts)
-            return await self._review_cells(message, call, evidence, cells, context, searched)
-        return await self._review_final(message, call, evidence, context)
-
-    async def _review_final(
-        self,
-        message: AIMessage,
-        call: MessageToolCall,
-        ledger: EvidenceLedger,
-        context: ReviewContext,
-    ) -> ModelResult:
-        """Apply ``run_agent``'s final-answer steps to one lone ``final_answer`` call.
-
-        Identity comes first, against this question's ledger; only a ``SUPPORTED``
-        answer with matching citations has its cited evidence read and its figures
-        checked, in the loop's order and with its report helpers.
-        """
-        evidence = {
-            chunk_id: EvidenceCitation.model_validate(identity)
-            for chunk_id, identity in ledger.items()
-        }
-        proposed = ToolCall(
-            call_id=call["id"] or FINAL_ANSWER_NAME,
-            name=FINAL_ANSWER_NAME,
-            arguments_json=json.dumps(call["args"]),
-        )
-        answer, problem = validate_final_answer(proposed, evidence)
-        if answer is not None and answer.label == "SUPPORTED":
-            cited = tuple(citation.chunk_id for citation in answer.citations)
-            reader = context.evidence_reader
-            try:
-                texts = await reader(cited) if reader is not None else {}
-            except GraphBubbleUp:
-                raise
-            except Exception as error:
-                failure = safe_runtime_error(error, "cited evidence read")
-                raise CitedEvidenceReadError(message, call, failure) from error
-            judged = judge_written_answer(
-                answer, texts, context.requested_fiscal_years, locale=context.locale
-            )
-            if judged.report is None:
-                answer, problem = None, judged.problem
+        ledger: EvidenceLedger = request.state.get("evidence") or {}
+        arguments_json = json.dumps(call["args"])
+        try:
+            if context.cell_answers:
+                review = await review_cell_answer(
+                    arguments_json,
+                    ledger=request.state.get("cells") or {},
+                    evidence=ledger,
+                    cell_reader=context.cell_reader,
+                    requested_items=context.requested_items,
+                    requested_years=context.requested_fiscal_years,
+                    searched=retrieval_returned(
+                        request.state.get("messages") or [], self.contracts
+                    ),
+                    locale=context.locale,
+                    passthrough=(GraphBubbleUp,),
+                )
             else:
-                records: dict[str, dict[str, Any] | list[dict[str, Any]]] = {}
-                if judged.withheld is not None:
-                    records["withheld"] = judged.withheld.model_dump(mode="json")
-                if judged.period_mismatch is not None:
-                    records["period_mismatch"] = judged.period_mismatch.model_dump(mode="json")
-                return _accepted(message, call, judged.report, **records)
-        if answer is None:
-            return _rejected(message, [call], problem)
-        return _accepted(message, call, as_report(answer))
-
-    async def _review_cells(
-        self,
-        message: AIMessage,
-        call: MessageToolCall,
-        evidence: EvidenceLedger,
-        cells: CellLedger,
-        context: ReviewContext,
-        searched: bool,
-    ) -> ModelResult:
-        """Check one cell-selecting ``final_answer`` and report the answer it assembles.
-
-        The proposal names cells only; the stored cells are read again so a changed
-        source ends the run instead of being reported, and the answer is written by the
-        application from the stored values. ``searched`` is :func:`retrieval_returned`
-        for this question.
-        """
-        try:
-            proposal = CellSelectionAnswer.model_validate_json(
-                json.dumps(call["args"]), strict=True
-            )
-        except ValidationError as error:
-            problem = f"invalid final_answer: {'; '.join(validation_errors(error))}"
-            return _rejected(message, [call], problem)
-        reader = context.cell_reader
-        refs = tuple(selection.cell_id for selection in proposal.selections)
-        try:
-            if reader is None:
-                raise RuntimeError("no stored cell reader is configured")
-            # A ref this question did not fetch is refused by the review below, so it
-            # is never read: only fetched cells are read again.
-            fetched = bool(refs) and all(ref in cells for ref in refs)
-            stored = await reader(refs) if fetched else {}
-            verdict = review_cell_selection(
-                proposal,
-                ledger=cells,
-                evidence=evidence,
-                stored=stored,
-                requested_items=context.requested_items,
-                requested_years=context.requested_fiscal_years,
-                searched=searched,
-                locale=context.locale,
-            )
-        except GraphBubbleUp:
-            raise
-        except Exception as error:
-            failure = safe_runtime_error(error, "stored cell read")
-            raise CitedEvidenceReadError(message, call, failure) from error
-        if verdict.report is None:
-            assert verdict.problem is not None
-            return _rejected(message, [call], verdict.problem)
-        records: dict[str, dict[str, Any] | list[dict[str, Any]]] = {
-            "cell_checks": list(verdict.checks)
-        }
-        if verdict.period_mismatch is not None:
-            records["period_mismatch"] = verdict.period_mismatch.model_dump(mode="json")
-        if verdict.withheld is not None:
-            records["withheld"] = verdict.withheld.model_dump(mode="json")
-        return _accepted(message, call, verdict.report, **records)
+                review = await review_written_answer(
+                    arguments_json,
+                    {
+                        key: EvidenceCitation.model_validate(record)
+                        for key, record in ledger.items()
+                    },
+                    evidence_reader=context.evidence_reader,
+                    requested_fiscal_years=context.requested_fiscal_years,
+                    locale=context.locale,
+                    policy=POLICIES["prebuilt"],
+                    passthrough=(GraphBubbleUp,),
+                )
+        except EvidenceReadError as error:
+            raise CitedEvidenceReadError(message, call, error.failure) from error
+        return _decided(message, call, review, cells=context.cell_answers)
 
 
 class StopOnSystemFailure(AgentMiddleware[StopState]):

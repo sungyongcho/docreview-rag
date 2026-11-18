@@ -30,7 +30,6 @@ from langgraph.checkpoint.memory import InMemorySaver
 from mcp import Client
 import pytest
 
-from app.agent.final_answer import FINAL_NOT_ALONE
 from app.agent.loop import run_agent
 from app.agent.prebuilt import build_review_agent
 from app.agent.review_middleware import (
@@ -39,13 +38,15 @@ from app.agent.review_middleware import (
     ReviewGate,
     StopOnSystemFailure,
 )
-from app.agent.types import AgentReportAnswer, AgentResult, ToolCall
+from app.agent.types import AgentResult, ToolCall
+from app.contracts.answers import AgentReportAnswer
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.report_text import withheld_text
 from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.mcp.client import mcp_tool_registry
+from app.review.final_answer import FINAL_NOT_ALONE
+from app.review.reports import withheld_text
 from app.tools.filings import build_default_registry
 from app.tools.registry import ToolRegistry
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
@@ -217,11 +218,12 @@ FAILURES = {
 }
 # (period mismatch record, withheld-figure record) as JSON; every other case has neither.
 MISMATCH = {
+    "code": "period_mismatch",
     "requested_fiscal_years": [2024],
     "evidenced_fiscal_years": [2023],
     "figures": ["22,680"],
 }
-HELD = {"figures": ["25,785"], "causes": ["currency"]}
+HELD = {"code": "figures_withheld", "figures": ["25,785"], "causes": ["currency"]}
 RECORDS = {"currency unknown": (None, HELD), "other-period figure": (MISMATCH, None)}
 
 

@@ -1,14 +1,20 @@
 """The written final-answer verdicts judge_written_answer returns."""
 
-from app.agent.final_answer import judge_written_answer
-from app.agent.types import AgentAnswer, AgentPeriodMismatch, AgentWithheld
+from dataclasses import replace
+from typing import Literal
+
+from app.contracts.answers import AgentAnswer
 from app.contracts.evidence import EvidenceCitation
-from app.contracts.report_text import withheld_text
+from app.contracts.figures import FiguresUnverified, FiguresWithheld, PeriodMismatch
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
+from app.review.policy import POLICIES
+from app.review.reports import figures_unverified_report, withheld_text
+from app.review.written_answer import judge_figures, judge_written_answer
 from tests.workflow.support import INCOME_TABLE, USD_INCOME_TABLE, income_table_hit
 
 CHUNK = 7
+LOOP = POLICIES["loop"]
 
 
 def evidence(html: str = USD_INCOME_TABLE) -> dict[int, EvidenceText]:
@@ -35,18 +41,22 @@ def supported(text: str) -> AgentAnswer:
 def test_a_confirmed_answer_is_accepted_as_written():
     """Accept a confirmed answer unchanged, with no qualifying record."""
     answer = supported("2024 net revenue was $25,785 million.")
-    judged = judge_written_answer(answer, evidence(), [2024], locale="en")
+    judged = judge_written_answer(answer, evidence(), [2024], locale="en", policy=LOOP)
     assert judged.report is not None
     assert judged.report.model_dump() == answer.model_dump()
-    assert (judged.problem, judged.period_mismatch, judged.withheld) == ("", None, None)
+    assert (judged.problem, judged.period_mismatch, judged.withheld) == (None, None, None)
 
 
 def test_an_unconfirmed_figure_goes_back_to_the_model():
     """Return a wrong figure to the model with the item it could not confirm."""
     judged = judge_written_answer(
-        supported("2024 net revenue was $99,999 million."), evidence(), [2024], locale="en"
+        supported("2024 net revenue was $99,999 million."),
+        evidence(),
+        [2024],
+        locale="en",
+        policy=LOOP,
     )
-    assert judged.report is None
+    assert judged.report is None and judged.problem is not None
     assert "99,999 (revenue)" in judged.problem
     assert (judged.period_mismatch, judged.withheld) == (None, None)
 
@@ -54,24 +64,24 @@ def test_an_unconfirmed_figure_goes_back_to_the_model():
 def test_an_uncertain_unit_withholds_the_answer():
     """Withhold a figure whose cited table states no currency, keeping no number."""
     answer = supported("2024 net revenue was $25,785 million.")
-    judged = judge_written_answer(answer, evidence(INCOME_TABLE), [2024], locale="en")
+    judged = judge_written_answer(answer, evidence(INCOME_TABLE), [2024], locale="en", policy=LOOP)
     assert judged.report is not None
     assert (judged.report.label, judged.report.answer) == (
         "UNVERIFIED",
         withheld_text(("currency",), locale="en")[0],
     )
-    assert judged.withheld == AgentWithheld(causes=("currency",), figures=("25,785",))
+    assert judged.withheld == FiguresWithheld(causes=("currency",), figures=("25,785",))
     assert judged.period_mismatch is None
 
 
 def test_another_period_is_reported_as_a_mismatch():
     """Report the period a figure belongs to when the question asks for another."""
     judged = judge_written_answer(
-        supported("Net revenue was $25,785 million."), evidence(), [2023], locale="en"
+        supported("Net revenue was $25,785 million."), evidence(), [2023], locale="en", policy=LOOP
     )
     assert judged.report is not None
     assert judged.report.label == "PERIOD_MISMATCH"
-    assert judged.period_mismatch == AgentPeriodMismatch(
+    assert judged.period_mismatch == PeriodMismatch(
         requested_fiscal_years=(2023,), evidenced_fiscal_years=(2024,), figures=("25,785",)
     )
     assert judged.withheld is None
@@ -83,7 +93,7 @@ def test_mismatch_reports_only_the_mismatched_subset_without_claiming_absence():
     html = USD_INCOME_TABLE.replace(
         "</table>", "<tr><td>Net income</td><td>1,641</td><td>854</td></tr></table>"
     )
-    judged = judge_written_answer(answer, evidence(html), [2024], locale="en")
+    judged = judge_written_answer(answer, evidence(html), [2024], locale="en", policy=LOOP)
     assert judged.report is not None and judged.report.label == "PERIOD_MISMATCH"
     assert judged.report.answer == (
         "The stated figures 22,680 were found for fiscal 2023, not the requested fiscal 2024."
@@ -92,3 +102,32 @@ def test_mismatch_reports_only_the_mismatched_subset_without_claiming_absence():
     assert judged.period_mismatch.figures == ("22,680",)
     assert "does not report" not in judged.report.answer
     assert "Every" not in judged.report.rationale
+
+
+def test_the_unverified_policy_decides_whether_an_unconfirmed_figure_returns_or_is_absent():
+    """One unconfirmed figure, judged under either value of ``unverified_figures``."""
+    wrong = "2024 net revenue was $99,999 million."
+    record = FiguresUnverified(figures=("99,999",))
+    for value in ("return_to_model", "report_not_in_docs"):
+        verdict: Literal["return_to_model", "report_not_in_docs"] = value
+        policy = replace(LOOP, unverified_figures=verdict)
+        judged = judge_figures(wrong, list(evidence().values()), [2024], policy=policy)
+        assert judged.unverified == record
+        assert (judged.verdict, judged.problem is not None) == (
+            ("returned", True) if value == "return_to_model" else ("not_in_docs", False)
+        )
+    absent = judge_written_answer(
+        supported(wrong),
+        evidence(),
+        [2024],
+        locale="ko",
+        policy=replace(LOOP, unverified_figures="report_not_in_docs"),
+    )
+    assert absent.report is not None and absent.problem is None
+    expected = figures_unverified_report(locale="ko")
+    assert (absent.report.label, absent.report.answer, absent.report.rationale) == (
+        expected.label,
+        expected.answer,
+        expected.rationale,
+    )
+    assert absent.report.citations == ()
