@@ -7,20 +7,20 @@ DocReview answers questions over SEC 10-K and DART filings with citations, and i
 - When something is wrong, find the structure that produced it and redesign that structure. Do not patch instances one by one, and do not choose a design because it is easy to implement.
 - Resolve discoverable facts and routine choices yourself. Ask only for material ambiguity, missing authority or the approvals below.
 - Say that something works only after running it. Report each check as passed, failed, blocked or not run, and never hide a failed one.
-- Preserve work that is not yours: staged, unstaged, untracked and ignored files, other worktrees and other contributors' identities. Never hide it with stash or reset.
-- The study plan and its progress live in the Second Brain Vault under the owner `Projects/docreview-rag`. At task start call Second Brain's `context` with that owner and read its TODO. Record verified outcomes there through `write` or `propose` after `rules` for the path; never edit a Vault file directly.
-- Communicate in Korean. Write code, comments, docstrings and commit messages in English; preserve required Korean UI text and the paired Korean/English guides.
+- Preserve ignored files, other worktrees and other contributors' identities as well.
+- The study plan and its progress live in the Second Brain owner `Projects/docreview-rag`; read its TODO at task start and record verified outcomes there.
+- Preserve required Korean UI text and the paired Korean/English guides.
 
 ## Approval
 
 - Work happens on `mcp-and-langgraph`. `main` and the running service stay as they are until the whole branch is ready to deploy; then the branch lands on `main` by rebase merge. `v1` is a frozen archive: never modify it or merge it.
-- Commit locally. Push, pull requests and anything that reaches `main` wait for the user's request.
-- Each of these needs the user's approval: database writes and re-indexing, paid model calls, Auth0 tenant settings, external publication, deployment, credentials, branch-protection changes and rewriting published history.
+- Pull requests and anything that reaches `main` wait for the user's request.
+- Each of these also needs the user's approval: database writes and re-indexing, paid model calls, Auth0 tenant settings, branch-protection changes and rewriting published history.
 - Commits use `Sungyong Cho <dev@sungyongcho.com>` as both author and committer; pushes authenticate as `sungyongcho`. Do not switch global credentials.
 
 ## Commits
 
-- Titles are English Conventional Commits: `<type>(<scope>): <outcome>`. Bodies contain Summary, Changes and Verification, and `Refs` when an issue applies. No attribution footers. Stage explicit paths and pass multiline messages from a file.
+- Titles are English Conventional Commits: `<type>(<scope>): <outcome>`. Bodies contain Summary, Changes and Verification, and `Refs` when an issue applies. Stage explicit paths and pass multiline messages from a file.
 - Keep `core.hooksPath=.githooks` and never bypass hooks.
 
 ## Verification
