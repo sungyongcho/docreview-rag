@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 # Parse-time bounds mirror the runtime contracts so a bad value fails as a usage
 # error before any settings load: search k mirrors SearchFilingsParams
-# (app/agent/builtin_tools.py, gt=0 le=20) and iterations mirror AgentBudget
+# (app/tools/filings.py, gt=0 le=20) and iterations mirror AgentBudget
 # (app/agent/types.py, gt=0 le=64). The runtime models remain the authority; the
 # demo builds its arguments from the real parameter model, so drift fails loudly.
 MAX_SEARCH_K = 20
