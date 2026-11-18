@@ -66,6 +66,7 @@ def _request(*, budget=None, provider_budget=None):
     return WorkflowRequest(
         run_id="run-integration",
         query="How much did revenue increase?",
+        locale="en",
         budget=budget or Budget(),
         provider_budget=provider_budget or _provider_budget(),
     )

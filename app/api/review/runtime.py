@@ -885,6 +885,7 @@ class RuntimeApiServices:
             run_id=f"run-{uuid4().hex}",
             query=retrieval_query,
             original_query=request.query,
+            locale=detect_query_language(request.query),
             k=profile.k,
             filters=scope.filters,
             budget=policy.workflow_budget,

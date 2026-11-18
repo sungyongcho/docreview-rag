@@ -43,7 +43,10 @@ def _hit(chunk: Chunk) -> ChunkHit:
 async def _label(session, hit: ChunkHit, answer: str, years: tuple[int, ...]):
     """Grade one hit relevant, load its readings as the runtime does, and report."""
     request = WorkflowRequest(
-        run_id="run-stored", query="What was revenue?", provider_budget=provider_budget()
+        run_id="run-stored",
+        query="What was revenue?",
+        locale="en",
+        provider_budget=provider_budget(),
     )
     state = initial_state(request).model_copy(update={"requested_fiscal_years": years})
     state = retrieve_node(state, [hit])

@@ -1,7 +1,7 @@
 """Pure workflow-node transitions and the prompt guardrails they depend on."""
 
 import json
-from typing import cast
+from typing import Literal, cast
 
 from pydantic import ValidationError
 import pytest
@@ -42,11 +42,12 @@ from tests.workflow.support import (
 ENVELOPE_CHARS = 2
 
 
-def _state(*, max_context_chars=12_000, **overrides):
+def _state(*, max_context_chars=12_000, locale: Literal["en", "ko"] = "en", **overrides):
     """Build one workflow state for a node under test."""
     request = WorkflowRequest(
         run_id="run-nodes",
         query="What changed?",
+        locale=locale,
         provider_budget=_provider_budget(),
         max_context_chars=max_context_chars,
         **overrides,
@@ -115,10 +116,14 @@ def test_empty_retrieval_is_typed_immutable_and_reports_not_in_docs():
         ),
     ],
 )
-def test_absence_reason_and_original_question_language(scenario, original, rationale):
-    """Explain each absent-evidence state and choose language from the original question."""
+def test_absence_reason_is_written_in_the_run_locale(scenario, original, rationale):
+    """Explain each absent-evidence state in the run's locale, whatever the search query reads."""
     korean_question = original.startswith("nvidia")
-    state = _state(original_query=original, max_context_chars=0 if scenario == "budget" else 12000)
+    state = _state(
+        original_query=original,
+        locale="ko" if korean_question else "en",
+        max_context_chars=0 if scenario == "budget" else 12000,
+    )
     state = state.model_copy(
         update={"query": "NVIDIA business risks" if korean_question else "삼성전자 위험"}
     )
@@ -317,9 +322,9 @@ def test_check_downgrades_a_supported_answer_that_loses_any_citation(
     assert downgraded.kept_chunk_ids == kept
 
 
-def test_citation_downgrade_explains_the_stop_in_the_original_question_language():
+def test_citation_downgrade_explains_the_stop_in_the_run_locale():
     """Localize the server's citation-validation notice without publishing the rejected answer."""
-    state = _graded_state().model_copy(update={"original_query": "NVIDIA 매출은?"})
+    state = _graded_state().model_copy(update={"locale": "ko"})
     decision = AnswerDecision(
         label="SUPPORTED",
         answer="Unverified claim.",
@@ -475,10 +480,10 @@ def test_a_currency_bearing_year_like_amount_is_never_dropped():
         assert reason.figures == ("2024",), text
 
 
-def test_the_unverified_notice_follows_the_question_language():
-    """Localize the hold statement from the original question."""
+def test_the_unverified_notice_follows_the_run_locale():
+    """Write the hold statement in the run's locale."""
     state, _ = _table_state()
-    state = state.model_copy(update={"original_query": "AMD의 2024년 매출은?"})
+    state = state.model_copy(update={"locale": "ko"})
     decision = _revenue_answer("25,785").model_copy(
         update={"answer": "2024년 매출액은 25,785이다."}
     )
@@ -577,18 +582,28 @@ def _prompt_json_values(user: str) -> dict:
     return values
 
 
+def test_workflow_request_requires_the_callers_locale():
+    """Refuse a request without a locale: no node guesses the report language."""
+    with pytest.raises(ValidationError):
+        WorkflowRequest.model_validate(
+            {"run_id": "run-invalid", "query": "Question?", "provider_budget": _provider_budget()}
+        )
+
+
 def test_workflow_request_rejects_blank_queries_and_scalar_coercion():
     """Reject a blank query and any coerced scalar in a workflow request."""
     with pytest.raises(ValidationError):
         WorkflowRequest(
             run_id="run-invalid",
             query=" ",
+            locale="en",
             provider_budget=_provider_budget(),
         )
     with pytest.raises(ValidationError):
         WorkflowRequest(
             run_id="run-invalid",
             query="Question?",
+            locale="en",
             # Deliberately a numeric string: the strict model must refuse to coerce it to an int.
             k=cast(int, "5"),
             provider_budget=_provider_budget(),

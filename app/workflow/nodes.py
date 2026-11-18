@@ -20,7 +20,6 @@ from app.llm.schemas import (
     RelevanceJudgment,
     SchemaRejected,
 )
-from app.query.language import detect_query_language
 from app.retrieval.tables import figure_evidence
 from app.retrieval.types import ChunkHit
 from app.workflow.prompts import evidence_budget_chars, evidence_chars
@@ -54,8 +53,8 @@ FIGURES_REASON = (
 
 
 def _fixed_rationale(state: WorkflowState, english: str, korean: str) -> str:
-    """Localize a server-authored evidence notice from the original question, not the corpus."""
-    return korean if detect_query_language(state.original_query or state.query) == "ko" else english
+    """Write a server-authored evidence notice in the run's report language."""
+    return korean if state.locale == "ko" else english
 
 
 def _unique_hits(hits: Sequence[ChunkHit]) -> tuple[tuple[ChunkHit, ...], tuple[int, ...]]:
@@ -560,12 +559,11 @@ def _absence_rationale(state: WorkflowState) -> str:
 
 def _mismatch_answer(state: WorkflowState, mismatch: PeriodMismatch) -> str:
     """State which period the cited figures belong to instead of the requested one."""
-    locale = detect_query_language(state.original_query or state.query)
     return period_mismatch_text(
         mismatch.requested_fiscal_years,
         mismatch.evidenced_fiscal_years,
         mismatch.figures,
-        locale=locale,
+        locale=state.locale,
     )
 
 
@@ -619,10 +617,7 @@ def report_node(state: WorkflowState) -> WorkflowState:
         if state.withheld is not None:
             # Withhold the figures: the answer text would assert numbers whose unit or
             # direction the evidence cannot confirm, so the report states only that.
-            text, rationale = withheld_text(
-                state.withheld.causes,
-                locale=detect_query_language(state.original_query or state.query),
-            )
+            text, rationale = withheld_text(state.withheld.causes, locale=state.locale)
             report = WorkflowReport(
                 label="UNVERIFIED",
                 answer=text,

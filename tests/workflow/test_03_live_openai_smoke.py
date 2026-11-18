@@ -36,6 +36,7 @@ def test_opt_in_live_openai_workflow_smoke():
     request = WorkflowRequest(
         run_id="run-live-smoke",
         query="How much did revenue increase?",
+        locale="en",
         budget=Budget(),
         provider_budget=_provider_budget(
             max_input_tokens=2_000,

@@ -156,6 +156,7 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
         WorkflowRequest(
             run_id="locale",
             query=question,
+            locale=locale,
             requested_fiscal_years=(2024,),
             provider_budget=provider_budget(),
         )

@@ -270,6 +270,9 @@ class WorkflowRequest(StrictSchema):
     run_id: RunId
     query: NonBlank
     original_query: NonBlank | None = None
+    # Language of the report text the server writes itself. The caller resolves it and
+    # the nodes never read it from the retrieval query, which may be a translation.
+    locale: Literal["en", "ko"]
     k: PositiveInt = 5
     filters: RetrievalFilters = Field(default_factory=RetrievalFilters)
     budget: Budget = Field(default_factory=Budget)
@@ -296,6 +299,7 @@ class WorkflowState(StrictSchema):
     run_id: RunId
     query: NonBlank
     original_query: NonBlank | None = None
+    locale: Literal["en", "ko"]
     k: PositiveInt
     filters: RetrievalFilters
     max_context_chars: NonNegativeInt
@@ -325,6 +329,7 @@ def initial_state(request: WorkflowRequest) -> WorkflowState:
         run_id=request.run_id,
         query=request.query,
         original_query=request.original_query or request.query,
+        locale=request.locale,
         k=request.k,
         filters=request.filters,
         max_context_chars=request.max_context_chars,

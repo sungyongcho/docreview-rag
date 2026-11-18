@@ -1045,6 +1045,54 @@ def test_review_preserves_original_question_across_search_rewriting(tmp_path, hi
     assert saved[0].request_context["path_decision"]["retrieval_query"] == search_query
 
 
+def test_server_notice_follows_the_original_question_across_search_rewriting(tmp_path):
+    """A Korean follow-up searched in English still reads its absence notice in Korean."""
+    from app.query.intent import ConversationTurn
+    from app.retrieval.search.service import ComponentRankings, RetrievalResult
+    from tests.api.support import MemorySession
+    from tests.llm.support import DeterministicLLMProvider
+
+    searched = []
+
+    async def retrieve(session, query, *, provider, k, filters, **plan):
+        """Record the rewritten search and find nothing."""
+        searched.append(query)
+        return RetrievalResult(
+            candidates=(),
+            hits=(),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(), lexical=()),
+        )
+
+    async def persist(session, run, traces):
+        """Accept the finished run without a database."""
+        return run
+
+    service = routing_runtime(
+        tmp_path,
+        session_factory=MemorySession,
+        retrieval_service=retrieve,
+        run_persister=persist,
+        llm_providers={"openai": DeterministicLLMProvider([])},
+        provider_budgets={
+            "openai": local_provider_budget(max_input_tokens=10000, max_output_tokens=1000)
+        },
+        intent_classifier_enabled=True,
+    )
+    request = ReviewRequest(
+        query="그럼 2024년은?",
+        conversation_history=(ConversationTurn(role="user", text="NVDA data center revenue 2023"),),
+    )
+    report = asyncio.run(service.review(request))
+
+    assert report.status == "ok"
+    (search_query,) = searched
+    assert "NVDA data center revenue" in search_query
+    assert report.report is not None
+    assert report.report["label"] == "NOT_IN_DOCS"
+    assert report.report["rationale"] == "질문에 대한 근거를 검색하지 못했습니다."
+
+
 def test_hbm_outlook_question_stays_deterministic_with_local_index(tmp_path):
     """A natural-language outlook question resolves its issuer without a provider call."""
     from app.api.review.schemas import RetrieveRequest

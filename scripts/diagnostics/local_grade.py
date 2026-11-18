@@ -23,6 +23,7 @@ import tiktoken
 
 from app.llm.estimate import estimate_prompt_tokens
 from app.llm.schemas import Prompt, RelevanceJudgment
+from app.query.language import detect_query_language
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.workflow.prompts import build_grade_prompt
 from app.workflow.types import DEFAULT_SYSTEM_PROMPT, WorkflowState
@@ -73,6 +74,7 @@ def grade_prompt(query: str, hits: list[ChunkHit], *, max_context_chars: int) ->
     state = WorkflowState(
         run_id=f"run-{uuid4().hex}",
         query=query,
+        locale=detect_query_language(query),
         k=max(1, len(hits)),
         filters=RetrievalFilters(),
         max_context_chars=max_context_chars,
