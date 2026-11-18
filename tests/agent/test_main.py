@@ -159,6 +159,7 @@ def test_openai_provider_receives_the_mode_selected_key_and_the_engine_is_releas
         base_url = "https://api.openai.com/v1"
 
         def __init__(self, **kwargs):
+            """Record the constructor arguments and expose a responses.create that fails offline."""
             captured.update(kwargs)
 
             async def create(**request):

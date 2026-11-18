@@ -184,6 +184,7 @@ def test_stream_send_failure_cancels_the_review_task():
         """Service boundary that blocks after the first node until cancelled."""
 
         def __init__(self):
+            """Create the events that mark the review started, cancelled and released."""
             self.started = asyncio.Event()
             self.cancelled = asyncio.Event()
             self.release = asyncio.Event()

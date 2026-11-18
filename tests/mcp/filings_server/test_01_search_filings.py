@@ -48,6 +48,7 @@ def observed(tmp_path_factory):
     log_path = tmp_path_factory.mktemp("search") / "events.jsonl"
 
     async def exercise():
+        """List tools, run each search case with its events, then unknown names and a search."""
         async with Client(controlled_filings(log_path), mode=PROTOCOL_MODE) as client:
             listing = await client.list_tools()
             results = {}

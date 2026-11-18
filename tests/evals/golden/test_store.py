@@ -41,6 +41,7 @@ def test_files_survive_service_recreation_and_feed_evaluation(service, tmp_path)
     """A saved dataset is usable without DB revision rows and cannot mutate its built-in parent."""
 
     async def exercise():
+        """Edit a draft, reload it in a fresh service, evaluate it, then try a stale edit."""
         original = (tmp_path / "retrieval.json").read_bytes()
         draft = await service.create_draft("sec-en", filename="my-eval.json")
         edited = await service.replace_case(
@@ -77,6 +78,7 @@ def test_empty_file_can_receive_a_new_question(service):
     """An empty custom dataset can be authored and cannot pass preparation empty."""
 
     async def exercise():
+        """Create an empty draft, try to validate it, then add one question."""
         draft = await service.create_draft("sec-en", filename="empty.json", empty=True)
         assert not draft.payload
         with pytest.raises(ValueError, match="at least one"):
@@ -101,6 +103,7 @@ def test_checks_are_invalidated_by_editing(service, monkeypatch):
     monkeypatch.setattr("app.evals.golden.store.bind_golden", lambda *args: BoundGolden((), ()))
 
     async def exercise():
+        """Validate a draft, then edit it and inspect its status and checked digest."""
         draft = await service.create_draft("sec-en", filename="checked.json")
         checked = await service.validate(draft.revision_id, expected_sha256=draft.sha256)
         assert checked.status == "validated" and checked.payload[0]["human_verified"] is False
@@ -120,6 +123,7 @@ def test_existing_filename_is_not_overwritten(service):
     """Creating the same filename twice leaves the original intact."""
 
     async def exercise():
+        """Create one filename, then try to create it again."""
         first = await service.create_draft("sec-en", filename="mine.json")
         with pytest.raises(ValueError, match="already exists"):
             await service.create_draft("sec-en", filename="mine.json", empty=True)
@@ -147,6 +151,7 @@ def test_incomplete_drafts_survive_reload_and_block_the_entire_evaluation(servic
     from app.evals.golden.models import DraftInputError, executable_cases
 
     async def exercise():
+        """Save an unfinished question, reload it and try to evaluate it, then finish it."""
         created = await service.create_draft("sec-en", filename="unfinished.json", empty=True)
         saved = await service.replace_case(
             created.revision_id,
@@ -186,6 +191,7 @@ def test_multiple_blank_drafts_are_saved_without_duplicate_question_errors(servi
     """Distinct IDs may hold unfinished questions until the dataset is checked."""
 
     async def exercise():
+        """Save two blank questions with distinct IDs into one empty draft."""
         item = await service.create_draft("sec-en", filename="blank.json", empty=True)
         for identity in ["draft-1", "draft-2"]:
             item = await service.replace_case(
@@ -212,6 +218,7 @@ def test_delete_case_removes_one_question_under_the_digest_check(service):
     """Deleting needs the current digest, removes only that question, and reports unknown IDs."""
 
     async def exercise():
+        """Add a second question, then delete the first under a stale and the current digest."""
         draft = await service.create_draft("sec-en", filename="delete.json")
         first = draft.payload[0]["id"]
         second = await service.replace_case(
@@ -235,6 +242,7 @@ def test_delete_draft_removes_only_user_files_under_the_digest_check(service, tm
     """A user file disappears from disk and listings; built-ins and stale digests are refused."""
 
     async def exercise():
+        """Delete under a stale digest, a built-in file and the current digest, then list drafts."""
         draft = await service.create_draft("sec-en", filename="gone.json")
         with pytest.raises(Exception, match="Dataset changed"):
             await service.delete_draft(draft.revision_id, expected_sha256="a" * 64)

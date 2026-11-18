@@ -37,6 +37,7 @@ def test_a_review_releases_the_period_and_withdrawing_it_holds_it_again() -> Non
     """The routes commit the review, and each answer shows the period as it then stands."""
 
     async def scenario() -> None:
+        """Store a report and its amendment, then review and withdraw through the routes."""
         async with isolated_session_factory() as factory:
             async with factory() as session:
                 await persist_seed_batch(
@@ -72,6 +73,7 @@ def test_a_refused_review_answers_with_its_cause_and_records_nothing() -> None:
     """An unknown document is 404; a report or an incomplete review is a typed 400."""
 
     async def scenario() -> None:
+        """Store a report and its amendment, then send each refused review through the routes."""
         async with isolated_session_factory() as factory:
             async with factory() as session:
                 await persist_seed_batch(

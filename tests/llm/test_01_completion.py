@@ -417,6 +417,7 @@ def test_repair_loop_still_guards_the_strict_path():
         """Responses endpoint returning one staged reply per call, in order."""
 
         def __init__(self, responses):
+            """Queue the staged replies and start with no recorded calls."""
             self.responses = list(responses)
             self.calls = []
 
@@ -611,8 +612,7 @@ def test_denied_repair_surfaces_the_billed_first_attempt_as_provider_metadata():
     """Raise a denied repair with the metadata of the first attempt, which was billed.
 
     The error stays an ``AIAllowanceError`` with the original code, message and retry
-    delay, so the 429 mapping is unchanged, and its metadata is what a typed failure
-    after that attempt would carry, so the caller can trace what was paid for.
+    delay, so the 429 mapping is unchanged.
     """
     label_only_decision = '{"label":"SUPPORTED"}'
     provider = AllowanceCappedProvider(
@@ -630,6 +630,8 @@ def test_denied_repair_surfaces_the_billed_first_attempt_as_provider_metadata():
         60,
     )
     assert len(provider.prompts) == 1
+    # The metadata is what a typed failure after that attempt would carry, so the caller
+    # can trace what was paid for.
     assert denial.metadata == ProviderMetadata(
         provider="deterministic",
         model_name="deterministic-mock",

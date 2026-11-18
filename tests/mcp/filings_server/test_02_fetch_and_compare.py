@@ -63,6 +63,7 @@ def observed(tmp_path_factory):
         return results
 
     async def exercise():
+        """List tools, then run every comparison and every read on one connection."""
         async with Client(controlled_filings(log_path), mode=PROTOCOL_MODE) as client:
             listing = await client.list_tools()
             compare = await call_all(client, "compare_years", COMPARE_CASES, lambda c: c[1])

@@ -12,8 +12,6 @@ def test_amd_2024_income_statement_withholds_figures_it_gives_no_currency_for(
 ):
     """Withhold AMD's FY2024 revenue claims: the filed table names no currency.
 
-    Its only unit note is "(In millions, except per share amounts)", it has no linked
-    caption, and its "$" signs sit in their own source cells apart from the amounts.
     Without an explicit currency neither the reported nor the comparative figure can be
     certified, so both are withheld rather than confirmed or called another period.
     """
@@ -31,6 +29,8 @@ def test_amd_2024_income_statement_withholds_figures_it_gives_no_currency_for(
         EvidenceText(1, chunk.body, chunk.context_header, tuple(read_table_cells(fragment)))
     ]
 
+    # Its only unit note is "(In millions, except per share amounts)", it has no linked
+    # caption, and its "$" signs sit in their own source cells apart from the amounts.
     assert "(In millions, except per share amounts)" in [
         cell["text"] for cell in fragment["header_cells"]
     ]

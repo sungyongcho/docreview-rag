@@ -189,6 +189,7 @@ def test_zero_budget_refuses_before_retrieval():
     calls = 0
 
     async def retriever(query, k, filters):
+        """Count each call and return one hit, which a zero budget must never request."""
         nonlocal calls
         calls += 1
         return retrieval_result([_hit()])
@@ -334,6 +335,7 @@ def test_retrieval_exception_becomes_typed_error_report():
     """Turn a retrieval exception into a typed error report."""
 
     async def retriever(query, k, filters):
+        """Raise a database outage in place of retrieval."""
         raise RuntimeError("database unavailable")
 
     result = asyncio.run(
@@ -388,6 +390,7 @@ def test_runner_reports_each_committed_node_to_the_observer():
     events = []
 
     async def observe(node, state):
+        """Record each committed node with its evidence and step counts."""
         events.append((node, len(state.evidence), len(state.steps)))
 
     result = asyncio.run(
@@ -452,8 +455,7 @@ def test_pre_call_refusal_by_the_runner_matches_the_provider_side_refusal():
     """Commit the runner's own pre-call refusal exactly like the provider's.
 
     Nothing was sent, so the refusal reports zero attempts and carries the budget
-    evidence that names its source; the refused node joins the path, its stage ends
-    failed, and the observer sees the failure, as it does when the provider refuses.
+    evidence that names its source.
     """
     grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
     provider = _provider([_raw(grade, input_tokens=10, output_tokens=1)])
@@ -461,9 +463,11 @@ def test_pre_call_refusal_by_the_runner_matches_the_provider_side_refusal():
     events = []
 
     async def observer(node, state):
+        """Record each committed node and whether its state carries a failure."""
         seen.append((node, state.failure is not None))
 
     async def observe(event):
+        """Record each stage event's node, phase and status."""
         events.append((event.node, event.phase, event.status))
 
     async def exercise():
@@ -494,6 +498,8 @@ def test_pre_call_refusal_by_the_runner_matches_the_provider_side_refusal():
         "projected_input_tokens": None,
     }
     assert reason["budget_source"] == "provider_budget"
+    # As when the provider refuses, the refused node joins the path, its stage ends failed,
+    # and the observer sees the failure.
     assert result.node_path == ("retrieve", "grade", "check")
     assert result.total_requests == 1
     assert seen == [("retrieve", False), ("grade", False), ("check", True)]
@@ -510,6 +516,7 @@ def test_schema_rejection_stops_closed_with_raw_trace_history_and_observer():
     seen = []
 
     async def observer(node, state):
+        """Record each committed node and whether its state carries a failure."""
         seen.append((node, state.failure is not None))
 
     result = asyncio.run(
@@ -596,9 +603,11 @@ def test_a_retriever_breaking_the_hit_contract_raises_instead_of_reporting_an_ou
     """Raise for a broken retrieval contract rather than report a retrieval outage."""
 
     async def bare_hits(query, k, filters):
+        """Return a bare list instead of a RetrievalResult."""
         return [{"chunk_id": 1, "body": "not a ChunkHit"}]
 
     async def malformed_hits(query, k, filters):
+        """Return a RetrievalResult whose hit is a plain dict, not a ChunkHit."""
         return RetrievalResult.model_construct(
             hits=({"chunk_id": 1, "body": "not a ChunkHit"},),
             candidates=(),
@@ -776,9 +785,11 @@ def test_mid_run_allowance_denial_commits_the_billed_grade_trace_before_propagat
     events = []
 
     async def observer(node, state):
+        """Record each committed node with its state."""
         committed.append((node, state))
 
     async def observe(event):
+        """Record each stage event's node, phase and status."""
         events.append((event.node, event.phase, event.status))
 
     async def exercise():
@@ -817,8 +828,6 @@ def test_repair_denial_of_the_grade_commits_its_billed_attempt_before_propagatin
     """Keep the grade's billed first attempt when the shared allowance denies its repair.
 
     The grade is the run's first provider call, so that attempt is the run's only trace.
-    The run is committed with it and the typed denial, and the error carries the
-    committed report so the caller can keep the billed run before answering 429.
     """
     grade_without_reason = '{"grades":[{"chunk_id":1,"relevant":true}]}'
     provider = _AllowanceCappedProvider(
@@ -827,6 +836,7 @@ def test_repair_denial_of_the_grade_commits_its_billed_attempt_before_propagatin
     committed = []
 
     async def observer(node, state):
+        """Record each committed node with its state."""
         committed.append((node, state))
 
     with pytest.raises(AIAllowanceError) as raised:
@@ -844,6 +854,8 @@ def test_repair_denial_of_the_grade_commits_its_billed_attempt_before_propagatin
     assert isinstance(error, BilledRunAllowanceError)
     assert (error.code, error.retry_after) == ("public_daily_limit", 60)
     assert len(provider.prompts) == 1
+    # The run is committed with that attempt and the typed denial, and the error carries
+    # the committed report so the caller can keep the billed run before answering 429.
     report = error.report
     assert report.status == "budget_exceeded"
     assert report.node_path == ("retrieve", "grade")
@@ -906,6 +918,7 @@ def test_allowance_denial_of_the_first_call_propagates_without_committing_a_node
     seen = []
 
     async def observer(node, state):
+        """Record the name of each committed node."""
         seen.append(node)
 
     with pytest.raises(AIAllowanceError):

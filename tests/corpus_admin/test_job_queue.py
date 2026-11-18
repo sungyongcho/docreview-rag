@@ -30,16 +30,19 @@ def test_concurrent_admission_leaves_no_unexecutable_jobs(tmp_path: Path) -> Non
             """Expose the same scheduling boundaries as an asynchronous database."""
 
             async def interrupt_incomplete(self, domain):
+                """Count the recovery and yield once before interrupting incomplete jobs."""
                 nonlocal recoveries
                 recoveries += 1
                 await asyncio.sleep(0)
                 return await super().interrupt_incomplete(domain)
 
             async def create(self, **values):
+                """Yield once before creating the job row."""
                 await asyncio.sleep(0)
                 return await super().create(**values)
 
         async def runner(command, publish, on_usage=None):
+            """Wait for the gate, count the execution and report success."""
             nonlocal executions
             await gate.wait()
             executions += 1
@@ -336,6 +339,7 @@ def test_unsaved_completion_blocks_history_until_the_snapshot_is_reconciled(tmp_
         executions = 0
 
         async def runner(command, publish, on_usage=None):
+            """Count the execution and report an outcome completed before storage recovered."""
             nonlocal executions
             executions += 1
             return OperationOutcome("completed before storage recovered")
@@ -485,6 +489,7 @@ def test_corpus_job_waits_for_search_before_running(tmp_path: Path) -> None:
     """The actual job worker drains an admitted search before starting an index update."""
 
     async def exercise():
+        """Hold a search open, queue an index update, then release the search."""
         called = asyncio.Event()
 
         async def runner(command, publish, on_usage=None):

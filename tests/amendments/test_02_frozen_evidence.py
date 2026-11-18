@@ -71,6 +71,7 @@ def test_a_snapshot_holds_only_current_evidence_and_outlives_a_later_hold(tmp_pa
     """Replaced text is not frozen; what was frozen stays searchable when live is held."""
 
     async def scenario() -> None:
+        """Freeze reviewed evidence, clear the review, then search live and frozen evidence."""
         async with isolated_session_factory() as factory:
             async with factory() as session:
                 await persist_seed_batch(

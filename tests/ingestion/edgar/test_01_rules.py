@@ -113,6 +113,7 @@ def test_item_regex_is_anchored_and_prefers_two_digit_items(edgar_module: Module
     """Reject inline references and capture complete two-digit Item numbers."""
 
     def item_of(text: str) -> str | None:
+        """Return the upper-cased Item number the heading regex captures, or None."""
         match = edgar_module.ITEM_RE.match(text)
         return (match.group("num") + (match.group("suffix") or "")).upper() if match else None
 

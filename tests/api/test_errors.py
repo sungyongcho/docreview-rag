@@ -28,6 +28,7 @@ def test_unsaved_job_history_returns_typed_503_without_storage_details():
 
     @app.get("/jobs")
     async def jobs():
+        """Raise an unsaved-job error with a private storage cause inside the translator."""
         async with translate_runtime_errors():
             raise JobPersistenceError("job-1") from OSError("private database endpoint")
 

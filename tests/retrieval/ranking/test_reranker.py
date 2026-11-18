@@ -55,6 +55,7 @@ def test_score_preserves_pair_order_and_runs_model_off_loop(monkeypatch):
         """Test double for Encoder behavior."""
 
         def __init__(self, model, *, max_length):
+            """Record the model, scoring window and constructing thread."""
             calls["model"] = model
             calls["max_length"] = max_length
             calls["constructor_thread"] = threading.get_ident()
@@ -89,6 +90,7 @@ def test_simultaneous_cold_scores_construct_one_model(monkeypatch):
         """Test double for Encoder behavior."""
 
         def __init__(self, model, *, max_length):
+            """Record the construction and sleep so a second cold score overlaps it."""
             del max_length
             constructors.append(model)
             time.sleep(0.05)
@@ -122,6 +124,7 @@ def test_shared_reranker_is_one_instance_per_model_and_batch_size(monkeypatch):
         """Test double for Encoder behavior."""
 
         def __init__(self, model, *, max_length):
+            """Record each model construction."""
             del max_length
             constructions.append(model)
 
@@ -149,7 +152,10 @@ def test_provider_receives_full_index_text_and_rescores_without_mutating_hits():
     calls = []
 
     class Provider(rerank.RerankProvider):
+        """Rerank provider recording its inputs and scoring the second hit higher."""
+
         async def score(self, query, documents):
+            """Record the query and documents and return fixed scores."""
             calls.append((query, list(documents)))
             return [0.1, 0.9]
 
@@ -177,7 +183,10 @@ def test_provider_scores_must_match_count_and_be_finite_numeric(scores, message)
     """Reject provider scores with invalid count, type, or finiteness."""
 
     class Provider(rerank.RerankProvider):
+        """Rerank provider returning the parametrized invalid scores."""
+
         async def score(self, _query, _documents):
+            """Return the parametrized scores unchanged."""
             return scores
 
     with pytest.raises(ValueError, match=message):
@@ -194,7 +203,10 @@ def test_empty_candidates_and_zero_limit_do_not_call_provider():
     """Avoid provider calls for empty candidates or a zero result limit."""
 
     class Provider(rerank.RerankProvider):
+        """Rerank provider that fails if it is ever called."""
+
         async def score(self, _query, _documents):
+            """Fail, since the provider must not be called."""
             raise AssertionError("provider should not be called")
 
     assert asyncio.run(rerank.rerank_hits("query", [], provider=Provider())) == []
@@ -208,7 +220,10 @@ def test_reranking_rejects_blank_queries_and_negative_limits(query, top_k):
     """Reject blank queries and negative result limits."""
 
     class Provider(rerank.RerankProvider):
+        """Rerank provider that fails if it is ever called."""
+
         async def score(self, _query, _documents):
+            """Fail, since the provider must not be called."""
             raise AssertionError("provider should not be called")
 
     with pytest.raises(ValueError):

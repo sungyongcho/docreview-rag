@@ -80,13 +80,10 @@ def _service(tmp_path: Path, rows: dict[int, _Row]) -> EvaluationAdminService:
 
 
 def test_result_detail_reads_the_stored_artifact(tmp_path: Path) -> None:
-    """Exercise the real reader, which a stubbed service cannot do.
+    """Read a real file through the real call, which a stubbed service cannot do.
 
-    Notes
-    -----
     The route-level tests substitute a duck-typed fake for the whole service, so an
-    argument mismatch inside this method is invisible to them. This test reads a real
-    file through the real call.
+    argument mismatch inside this method is invisible to them.
     """
     runs = tmp_path / "runs"
     runs.mkdir()

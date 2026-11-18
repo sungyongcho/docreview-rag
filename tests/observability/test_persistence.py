@@ -128,6 +128,7 @@ def test_persistence_flushes_without_committing_or_live_services():
         """Record what persistence adds and flushes, without a database."""
 
         def __init__(self):
+            """Start with nothing added and no flush."""
             self.added = []
             self.added_many = []
             self.flushed = False

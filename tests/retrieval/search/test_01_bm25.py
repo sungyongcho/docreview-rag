@@ -216,6 +216,7 @@ def test_readiness_is_read_in_the_same_statement_as_the_search():
         """Serve a search that saw no statistics, then a sentinel that sees rebuilt ones."""
 
         def __init__(self) -> None:
+            """Start with no recorded calls."""
             self.calls: list[str] = []
 
         async def execute(self, statement):

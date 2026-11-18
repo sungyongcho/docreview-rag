@@ -20,6 +20,7 @@ def test_each_request_carries_the_version_and_gets_one_matching_response(tmp_pat
     trace.mkdir()
 
     async def exercise():
+        """Discover, list tools and call list_corpus through the recording relay."""
         relay = module_server(
             "tests.mcp.stdio_relay",
             str(trace),

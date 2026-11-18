@@ -122,6 +122,7 @@ def test_only_a_recorded_filing_is_evidence() -> None:
     """A report is evidence once indexed, and stops being evidence without its record."""
 
     async def scenario() -> None:
+        """Index a report, then delete its filing record."""
         async with isolated_session() as session:
             await persist_seed_batch(session, batch(parsed(REPORT, ("1", "7", None))))
             assert await eligible(session) == {
@@ -142,6 +143,7 @@ def test_a_later_report_replaces_the_whole_earlier_report() -> None:
     """A DART correction retires its original as soon as it is known, indexed or not."""
 
     async def scenario() -> None:
+        """Register a DART correction over an indexed original, then index the correction."""
         async with isolated_session() as session:
             await persist_seed_batch(session, batch(parsed(ORIGINAL, ("I", "II", None))))
             await register_filings(session, [CORRECTION])
@@ -174,6 +176,7 @@ def test_an_unreviewed_amendment_withholds_its_report_period() -> None:
     """Knowing of an amendment is enough to withhold; indexing it does not release."""
 
     async def scenario() -> None:
+        """Register an amendment to an indexed report, then index the amendment too."""
         async with isolated_session() as session:
             await persist_seed_batch(session, batch(parsed(REPORT, ("1", "7"))))
             await register_filings(session, [AMENDMENT])
@@ -197,6 +200,7 @@ def test_a_review_decides_each_item() -> None:
     """Replace swaps the Item, add keeps both, withhold removes both, the rest stays."""
 
     async def scenario() -> None:
+        """Review an amendment that replaces, adds and withholds Items of the report."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session,
@@ -234,6 +238,7 @@ def test_a_later_amendment_retires_an_earlier_amendment_item() -> None:
     """Amendments apply in acceptance order, each over everything accepted before it."""
 
     async def scenario() -> None:
+        """Review two amendments that each replace the report's Item 7."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session,
@@ -266,6 +271,7 @@ def test_a_refiled_report_replaces_the_amendment_to_the_report_before_it() -> No
     """An amendment follows its own report: a report accepted after it is whole again."""
 
     async def scenario() -> None:
+        """Register a refiled report over an unreviewed amendment, index it, then review that."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session, batch(parsed(REPORT, ("1", "7")), parsed(AMENDMENT, ("7",)))
@@ -300,6 +306,7 @@ def test_an_amendment_is_not_evidence_while_its_report_is_not_indexed() -> None:
     """What a search returns and what its hold says agree when only the amendment is stored."""
 
     async def scenario() -> None:
+        """Store a reviewed amendment whose report is only registered, then index the report."""
         async with isolated_session() as session:
             await register_filings(session, [REPORT])
             await session.commit()
@@ -332,6 +339,7 @@ def test_a_scope_that_leaves_out_the_replacing_filing_is_told_what_was_replaced(
     """Replaced text a search covers is named, whole or by Item, whatever narrowed the search."""
 
     async def scenario() -> None:
+        """Review an amendment, then ask for holds under scopes that leave out its text."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session,
@@ -385,6 +393,7 @@ def test_a_hold_names_an_item_only_while_stored_text_has_no_evidence() -> None:
     """Replacing an Item with no text withholds it; a later amendment's text ends that."""
 
     async def scenario() -> None:
+        """Review amendments over Items with and without text, then a correction dropping one."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session,
@@ -445,6 +454,7 @@ def test_an_amendment_that_sets_out_no_item_is_released_by_an_empty_review() -> 
     """A stored amendment without Items can still be reviewed, so its period is not stuck."""
 
     async def scenario() -> None:
+        """Store an amendment that sets out no Item, then record an empty review of it."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session, batch(parsed(REPORT, ("1", "7")), parsed(AMENDMENT, ()))
@@ -470,6 +480,7 @@ def test_versions_that_cannot_be_ordered_or_lack_a_report_are_withheld() -> None
     """Two reports accepted at one time, and an amendment alone, are both withheld."""
 
     async def scenario() -> None:
+        """Store two reports accepted at one time, then a reviewed amendment without its report."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session, batch(parsed(REPORT, ("1",)), parsed(sec_document(19), ("1",)))
@@ -597,6 +608,7 @@ def test_search_and_hold_agree_on_which_filings_are_unordered(
     """The SQL that ranks evidence and the rule that reports holds read one period alike."""
 
     async def scenario() -> None:
+        """Store and review the parametrized filings, then compare the hold rule with the SQL."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session,
@@ -633,6 +645,7 @@ def test_named_chunks_are_refused_once_they_are_replaced() -> None:
     """A chunk id read back later is checked against the policy as it stands then."""
 
     async def scenario() -> None:
+        """Check named chunks before and after a review replaces Item 7."""
         async with isolated_session() as session:
             await persist_seed_batch(session, batch(parsed(REPORT, ("1", "7"))))
             rows = await session.execute(select(Chunk.item, Chunk.id))

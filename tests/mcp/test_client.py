@@ -100,6 +100,7 @@ def runs(tmp_path_factory):
     contracts = build_default_registry(cast(SessionFactory, object))
 
     async def exercise():
+        """Run each question through the bridged registry, keeping its result and events."""
         async with Client(controlled_filings(log_path), mode=PROTOCOL_MODE) as client:
             bridge = await mcp_tool_registry(client, contracts)
             observed = {}

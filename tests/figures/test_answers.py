@@ -198,6 +198,7 @@ def test_a_reported_figure_keeps_only_its_own_parentheses():
     evidence = [EvidenceText(1, "body", "ctx")]
 
     def reported(answer):
+        """Return the figures the check reports for an answer against the 2024 evidence."""
         return [check.figure for check in check_figures(answer, evidence, [2024]).checks]
 
     assert reported("Net loss was (1,234) million.") == ["(1,234)"]

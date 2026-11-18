@@ -151,9 +151,11 @@ def test_chunking_respects_the_selected_models_complete_input_limit(parsed_filin
 
         @property
         def max_input_tokens(self):
+            """Allow sixteen tokens of complete input."""
             return 16
 
         def count_input_tokens(self, text):
+            """Count each whitespace-separated word as one token."""
             return len(text.split())
 
     batch = build_chunking_batch(

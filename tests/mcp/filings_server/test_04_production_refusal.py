@@ -12,6 +12,7 @@ def test_production_mode_is_refused_before_serving(monkeypatch, capsys):
     """MODE=prod exits with code 2 on stderr and never starts the server."""
 
     async def serve(registry):
+        """Fail if called, since production mode must stop before serving."""
         raise AssertionError("the server must not start in production mode")
 
     monkeypatch.setattr(filings_server, "get_settings", lambda: SimpleNamespace(environment="prod"))

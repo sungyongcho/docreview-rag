@@ -367,10 +367,11 @@ def test_a_withheld_figure_holds_the_whole_answer_beside_a_wrong_one():
 def test_a_header_note_counts_only_with_its_whole_applicability(note, verdict):
     """Never let a recognized scale hide an exception or unit declaration it cannot read.
 
-    A header that declares nothing ("Change in revenue") leaves the unit absent. A
-    percentage note beside a monetary one, or notes declaring different currencies (the
-    table's USD against 원), conflict; "$"/달러 notes agree with the table's USD.
+    A header that declares nothing ("Change in revenue") leaves the unit absent;
+    "$"/달러 notes agree with the table's USD.
     """
+    # A percentage note beside a monetary one, or notes declaring different currencies
+    # (the table's USD against 원), conflict.
     result = check_figures("2024 net revenue was $25,785 million.", [noted(note)], [2024])
     assert result.verdict == verdict
 
@@ -431,9 +432,9 @@ def test_per_share_rows_use_plain_currency_only_when_the_note_says_so(
     """Read a per-share row as plain currency only under an explicit per-share exception.
 
     Otherwise a table in plain units certifies plain amounts, and a scaled table without
-    the exception withholds every per-share claim, since its row unit is ambiguous. A
-    per-share amount still needs the table's currency.
+    the exception withholds every per-share claim, since its row unit is ambiguous.
     """
+    # A per-share amount still needs the table's currency.
     evidence = noted(note, label, value)
     claim = f"2024 {label.casefold()} was {answer}."
     assert check_figures(claim, [evidence], [2024]).verdict == verdict

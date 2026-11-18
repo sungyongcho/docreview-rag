@@ -65,6 +65,7 @@ def test_search_ranks_only_current_evidence_and_names_what_is_held() -> None:
     """A held period returns nothing and says why; a review swaps the replaced Item."""
 
     async def scenario() -> None:
+        """Search before and after the review, then narrow the search to the original form."""
         async with isolated_session_factory() as factory:
             await stored(factory)
             async with factory() as session:
@@ -113,6 +114,7 @@ def test_agent_tools_report_holds_and_refuse_a_replaced_chunk() -> None:
     """The search tools name a hold only when there is one; a replaced chunk is refused."""
 
     async def scenario() -> None:
+        """Run the search, comparison and fetch tools before and after the review."""
         async with isolated_session_factory() as factory:
             ids = await stored(factory)
             registry = build_default_registry(
@@ -154,6 +156,7 @@ def test_a_final_answer_is_not_reviewed_from_a_replaced_chunk() -> None:
     """Reading cited text or selected cells again refuses a chunk replaced meanwhile."""
 
     async def scenario() -> None:
+        """Store and review the filings, then read cited text and selected cells again."""
         async with isolated_session_factory() as factory:
             ids = await stored(factory)
             await reviewed(factory)
@@ -177,6 +180,7 @@ def test_a_pinned_selection_made_before_a_review_is_reported_stale() -> None:
     """Candidates retrieved while an Item was current are stale once it is replaced."""
 
     async def scenario() -> None:
+        """Reload a signed selection after the review, from live and from frozen evidence."""
         async with isolated_session_factory() as factory:
             ids = await stored(factory)
             await reviewed(factory)

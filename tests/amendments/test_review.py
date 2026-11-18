@@ -29,6 +29,7 @@ def test_a_review_must_be_complete_and_about_an_indexed_amendment() -> None:
     """Each refusal carries the code the operator surface reports."""
 
     async def scenario() -> None:
+        """Store a report and its amendment, register a later one, then try each refused review."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session, batch(parsed(REPORT, ("7", "15")), parsed(AMENDMENT, ("7", "15")))
@@ -67,6 +68,7 @@ def test_a_review_replaces_the_previous_one_and_can_be_withdrawn() -> None:
     """The last recorded review is the one in force; withdrawing it withholds again."""
 
     async def scenario() -> None:
+        """Review the amendment twice, then withdraw the review."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session, batch(parsed(REPORT, ("1", "7")), parsed(AMENDMENT, ("7",)))
@@ -98,6 +100,7 @@ def test_indexing_an_amendment_again_keeps_or_withdraws_its_review() -> None:
     """Same source and Items keep the review; a new source or a new Item withdraws it."""
 
     async def scenario() -> None:
+        """Review the amendment, then index it again unchanged, with a new Item and a new source."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session, batch(parsed(REPORT, ("1", "7")), parsed(AMENDMENT, ("7",)))

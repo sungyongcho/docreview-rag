@@ -189,6 +189,7 @@ def test_local_provider_refuses_an_oversized_prompt_before_contacting_ollama() -
     calls: list[httpx.Request] = []
 
     def capture(request: httpx.Request) -> httpx.Response:
+        """Record the request and answer with a small valid Ollama reply."""
         calls.append(request)
         return httpx.Response(
             200,

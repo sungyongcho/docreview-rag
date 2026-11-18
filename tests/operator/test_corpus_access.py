@@ -15,6 +15,7 @@ def test_writer_drains_existing_searches_and_rejects_new_requests():
     """A waiting writer closes admission without interrupting either existing reader."""
 
     async def exercise():
+        """Hold two searches while a writer waits, then let it enter and finish."""
         access = CorpusAccess()
         entered = asyncio.Event()
         release = asyncio.Event()
@@ -49,6 +50,7 @@ def test_cancelled_waiting_writer_reopens_admission():
     """Cancelling a writer waiting for readers cannot leave searches permanently blocked."""
 
     async def exercise():
+        """Cancel a writer waiting on an active search, then search again."""
         access = CorpusAccess()
 
         async def write():
@@ -73,6 +75,7 @@ def test_failed_writer_reopens_admission_and_runtime_returns_typed_error():
     """HTTP admission exposes an actionable code and writer failure releases the barrier."""
 
     async def exercise():
+        """Fail an update while a search is refused, then search again."""
         runtime = RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
         services = create_admin_services(runtime=runtime)
         with pytest.raises(ValueError, match="failed update"):

@@ -318,8 +318,8 @@ def test_backfill_batches_missing_chunks_and_reports_stale_updates(monkeypatch):
     progress = []
 
     async def missing(_session, batch_size, *, after_chunk_id, identity, document_ids):
-        assert document_ids == ("selected-doc",)
         """Return the next stable batch after the supplied cursor."""
+        assert document_ids == ("selected-doc",)
         assert identity == provider.identity
         selected_sizes.append(batch_size)
         selected_cursors.append(after_chunk_id)
@@ -413,6 +413,8 @@ def test_openai_batches_provider_limits_without_splitting_inputs(texts):
     requests = []
 
     class Resource:
+        """Embeddings endpoint recording each request's inputs."""
+
         async def create(self, **kwargs):
             """Return one deterministic vector for each complete request input."""
             inputs = kwargs["input"]

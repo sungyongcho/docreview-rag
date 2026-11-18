@@ -27,6 +27,7 @@ def test_only_periods_with_something_to_weigh_are_listed() -> None:
     """A lone report is left out; a known correction and an amendment are each listed."""
 
     async def scenario() -> None:
+        """Store three reports, register an amendment and a correction, then list the periods."""
         async with isolated_session() as session:
             lone = sec_document(5, period=REPORT.report_period.replace(year=2024))
             original, correction = dart_document("20210322000782"), dart_document("20210330000776")
@@ -64,6 +65,7 @@ def test_a_reviewed_amendment_shows_its_decisions_and_what_is_current() -> None:
     """The review is shown as recorded, and the period can be read by a member document."""
 
     async def scenario() -> None:
+        """Store and review an amendment, then read its period by the report's document id."""
         async with isolated_session() as session:
             await persist_seed_batch(
                 session, batch(parsed(REPORT, ("1", "7")), parsed(AMENDMENT, ("7", "15")))
@@ -103,6 +105,7 @@ def test_filings_are_listed_in_the_order_the_policy_applies_them() -> None:
     """A refiled report is listed after the amendment it replaced, and is what is current."""
 
     async def scenario() -> None:
+        """Store a report, its amendment and a refiled report, then list the period's filings."""
         async with isolated_session() as session:
             refiled = sec_document(
                 40, filed=date(2026, 3, 2), accepted=datetime(2026, 3, 2, 21, 0, 0, tzinfo=UTC)

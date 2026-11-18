@@ -44,6 +44,7 @@ def test_recording_a_filing_again_keeps_its_review() -> None:
     """A later acquisition or ingestion refreshes the description, not the decision."""
 
     async def scenario() -> None:
+        """Store and review an amendment, then record both filings again with a new issuer."""
         async with isolated_session() as session:
             report, amendment = sec_document(18), amendment_document(21)
             await persist_seed_batch(
@@ -76,6 +77,7 @@ def test_stored_documents_fill_missing_versions_without_changing_recorded_ones()
     """A stored row that lacks an acceptance time does not undo one the catalog learned."""
 
     async def scenario() -> None:
+        """Record an acceptance time for a stored report, then rebuild versions from stored rows."""
         async with isolated_session() as session:
             report = sec_document(18)
             await persist_seed_batch(session, batch(parsed(report, ("7",))))

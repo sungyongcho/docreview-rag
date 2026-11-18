@@ -309,6 +309,7 @@ def test_reranked_requests_share_one_cross_encoder_model_load(monkeypatch):
         """Count every model construction the optional dependency would perform."""
 
         def __init__(self, model, *, max_length):
+            """Record the model name each construction loads."""
             del max_length
             constructions.append(model)
 

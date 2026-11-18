@@ -112,19 +112,26 @@ def test_embed_documents_reuses_the_model_and_runs_model_off_loop(monkeypatch):
     calls: dict[str, Any] = {"constructed": 0}
 
     class Matrix:
+        """Encoder output standing in for a two-row numpy array."""
+
         def tolist(self):
+            """Return two orthogonal two-dimensional vectors."""
             return [[1.0, 0.0], [0.0, 1.0]]
 
     class Encoder:
+        """SentenceTransformer stand-in recording its construction and encoding calls."""
+
         max_seq_length = 128
         tokenizer = staticmethod(fake_tokenizer)
 
         def __init__(self, model):
+            """Count the construction and record the model name and constructing thread."""
             calls["constructed"] = int(calls["constructed"]) + 1
             calls["model"] = model
             calls["constructor_thread"] = threading.get_ident()
 
         def get_sentence_embedding_dimension(self):
+            """Declare a two-dimensional embedding."""
             return 2
 
         def encode(
@@ -135,6 +142,7 @@ def test_embed_documents_reuses_the_model_and_runs_model_off_loop(monkeypatch):
             normalize_embeddings: bool,
             convert_to_numpy: bool,
         ):
+            """Record the inputs, encoding options and thread, and return the matrix."""
             calls["inputs"] = list(inputs)
             calls["batch_size"] = batch_size
             calls["normalize"] = normalize_embeddings
@@ -181,20 +189,28 @@ def test_provider_output_still_passes_through_shared_validation(monkeypatch):
     """Validate local model output through the shared embedding boundary."""
 
     class Matrix:
+        """Encoder output holding one vector, fewer than the inputs."""
+
         def tolist(self):
+            """Return a single two-dimensional vector."""
             return [[1.0, 0.0]]
 
     class Encoder:
+        """SentenceTransformer stand-in returning one vector for any number of inputs."""
+
         max_seq_length = 128
         tokenizer = staticmethod(fake_tokenizer)
 
         def __init__(self, model):
+            """Keep the requested model name."""
             self.model = model
 
         def get_sentence_embedding_dimension(self):
+            """Declare a two-dimensional embedding."""
             return 2
 
         def encode(self, inputs, **kwargs):
+            """Return the one-vector matrix whatever the inputs."""
             return Matrix()
 
     fake_sentence_transformers(monkeypatch, SentenceTransformer=Encoder)
@@ -209,6 +225,8 @@ def test_sbert_planning_and_encoding_share_special_token_limits(monkeypatch):
     calls = []
 
     class Encoder:
+        """SentenceTransformer stand-in with an eight-token window, recording loads and encodes."""
+
         max_seq_length = 8
         tokenizer = staticmethod(fake_tokenizer)
 

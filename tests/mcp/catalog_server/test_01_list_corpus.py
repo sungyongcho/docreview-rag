@@ -40,6 +40,7 @@ def test_real_client_discovers_and_calls_list_corpus(tmp_path):
     expected = write_catalog(tmp_path, 2)
 
     async def exercise():
+        """List tools and call list_corpus through a stdio client, returning both."""
         server = module_server("app.mcp.catalog_server", env={"CORPUS_DIR": str(tmp_path)})
         async with Client(server, mode=PROTOCOL_MODE) as client:
             listing = await client.list_tools()

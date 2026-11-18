@@ -20,6 +20,8 @@ def test_source_span_fails_closed():
     """Reject chunk blocks that lack complete source coordinates."""
 
     class Missing:
+        """Chunk block whose source and end positions are both missing."""
+
         source_pos = None
         end_pos = None
 

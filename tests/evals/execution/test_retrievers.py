@@ -41,16 +41,19 @@ def test_every_retrieval_strategy_receives_the_same_normalized_query(monkeypatch
     queries = []
 
     async def lexical_search(_session, query, _k, _filters, *, text_search_config):
+        """Record the query the lexical lane receives and return no rows."""
         queries.append(query)
         return []
 
     async def vector_search(_session, _vector, *, k, filters, identity):
+        """Check the vector lane's depth, filters and identity, and return no rows."""
         assert k == 1
         assert filters is None
         assert identity == provider.identity
         return []
 
     async def retrieve(_session, query, **_kwargs):
+        """Record the query the hybrid path receives and return no hits."""
         queries.append(query)
         return SimpleNamespace(hits=())
 
@@ -76,10 +79,12 @@ def test_bm25_parameters_are_identical_in_lexical_and_hybrid_paths(monkeypatch):
     calls = []
 
     async def bm25_search(_session, query, _k, _filters, *, k1, b, idf, text_search_config):
+        """Record the lexical query and its BM25 parameters, returning no rows."""
         calls.append(("lexical", query, k1, b, idf))
         return []
 
     async def retrieve(_session, query, **kwargs):
+        """Record the hybrid query and its plan's BM25 parameters, returning no hits."""
         calls.append(
             (
                 "hybrid",
@@ -152,6 +157,7 @@ def test_language_routing_is_bound_to_the_arm_and_only_to_a_fused_one(monkeypatc
     seen = {}
 
     async def retrieve(_session, _query, **kwargs):
+        """Record the keyword arguments the arm passes and return no hits."""
         seen.update(kwargs)
         return SimpleNamespace(hits=())
 
@@ -248,6 +254,7 @@ def test_a_bound_arm_rejects_a_deeper_per_call_hit_count(monkeypatch):
     """Refuse a per-call ``k`` the bound candidate depth cannot cover."""
 
     async def lexical_search(_session, _query, _k, _filters, *, text_search_config):
+        """Fail if called, since depth validation must refuse first."""
         raise AssertionError("depth validation must run before retrieval")
 
     monkeypatch.setattr(arms, "lexical_search", lexical_search)
@@ -276,6 +283,7 @@ def test_lexical_lane_tokenizes_for_the_filtered_corpus_language(monkeypatch, fi
     calls = []
 
     async def lexical_search(_session, query, _k, _filters, *, text_search_config):
+        """Record the query and text-search configuration the lane sends."""
         calls.append((query, text_search_config))
         return []
 

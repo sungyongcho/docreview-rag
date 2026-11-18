@@ -32,6 +32,7 @@ def test_tool_failures_and_empty_results_stay_in_the_tool_result(tmp_path):
     manifest = tmp_path / "manifest.json"
 
     async def exercise():
+        """Call list_corpus with a missing, an empty and a restored catalog."""
         server = module_server("app.mcp.catalog_server", env={"CORPUS_DIR": str(tmp_path)})
         async with Client(server, mode=PROTOCOL_MODE) as client:
             missing = await client.call_tool("list_corpus", {})
@@ -55,6 +56,7 @@ def test_an_unknown_tool_is_a_protocol_error_and_the_connection_serves_on(tmp_pa
     write_catalog(tmp_path, 1)
 
     async def exercise():
+        """Call every unpublished tool name, then list_corpus on the same connection."""
         server = module_server("app.mcp.catalog_server", env={"CORPUS_DIR": str(tmp_path)})
         async with Client(server, mode=PROTOCOL_MODE) as client:
             unknown = {name: await call_or_error(client, name, {}) for name in UNKNOWN_TOOLS}

@@ -168,6 +168,7 @@ def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
         base_url = "https://api.openai.com/v1"
 
         def __init__(self, **kwargs):
+            """Record the constructor arguments and expose an empty responses namespace."""
             captured.update(kwargs)
             self.responses = SimpleNamespace()
 

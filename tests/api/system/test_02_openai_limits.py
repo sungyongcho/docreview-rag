@@ -114,6 +114,7 @@ def test_review_requests_use_the_saved_per_call_cap(tmp_path) -> None:
     _, runtime, manager = limits_app(tmp_path)
 
     async def exercise():
+        """Save working limits, then return the budget the runtime resolves for a review."""
         await manager.save(
             max_input_tokens=5_000, max_output_tokens=200, max_cost_usd=Decimal("0.01")
         )

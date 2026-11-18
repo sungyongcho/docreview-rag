@@ -31,6 +31,7 @@ def test_opt_in_live_openai_workflow_smoke():
     assert LIVE_KEY is not None
 
     async def retriever(query, k, filters):
+        """Return one hit stating a ten percent revenue increase."""
         return retrieval_result([_hit(1, body="Revenue increased by ten percent.")])
 
     request = WorkflowRequest(

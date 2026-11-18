@@ -137,6 +137,7 @@ def test_production_mode_refuses_the_experiment_before_any_work(tmp_path, monkey
     monkeypatch.setattr(config, "get_settings", lambda: offline_settings("prod"))
 
     async def require_indexed(issuer, years, **_):
+        """Fail if reached, since production mode must stop before the database."""
         raise AssertionError("production mode must stop before the database")
 
     monkeypatch.setattr(live, "require_indexed", require_indexed)
@@ -156,6 +157,7 @@ def test_production_mode_refuses_the_server_before_the_database(monkeypatch, cap
     monkeypatch.setattr(config, "get_settings", lambda: offline_settings("prod"))
 
     def never(*_: object) -> Any:
+        """Fail if reached, since production mode must stop before the engine or transport."""
         raise AssertionError("production mode must stop before the engine or transport")
 
     monkeypatch.setattr(live, "read_only_engine", never)
@@ -397,6 +399,7 @@ def test_agent_checks_the_index_before_claiming_the_run(tmp_path, monkeypatch):
     checked = []
 
     async def require_indexed(issuer, years, **_):
+        """Record the issuer and years checked, then stop as if they were not indexed."""
         checked.append((issuer, years))
         raise SystemExit("not indexed")
 
@@ -510,6 +513,7 @@ def test_model_options_fail_before_any_database_or_api_work(
     checked = []
 
     async def require_indexed(issuer, years, **_):
+        """Record any index check and fail, since invalid options must stop first."""
         checked.append((issuer, years))
         raise AssertionError("invalid model settings must stop before the index check")
 
@@ -1340,9 +1344,11 @@ def test_a_setup_failure_after_the_server_started_is_reported(
     """A tool-listing or agent-build failure is setup_error naming only its type and stage."""
 
     def fail(*_: object, **__: object) -> Any:
+        """Raise a runtime error whose message carries the fake key."""
         raise RuntimeError(f"private detail {FAKE_KEY}")
 
     async def fail_async(*_: object, **__: object) -> Any:
+        """Raise the same failure from a coroutine, for the async tool listing."""
         fail()
 
     monkeypatch.setattr(target, attribute, fail_async if attribute == "list_tools" else fail)
@@ -1426,10 +1432,12 @@ def test_a_server_stop_failure_keeps_the_answered_cell_question(tmp_path, monkey
     answered: list[dict[str, Any]] = []
 
     async def asked_once(*args: Any) -> dict[str, Any]:
+        """Ask the real review agent once and keep its answer."""
         answered.append(await ask(*args))
         return answered[-1]
 
     async def failing_stop(self: MCPAdapter, *exc: Any) -> Any:
+        """Stop the server, then raise once a question has been answered."""
         await stop(self, *exc)
         if answered:  # the adapter also exits inner sessions while listing tools
             raise RuntimeError(FAKE_KEY)
@@ -1482,6 +1490,7 @@ def test_a_create_agent_run_that_raises_still_records_and_keeps_its_marker(
     """An escaped error or cancellation is recorded, re-raised, and the run ID stays used."""
 
     async def run_review_agent_over_mcp(*_: object, **__: object) -> dict[str, Any]:
+        """Raise the parametrized error or cancellation in place of the agent run."""
         raise raised
 
     monkeypatch.setattr(live, "run_review_agent_over_mcp", run_review_agent_over_mcp)
@@ -1583,6 +1592,7 @@ def test_only_agent_runs_require_current_stored_tables(tmp_path, monkeypatch, ar
     checked: list[bool] = []
 
     async def require_indexed(issuer, years, *, current_tables=False) -> None:
+        """Record whether current stored tables were required, then stop the run."""
         checked.append(current_tables)
         raise SystemExit("checked")
 
