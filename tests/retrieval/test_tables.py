@@ -205,7 +205,7 @@ def test_catalog_distinguishes_missing_records_from_stale_identities_without_db(
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.agent.tools.filings import CellCatalog
+    from app.tools.filings import CellCatalog
 
     stored = {"builder_identity": builder_identity(), "resolver_identity": resolver_identity()}
     if changed == "both":

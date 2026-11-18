@@ -19,9 +19,9 @@ from app.agent.review_middleware import (
     StopOnSystemFailure,
     final_answer_format,
 )
-from app.agent.tools.registry import Tool, ToolRegistry
 from app.agent.types import ToolCall
 from app.contracts.evidence import EvidenceCitation
+from app.tools.registry import Tool, ToolRegistry
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
 
 

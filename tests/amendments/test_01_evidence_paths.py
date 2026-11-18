@@ -8,8 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agent.stored_evidence import read_cited_evidence, read_selected_cells
-from app.agent.tools.filings import build_default_registry
-from app.agent.tools.registry import ToolError
 from app.amendments.policy import EvidenceWithheldError
 from app.amendments.registration import register_filings
 from app.amendments.review import ItemEffect, record_review
@@ -24,6 +22,8 @@ from app.retrieval.search.plan import SearchPlan
 from app.retrieval.search.service import retrieve
 from app.retrieval.tables import cell_ref
 from app.retrieval.types import RetrievalFilters
+from app.tools.filings import build_default_registry
+from app.tools.registry import ToolError
 from tests.amendments.support import amendment_document, batch, hold, parsed, sec_document
 from tests.live_postgres import isolated_session_factory
 

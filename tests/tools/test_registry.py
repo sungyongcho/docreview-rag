@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
-from app.agent.tools.registry import Tool, ToolRegistry
+from app.tools.registry import Tool, ToolRegistry
 
 
 class EchoParams(BaseModel):

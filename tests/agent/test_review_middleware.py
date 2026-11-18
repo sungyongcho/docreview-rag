@@ -32,9 +32,9 @@ from app.agent.review_middleware import (
     keep_first_failure,
     retrieval_returned,
 )
-from app.agent.tools.filings import build_default_registry
 from app.contracts.evidence import EvidenceCitation
 from app.db.session_factory import SessionFactory
+from app.tools.filings import build_default_registry
 from tests.agent.support import ScriptedChatModel
 from tests.mcp.controlled_filings import fixture_hit
 from tests.mcp.support import logged_events, module_server

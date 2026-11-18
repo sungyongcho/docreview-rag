@@ -13,7 +13,6 @@ from typing import Any, Literal
 
 from pydantic import ValidationError
 
-from app.agent.tools.registry import FINAL_ANSWER_NAME, parse_arguments
 from app.agent.types import (
     AgentAnswer,
     AgentPeriodMismatch,
@@ -29,6 +28,7 @@ from app.figures.answers import (
     check_figures,
 )
 from app.llm.decoding import strict_response_format, validation_errors
+from app.tools.registry import FINAL_ANSWER_NAME, parse_arguments
 
 type EvidenceReader = Callable[[tuple[int, ...]], Awaitable[Mapping[int, EvidenceText]]]
 

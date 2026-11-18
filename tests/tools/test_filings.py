@@ -8,10 +8,10 @@ from typing import get_args
 from pydantic import ValidationError
 import pytest
 
-from app.agent.tools.filings import CatalogCell, build_default_registry
-from app.agent.tools.registry import ToolError
 from app.figures.tables import CellStatus
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
+from app.tools.filings import CatalogCell, build_default_registry
+from app.tools.registry import ToolError
 from tests.agent.support import FakeSessionFactory
 from tests.retrieval.support import hit
 
@@ -186,7 +186,7 @@ def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
 )
 def test_filter_violations_are_reported_as_invalid_arguments(name, arguments, field):
     """A schema-shaped call the retrieval contract rejects names the field instead of hiding it."""
-    from app.agent.tools.registry import execute_tool
+    from app.tools.registry import execute_tool
 
     registry = build_default_registry(FakeSessionFactory())
 
@@ -206,7 +206,7 @@ def test_a_catalog_cell_status_is_any_listed_cell_status():
 @pytest.mark.parametrize("status", ["not_table", "missing_records", "stale_reading", "unavailable"])
 def test_catalog_states_cannot_silently_supply_cells(status):
     """Old/unknown states and stale/missing payloads cannot certify selectable data."""
-    from app.agent.tools.filings import CellCatalog
+    from app.tools.filings import CellCatalog
 
     if status in {"not_table", "missing_records"}:
         assert CellCatalog(status=status).cells == ()
@@ -236,7 +236,7 @@ def test_catalog_states_cannot_silently_supply_cells(status):
 )
 def test_catalog_schema_refuses_inconsistent_state_details(payload):
     """Only genuinely different complete identity pairs explain stale readings."""
-    from app.agent.tools.filings import CellCatalog
+    from app.tools.filings import CellCatalog
 
     with pytest.raises(ValueError):
         CellCatalog.model_validate(payload)

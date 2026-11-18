@@ -11,11 +11,11 @@ import pytest
 
 from app.agent.loop import run_agent
 from app.agent.provider import DeterministicToolProvider, ProviderTurn
-from app.agent.tools.filings import FetchChunkParams, build_default_registry
-from app.agent.tools.registry import ToolError
 from app.agent.types import ToolCall
 from app.db.session_factory import SessionFactory
 from app.mcp.client import MCPSystemError, mcp_runner, mcp_tool_registry
+from app.tools.filings import FetchChunkParams, build_default_registry
+from app.tools.registry import ToolError
 from tests.mcp.support import PROTOCOL_MODE, controlled_filings, logged_events
 
 SEARCH_2023 = {"query": "revenue", "issuers": ["TEST"], "fiscal_years": [2023]}

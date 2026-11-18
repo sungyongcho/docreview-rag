@@ -17,9 +17,9 @@ from langchain_core.output_parsers.openai_tools import make_invalid_tool_call, p
 import pytest
 
 from app.agent.provider import BudgetExhaustedError, DeterministicToolProvider
-from app.agent.tools.filings import build_default_registry
 from app.agent.types import ToolCall
 from app.llm.decoding import strict_json_loads
+from app.tools.filings import build_default_registry
 from scripts.mcp.live import Reservation
 from tests.agent.support import FakeSessionFactory, ScriptedChatModel, turn
 

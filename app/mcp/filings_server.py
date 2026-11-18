@@ -24,10 +24,10 @@ from mcp.types import (
 from starlette.applications import Starlette
 import uvicorn
 
-from app.agent.tools.filings import build_default_registry
-from app.agent.tools.registry import ToolRegistry, execute_tool
 from app.config import get_settings
 from app.db.session_factory import default_session_factory
+from app.tools.filings import build_default_registry
+from app.tools.registry import ToolRegistry, execute_tool
 
 EXPOSED_TOOLS = ("search_filings", "compare_years", "fetch_chunk")
 

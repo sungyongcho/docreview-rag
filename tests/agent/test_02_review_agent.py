@@ -39,8 +39,6 @@ from app.agent.review_middleware import (
     StopOnSystemFailure,
     final_answer_format,
 )
-from app.agent.tools.filings import build_default_registry
-from app.agent.tools.registry import ToolRegistry
 from app.agent.types import AgentReportAnswer, AgentResult, ToolCall
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.report_text import withheld_text
@@ -48,6 +46,8 @@ from app.db.session_factory import SessionFactory
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.mcp.client import mcp_tool_registry
+from app.tools.filings import build_default_registry
+from app.tools.registry import ToolRegistry
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn
 from tests.mcp.controlled_filings import PRIVATE_DETAIL, fixture_hit
 from tests.mcp.support import PROTOCOL_MODE, logged_events, module_server

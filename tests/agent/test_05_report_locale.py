@@ -20,13 +20,13 @@ from app.agent.review_middleware import (
     StopOnSystemFailure,
     final_answer_format,
 )
-from app.agent.tools.registry import Tool, ToolRegistry
 from app.agent.types import CellSelection, CellSelectionAnswer, ToolCall
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.report_text import withheld_text
 from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
+from app.tools.registry import Tool, ToolRegistry
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
 from app.workflow.types import FiguresWithheld, WorkflowRequest, initial_state
 from tests.agent.support import RecordingToolProvider, ScriptedChatModel, turn

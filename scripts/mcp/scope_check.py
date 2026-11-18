@@ -112,12 +112,12 @@ async def serve(log_path: Path, failing_year: int) -> None:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from app.agent.tools.filings import build_default_registry
     from app.amendments.policy import eligible_chunk
     from app.db.models import Chunk, Document
     from app.mcp.filings_server import serve as serve_stdio
     from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
     from app.retrieval.types import RetrievalFilters
+    from app.tools.filings import build_default_registry
     from scripts.mcp.live import read_only_engine
 
     async def retrieve(session: AsyncSession, query: str, **kwargs: object) -> SimpleNamespace:
@@ -164,7 +164,7 @@ async def serve(log_path: Path, failing_year: int) -> None:
             embedding_provider=DeterministicEmbeddingProvider(),
         )
         with (
-            patch("app.agent.tools.filings.retrieve", retrieve),
+            patch("app.tools.filings.retrieve", retrieve),
             patch.object(AsyncSession, "get", recorded_get),
         ):
             await serve_stdio(registry)
@@ -203,10 +203,10 @@ async def check(issuer: str, years: Sequence[int]) -> list[dict[str, Any]]:
 
     from app.agent.loop import run_agent
     from app.agent.provider import DeterministicToolProvider, ProviderTurn
-    from app.agent.tools.filings import build_default_registry
     from app.agent.types import ToolCall
     from app.db.session_factory import default_session_factory
     from app.mcp.client import mcp_tool_registry
+    from app.tools.filings import build_default_registry
 
     first_year, second_year = years
     first, second = await first_chunk(issuer, first_year), await first_chunk(issuer, second_year)

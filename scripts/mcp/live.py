@@ -78,7 +78,6 @@ from app.agent.review_middleware import (
     StopOnSystemFailure,
     final_answer_format,
 )
-from app.agent.tools.registry import ToolRegistry, safe_runtime_error
 from app.agent.types import AgentBudget
 from app.llm.schemas import TokenPricing
 from app.observability.redaction import sanitize_json
@@ -86,6 +85,7 @@ from app.openai_models import POLICY_REVISION, OpenAIModelPolicyError, resolve_o
 from app.query.language import QueryLanguage, detect_query_language
 from app.query.scope import QueryScopeError, issuer_names
 from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
+from app.tools.registry import ToolRegistry, safe_runtime_error
 
 if TYPE_CHECKING:
     from mcp import Client, StdioServerParameters
@@ -944,9 +944,9 @@ async def serve(run_dir: Path, embedding: Reservation, *, include_cells: bool = 
     from openai import AsyncOpenAI
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from app.agent.tools.filings import build_default_registry
     from app.config import get_settings
     from app.mcp.filings_server import serve as serve_stdio
+    from app.tools.filings import build_default_registry
 
     settings = get_settings()
     embedding.journal = run_dir / "budget.jsonl"
@@ -1084,11 +1084,11 @@ async def run_agent_over_mcp(
     from app.agent.loop import run_agent
     from app.agent.provider import OpenAIToolProvider, ProviderTurn
     from app.agent.stored_evidence import read_cited_evidence
-    from app.agent.tools.filings import build_default_registry
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.mcp.client import mcp_tool_registry
     from app.query.periods import question_fiscal_years, utc_today
+    from app.tools.filings import build_default_registry
 
     model_budget = Reservation(
         Decimal(args.model_cap), args.model_attempts, journal=run_dir / "budget.jsonl"
@@ -1186,11 +1186,11 @@ async def run_review_agent_over_mcp(
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from app.agent.stored_evidence import read_cited_evidence, read_selected_cells
-    from app.agent.tools.filings import build_default_registry
     from app.agent.types import AgentBudget
     from app.config import get_settings
     from app.figures.vocabulary import items_named
     from app.query.periods import question_fiscal_years, utc_today
+    from app.tools.filings import build_default_registry
 
     config = get_settings()
     if config.openai_api_key is None:

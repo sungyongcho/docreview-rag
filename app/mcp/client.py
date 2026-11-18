@@ -11,7 +11,7 @@ from typing import Any
 from mcp import Client
 from pydantic import BaseModel
 
-from app.agent.tools.registry import ToolError, ToolRegistry
+from app.tools.registry import ToolError, ToolRegistry
 
 
 class MCPSystemError(RuntimeError):

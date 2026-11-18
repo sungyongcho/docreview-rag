@@ -19,10 +19,10 @@ from unittest.mock import patch
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.tools.filings import build_default_registry
 from app.mcp.filings_server import parse_arguments, serve, serve_http
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.tools.filings import build_default_registry
 
 SEARCH_CHUNK_ID = 7
 FAILING_CHUNK_ID = 13
@@ -148,7 +148,7 @@ async def main(
         include_cells=include_cells,
     )
     try:
-        with patch("app.agent.tools.filings.retrieve", controlled_retrieve(log_path)):
+        with patch("app.tools.filings.retrieve", controlled_retrieve(log_path)):
             if http_port is None:
                 await serve(registry)
             else:

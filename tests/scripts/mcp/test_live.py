@@ -34,9 +34,6 @@ from app.agent import stored_evidence
 from app.agent.cell_answers import StoredCell
 from app.agent.provider import BudgetExhaustedError
 from app.agent.review_middleware import ReviewContext
-from app.agent.tools import filings
-from app.agent.tools.filings import FetchedChunk, build_default_registry
-from app.agent.tools.registry import ToolError, execute_tool
 from app.contracts.evidence import EvidenceCitation
 from app.db.models import Chunk, ParsedTable
 from app.db.session_factory import SessionFactory
@@ -44,6 +41,9 @@ from app.figures.answers import EvidenceText
 from app.figures.tables import read_table_cells
 from app.mcp import filings_server
 from app.query.scope import issuer_names
+from app.tools import filings
+from app.tools.filings import FetchedChunk, build_default_registry
+from app.tools.registry import ToolError, execute_tool
 from scripts.mcp import live
 from scripts.mcp.live import (
     COUNTED_FIELDS,
@@ -1739,9 +1739,9 @@ def test_sequential_live_adapter_accounts_observed_overruns_or_unknown_requests(
 ):
     """The sequential adapter keeps the same per-request max rule, including a lost response."""
     from app.agent import loop, provider
-    from app.agent.tools.registry import ToolRegistry
     from app.llm.schemas import TokenPricing
     from app.mcp import client
+    from app.tools.registry import ToolRegistry
 
     async def bridge(*args):
         """No server or tools are needed to inspect the capped provider."""
@@ -1797,8 +1797,8 @@ def test_sequential_reservation_refusal_reports_budget_exceeded_before_any_reque
 ):
     """The sequential adapter's reservation cap is a budget ending, not a provider failure."""
     from app.agent import provider
-    from app.agent.tools.registry import ToolRegistry
     from app.mcp import client
+    from app.tools.registry import ToolRegistry
 
     async def bridge(*args):
         """No tools or server are needed for a pre-send budget refusal."""

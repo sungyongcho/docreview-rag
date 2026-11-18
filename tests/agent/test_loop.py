@@ -10,11 +10,11 @@ import pytest
 
 from app.agent.loop import COMPACTED_OUTPUT, run_agent
 from app.agent.provider import BudgetExhaustedError, ToolCallingProvider
-from app.agent.tools.filings import FetchChunkParams
-from app.agent.tools.registry import EvidenceExtractor, Tool, ToolRegistry
 from app.agent.types import AgentBudget, ToolCall
 from app.contracts.evidence import EvidenceCitation
 from app.llm.schemas import TokenPricing
+from app.tools.filings import FetchChunkParams
+from app.tools.registry import EvidenceExtractor, Tool, ToolRegistry
 from tests.agent.support import RecordingToolProvider, turn
 
 SOURCE_SHA256 = "a" * 64

@@ -46,5 +46,5 @@ async def load_cell_catalog(session: object, chunk_id: int) -> dict[str, object]
 
 
 if __name__ == "__main__":
-    with patch("app.agent.tools.filings.load_cell_catalog", load_cell_catalog):
+    with patch("app.tools.filings.load_cell_catalog", load_cell_catalog):
         asyncio.run(main(Path(sys.argv[1]), include_cells=True))

@@ -6,7 +6,7 @@ import json
 from mcp import Client
 import pytest
 
-from app.agent.tools.filings import SearchFilingsParams
+from app.tools.filings import SearchFilingsParams
 from tests.mcp.controlled_filings import PRIVATE_DETAIL, SEARCH_CHUNK_ID
 from tests.mcp.support import (
     PROTOCOL_MODE,

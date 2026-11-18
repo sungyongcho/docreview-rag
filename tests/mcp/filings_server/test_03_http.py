@@ -20,11 +20,11 @@ import pytest
 
 from app.agent.loop import run_agent
 from app.agent.provider import DeterministicToolProvider, ProviderTurn
-from app.agent.tools.filings import build_default_registry
 from app.agent.types import ToolCall
 from app.db.session_factory import SessionFactory
 from app.mcp import filings_server
 from app.mcp.client import mcp_tool_registry
+from app.tools.filings import build_default_registry
 from tests.mcp.controlled_filings import PRIVATE_DETAIL
 from tests.mcp.support import (
     PROTOCOL_MODE,

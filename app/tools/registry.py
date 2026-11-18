@@ -223,10 +223,10 @@ async def execute_tool(
 
     Notes
     -----
-    A :class:`~app.agent.tools.registry.ToolError` and a validation failure carry their
+    A :class:`~app.tools.registry.ToolError` and a validation failure carry their
     model-actionable detail verbatim — both are authored against the caller's
     own input, never against provider payloads — while every unexpected
-    exception is redacted through :func:`~app.agent.tools.registry.safe_runtime_error`.
+    exception is redacted through :func:`~app.tools.registry.safe_runtime_error`.
     """
     try:
         tool = registry.get(name)

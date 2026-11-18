@@ -6,7 +6,6 @@ from typing import Annotated, Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.functional_validators import field_validator, model_validator
 
-from app.agent.tools.registry import Tool, ToolError, ToolRegistry
 from app.amendments.policy import eligible_ids
 from app.contracts.evidence import EvidenceCitation
 from app.contracts.validation import NonBlank, PositiveInt, StrictSchema
@@ -20,6 +19,7 @@ from app.retrieval.embedding.provider import (
 from app.retrieval.search.service import RetrievalResult, retrieve
 from app.retrieval.tables import load_cell_catalog
 from app.retrieval.types import ChunkHit, Form, Issuer, RetrievalFilters
+from app.tools.registry import Tool, ToolError, ToolRegistry
 
 DEFAULT_SEARCH_K = 5
 MAX_SEARCH_K = 20

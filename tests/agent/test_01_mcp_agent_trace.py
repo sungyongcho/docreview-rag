@@ -21,9 +21,9 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 import pytest
 
-from app.agent.tools.filings import build_default_registry
 from app.db.session_factory import SessionFactory
 from app.mcp.filings_server import EXPOSED_TOOLS
+from app.tools.filings import build_default_registry
 from tests.agent.support import ModelRequest, ScriptedChatModel
 from tests.mcp.controlled_filings import fixture_hit
 from tests.mcp.support import logged_events, module_server

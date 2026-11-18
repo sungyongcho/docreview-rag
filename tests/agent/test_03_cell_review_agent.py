@@ -18,8 +18,8 @@ from app.agent.review_middleware import (
     StopOnSystemFailure,
     final_answer_format,
 )
-from app.agent.tools.filings import build_default_registry
 from app.db.session_factory import SessionFactory
+from app.tools.filings import build_default_registry
 from tests.agent.support import ScriptedChatModel
 
 USAGE = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}

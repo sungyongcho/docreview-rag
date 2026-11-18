@@ -7,7 +7,7 @@ import json
 from mcp import Client
 import pytest
 
-from app.agent.tools.filings import CompareYearsParams, FetchedChunk
+from app.tools.filings import CompareYearsParams, FetchedChunk
 from tests.mcp.controlled_filings import FAILING_CHUNK_ID, PRIVATE_DETAIL, fixture_hit
 from tests.mcp.support import (
     PROTOCOL_MODE,

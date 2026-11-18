@@ -17,15 +17,6 @@ from app.agent.final_answer import (
 )
 from app.agent.ledger import citation_records, ledger_failure, merge_identities
 from app.agent.provider import BudgetExhaustedError, ProviderTurn, ToolCallingProvider
-from app.agent.tools.filings import unretrieved_fetch
-from app.agent.tools.registry import (
-    FINAL_ANSWER_NAME,
-    ToolError,
-    ToolRegistry,
-    execute_tool,
-    parse_arguments,
-    safe_runtime_error,
-)
 from app.agent.types import (
     AgentAnswer,
     AgentBudget,
@@ -40,6 +31,15 @@ from app.agent.types import (
     ToolCall,
 )
 from app.contracts.evidence import EvidenceCitation
+from app.tools.filings import unretrieved_fetch
+from app.tools.registry import (
+    FINAL_ANSWER_NAME,
+    ToolError,
+    ToolRegistry,
+    execute_tool,
+    parse_arguments,
+    safe_runtime_error,
+)
 
 # The Responses API rejects max_output_tokens below 16, so a smaller remaining
 # allowance can only buy a failed request: the run is out of budget, and saying
@@ -117,7 +117,7 @@ async def _dispatch(
     -----
     Tool exceptions never escape into the agent loop: lookup, validation,
     execution, and serialization run through the shared
-    :func:`~app.agent.tools.registry.execute_tool` boundary. Evidence extraction
+    :func:`~app.tools.registry.execute_tool` boundary. Evidence extraction
     stays here because the loop grounds citations against its observations.
     """
     try:
