@@ -553,6 +553,7 @@ def test_a_fetched_table_records_its_cells_by_content_and_source_version():
     result = fetched_result(table=CATALOG)
     answer, _ = gate_call("fetch_chunk", {"chunk_id": 2024}, {2024: identity(2024)}, result)
     assert isinstance(answer, Command)
+    assert answer.update is not None
     assert answer.update["cells"] == {"2024:r1c1": cell_record(CATALOG["cells"][0], CATALOG, 2024)}
     record = answer.update["cells"]["2024:r1c1"]
     assert (record["stable_key"], record["resolver_identity"]) == ("k" * 64, "r" * 64)
@@ -583,6 +584,7 @@ def test_a_chunk_without_stored_cells_adds_no_cells():
             "fetch_chunk", {"chunk_id": 2024}, {2024: identity(2024)}, fetched_result(table=table)
         )
         assert isinstance(answer, Command)
+        assert answer.update is not None
         assert "cells" not in answer.update
 
 
@@ -602,7 +604,9 @@ def test_cell_updates_merge_and_a_disagreement_stops_before_the_next_model_call(
     }
     assert stop.before_model(cast(Any, {"messages": [], "cells": first}), runtime) is None
     gate = ReviewGate(contracts())
-    assert gate.before_agent(cast(Any, {"messages": []}), runtime)["cells"] is None
+    reset = gate.before_agent(cast(Any, {"messages": []}), runtime)
+    assert reset is not None
+    assert reset["cells"] is None
 
 
 def test_only_a_returned_retrieval_in_this_question_counts_as_a_search():

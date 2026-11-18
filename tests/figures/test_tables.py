@@ -800,6 +800,7 @@ def test_scope_unknown_explains_only_the_established_cause(header, rows, stateme
     interpretation = interpret_table_cell("1,234", [cell])
     assert interpretation.status == "scope_unknown"
     assert cell.scope_cause == cause
+    assert interpretation.reason is not None
     assert reason in interpretation.reason
     assert "filing declares no" not in interpretation.reason
 

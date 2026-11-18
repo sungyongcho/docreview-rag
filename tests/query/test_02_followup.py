@@ -2,10 +2,12 @@
 
 import asyncio
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 
+from app.api.review.engines import ReviewEngines
 from app.api.review.schemas import RetrieveRequest
 from app.ingestion.sources.models import CorpusIdentity, Manifest
 from app.query.conversation import ConversationRouter
@@ -46,7 +48,7 @@ def test_issuer_and_year_pivot_preserves_only_the_previous_topic(tmp_path, previ
             developer=False,
             secret_values=(),
         ),
-        engines=engines,
+        engines=cast(ReviewEngines, engines),
         classifier_enabled=True,
     )
     decision, path = asyncio.run(

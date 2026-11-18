@@ -106,15 +106,11 @@ def test_operator_board_reads_persisted_history_and_global_queue_actions(
 
         def api():
             """Start a fresh API projection with only recovery side effects replaced."""
-            service = SimpleNamespace()
-            service.corpus = cast(
-                RuntimeCorpusAdminService, SimpleNamespace(recover_jobs=AsyncMock())
+            return _admin(
+                corpus=cast(RuntimeCorpusAdminService, SimpleNamespace(recover_jobs=AsyncMock())),
+                evaluations=cast(EvaluationAdminService, SimpleNamespace(recover_jobs=AsyncMock())),
+                jobs=store,
             )
-            service.evaluations = cast(
-                EvaluationAdminService, SimpleNamespace(recover_jobs=AsyncMock())
-            )
-            service.jobs = store
-            return service
 
         board = await _operator_jobs(api())
         assert board.active_count == 1

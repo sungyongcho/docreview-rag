@@ -19,14 +19,11 @@ def test_config_rejects_non_positive_limits(field, value):
 def test_source_span_fails_closed():
     """Reject chunk blocks that lack complete source coordinates."""
 
-    class Missing:
-        """Chunk block whose source and end positions are both missing."""
+    from app.ingestion.parsing.models import Block
 
-        source_pos = None
-        end_pos = None
-
+    missing = Block("paragraph", "missing")
     with pytest.raises(ValueError, match="source spans"):
-        chunking._source_span([Missing()])
+        chunking._source_span([missing])
 
 
 def test_source_span_validates_each_block_and_group():

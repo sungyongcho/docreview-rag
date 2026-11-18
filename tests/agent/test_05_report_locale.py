@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel
@@ -125,10 +126,11 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
             for c in calls
         ]
     )
+    middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(registry)]
     agent = create_agent(
         model,
         [search_notes],
-        middleware=[StopOnSystemFailure(), ReviewGate(registry)],
+        middleware=middleware,
         response_format=final_answer_format(),
         context_schema=ReviewContext,
     )
@@ -251,6 +253,7 @@ def test_all_report_paths_use_the_resolved_locale(locale, kind):
         locale=locale,
     )
     if kind == "direction":
+        assert selected.problem is not None
         assert selected.report is None and "conflicting" in selected.problem
     else:
         assert selected.report is not None and selected.report.label == direct.label

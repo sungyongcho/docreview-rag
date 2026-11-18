@@ -88,6 +88,7 @@ def test_mismatch_reports_only_the_mismatched_subset_without_claiming_absence():
     assert judged.report.answer == (
         "The stated figures 22,680 were found for fiscal 2023, not the requested fiscal 2024."
     )
+    assert judged.period_mismatch is not None
     assert judged.period_mismatch.figures == ("22,680",)
     assert "does not report" not in judged.report.answer
     assert "Every" not in judged.report.rationale

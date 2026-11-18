@@ -269,14 +269,14 @@ def test_direct_backfill_keeps_charged_cli_usage_when_vector_storage_fails(monke
                 """Fail after the provider response to verify independent usage durability."""
                 raise ValueError("fixture vector write rejected")
 
-            import httpx
-            from openai import AsyncOpenAI
+            import httpx2
+            from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 
             from app.retrieval.embedding.openai import OpenAIEmbeddingProvider
 
             def respond(request):
                 """Return billed usage at the actual HTTP transport boundary."""
-                return httpx.Response(
+                return httpx2.Response(
                     200,
                     json={
                         "object": "list",
@@ -290,7 +290,7 @@ def test_direct_backfill_keeps_charged_cli_usage_when_vector_storage_fails(monke
             monkeypatch.setattr(embeddings, "_store_batch", reject_store)
             async with AsyncOpenAI(
                 api_key="offline-test",
-                http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+                http_client=DefaultAsyncHttpxClient(transport=httpx2.MockTransport(respond)),
             ) as client:
                 provider = OpenAIEmbeddingProvider(client=client, credential_slot="dev")
                 async with factory() as session:

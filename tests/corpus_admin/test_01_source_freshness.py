@@ -15,6 +15,7 @@ from app.ingestion.sources.deletion import SourceDeletion
 from app.ingestion.sources.models import Manifest
 from app.ingestion.sources.publication import publish_acquired
 from app.ingestion.sources.selection import record_selection
+from tests.api.support import _admin
 from tests.ingestion.seed.support import sample_chunks, sample_filing
 from tests.ingestion.support import acquired_filing
 from tests.live_postgres import isolated_session_factory
@@ -145,9 +146,7 @@ def test_source_changes_and_failed_reingestion_keep_committed_provenance(tmp_pat
             assert deleted.documents[0].ingestion_status == "unknown"
 
             # Verify the actual typed API boundary includes both independent states.
-            dependencies = SimpleNamespace(
-                corpus=service, runtime=SimpleNamespace(company_names=lambda: {})
-            )
+            dependencies = _admin(corpus=service, runtime=SimpleNamespace(company_names=lambda: {}))
             resource = await _corpus_snapshot(dependencies)
             assert resource.sources[0].ingestion_status == "unknown"
             assert resource.documents[0].ingestion_status == "unknown"

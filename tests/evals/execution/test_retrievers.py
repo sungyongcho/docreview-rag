@@ -2,7 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -146,7 +146,7 @@ def test_vector_and_hybrid_arms_preserve_mixed_corpus_languages(
     )
 
     assert asyncio.run(retriever("revenue", 1)).hits == ()
-    expected = [("vector", ("en", "ko"))]
+    expected: list[tuple[str, tuple[str, ...]]] = [("vector", ("en", "ko"))]
     if strategy == "hybrid":
         expected.extend([("lexical", ("en",)), ("lexical", ("ko",))])
     assert calls == expected
@@ -303,7 +303,7 @@ def test_lexical_lane_tokenizes_for_the_filtered_corpus_language(monkeypatch, fi
 def test_stored_fragments_yield_cell_spans_only_when_every_cell_has_one(monkeypatch):
     """Read every rendered cell's span, and leave out a fragment stored before spans existed."""
 
-    def cell(row: int, column: int, span: tuple[int, int] | None) -> dict[str, object]:
+    def cell(row: int, column: int, span: tuple[int, int] | None) -> dict[str, Any]:
         """Build one stored fragment member with a single source cell."""
         source = {"row": row, "column": column, "rowspan": 1, "colspan": 1, "text": "1"}
         if span is not None:

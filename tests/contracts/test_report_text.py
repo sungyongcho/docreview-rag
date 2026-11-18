@@ -9,6 +9,7 @@ from app.agent.final_answer import judge_written_answer, period_mismatch_report,
 from app.agent.loop import run_agent
 from app.agent.review_middleware import ReviewContext
 from app.contracts.report_text import period_mismatch_rationale, period_mismatch_text, withheld_text
+from app.figures.withholding import WithholdingCause
 
 
 @pytest.mark.parametrize(
@@ -35,7 +36,7 @@ def test_locale_is_a_required_keyword(producer):
 @pytest.mark.parametrize("locale", ["en", "ko"])
 def test_sentences_name_only_the_actual_cause_and_never_report_the_figure(locale):
     """Single and mixed causes stay distinct in both the answer and the rationale."""
-    names = (
+    names: dict[WithholdingCause, str] = (
         {"scale": "단위", "currency": "통화", "direction": "손익 방향"}
         if locale == "ko"
         else {

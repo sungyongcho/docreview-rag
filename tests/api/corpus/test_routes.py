@@ -20,7 +20,6 @@ def test_acquisition_api_preserves_absent_deletion_and_document_arguments():
     from app.corpus_admin.types import AdminCommand
 
     request = AdminCommand(kind="acquire_edgar", identifiers=("NVDA",), years=(2024,))
-    service = SimpleNamespace()
 
     async def enqueue(command):
         """Return the accepted command through the actual dataclass serialization boundary."""
@@ -28,7 +27,7 @@ def test_acquisition_api_preserves_absent_deletion_and_document_arguments():
         assert command.document_ids is None and command.confirm_delete is None
         return AdminJob("download", command, "queued", "queued", 0, None, "Queued")
 
-    service.corpus = cast(RuntimeCorpusAdminService, SimpleNamespace(enqueue=enqueue))
+    service = _admin(corpus=cast(RuntimeCorpusAdminService, SimpleNamespace(enqueue=enqueue)))
     result = asyncio.run(_enqueue_corpus(service, request))
     assert result["command"]["kind"] == "acquire_edgar"
 
@@ -55,10 +54,11 @@ def test_source_deletion_preview_accepts_the_plan_lists_from_the_corpus_service(
         "retained_inputs": 2,
         "retained_derived": True,
     }
-    service = SimpleNamespace()
-    service.corpus = cast(
-        RuntimeCorpusAdminService,
-        SimpleNamespace(preview_source_deletion=AsyncMock(return_value=plan)),
+    service = _admin(
+        corpus=cast(
+            RuntimeCorpusAdminService,
+            SimpleNamespace(preview_source_deletion=AsyncMock(return_value=plan)),
+        )
     )
     resource = asyncio.run(
         _source_deletion_preview(

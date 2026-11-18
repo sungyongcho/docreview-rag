@@ -10,8 +10,8 @@ import sys
 from types import SimpleNamespace
 from typing import cast
 
-import httpx
-from openai import AsyncOpenAI
+import httpx2
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from pydantic import SecretStr, ValidationError
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,7 +154,7 @@ def test_openai_provider_requests_384_floats_and_restores_response_order():
         assert request.method == "POST"
         assert request.url.path == "/v1/embeddings"
         requests.append(json.loads(request.content))
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "object": "list",
@@ -173,7 +173,7 @@ def test_openai_provider_requests_384_floats_and_restores_response_order():
             api_key="offline-test-key",
             base_url="https://openai.test/v1",
             max_retries=0,
-            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+            http_client=DefaultAsyncHttpxClient(transport=httpx2.MockTransport(respond)),
         ) as client:
             provider = openai_embeddings.OpenAIEmbeddingProvider(client=client)
             return await provider.embed_documents(["first", "second"]), provider.usage
@@ -211,7 +211,9 @@ def test_openai_provider_rejects_incomplete_duplicate_or_wrong_dimension_data(
     data: list[FakeEmbeddingData],
 ):
     """Reject incomplete, duplicate-indexed, and malformed provider responses."""
-    provider = openai_embeddings.OpenAIEmbeddingProvider(client=FakeEmbeddingClient(data))
+    provider = openai_embeddings.OpenAIEmbeddingProvider(
+        client=cast(AsyncOpenAI, FakeEmbeddingClient(data))
+    )
     with pytest.raises(ValueError):
         asyncio.run(provider.embed_documents(["first", "second"]))
 
@@ -401,7 +403,7 @@ def test_backfill_rejects_invalid_batch_size_and_active_transactions():
 def test_openai_preflights_all_inputs_before_any_request():
     """An oversized later input must prevent even an earlier valid request."""
     client = FakeEmbeddingClient([])
-    provider = openai_embeddings.OpenAIEmbeddingProvider(client=client)
+    provider = openai_embeddings.OpenAIEmbeddingProvider(client=cast(AsyncOpenAI, client))
     with pytest.raises(ValueError, match="8192"):
         asyncio.run(provider.embed_documents(["valid", "word " * 8193]))
     assert client.embeddings.requests == []
@@ -439,7 +441,9 @@ def test_openai_batches_provider_limits_without_splitting_inputs(texts):
 def test_provider_planning_configuration_is_explicit_and_matches_counting():
     """Expose provider-specific token accounting without inferred tokenizer identities."""
     deterministic = embeddings.DeterministicEmbeddingProvider()
-    openai = openai_embeddings.OpenAIEmbeddingProvider(client=FakeEmbeddingClient([]))
+    openai = openai_embeddings.OpenAIEmbeddingProvider(
+        client=cast(AsyncOpenAI, FakeEmbeddingClient([]))
+    )
     assert deterministic.count_input_tokens("ＡＬＰＨＡ beta!") == 2
     assert deterministic.max_input_tokens == openai.max_input_tokens == 8192
     assert openai.count_input_tokens("<|endoftext|>") > 0
@@ -478,7 +482,8 @@ def test_openai_usage_survives_vector_validation_failure():
             records.append(record)
 
         provider = openai_embeddings.OpenAIEmbeddingProvider(
-            client=FakeEmbeddingClient([FakeEmbeddingData(1, [1.0] * 384)]), credential_slot="dev"
+            client=cast(AsyncOpenAI, FakeEmbeddingClient([FakeEmbeddingData(1, [1.0] * 384)])),
+            credential_slot="dev",
         )
         with observe_embedding_usage(sink), pytest.raises(ValueError, match="indices"):
             await provider.embed_documents(["one source"])
@@ -499,7 +504,7 @@ def test_concurrent_embedding_observers_do_not_capture_other_queries():
     async def scenario():
         """Interleave two backfill observers and one unobserved query on the same provider."""
         provider = openai_embeddings.OpenAIEmbeddingProvider(
-            client=FakeEmbeddingClient([FakeEmbeddingData(0, [1.0] * 384)])
+            client=cast(AsyncOpenAI, FakeEmbeddingClient([FakeEmbeddingData(0, [1.0] * 384)]))
         )
 
         async def operation(name):

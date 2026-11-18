@@ -440,6 +440,7 @@ def test_conflicting_chunk_identity_is_rejected_and_kept_out_of_evidence():
     result, _ = run_loop(turns, registry=registry)
 
     assert result.status == "tool_error"
+    assert result.failure is not None
     assert "conflicting immutable identity" in result.failure
     assert len(result.steps) == 2
     assert result.answer is None

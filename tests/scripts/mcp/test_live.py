@@ -1785,7 +1785,7 @@ def test_sequential_live_adapter_accounts_observed_overruns_or_unknown_requests(
             "100",
         ]
     )
-    outcome = asyncio.run(live.run_agent_over_mcp(object(), tmp_path, args))
+    outcome = asyncio.run(live.run_agent_over_mcp(cast(mcp.Client, object()), tmp_path, args))
     events = [json.loads(line) for line in (tmp_path / "budget.jsonl").read_text().splitlines()]
     assert events[-1]["status"] == ("unknown" if lost else "observed")
     assert outcome["budget"]["accounted_usd"] == events[-1]["accounted_usd"]
@@ -1826,7 +1826,7 @@ def test_sequential_reservation_refusal_reports_budget_exceeded_before_any_reque
             "0.000000001",
         ]
     )
-    outcome = asyncio.run(live.run_agent_over_mcp(object(), tmp_path, args))
+    outcome = asyncio.run(live.run_agent_over_mcp(cast(mcp.Client, object()), tmp_path, args))
     assert outcome["status"] == "budget_exceeded"
     assert outcome["failure"] == "approved model budget exhausted"
     assert outcome["budget"]["attempts"] == 0

@@ -109,6 +109,7 @@ def test_page_join_preserves_item_ownership_and_distinct_source_occurrences(xref
         assert visible and visible in evidence
         assert visible != "Table of Contents" and not visible.isdigit()
     financial = next(block for block in sections["8"].blocks if block.kind == "table")
+    assert financial.html is not None
     assert normalize(financial.html).get_text(" ", strip=True) == (
         "Metric 2024 2023 Revenue 120 100 Expenses 80 70"
     )

@@ -19,7 +19,7 @@ from app.llm.local.provider import LocalLLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
 from app.retrieval.embedding.provider import DeterministicEmbeddingProvider
 from app.retrieval.search.service import ComponentRankings, RetrievalResult
-from tests.api.support import MemorySession, write_scope_manifest
+from tests.api.support import MemorySession, _admin, write_scope_manifest
 from tests.ingestion.support import filing_document
 from tests.llm.support import DeterministicLLMProvider, raw
 
@@ -74,7 +74,7 @@ def test_http_review_grades_evidence_and_persists_the_returned_report(tmp_path, 
         sessions.append(session)
         return session
 
-    async def retrieval_service(session, query, *, provider, k, filters, plan, **options):
+    async def retrieval_service(session, query, *, provider, k, filters, plan=None, **options):
         """Simulate retrieval opening a database transaction and returning ranked evidence."""
         session.transaction_open = True
         retrieval_calls.append({"query": query, "filters": filters, "plan": plan})
@@ -213,7 +213,7 @@ def test_http_review_grades_evidence_and_persists_the_returned_report(tmp_path, 
 def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(tmp_path, hit):
     """Keep provider-free evidence retrieval available when language routing is off."""
 
-    async def retrieval_service(session, query, *, provider, k, filters, plan, **options):
+    async def retrieval_service(session, query, *, provider, k, filters, plan=None, **options):
         """Return one deterministic hit without touching an answer provider."""
         del session, query, provider, k, filters, plan
         return RetrievalResult(
@@ -250,7 +250,7 @@ def test_korean_preset_retrieval_uses_the_issuer_language_without_translation(
     """Keep an English NVIDIA query on SEC evidence without requiring a translation model."""
     observed = []
 
-    async def retrieval_service(session, query, *, provider, k, filters, plan, **options):
+    async def retrieval_service(session, query, *, provider, k, filters, plan=None, **options):
         """Record the actual runtime filter and return one controlled candidate."""
         observed.append(filters)
         return RetrievalResult(
@@ -324,7 +324,7 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
     provider = DeterministicLLMProvider(responses)
     observed = []
 
-    async def retrieval_service(session, query, *, provider, k, filters, plan, **options):
+    async def retrieval_service(session, query, *, provider, k, filters, plan=None, **options):
         """Observe the actual retrieval input; empty evidence needs no answer model."""
         observed.append((query, filters, options["query_variants"]))
         return RetrievalResult(
@@ -352,8 +352,6 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
     )
     session_profile = ReviewSessionProfile(retrieval_preset=preset)
     if entrypoint == "preview":
-        from types import SimpleNamespace
-
         from app.api.review.previews import ReviewPreviewRequest, _review_preview
         from app.api.review.profiles import resolve_retrieval_profile
         from app.retrieval.search.profiles import RetrievalProfile
@@ -361,7 +359,7 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
         profile = resolve_retrieval_profile(session_profile, services.bm25_parameters)
         asyncio.run(
             _review_preview(
-                SimpleNamespace(runtime=services),
+                _admin(runtime=services),
                 ReviewPreviewRequest(
                     query=query,
                     profile=RetrievalProfile.model_validate(
@@ -416,7 +414,7 @@ def test_default_runtime_is_live_but_review_is_fail_closed_without_provider():
 def test_retrieval_failures_are_typed_and_hide_provider_details(failure, status, code, message):
     """Translate retrieval-domain rejection and embedding-provider failure at the HTTP boundary."""
 
-    async def rejecting_retrieval(session, query, *, provider, k, filters, plan, **options):
+    async def rejecting_retrieval(session, query, *, provider, k, filters, plan=None, **options):
         """Fail where the retrieval plan or its embedding provider rejects the request."""
         raise failure
 
@@ -456,7 +454,7 @@ def test_provider_failure_is_recorded_and_redacted_before_http_response(tmp_path
             """Model an upstream failure carrying a configured secret."""
             raise RuntimeError(f"provider unavailable: {secret}")
 
-    async def retrieval_service(session, query, *, provider, k, filters, plan, **options):
+    async def retrieval_service(session, query, *, provider, k, filters, plan=None, **options):
         """Supply evidence so the workflow must attempt its grade call."""
         return RetrievalResult(
             candidates=(hit,),
@@ -531,7 +529,7 @@ def test_allowance_denial_after_a_billed_call_keeps_the_run_on_record(tmp_path, 
                 raise AIAllowanceError("public_daily_limit", "Daily AI allowance reached.", 60)
             return await super()._request(prompt, schema, budget)
 
-    async def retrieval_service(session, query, *, provider, k, filters, plan, **options):
+    async def retrieval_service(session, query, *, provider, k, filters, plan=None, **options):
         """Return the one staged hit."""
         del session, query, provider, k, filters, plan
         return RetrievalResult(

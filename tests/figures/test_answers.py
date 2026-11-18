@@ -233,6 +233,7 @@ def test_period_filtering_and_a_confirmed_match_do_not_inherit_other_cells_cause
     from tests.figures.support import table_evidence
 
     original = table_evidence()
+    assert original.table_cells is not None
     revenue = next(
         cell for cell in original.table_cells if cell.item == "revenue" and 2024 in cell.years
     )
@@ -242,6 +243,7 @@ def test_period_filtering_and_a_confirmed_match_do_not_inherit_other_cells_cause
     answer = "FY2024 net revenue was USD 25,785 million."
     held = check_figures(answer, [evidence], [2024])
     assert held.verdict == "withheld" and held.causes == ("scale",)
+    assert evidence.table_cells is not None
     confirmed = check_figures(
         answer, [replace(evidence, table_cells=(*evidence.table_cells, revenue))], [2024]
     )

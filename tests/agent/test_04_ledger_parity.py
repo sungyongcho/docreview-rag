@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
@@ -80,7 +81,7 @@ def test_stored_identity_changes_end_both_agents_before_final(versions, candidat
         return json.dumps(out), {"structured_content": out}
 
     batches = [calls(*versions)] if parallel else [calls(v) for v in versions]
-    final = dict(
+    final: dict[str, Any] = dict(
         name="final_answer",
         id="final",
         type="tool_call",
@@ -102,10 +103,11 @@ def test_stored_identity_changes_end_both_agents_before_final(versions, candidat
             ]
         )
     model = ScriptedChatModel.from_replies(*replies)
+    middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(registry)]
     agent = create_agent(
         model,
         [read_chunk],
-        middleware=[StopOnSystemFailure(), ReviewGate(registry)],
+        middleware=middleware,
         response_format=final_answer_format(),
         checkpointer=InMemorySaver(),
     )
@@ -148,6 +150,7 @@ def test_stored_identity_changes_end_both_agents_before_final(versions, candidat
         assert "conflicting immutable identity for chunk 1" in state["failure"]
         assert state.get("structured_response") is None
         assert result.status == "tool_error"
+        assert result.failure is not None
         assert "conflicting immutable identity for chunk 1" in result.failure
         assert len(model.requests) == len(batches) + (3 if check_reset else 0)
         assert len(provider.requests) == len(batches)
@@ -184,9 +187,8 @@ def test_unexpected_evidence_extraction_errors_are_system_failures_on_both_paths
         )
     )
     model = ScriptedChatModel.from_replies(AIMessage(content="", tool_calls=calls("a")))
-    agent = create_agent(
-        model, [read_chunk], middleware=[StopOnSystemFailure(), ReviewGate(registry)]
-    )
+    middleware: list[AgentMiddleware[Any, Any]] = [StopOnSystemFailure(), ReviewGate(registry)]
+    agent = create_agent(model, [read_chunk], middleware=middleware)
     provider = RecordingToolProvider(
         [
             turn(

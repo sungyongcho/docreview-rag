@@ -102,13 +102,17 @@ def test_a_fragment_keeps_member_header_and_caption_order():
     )
     fragment = stored[7].fragment
     assert fragment["header_rows"] == [0]
-    assert [(cell["row"], cell["column"]) for cell in fragment["cells"]] == [(1, 0), (1, 1)]
-    assert [cell["sources"][0]["text"] for cell in fragment["cells"]] == [
+    stored_cells, header_cells = fragment["cells"], fragment["header_cells"]
+    caption_sources = fragment["caption_sources"]
+    assert isinstance(stored_cells, list) and isinstance(header_cells, list)
+    assert isinstance(caption_sources, list)
+    assert [(cell["row"], cell["column"]) for cell in stored_cells] == [(1, 0), (1, 1)]
+    assert [cell["sources"][0]["text"] for cell in stored_cells] == [
         "Net revenue",
         "25,785",
     ]
-    assert [cell["text"] for cell in fragment["header_cells"]] == ["(In millions)", "2024"]
-    assert [source["text"] for source in fragment["caption_sources"]] == ["(In millions)"]
+    assert [cell["text"] for cell in header_cells] == ["(In millions)", "2024"]
+    assert [source["text"] for source in caption_sources] == ["(In millions)"]
 
 
 def test_readings_follow_member_order_then_link_order():
@@ -183,6 +187,7 @@ def test_a_catalog_lists_numeric_cells_by_ref_with_their_reading():
         {(1, 1): grid(1, 1, "25,785", revenue(1, "25785"))},
     )
     assert catalog["unit"] == {"status": "known", "scale": "1000000", "currency": ["USD"]}
+    assert isinstance(catalog["cells"], list)
     (cell,) = catalog["cells"]
     assert (cell["ref"], cell["item"], cell["fiscal_years"], cell["complete"]) == (
         "7:r1c1",

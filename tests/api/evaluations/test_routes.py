@@ -25,12 +25,13 @@ def test_duplicate_evaluation_is_a_typed_409():
     from app.evals.admin.service import EvaluationAlreadyQueuedError
     from app.evals.contracts import EvaluationRunRequest
 
-    service = SimpleNamespace()
-    service.evaluations = cast(
-        EvaluationAdminService,
-        SimpleNamespace(
-            enqueue=AsyncMock(side_effect=EvaluationAlreadyQueuedError("eval-existing"))
-        ),
+    service = _admin(
+        evaluations=cast(
+            EvaluationAdminService,
+            SimpleNamespace(
+                enqueue=AsyncMock(side_effect=EvaluationAlreadyQueuedError("eval-existing"))
+            ),
+        )
     )
     with pytest.raises(ApiProblemError) as error:
         asyncio.run(_enqueue_evaluation(service, EvaluationRunRequest(suite_id="sec-en")))
@@ -85,10 +86,11 @@ def test_evaluation_jobs_expose_each_recorded_result_configuration():
                     ),
                 )
             )
-            service = SimpleNamespace()
-            service.runtime = cast(RuntimeApiServices, SimpleNamespace(session_factory=factory))
-            service.evaluations = cast(
-                EvaluationAdminService, SimpleNamespace(jobs=AsyncMock(return_value=board))
+            service = _admin(
+                runtime=cast(RuntimeApiServices, SimpleNamespace(session_factory=factory)),
+                evaluations=cast(
+                    EvaluationAdminService, SimpleNamespace(jobs=AsyncMock(return_value=board))
+                ),
             )
             result = await _evaluation_jobs(service)
             assert [item.config["strategy"] for item in result.jobs[0].result_summaries] == [

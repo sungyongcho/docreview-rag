@@ -2,12 +2,13 @@
 
 import asyncio
 from functools import partial
+from typing import cast
 
 import pytest
 from sqlalchemy import select, update
 
 from app.db.models import Chunk, ParsedTable
-from app.ingestion.chunking import compose_index_text
+from app.ingestion.chunking import ChunkKind, compose_index_text
 from app.ingestion.persistence import persist_seed_batch
 from app.llm.schemas import AnswerDecision, ChunkRelevance, RelevanceJudgment
 from app.retrieval.tables import load_table_readings
@@ -28,7 +29,7 @@ def _hit(chunk: Chunk) -> ChunkHit:
         chunk_id=chunk.id,
         doc_id=chunk.doc_id,
         item=chunk.item,
-        kind=chunk.kind,
+        kind=cast(ChunkKind, chunk.kind),
         citation=chunk.citation,
         start_char=chunk.start_char,
         end_char=chunk.end_char,

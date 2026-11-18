@@ -4,9 +4,10 @@ import asyncio
 from decimal import Decimal
 import json
 from types import SimpleNamespace
+from typing import cast
 
-import httpx
-from openai import AsyncOpenAI
+import httpx2
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
@@ -245,7 +246,7 @@ def test_openai_adapter_sends_one_schema_bound_request_with_injected_offline_cli
         assert request.method == "POST"
         assert request.url.path == "/v1/responses"
         requests.append(json.loads(request.content))
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "resp-123",
@@ -274,7 +275,7 @@ def test_openai_adapter_sends_one_schema_bound_request_with_injected_offline_cli
             api_key="offline-test-key",
             base_url="https://openai.test/v1",
             max_retries=0,
-            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+            http_client=DefaultAsyncHttpxClient(transport=httpx2.MockTransport(respond)),
         ) as client:
             provider = OpenAILLMProvider(
                 model_name="gpt-5.6-terra", client=client, clock=TickClock()
@@ -312,7 +313,7 @@ def test_openai_adapter_maps_structured_refusal_without_network_or_retry():
     client = FakeClient(response)
     provider = OpenAILLMProvider(
         model_name="gpt-5.6-terra",
-        client=client,
+        client=cast(AsyncOpenAI, client),
         clock=TickClock(),
     )
 
@@ -337,7 +338,7 @@ def test_openai_adapter_rejects_missing_usage_as_typed_provider_error():
     client = FakeClient(response)
     provider = OpenAILLMProvider(
         model_name="gpt-5.6-terra",
-        client=client,
+        client=cast(AsyncOpenAI, client),
         clock=TickClock(),
     )
 
@@ -355,7 +356,7 @@ def test_openai_adapter_rejects_missing_usage_as_typed_provider_error():
 def test_provider_closes_only_the_client_it_opened_itself():
     """Own the shutdown of a self-built client and leave an injected one alone."""
     injected = FakeClient(SimpleNamespace())
-    borrower = OpenAILLMProvider(model_name="gpt-5.6-terra", client=injected)
+    borrower = OpenAILLMProvider(model_name="gpt-5.6-terra", client=cast(AsyncOpenAI, injected))
 
     asyncio.run(borrower.aclose())
 
@@ -441,7 +442,7 @@ def test_repair_loop_still_guards_the_strict_path():
     responses = SequencedResponses([invalid, repaired])
     provider = OpenAILLMProvider(
         model_name="gpt-5.6-terra",
-        client=SimpleNamespace(responses=responses),
+        client=cast(AsyncOpenAI, SimpleNamespace(responses=responses)),
         clock=TickClock(),
     )
 
@@ -545,7 +546,7 @@ def test_openai_preflight_refusal_records_its_projection_in_metadata():
     responses = UnreachableResponses()
     provider = OpenAILLMProvider(
         model_name="gpt-5.6-terra",
-        client=SimpleNamespace(responses=responses),
+        client=cast(AsyncOpenAI, SimpleNamespace(responses=responses)),
         clock=TickClock(),
     )
 
@@ -572,7 +573,7 @@ def test_missing_tokenizer_is_a_pre_call_refusal_that_sent_nothing(monkeypatch, 
     responses = UnreachableResponses()
     provider = OpenAILLMProvider(
         model_name="gpt-5.6-terra",
-        client=SimpleNamespace(responses=responses),
+        client=cast(AsyncOpenAI, SimpleNamespace(responses=responses)),
         clock=TickClock(),
     )
     ledger = SharedAIAllowance(tmp_path / "limits.sqlite3", Decimal("1"), 5, 25)

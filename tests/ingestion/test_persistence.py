@@ -1,6 +1,7 @@
 """Persisting one batch's tables and their tagged facts."""
 
 import asyncio
+from collections import Counter
 
 import pytest
 from sqlalchemy import select
@@ -65,7 +66,7 @@ def test_facts_naming_declared_contexts_and_units_are_all_stored():
         async with isolated_session() as session:
             await persist_seed_batch(session, tagged_table_batch())
             units = (await session.scalars(select(TableSourceFact.unit_id))).all()
-            assert sorted(units) == ["usd", "usd", "usd", "usdPerShare", "usdPerShare"]
+            assert Counter(units) == Counter(["usd", "usd", "usd", "usdPerShare", "usdPerShare"])
 
     asyncio.run(exercise())
 

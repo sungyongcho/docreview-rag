@@ -79,6 +79,7 @@ def test_the_cell_catalog_lists_stored_cells_and_says_why_a_chunk_has_none():
             assert chunk_id is not None
             catalog = await load_cell_catalog(session, chunk_id)
             assert catalog["status"] == "available"
+            assert isinstance(catalog["cells"], list)
             cells = {cell["raw_text"]: cell for cell in catalog["cells"]}
             assert set(cells) == {"$ 25,785", "$ 22,680", "(1,641)"}
             revenue = cells["$ 25,785"]
@@ -199,7 +200,10 @@ def test_figure_evidence_gives_no_body_or_cells_for_a_table_without_usable_readi
 def test_catalog_distinguishes_missing_records_from_stale_identities_without_db(changed):
     """Missing rows and either stale reader component explain emptiness without exposing cells."""
     from types import SimpleNamespace
+    from typing import cast
     from unittest.mock import AsyncMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.agent.tools.filings import CellCatalog
 
@@ -213,7 +217,7 @@ def test_catalog_distinguishes_missing_records_from_stale_identities_without_db(
         get=AsyncMock(side_effect=[Chunk(id=1, kind="table"), ParsedTable(table_id="t", **stored)]),
         scalars=AsyncMock(return_value=SimpleNamespace(all=lambda: members)),
     )
-    result = asyncio.run(load_cell_catalog(session, 1))
+    result = asyncio.run(load_cell_catalog(cast(AsyncSession, session), 1))
     model = CellCatalog.model_validate(result)
     assert model.cells == () and model.unit is None
     if changed is None:
