@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
-# Reject whitespace errors in the exact staged change.
+# Reject whitespace errors and secrets in the exact staged change.
 set -euo pipefail
 git diff --cached --check
+exec python3 "$(git rev-parse --show-toplevel)/.githooks/secret_scan.py"
