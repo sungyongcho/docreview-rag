@@ -8,15 +8,24 @@ fail() {
   exit 1
 }
 
-# Git's own comment lines are not part of the message.
-message="$(grep -v '^#' "$1" || true)"
+# Normalize CRLF, stop at Git's scissors, and drop Git comment lines.
+message="$(awk '
+  { sub(/\r$/, "") }
+  $0 == "# ------------------------ >8 ------------------------" { exit }
+  !/^#/ { print }
+' "$1")"
 title="$(sed -n 1p <<<"$message")"
+# A revert needs the same explanation and verification as any other change.
+if [[ "$title" == 'Revert "'*'"' ]]; then
+  fail "rewrite Git's default revert title as 'revert(<scope>): <outcome>'"
+fi
 [[ "$title" =~ ^[a-z]+(\([a-z0-9._/-]+\))?!?:\ .+ ]] || fail "the title is not a Conventional Commit: $title"
 [ -z "$(sed -n 2p <<<"$message")" ] || fail "the second line is not blank"
 
+# Project bodies use standalone headings with or without a trailing colon.
 last=2
 for section in Summary Changes Verification; do
-  line="$(grep -n -m 1 "^$section" <<<"$message" | cut -d: -f1 || true)"
+  line="$(grep -En -m 1 "^$section:?[[:blank:]]*$" <<<"$message" | cut -d: -f1 || true)"
   [ -n "$line" ] || fail "the body has no $section section"
   [ "$line" -gt "$last" ] || fail "the $section section is out of order"
   last=$line

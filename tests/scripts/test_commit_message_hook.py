@@ -12,6 +12,7 @@ import pytest
 HOOK = Path(__file__).resolve().parents[2] / ".githooks" / "commit-msg"
 _BODY = "\n\nSummary\n\nWhy.\n\nChanges\n\n- What.\n\nVerification\n\n- passed: the check.\n"
 _BODY_WITH_COLONS = "\n\nSummary:\nWhy.\n\nChanges:\n- What.\n\nVerification:\n- passed.\n"
+_SCISSORS = "# ------------------------ >8 ------------------------\n"
 
 
 def _refusal(tmp_path: Path, message: str) -> str | None:
@@ -30,6 +31,13 @@ def _refusal(tmp_path: Path, message: str) -> str | None:
         "feat(api)!: drop the old route" + _BODY + "\nRefs #12\n",
         "fix(agent): end the run once" + _BODY_WITH_COLONS,
         "build(hooks): refuse a line that says Generated with a tool" + _BODY,
+        "fix(agent): end the run once"
+        + _BODY.replace("Why.", "Verification previously missed this case."),
+        ("fix(agent): end the run once" + _BODY_WITH_COLONS).replace("\n", "\r\n"),
+        "fix(agent): end the run once"
+        + _BODY
+        + _SCISSORS
+        + "diff --git a/README.md b/README.md\n Generated with a tool\n",
         "# a comment Git adds\nfix(agent): end the run once"
         + _BODY
         + "# Please enter the message\n",
@@ -47,6 +55,19 @@ def test_a_message_in_the_project_form_is_accepted(tmp_path: Path, message: str)
         ("fix(agent): end the run once\n", "no Summary section"),
         ("fix(agent): end the run once\nSummary\n\nChanges\n\nVerification\n", "not blank"),
         ("fix(agent): end the run once\n\nSummary\n\nChanges\n", "no Verification section"),
+        (
+            "fix(agent): end the run once"
+            + _BODY.replace("Verification\n", "Verification passed yesterday.\n"),
+            "no Verification section",
+        ),
+        (
+            "fix(agent): end the run once"
+            + _BODY.partition("\nVerification")[0]
+            + "\n"
+            + _SCISSORS
+            + "diff --git a/a b/a\nVerification\n",
+            "no Verification section",
+        ),
         (
             "fix(agent): end the run once\n\nChanges\n\nSummary\n\nVerification\n",
             "Changes section is out of order",
@@ -72,3 +93,14 @@ def test_a_message_outside_the_form_is_refused_with_its_reason(
 
     assert refusal is not None
     assert reason in refusal
+
+
+def test_a_git_generated_revert_requires_the_project_form(tmp_path: Path) -> None:
+    """Require the same verification record for a revert as for any other change."""
+    refusal = _refusal(
+        tmp_path, 'Revert "fix(agent): end the run once"\n\nThis reverts commit abc.\n'
+    )
+
+    assert refusal is not None
+    assert "rewrite Git's default revert title" in refusal
+    assert _refusal(tmp_path, "revert(agent): restore the previous run handling" + _BODY) is None
