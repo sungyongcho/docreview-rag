@@ -85,10 +85,10 @@ def test_active_operations_block_inspection(tmp_path, state_dir):
 
 
 @pytest.mark.prepared_environment
-def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch, state_dir):
+def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch, state_dir, request):
     """Erase only an isolated test volume and verify a real empty pgvector schema."""
     # A freshly built application image; the test starts its own Compose project from it.
-    (image,) = prepared("DOCREVIEW_WIPE_TEST_IMAGE")
+    (image,) = prepared(request, "DOCREVIEW_WIPE_TEST_IMAGE")
     root = tmp_path / "docreview-wipe-test"
     root.mkdir()
     (root / "docker").mkdir()

@@ -290,9 +290,9 @@ def test_readiness_wait_handles_transient_non_json_proxy_response(tmp_path, monk
 
 
 @pytest.mark.prepared_environment
-def test_prepared_local_prod_has_verified_sources_vectors_and_foreign_keys():
+def test_prepared_local_prod_has_verified_sources_vectors_and_foreign_keys(request):
     """Read the explicitly selected local PROD volume; never create, clear or modify its data."""
-    (requested,) = prepared("DOCREVIEW_LOCAL_PROD_ACCEPTANCE")
+    (requested,) = prepared(request, "DOCREVIEW_LOCAL_PROD_ACCEPTANCE", disabled_value="0")
     assert requested == "1", "DOCREVIEW_LOCAL_PROD_ACCEPTANCE takes the value 1"
     root = Path(__file__).resolve().parents[3]
     database = prod.LocalDatabase(root)

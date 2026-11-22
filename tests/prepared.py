@@ -3,9 +3,8 @@
 A test marked ``prepared_environment`` reads or drives something a test run cannot
 make for itself: a freshly built application image, a database restored from the
 public artifacts, or the local PROD volume. The caller names that environment in the
-test's own variables, and setting them is the request to run the check. Until then the
-test is skipped with the variables it waits for, also under ``--require-live-postgres``:
-that option speaks only for the isolated PostgreSQL of :mod:`tests.live_postgres`.
+test's own variables. An unprepared test skips with its name and the variables it
+needs. Use ``--require-prepared-environment`` when selected checks must run.
 """
 
 import os
@@ -13,10 +12,16 @@ import os
 import pytest
 
 
-def prepared(*names: str) -> tuple[str, ...]:
-    """Return the values of the variables naming a prepared environment, or skip."""
+def prepared(
+    request: pytest.FixtureRequest, *names: str, disabled_value: str | None = None
+) -> tuple[str, ...]:
+    """Read prepared variables, treating an explicit off value as unprepared."""
     values = tuple(os.environ.get(name, "") for name in names)
-    missing = [name for name, value in zip(names, values, strict=True) if not value]
+    missing = [
+        name
+        for name, value in zip(names, values, strict=True)
+        if not value or value == disabled_value
+    ]
     if missing:
-        pytest.skip(f"Prepared environment not named: set {', '.join(missing)}")
+        pytest.skip(f"{request.node.nodeid}: prepared environment requires {', '.join(missing)}")
     return values

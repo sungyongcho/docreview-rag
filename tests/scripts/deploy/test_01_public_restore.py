@@ -16,10 +16,12 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.prepared_environment
-def test_restored_public_portfolio_matches_checked_artifacts(tmp_path):
+def test_restored_public_portfolio_matches_checked_artifacts(tmp_path, request):
     """Verify the real restore without touching schema, corpus, vectors or runtime records."""
     # A disposable database restored from the public artifacts, and those artifacts.
-    dsn, artifact_dir = prepared("DOCREVIEW_RESTORE_TEST_DSN", "DOCREVIEW_PUBLIC_ARTIFACT_DIR")
+    dsn, artifact_dir = prepared(
+        request, "DOCREVIEW_RESTORE_TEST_DSN", "DOCREVIEW_PUBLIC_ARTIFACT_DIR"
+    )
     parsed = urlsplit(dsn)
     assert parsed.hostname in {"127.0.0.1", "localhost"}
     assert parsed.path.startswith("/pipeline_test_")

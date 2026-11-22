@@ -1,5 +1,6 @@
 """Repository-wide pytest command-line options."""
 
+from collections.abc import Generator
 import os
 from pathlib import Path
 
@@ -34,11 +35,16 @@ def no_evidence_holds(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Expose an explicit local gate for live PostgreSQL coverage."""
+    """Expose gates for checks that need a live or prepared environment."""
     parser.addoption(
         "--require-live-postgres",
         action="store_true",
         help="Fail instead of skipping when a live PostgreSQL prerequisite is unavailable.",
+    )
+    parser.addoption(
+        "--require-prepared-environment",
+        action="store_true",
+        help="Fail when a selected prepared_environment test is skipped.",
     )
 
 
@@ -46,3 +52,20 @@ def pytest_configure(config: pytest.Config) -> None:
     """Map the repository option onto the shared live-test policy."""
     if config.getoption("--require-live-postgres"):
         os.environ[EXPECT_LIVE_POSTGRES_ENV] = "1"
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item,
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """Turn a selected prepared check's skip into a release failure."""
+    report = yield
+    if (
+        report.skipped
+        and item.config.getoption("--require-prepared-environment")
+        and item.get_closest_marker("prepared_environment") is not None
+    ):
+        reason = report.longrepr[-1] if isinstance(report.longrepr, tuple) else report.longrepr
+        report.outcome = "failed"
+        report.longrepr = f"Required prepared check {item.nodeid} skipped: {reason}"
+    return report

@@ -77,7 +77,7 @@ docker compose --project-directory . -f docker/docker-compose.yml -p "$M7_PROJEC
 
 printf 'Clean archive: isolated Compose reset with the freshly built image\n'
 DOCREVIEW_WIPE_TEST_IMAGE="${M7_PROJECT}-app" \
-    uv run pytest -q -m prepared_environment \
+    uv run pytest -q -m prepared_environment --require-prepared-environment \
     tests/operator/reset/test_service.py::test_disposable_compose_reset_recreates_empty_schema
 
 printf 'Clean archive: Hugging Face image build and canned local smoke\n'
