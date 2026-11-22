@@ -8,7 +8,7 @@ DocReview answers questions over SEC 10-K and DART filings with citations, and i
 - Resolve discoverable facts and routine choices yourself. Ask only for material ambiguity, missing authority or the approvals below.
 - Say that something works only after running it. Report each check as passed, failed, blocked or not run, and never hide a failed one.
 - Preserve ignored files, other worktrees and other contributors' identities as well.
-- The study plan and its progress live in the Second Brain owner `Projects/docreview-rag`; read its TODO at task start and record verified outcomes there.
+- The study plan and its progress live in the Second Brain owner `Projects/docreview-rag`.
 - Preserve required Korean UI text and the paired Korean/English guides.
 
 ## Approval
