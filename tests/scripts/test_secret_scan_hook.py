@@ -87,6 +87,17 @@ def test_a_documented_fake_line_can_be_allowed(repo: Path) -> None:
     assert _refusal(repo, files) is None
 
 
-def test_the_example_env_file_may_be_committed(repo: Path) -> None:
-    """Accept `.env.example`, which documents names without values."""
-    assert _refusal(repo, {".env.example": "OPENAI_API_KEY_LOCAL=\n"}) is None
+@pytest.mark.parametrize("name", [".env.example", "config/.env.local.example"])
+def test_an_example_env_file_may_be_committed(repo: Path, name: str) -> None:
+    """Accept an `*.example` env template, which documents names without values."""
+    assert _refusal(repo, {name: "OPENAI_API_KEY_LOCAL=\n"}) is None
+
+
+def test_an_added_line_that_looks_like_a_file_header_does_not_hide_the_rest(repo: Path) -> None:
+    """Keep scanning after an added line whose text starts with `++ `."""
+    files = {"docs/notes.md": f"++ a diff-like line\nKEY={_OPENAI_FORM}\n"}
+
+    refusal = _refusal(repo, files)
+
+    assert refusal is not None
+    assert "docs/notes.md:2: an OpenAI or Anthropic API key" in refusal

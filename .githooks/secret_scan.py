@@ -3,7 +3,7 @@
 Run by ``.githooks/pre-commit`` from the repository root. It reads only the staged
 change, so what it judges is exactly what the commit would publish. Three things refuse:
 
-- a staged ``.env`` or ``.env.*`` file other than ``.env.example``;
+- a staged ``.env`` or ``.env.*`` file other than an ``*.example`` template;
 - an added line holding the value of a secret-named variable from a local env file
   (the repository's own ``.env`` files, which Git ignores);
 - an added line matching a well-known credential form (provider API keys, private keys).
@@ -37,7 +37,7 @@ _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 def is_env_file(path: str) -> bool:
     """Tell whether a path names an env file that must stay out of Git."""
     name = Path(path).name
-    return (name == ".env" or name.startswith(".env.")) and name != ".env.example"
+    return (name == ".env" or name.startswith(".env.")) and not name.endswith(".example")
 
 
 def _git(*args: str) -> str:
@@ -70,14 +70,21 @@ def secret_values(files: Iterator[Path]) -> dict[str, str]:
 
 
 def added_lines(diff: str) -> Iterator[tuple[str, int, str]]:
-    """Yield (path, line number, text) for every line a ``git diff -U0`` adds."""
-    path, number = "", 0
+    """Yield (path, line number, text) for every line a ``git diff -U0`` adds.
+
+    A ``+++`` line is a file header only between ``diff --git`` and the first hunk; inside
+    a hunk it is an added line whose text starts with ``++``.
+    """
+    path, number, in_header = "", 0, False
     for line in diff.splitlines():
-        if line.startswith("+++ "):
-            path = line[6:] if line.startswith("+++ b/") else ""
+        if line.startswith("diff --git "):
+            path, in_header = "", True
+        elif in_header and line.startswith("+++ "):
+            target = line[4:].strip('"')
+            path = target[2:] if target.startswith("b/") else ""
         elif hunk := _HUNK.match(line):
-            number = int(hunk.group(1))
-        elif line.startswith("+") and path:
+            number, in_header = int(hunk.group(1)), False
+        elif not in_header and line.startswith("+") and path:
             yield path, number, line[1:]
             number += 1
 
