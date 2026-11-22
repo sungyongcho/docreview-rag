@@ -101,3 +101,50 @@ def test_an_added_line_that_looks_like_a_file_header_does_not_hide_the_rest(repo
 
     assert refusal is not None
     assert "docs/notes.md:2: an OpenAI or Anthropic API key" in refusal
+
+
+def test_the_allow_mark_never_excuses_a_real_local_value(repo: Path) -> None:
+    """Refuse a value a local env file holds even on a line marked as a fake."""
+    files = {"tests/fake.py": f'FAKE = "{_LOCAL_VALUE}"  # secret-scan: allow\n'}
+
+    refusal = _refusal(repo, files)
+
+    assert refusal is not None
+    assert "the value of OPENAI_API_KEY_LOCAL" in refusal
+
+
+def test_a_value_followed_by_a_comment_in_the_env_file_is_still_found(repo: Path) -> None:
+    """Read `KEY=value # note` as the value alone."""
+    commented = "commented-" + "Wx4" * 6
+    with (repo / ".env").open("a", encoding="utf-8") as env:
+        env.write(f"AUTH0_CLIENT_SECRET={commented}  # rotate monthly\n")
+
+    refusal = _refusal(repo, {"app/auth.py": f'SECRET = "{commented}"\n'})
+
+    assert refusal is not None
+    assert "the value of AUTH0_CLIENT_SECRET" in refusal
+
+
+def test_a_pgp_private_key_and_an_envrc_are_refused(repo: Path) -> None:
+    """Refuse a PGP private key block and a staged direnv file."""
+    pgp = "-----BEGIN PGP " + "PRIVATE KEY BLOCK-----"
+    files = {"keys/release.asc": f"{pgp}\n", ".envrc": "export MODE=development\n"}
+
+    refusal = _refusal(repo, files)
+
+    assert refusal is not None
+    assert "keys/release.asc:1: a private key" in refusal
+    assert ".envrc: an env file is staged" in refusal
+
+
+def test_a_linked_worktree_checks_the_values_of_the_main_checkout(repo: Path) -> None:
+    """Find a value from the main checkout's `.env` when committing in a linked worktree."""
+    _git(repo, "add", ".gitignore", ".githooks")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "base")
+    worktree = repo.parent / f"{repo.name}-wt"
+    _git(repo, "worktree", "add", "-q", str(worktree))
+
+    refusal = _refusal(worktree, {"app/config.py": f'KEY = "{_LOCAL_VALUE}"\n'})
+
+    assert refusal is not None
+    assert "the value of OPENAI_API_KEY_LOCAL" in refusal
